@@ -1,0 +1,6 @@
+# Build output and generated files. Mirrors the `ignores` block in eslint.config.js.
+# Without this, `format:check` passes on a clean checkout (CI order: ci -> format:check
+# -> build) but fails locally the moment anyone has run a build.
+dist/
+coverage/
+package-lock.json

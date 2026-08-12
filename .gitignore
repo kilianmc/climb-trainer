@@ -1,0 +1,22 @@
+# dependencies
+node_modules/
+.venv/
+
+# build output
+dist/
+*.tsbuildinfo
+
+# secrets — never commit. Anything here belongs in Vercel env vars.
+.env
+.env.*
+!.env.example
+
+# tooling
+.vercel
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+__pycache__/
+*.py[cod]
+coverage/
+.DS_Store

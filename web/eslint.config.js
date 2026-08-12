@@ -1,0 +1,40 @@
+import js from '@eslint/js';
+import a11y from 'eslint-plugin-jsx-a11y';
+import reactHooks from 'eslint-plugin-react-hooks';
+import globals from 'globals';
+import tseslint from 'typescript-eslint';
+import prettier from 'eslint-config-prettier';
+
+export default tseslint.config(
+  { ignores: ['dist/**', 'coverage/**'] },
+  js.configs.recommended,
+
+  // Type-aware linting. This is the reason the repo stays on TypeScript 6 —
+  // typescript-eslint's peer range is >=4.8.4 <6.1.0, so TS 7 would silently cost
+  // us the two rules below, which are exactly the ones an app with optimistic
+  // writes and a background outbox needs.
+  ...tseslint.configs.recommendedTypeChecked,
+  {
+    languageOptions: {
+      parserOptions: { projectService: true, tsconfigRootDir: import.meta.dirname },
+      globals: globals.browser,
+    },
+    plugins: { 'react-hooks': reactHooks, 'jsx-a11y': a11y },
+    rules: {
+      ...reactHooks.configs.recommended.rules,
+      ...a11y.flatConfigs.recommended.rules,
+      '@typescript-eslint/no-floating-promises': 'error',
+      '@typescript-eslint/no-misused-promises': 'error',
+      '@typescript-eslint/consistent-type-imports': 'error',
+    },
+  },
+
+  // Config files run in Node and are outside the app's tsconfig project.
+  {
+    files: ['*.config.{ts,js}'],
+    languageOptions: { globals: globals.node },
+    ...tseslint.configs.disableTypeChecked,
+  },
+
+  prettier,
+);
