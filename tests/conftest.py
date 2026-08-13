@@ -14,22 +14,46 @@ Transaction handling per test: the fixture opens a connection, begins a transact
 session joins as a SAVEPOINT, and rolls the whole thing back afterwards. So tests see
 the seeded reference data, can write freely, and leave nothing behind — and the seed
 runs once per session rather than once per test.
+
+`AUTH_SECRET` is injected for the whole run by an autouse fixture, so the *pure* auth
+tests (JWT shapes, the public-route table) execute in the local gate with no database
+and no local configuration.
 """
 
 from collections.abc import Iterator
 
 import pytest
+from fastapi.testclient import TestClient
 from sqlalchemy import Engine, inspect
 from sqlalchemy.orm import Session
 
-from server.db import get_engine, session_scope
+from server.app import app
+from server.db import get_engine, get_session, session_scope
 from server.seed import seed_reference_data
-from server.settings import POOLED_URL_ENV, pooled_database_url
+from server.settings import AUTH_SECRET_ENV, POOLED_URL_ENV, pooled_database_url
 
 _SKIP_REASON = (
     f"{POOLED_URL_ENV} is not set — this test needs real Postgres. Local development "
     f"has no database by design; CI runs it against the postgres service container."
 )
+
+# Long enough to clear the 32-character floor, and constructed by repetition so it has
+# almost no entropy — gitleaks scans this repo's full history and a random-looking
+# string next to the word "secret" is exactly what its generic rule looks for.
+_FAKE_AUTH_SECRET = "not-a-real-secret-" * 3
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _auth_secret() -> Iterator[None]:
+    """A deterministic signing key for the whole test session.
+
+    Set unconditionally, overriding any real `AUTH_SECRET` from a developer's `.env`, so
+    a token minted in one test always verifies in another and a local run cannot behave
+    differently from CI.
+    """
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setenv(AUTH_SECRET_ENV, _FAKE_AUTH_SECRET)
+        yield
 
 
 @pytest.fixture(scope="session")
@@ -44,7 +68,14 @@ def engine() -> Engine:
 
     db_engine = get_engine()
     tables = set(inspect(db_engine).get_table_names())
-    missing = {"alembic_version", "grade_system", "grade"} - tables
+    missing = {
+        "alembic_version",
+        "grade_system",
+        "grade",
+        "app_user",
+        "auth_session",
+        "rate_limit",
+    } - tables
     if missing:
         raise RuntimeError(
             f"database is reachable but not migrated (missing: {sorted(missing)}). "
@@ -72,3 +103,29 @@ def db_session(seeded: Engine) -> Iterator[Session]:
         session.close()
         transaction.rollback()
         connection.close()
+
+
+@pytest.fixture
+def api_client(db_session: Session) -> Iterator[TestClient]:
+    """A `TestClient` whose requests run inside the test's rolled-back transaction.
+
+    Overriding `get_session` (rather than letting the app open its own) is what keeps
+    endpoint tests from leaving rows behind: handlers commit freely, but a commit on a
+    savepoint-joined session only releases the savepoint — the outer transaction is
+    still rolled back in `db_session`'s teardown.
+
+    **The base URL is https on purpose.** The refresh cookie carries `Secure`, and
+    httpx's cookie jar silently discards a `Secure` cookie received over http — every
+    refresh test would then fail for a reason that has nothing to do with the code.
+    """
+
+    def _use_test_session() -> Iterator[Session]:
+        # No close(): the session belongs to `db_session`, which tears it down.
+        yield db_session
+
+    app.dependency_overrides[get_session] = _use_test_session
+    try:
+        with TestClient(app, base_url="https://climb.kilianmc.com") as client:
+            yield client
+    finally:
+        app.dependency_overrides.clear()

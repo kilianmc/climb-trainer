@@ -1,0 +1,101 @@
+# Alembic runner — MANUAL ONLY.
+#
+# WHY THERE IS NO `on: push` HERE, and why adding one would be a mistake:
+# deploys in this project are automatic, migrations deliberately are not. If a
+# migration ran on push it would race the deployment that pushed it, and the loser is
+# decided by whichever finishes first — so the API can come up against a schema that is
+# either not there yet or already changed underneath it. Migrations therefore run out of
+# band, on a human's decision, following expand -> deploy -> contract. The FastAPI
+# lifespan only READS `alembic_version` and warns; it never migrates. See CLAUDE.md,
+# "Migrations run out-of-band".
+#
+# Nothing in this file may print a connection string. The repository is public and so
+# are these logs: no `set -x`, no `echo "$DATABASE_URL"`, not even a masked prefix.
+name: Migrate
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Which database to act on"
+        type: choice
+        required: true
+        options: [dev, production]
+      action:
+        # `current` is first AND the default on purpose: clicking straight through the
+        # dialog without reading it performs a read-only revision check, not a DDL run.
+        description: "current = read the applied revision · upgrade = run migrations · history = list revisions"
+        type: choice
+        required: true
+        default: current
+        options: [current, upgrade, history]
+      seed:
+        description: "After a successful upgrade, run `python -m server.seed` (idempotent upsert)"
+        type: boolean
+        required: false
+        default: false
+
+permissions:
+  contents: read
+
+# Two migration runs against the same database must never overlap. Queued, not
+# cancelled: cancelling mid-DDL is how a half-applied migration happens.
+concurrency:
+  group: migrate-${{ inputs.environment }}
+  cancel-in-progress: false
+
+jobs:
+  # NOTE: deliberately NOT named `web`, `server` or `secrets`. Those three are required
+  # status checks in a GitHub ruleset and the names are load-bearing.
+  migrate:
+    runs-on: ubuntu-latest
+
+    # GitHub environment protection applies here: `production` can require Kilian's
+    # approval before the job starts, and the connection strings are environment
+    # secrets, so a run against `dev` cannot reach production's database.
+    environment: ${{ inputs.environment }}
+
+    env:
+      # Alembic uses the DIRECT (unpooled) endpoint. DDL and CREATE TYPE need a real
+      # session; through Neon's PgBouncer transaction-mode pooler a migration tends to
+      # HANG rather than error, which is far worse to diagnose.
+      DATABASE_URL_UNPOOLED: ${{ secrets.DATABASE_URL_UNPOOLED }}
+      # The seed step goes through `server.db`, which reads the pooled URL.
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      # Choice inputs are constrained, but they are still interpolated into a shell, so
+      # they are passed as environment variables and quoted rather than expanded inline.
+      ACTION: ${{ inputs.action }}
+
+    steps:
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+      # No `--all-groups`: alembic and the server package are runtime dependencies, and
+      # a migration run has no use for pytest, ruff or mypy. `--frozen` still fails if
+      # uv.lock is stale, so this runs exactly the versions CI and Vercel resolved.
+      - run: uv sync --frozen
+
+      # The "before" half of the audit trail. For `action: current` this is the whole job.
+      - name: Applied revision (before)
+        run: uv run alembic current --verbose
+
+      - name: Revision history
+        if: ${{ inputs.action == 'history' }}
+        run: uv run alembic history --verbose
+
+      - name: Upgrade to head
+        if: ${{ inputs.action == 'upgrade' }}
+        run: uv run alembic upgrade head
+
+      # The "after" half. The two together are the record of what this run actually
+      # moved, which matters because nothing else logs it.
+      - name: Applied revision (after)
+        if: ${{ inputs.action == 'upgrade' }}
+        run: uv run alembic current --verbose
+
+      # The same seed module CI, local development and production all use. Upserts and
+      # never deletes, so re-running it is safe and cheap.
+      - name: Seed reference data
+        if: ${{ inputs.action == 'upgrade' && inputs.seed }}
+        run: uv run python -m server.seed

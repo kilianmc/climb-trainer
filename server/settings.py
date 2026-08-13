@@ -115,6 +115,71 @@ def direct_database_url() -> str | None:
     return _env_or_none(DIRECT_URL_ENV) or pooled_database_url()
 
 
+# --- Auth configuration -----------------------------------------------------------
+#
+# Both are read LAZILY, never at import time, for the same two reasons as the database
+# URLs: on Vercel an import-time failure takes the whole function down (including
+# `/api/health` and the SPA's own error reporting), and the local SPA-only workflow has
+# no auth at all — `npm run check` must stay green with neither variable set.
+# These are variable NAMES, not values — the values never appear in this repository.
+# The suppression below is because ruff's S105 flags any literal assigned to a name
+# containing "SECRET", which is exactly what an env-var-name constant looks like.
+AUTH_SECRET_ENV = "AUTH_SECRET"  # noqa: S105
+COOKIE_SECURE_ENV = "COOKIE_SECURE"
+
+# 32 chars is the floor, not the recommendation. It exists to stop a placeholder
+# ("changeme", "secret") reaching production, where every access token in the system
+# would be forgeable. Generate the real one with the command in .env.example.
+MIN_AUTH_SECRET_LENGTH = 32
+
+# Only these exact values disable `Secure` on the refresh cookie. Anything else —
+# including a typo — leaves it on, because the failure modes are asymmetric: a cookie
+# that is too secure fails visibly on http, one that is not secure enough travels in
+# clear text and nobody notices.
+_EXPLICIT_FALSE = frozenset({"0", "false", "no", "off"})
+
+
+class AuthNotConfiguredError(RuntimeError):
+    """Raised when an auth operation needs `AUTH_SECRET` and it is missing or too short."""
+
+
+def auth_secret() -> str:
+    """The HS256 signing key for access tokens. Raises only when auth is actually used.
+
+    Deliberately not `lru_cache`d: the miss costs one dict lookup, and caching would
+    freeze a value that tests (and a future secret rotation) need to be able to change.
+    """
+    value = _env_or_none(AUTH_SECRET_ENV)
+    if value is None:
+        raise AuthNotConfiguredError(
+            f"{AUTH_SECRET_ENV} is not set. Generate one with "
+            f'`python -c "import secrets; print(secrets.token_urlsafe(48))"` and put it '
+            f"in {DOTENV_PATH} (gitignored — this repo is public, so never commit a real "
+            f"value). On Vercel, .env is deliberately NOT read: set {AUTH_SECRET_ENV} in "
+            f"the project's environment variables, for every scope you deploy to."
+        )
+    if len(value) < MIN_AUTH_SECRET_LENGTH:
+        raise AuthNotConfiguredError(
+            f"{AUTH_SECRET_ENV} is only {len(value)} characters; at least "
+            f"{MIN_AUTH_SECRET_LENGTH} are required. A short or placeholder secret makes "
+            f'every access token forgeable. Use `python -c "import secrets; '
+            f'print(secrets.token_urlsafe(48))"`.'
+        )
+    return value
+
+
+def cookie_secure() -> bool:
+    """Whether the refresh cookie carries `Secure`. Defaults to True; opt out explicitly.
+
+    Defaulting to True and requiring `COOKIE_SECURE=false` to disable it means the
+    insecure setting can only ever be reached on purpose. The reason it is configurable
+    at all is plain http on localhost: Safari's handling of `Secure` cookies on
+    `http://localhost` has changed more than once and is not something to bet the login
+    flow on, so local development gets an escape hatch. Production never sets it.
+    """
+    return os.environ.get(COOKIE_SECURE_ENV, "").strip().lower() not in _EXPLICIT_FALSE
+
+
 @dataclass(frozen=True)
 class Settings:
     env: str = field(default_factory=lambda: os.environ.get("VERCEL_ENV", "development"))

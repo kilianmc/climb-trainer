@@ -278,6 +278,58 @@ recorded it as a side effect, batch it.**
 - **Never cron-ping Neon to defeat autosuspend.** A 5-minute ping is ≈ **730
   CU-hr/month** against a **100 CU-hr** allowance — the free tier is gone in ~4 days.
 - **No per-action telemetry rows.**
+- **The Postgres rate limiter does NOT protect awake time — corrected 2026-08-13.** The
+  original plan's risk #4 named "hard rate-limit `POST /api/auth/demo`" as the mitigation
+  for the 100 CU-hr ceiling. **That wording is superseded and must not be restored from
+  the plan.** `server/auth/ratelimit.py` counts with an upsert **and commits before it
+  checks the limit** — so a request that gets a 429 has still written to Postgres and has
+  still restarted the five-minute autosuspend window. Rejected traffic costs the same
+  awake time as accepted traffic. (Do not invert it to check-then-count: that
+  reintroduces a read-then-write race, and rejected attempts must be counted or the limit
+  is trivially evaded.) The table is an **abuse** control — credential stuffing, address
+  probing, unbounded demo-token minting — and it is worth having for that.
+  **Awake-time protection for unauthenticated endpoints has to sit at the edge**, where
+  the request never reaches the function: a Vercel WAF rule on `/api/auth/*`.
+- **The 400-hour ceiling, and the arithmetic nobody had written down.** 100 CU-hr/month
+  at the 0.25 CU floor is **400 awake-hours** against a 730-hour month, and **autosuspend
+  is fixed at 5 minutes and is NOT configurable on the Free plan** (paid plans can only
+  *disable* it, never shorten it — verified against Neon's scale-to-zero docs,
+  2026-08-13). Each training session wakes the compute for roughly one 5-minute window
+  per burst of activity, so 400 hours works out to **~260 sessions/month**, i.e. **about
+  20 users training 3×/week** before the free tier is exceeded. Per-user cost is already
+  close to the floor by design — batched Tier-2 writes, the CDN-cached library endpoint,
+  and stateless token verification mean an authenticated request usually touches nothing.
+  **Growth past ~20 users is solved by Neon's paid plan, not by restricting users.** Do
+  not respond to this number by adding quotas, trimming features or shortening token
+  lifetimes; the correct lever is $19/month.
+- **⚠️ The demo endpoint's rate limit lives OUTSIDE this repository.** It is a **Vercel
+  WAF rule on `/api/auth/*` — 20 requests / 10 minutes / IP** (10 minutes is the Hobby
+  maximum window, and Hobby allows exactly one rate-limit rule per project).
+  **Deleting that WAF rule silently removes the only rate limit on demo-token minting,
+  and nothing in the codebase will hint that it is gone.** There is deliberately no
+  `DEMO` rule in `server/auth/ratelimit.py` — it was removed 2026-08-13 because
+  enforcing it was itself a Postgres write, so a rejected request cost the same awake
+  time as an accepted one. A bot at **one request per minute** keeps the compute awake
+  100% of the time (~182 CU-hr/month) while sitting inside any limit that table could
+  express.
+  - **The remaining exposure, honestly:** `POST /api/auth/demo` now issues **zero SQL**
+    (no `Session` in its signature), so unlimited demo-token minting costs Vercel
+    invocations (1M/month free) and CPU, and **zero Neon time**. That is the whole point
+    of the change, and it is why unlimited minting is an acceptable worst case: the
+    resource that is actually scarce is untouched.
+  - **`x-forwarded-for` is NOT client-spoofable on Vercel — resolved 2026-08-13.** An
+    earlier draft of this file claimed a header-rotating attacker could get a fresh
+    bucket per request. That was wrong. Vercel's request-headers reference states: *"If
+    you are trying to use Vercel behind a proxy, we currently overwrite the
+    `X-Forwarded-For` header and do not forward external IPs. This restriction is in
+    place to prevent IP spoofing."* The platform sets the header to the real client IP
+    and there is exactly **one** entry, so leftmost and rightmost are the same string;
+    `x-real-ip` and `x-vercel-forwarded-for` are documented as identical to it. Verified
+    against <https://vercel.com/docs/headers/request-headers>, 2026-08-13. Two residual
+    facts, neither a change to make: a proxy *this project* puts in front of Vercel could
+    overwrite the header afterwards (`x-vercel-forwarded-for` is the documented escape
+    hatch, and there is no such proxy), and **locally** under bare `uvicorn` the header
+    is whatever the client sends, so the limiter is trivially bypassable in development.
 - `GET /api/library?v=<buildId>` is user-independent and immutable per deploy — serve
   `public, s-maxage=31536000, immutable` with `staleTime: Infinity`. Zero DB time and
   zero invocations after the first request per deploy.
@@ -326,7 +378,35 @@ line that appeared in the original plan:
   `server/seed.py` is the **single** seed module — CI, local work and production all
   call it, because a test fixture with hand-written rows tests a table production never
   has. It **upserts and never deletes**: user rows reference `grade.id`, so retiring a
-  grade is a deliberate migration, not a side effect of editing a tuple.
+  grade is a deliberate migration, not a side effect of editing a tuple. It also seeds
+  the **demo account** (`demo@climb-trainer.example`, `password_hash = NULL`), which is
+  deployment fixture data, not user data.
+- **`DEMO_USER_ID` is pinned at 1 and is part of the data contract** — demo tokens carry
+  it as `sub` so `POST /api/auth/demo` needs no lookup. Changing it is a migration. The
+  seed inserts that id explicitly and therefore **repairs `app_user_id_seq`** afterwards
+  (monotonic `setval`); without that the first real registration collides on the primary
+  key and surfaces as a baffling 409 on someone's first sign-up.
+
+#### How to actually run one: `.github/workflows/migrate.yml`
+
+Actions → **Migrate** → *Run workflow*. Three inputs:
+
+- **`environment`** — `dev` or `production`. This selects the GitHub **environment**, so
+  `production`'s protection rules (approval) apply and each environment carries its own
+  connection secrets. A `dev` run therefore cannot reach production's database.
+- **`action`** — **`current` is the default, and it is read-only**: it prints the applied
+  revision and stops. `upgrade` runs `alembic upgrade head` and prints `current` both
+  before and after, so the job log is the audit trail. `history` lists the revisions.
+- **`seed`** — off by default; when on, runs `python -m server.seed` after a successful
+  upgrade.
+
+**Prerequisite:** the two GitHub environments (`dev`, `production`) must exist, each
+with **`DATABASE_URL_UNPOOLED`** (the *direct* endpoint — Alembic uses this) and
+**`DATABASE_URL`** (the *pooled* endpoint — the seed step uses this) as environment
+secrets. Without them the job starts and fails on the first Alembic step.
+
+The workflow is `workflow_dispatch`-only and never prints a connection string; keep both
+properties if you edit it.
 
 ### SQLite is disqualified for tests
 
@@ -361,10 +441,11 @@ Non-negotiable. The realistic threat is bulk data extraction, not defacement.
 - **Demo mode is public by design, but read-only.** `POST /api/auth/demo` issues a
   short-lived token for a **seeded fake-data** demo user. Enforced two ways:
   `SET LOCAL transaction_read_only` on the demo path, **and** deny-by-default
-  middleware rejecting every mutating method for demo tokens. Hard **rate-limited**
-  (rate limiting lives in a Postgres `rate_limit` table — there are no background
-  workers). A route-enumeration test asserts **every** mutating route 403s for a demo
-  token. No real user data is ever seeded into demo.
+  middleware rejecting every mutating method for demo tokens. A route-enumeration test
+  asserts **every** mutating route 403s for a demo token. No real user data is ever
+  seeded into demo. **Its rate limit is a Vercel WAF rule, not a Postgres row** — see the
+  warning in the compute-budget section, and note the endpoint deliberately issues zero
+  SQL so that unlimited minting cannot cost Neon time.
 - **`/docs` and `/openapi.json` are OFF in production** — an OpenAPI schema is a map of
   the attack surface. See `_docs_enabled` in `server/app.py`.
 - **CORS is an allowlist, never `"*"`**, with a **startup assertion** that rejects `*`
@@ -379,6 +460,61 @@ Non-negotiable. The realistic threat is bulk data extraction, not defacement.
   - **The custom subdomain is load-bearing, not cosmetic.** `*.vercel.app` is on the
     Public Suffix List, so a preview URL is genuinely **cross-site** and the cookie
     cannot work there. Previews fall back to demo mode.
+
+### Auth implementation (PR #3) — where each piece lives
+
+`server/auth/` — `passwords.py`, `tokens.py`, `refresh.py`, `cookies.py`,
+`ratelimit.py`, `deps.py`, `routes.py`. Each module's docstring carries its reasoning;
+this is the map, not a substitute for reading them.
+
+**Two token shapes, and they are deliberately different things:**
+
+- **Access token** — HS256 JWT, claims `sub` / `scope` / `typ` / `iss` / `iat` / `exp`.
+  **3 h** for `user`, **1 h** for `demo`. Verified with `algorithms=["HS256"]` and an
+  explicit `require=[…]`, and **verification never touches the database** — that is what
+  keeps an authenticated request from waking Neon. Held **in memory** by the client.
+- **Refresh token** — opaque, 32 random bytes, stored only as a **sha256 hex digest**,
+  30-day lifetime, in an httpOnly `SameSite=Lax` host-only cookie scoped to
+  `path=/api/auth`. Rotated on every use, in a **family**; presenting an
+  already-rotated or revoked token **revokes the whole family** (`refresh.rotate`).
+  sha256 rather than argon2 because the token is already 256 bits of entropy.
+  `rotate()` reads its row **`FOR UPDATE`** — without the lock two simultaneous
+  presentations of the same token both pass the reuse check and reuse goes undetected,
+  which is the exact case the family mechanism exists for.
+
+**The public-route list is `PUBLIC_ROUTES` in `server/auth/deps.py`.** `enforce_auth`
+is registered **once, application-wide** (`FastAPI(dependencies=[…])`), never per
+router — opt-in fails open when someone forgets. Adding an endpoint protects it by
+default; making it public is a visible line in that frozenset.
+`tests/test_auth_routes_enumerated.py` walks every registered route and fails if one is
+neither listed nor 401-ing.
+
+**Demo read-only is enforced twice**, per the rule above: `enforce_auth` 403s a
+`demo`-scope token on every `POST/PUT/PATCH/DELETE` (sole exception:
+`POST /api/auth/demo`, enumerated in `DEMO_WRITE_EXEMPT_ROUTES`), **and**
+`get_request_session` issues `SET LOCAL transaction_read_only = on` for a demo
+principal. A consequence for the auth UI: a client in demo mode must **drop its demo
+token before calling login or register**, or those calls 403.
+
+`AUTH_SECRET` (≥32 chars) is read lazily via `server/settings.py::auth_secret()`, never
+at import time, and must be set in Vercel for every scope.
+
+Rate limiting lives in the `rate_limit` table, keyed by an **HMAC of the subject** — the
+raw IP or email is never stored. Three IP-keyed rules (`login` 10/15 min, `register`
+3/hour, `refresh` 30/hour) plus **`login_account`, keyed on the attempted email**, because
+a per-IP limit does nothing against an attacker spread across many addresses. There is
+**no `demo` rule** — that one is a Vercel WAF rule instead (see the compute-budget
+warning). `login` and `refresh` are generous on purpose and lowering them buys nothing:
+each attempt is one write, so the Neon cost is identical at 3 or 30, and a tighter limit
+only inconveniences someone mistyping a password. Login checks both of its buckets **in a
+single `INSERT … ON CONFLICT` statement** (`enforce_all`), so the second dimension costs
+no extra round trip and no extra Neon wake-up. `login_account` is 30/hour: an attacker
+can deliberately hold a real user at 429, which is accepted — it self-heals within the
+hour and is a **rate limit, never an account lockout** (no state disables an account).
+The 429 is identical whichever bucket tripped, and the email counter increments for
+addresses that do not exist, so it is not an account-existence oracle. It is an **abuse**
+control only; see the correction in the compute-budget section for why it does not
+protect awake time.
 
 ---
 
