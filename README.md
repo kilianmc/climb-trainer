@@ -97,7 +97,7 @@ Requires Node per `.nvmrc` (24) and [`uv`](https://docs.astral.sh/uv/) for Pytho
 # once
 npm --prefix web ci
 uv sync --all-groups
-cp .env.example .env      # then fill in the Neon URLs
+cp .env.example .env      # then fill in the Neon URLs and AUTH_SECRET
 ```
 
 `.env` is **loaded automatically** by `server/settings.py`, so the API, `alembic`,
@@ -106,6 +106,25 @@ exported environment variable always overrides the file, and the load is skipped
 entirely on Vercel so a stray `.env` can never shadow production config. Quote any
 value containing `&` (Neon appends `&channel_binding=require`) if you also shell-source
 the file.
+
+The variables, all documented inline in `.env.example`:
+
+| Variable                | What it is                                                            |
+| ----------------------- | --------------------------------------------------------------------- |
+| `CORS_ORIGINS`          | Comma-separated allowlist. A `*` fails at startup.                    |
+| `DATABASE_URL`          | Neon **pooled** endpoint (host contains `-pooler`) — the app.         |
+| `DATABASE_URL_UNPOOLED` | Neon **direct** endpoint — Alembic only.                              |
+| `AUTH_SECRET`           | HS256 signing key for access tokens. **≥32 chars**, generate it.      |
+| `COOKIE_SECURE`         | Optional. Defaults to `true`; set `false` only for http on localhost. |
+
+Generate a signing key with
+`python -c "import secrets; print(secrets.token_urlsafe(48))"`. It has to be set in
+Vercel too, for every scope you deploy to — `.env` is not read inside a deployment.
+Nothing secret may ever carry a `VITE_` prefix: that prefix is inlined into the public
+client bundle.
+
+Database migrations are **not** run from a laptop against production. Use the manual
+**Migrate** workflow (Actions → Migrate); see `CLAUDE.md`.
 
 Then run both halves — the API on `:8000`, the SPA on `:5173` with Vite proxying
 `/api` across so the two share an origin exactly as they do in production:

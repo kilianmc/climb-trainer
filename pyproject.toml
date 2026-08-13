@@ -5,10 +5,19 @@ description = "climb-trainer API — versioning lives in the root package.json"
 requires-python = ">=3.13"
 dependencies = [
     "alembic==1.19.1",
+    # argon2id password hashing (server/auth/passwords.py). The reference implementation
+    # of the algorithm OWASP recommends for new password storage.
+    "argon2-cffi==25.1.0",
+    # Pydantic's EmailStr is a no-op stub without it — it raises at model definition
+    # time rather than validating, so this is a hard runtime dep, not an extra.
+    "email-validator==2.3.0",
     "fastapi==0.128.8",
     # psycopg3 (NOT asyncpg) — see server/db.py for why. The [binary] extra ships a
     # wheel with libpq bundled, so the Vercel Python image needs no system libpq.
     "psycopg[binary]==3.3.4",
+    # HS256 access tokens (server/auth/tokens.py). Verification is stateless on purpose,
+    # so it must never need the database.
+    "pyjwt==2.13.0",
     # A runtime dep, not a dev one, on purpose: server/settings.py imports it, and a
     # dev-only dep would make production depend on the Vercel guard never regressing.
     "python-dotenv==1.2.2",
@@ -28,7 +37,7 @@ dev = [
 ]
 
 [tool.setuptools]
-packages = ["server", "server.domain"]
+packages = ["server", "server.auth", "server.domain"]
 
 [tool.ruff]
 target-version = "py313"
@@ -36,8 +45,10 @@ line-length = 100
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "S", "ASYNC"]
-# S101: pytest needs bare asserts.
-per-file-ignores = { "tests/*" = ["S101"] }
+# S101: pytest needs bare asserts. S105/S106: the auth tests contain obviously-fake
+# passwords and hashes by necessity — flagging them would mean either silencing the rule
+# line by line forever or, worse, making the fixtures look less fake.
+per-file-ignores = { "tests/*" = ["S101", "S105", "S106"] }
 
 [tool.mypy]
 python_version = "3.13"

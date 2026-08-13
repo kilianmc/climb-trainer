@@ -17,10 +17,12 @@ a class of future mistake:
    migrate. Store aware, convert at the edge.
 """
 
+import uuid
 from datetime import datetime
 
 from sqlalchemy import (
     TIMESTAMP,
+    Boolean,
     Enum,
     ForeignKey,
     Index,
@@ -29,6 +31,8 @@ from sqlalchemy import (
     SmallInteger,
     String,
     UniqueConstraint,
+    Uuid,
+    func,
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
@@ -111,3 +115,91 @@ class Grade(Base):
         # send pyramid's `(user_id, grade_ordinal)` joins both come in on ordinal.
         Index("ix_grade_ordinal", "ordinal"),
     )
+
+
+class AppUser(Base):
+    """An account. Named `app_user` because `user` is a reserved word in Postgres.
+
+    `email` is `String(254)` (the RFC 5321 maximum) rather than `citext`: the extension
+    is not guaranteed on Neon and adding one is a privileged operation, so
+    case-insensitivity is enforced at the edge instead — every write path lowercases and
+    strips before it touches this column, and the unique constraint then means what it
+    looks like it means. If a future path forgets to normalise, two accounts differing
+    only in case become possible; that is the failure this comment exists to prevent.
+
+    `password_hash` is **nullable on purpose**. The seeded demo account has no password
+    and must never be loggable through `/api/auth/login`; a NULL here is what makes that
+    structural rather than a check the login handler could forget.
+    """
+
+    __tablename__ = "app_user"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    email: Mapped[str] = mapped_column(String(254), unique=True)
+    # argon2id encoded hash ("$argon2id$v=19$m=47104,t=1,p=1$..."), ~100 chars at the
+    # profile in server/auth/passwords.py. 255 leaves room for a future parameter bump.
+    password_hash: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    is_demo: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=func.false())
+    # `Mapped[datetime]` picks up TIMESTAMPTZ from `type_annotation_map` above. The
+    # default is a SERVER default so the timestamp is the database's clock, not a
+    # serverless function's — the two disagree often enough to matter for ordering.
+    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
+
+
+class AuthSession(Base):
+    """One refresh token in a rotation family. See `server/auth/refresh.py`.
+
+    A *family* is the chain of refresh tokens descending from one login. Every rotation
+    writes a new row with the same `family_id` and stamps `rotated_at` on the old one,
+    so the family is an append-only audit trail of a single browser's session.
+
+    That trail is what makes **reuse detection** possible: a token whose row already has
+    `rotated_at` (or `revoked_at`) set has been presented twice, which only happens if it
+    was captured. The response is to revoke the whole family — the legitimate holder is
+    logged out too, which is the correct trade when the alternative is leaving an
+    attacker with a valid chain.
+
+    `token_hash` stores a **sha256 hex digest, never the token**. A database dump must
+    not be a set of working credentials.
+    """
+
+    __tablename__ = "auth_session"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    # ondelete=CASCADE: deleting an account must not leave live refresh tokens behind,
+    # and this is one of the few places where the database can guarantee that itself.
+    user_id: Mapped[int] = mapped_column(ForeignKey("app_user.id", ondelete="CASCADE"))
+    family_id: Mapped[uuid.UUID] = mapped_column(Uuid())
+    # 64 hex characters, exactly — sha256. Unique because two rows sharing a digest
+    # would make rotation ambiguous, and because it is the lookup key on every refresh.
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True)
+    issued_at: Mapped[datetime] = mapped_column(server_default=func.now())
+    expires_at: Mapped[datetime] = mapped_column()
+    rotated_at: Mapped[datetime | None] = mapped_column(nullable=True)
+    revoked_at: Mapped[datetime | None] = mapped_column(nullable=True)
+
+    __table_args__ = (
+        # Revoking a compromised family is a single indexed UPDATE.
+        Index("ix_auth_session_family_id", "family_id"),
+        # "this user's live sessions", for a future device list and for logout-everywhere.
+        Index("ix_auth_session_user_id_family_id", "user_id", "family_id"),
+    )
+
+
+class RateLimit(Base):
+    """Fixed-window request counter. See `server/auth/ratelimit.py`.
+
+    It lives in Postgres because there are no background workers and no Redis in this
+    deployment — a serverless function is frozen between requests, so an in-process
+    counter would reset on every cold start and be per-instance even when warm.
+
+    The primary key IS the window: `(bucket, window_start)`. That makes the whole limiter
+    one `INSERT ... ON CONFLICT DO UPDATE ... RETURNING count`, i.e. one round trip with
+    no read-then-write race. `bucket` never contains a raw IP — see the module for why.
+    """
+
+    __tablename__ = "rate_limit"
+
+    bucket: Mapped[str] = mapped_column(String(128), primary_key=True)
+    window_start: Mapped[datetime] = mapped_column(primary_key=True)
+    count: Mapped[int] = mapped_column(Integer, nullable=False)
