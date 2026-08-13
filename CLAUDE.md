@@ -408,6 +408,44 @@ secrets. Without them the job starts and fails on the first Alembic step.
 The workflow is `workflow_dispatch`-only and never prints a connection string; keep both
 properties if you edit it.
 
+##### ⚠️ Two traps that cost a debugging session on 2026-08-13, the day it first ran
+
+**1. A `workflow_dispatch` workflow only registers if the file exists on the DEFAULT
+branch.** `migrate.yml` shipped on `dev` in PR #2 and was therefore *completely inert*:
+`gh workflow run` returned `HTTP 404: workflow migrate.yml not found on the default
+branch`, and it did not appear in the Actions UI at all — so there was nothing to click
+either. The GitHub environments and their secrets were correct the whole time and it made
+no difference. PR #3 fixed it by putting the file on `main` on its own, as a deliberate
+exception to the "`main` receives only promotion PRs" rule.
+
+> **Keep `main`'s copy BYTE-IDENTICAL to `dev`'s.** The branches' merge base predates the
+> file, so any difference is an **add/add conflict** at the first promotion. Identical
+> content merges silently. A change to this workflow therefore takes **two** PRs — one to
+> `dev`, one to `main` — and the same rule applies to every future
+> `workflow_dispatch` workflow. Notes about the workflow go in *this* file, on `dev`, not
+> in a comment that would have to be duplicated.
+
+**2. `environment` chooses the DATABASE; the REF chooses the MIGRATIONS.** Registration
+comes from the default branch, but GitHub takes both the job definition and the checkout
+from the ref you select in the dialog. They are independent inputs and confusing them is
+how production gets a revision nobody reviewed. Until the first `dev`→`main` promotion,
+`main` has no `migrations/` directory and no alembic dependency, so a run must select
+`dev`:
+
+```bash
+gh workflow run migrate.yml --ref dev -f environment=dev -f action=current
+```
+
+**And a third, smaller one: `alembic current --verbose` prints the connection URL.** It
+emits a `Current revision(s) for <url>:` header. Alembic hides the password and GitHub
+masks the secret, but the **Neon endpoint hostname, region and database name reach the
+public log** — breaking the workflow's own no-connection-string rule via a flag rather
+than an `echo`. The steps use bare `alembic current` for that reason; `alembic history
+--verbose` is fine because it never opens a connection. Verified 2026-08-13 that nothing
+else on the path logs a URL: `sqlalchemy.engine` is pinned to `WARNING` in `alembic.ini`
+and `migrations/env.py` never prints one. **The lesson generalises — in a public repo,
+audit what a tool prints at its chosen verbosity, not just what the workflow echoes.**
+
 ### SQLite is disqualified for tests
 
 The schema uses native Postgres enums, `text[]`, `GENERATED … STORED`, GIN indexes and
@@ -515,6 +553,75 @@ The 429 is identical whichever bucket tripped, and the email counter increments 
 addresses that do not exist, so it is not an account-existence oracle. It is an **abuse**
 control only; see the correction in the compute-budget section for why it does not
 protect awake time.
+
+### 🔒 TODO — the end-to-end security verification pass (Kilian's call, 2026-08-13)
+
+**Not yet done. Do not tick any of it off from memory.** Every rule in this file was
+written because of a real risk, and a rule that was implemented once and never verified
+against the running system is indistinguishable from a rule that quietly stopped working.
+Two of the controls listed below **do not live in this repository at all**, so no test in
+CI can ever notice their absence.
+
+**When:** once the product is feature-complete on `climb.kilianmc.com` — realistically
+after PR #7 — and **before** the project is shown to anyone as a portfolio piece. Run it
+against the **production deploy**, not a preview: previews are cross-site
+(`*.vercel.app` is on the Public Suffix List) and behave differently on purpose.
+
+**Scope it honestly — three tiers, and only two of them need a human:**
+
+- **Already proven by CI on every push. Do NOT re-test by hand:** the route-enumeration
+  auth/demo tests, the routing contract, the version wiring, refresh rotation and reuse
+  detection under a real row lock, the rate-limiter's single-statement upsert, `alembic
+  upgrade head` + `alembic check` on a fresh Postgres, gitleaks over full history.
+  Re-checking these manually is how a verification pass becomes theatre.
+- **Only verifiable against the real deployment**, because the Vercel rewrite, the CDN
+  and the browser are the parts CI does not have:
+  1. **Routing** — `/api/health` → JSON, `/api/nope` → FastAPI's **JSON** 404 (not the
+     SPA shell), `/` and `/deep/link` → `text/html`. The dangerous failure is a
+     `200 text/html` from an `/api/*` path.
+  2. **`/api/docs` and `/api/openapi.json` → 404 in production.**
+  3. **CORS** — an allowed origin is echoed with `Vary: Origin`; an **unknown origin gets
+     no `Access-Control-Allow-Origin` header at all**; there is no `*` anywhere on
+     `/api/*`. Test with a real preflight, not just a GET.
+  4. **Cookies** (browser devtools — ask Kilian) — the refresh cookie is `HttpOnly`,
+     `Secure`, `SameSite=Lax`, `Path=/api/auth`, and has **no `Domain` attribute**.
+     And **nothing token-shaped in `localStorage` or `sessionStorage` in either mount** —
+     check the federated mount too, where the storage is kilianmc.com's.
+  5. **Deny-by-default through the rewrite** — hit a protected endpoint anonymously on
+     the deploy. The enumerated test proves this in-process; this proves the rewrite
+     doesn't route around it.
+  6. **IDOR, with two real accounts** — as user A, request user B's plan / session /
+     ascent / diary entry by id. Expect 404 or 403 and **never** a row. This is the
+     single highest-value check in the list: it is the actual extraction risk.
+  7. **Demo mode against a live mutating endpoint** — a demo token must 403, and the
+     `SET LOCAL transaction_read_only` layer must reject a write if the first layer is
+     ever bypassed.
+  8. **Login rate limit** — it trips; the 429 is byte-identical for a real and a
+     non-existent address; it self-heals within the window and no account is ever
+     disabled.
+  9. **Security response headers** — once that PR has landed: HSTS, CSP,
+     `Referrer-Policy`, `X-Content-Type-Options`, and **verify `frame-ancestors` does not
+     break the federated mount inside `portfolio-shell`** (this is the one that will).
+  10. **No secret in the client bundle** — grep the built `web/dist` for any value of a
+      non-`VITE_` env var, and for anything resembling `AUTH_SECRET`.
+- **Infra, outside the repo — these are the ones nothing else can catch:**
+  11. **The Vercel WAF rule on `/api/auth/*` still exists and actually fires** (20 req /
+      10 min / IP). Confirm the denials appear in the Firewall traffic view. **This is
+      the only rate limit on demo-token minting** — see the ⚠️ in the compute-budget
+      section.
+  12. **Vercel project settings** — `framework` is still `null` (re-check after any
+      `vercel link`), and `ssoProtection` is still **ON** for this project's previews.
+  13. **Zero open Dependabot alerts**, or each remaining one triaged with a written
+      reason it does not apply. On 2026-08-13 there were 6 (starlette + pytest) and none
+      were exploitable here, but "not exploitable" needs re-deciding per alert, not once.
+  14. **2FA still enabled on GitHub, Vercel, Neon and Cloudflare.**
+  15. **Neon CU-hours for the month match the model** in the compute-budget section. A
+      figure well above it means something is waking the database — that is the signal.
+
+**Script what is scriptable** (1, 2, 3, 5, 6, 7, 8, 10 are all `curl`/CLI), and **ask
+Kilian for the browser-only ones** (4, 9, 11) rather than burning turns on them.
+**Write the outcome down** — in the PR that does the pass, with the date — so the next
+person verifies rather than re-verifies.
 
 ---
 

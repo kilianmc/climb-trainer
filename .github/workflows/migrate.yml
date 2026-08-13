@@ -11,6 +11,19 @@
 #
 # Nothing in this file may print a connection string. The repository is public and so
 # are these logs: no `set -x`, no `echo "$DATABASE_URL"`, not even a masked prefix.
+# That is easier to violate than it looks, and it was violated on the first real run —
+# by a `--verbose` flag, not by an `echo`. See the note on the `current` steps below.
+#
+# DISPATCHING THIS: the workflow is only *registered* because the file exists on the
+# default branch (`main`) — `workflow_dispatch` is ignored on any other branch, and
+# before it was registered `gh workflow run` answered `HTTP 404: not found on the
+# default branch`. But GitHub takes the job definition AND the checkout from the ref you
+# select, so pick it deliberately: run the ref whose `migrations/` directory you mean to
+# apply. Until the first `dev`->`main` promotion, `main` has no migrations and no alembic
+# dependency at all, so a run must select `dev` (`gh workflow run migrate.yml --ref dev
+# -f environment=dev -f action=current`). `environment` chooses the DATABASE; the ref
+# chooses the MIGRATIONS. They are independent, and mixing them up is how production
+# gets a revision that was never reviewed.
 name: Migrate
 
 on:
@@ -77,9 +90,21 @@ jobs:
       - run: uv sync --frozen
 
       # The "before" half of the audit trail. For `action: current` this is the whole job.
+      #
+      # NO `--verbose` HERE, and that is not a style preference. `alembic current
+      # --verbose` prints a `Current revision(s) for <url>:` header before the revision.
+      # Alembic obscures the password and GitHub masks the secret, but the Neon endpoint
+      # HOSTNAME, region and database name survive into a **public** Actions log — which
+      # is precisely what the header comment at the top of this file forbids. It happened
+      # (2026-08-13, first run; the run was deleted). Bare `current` prints `0002 (head)`
+      # and emits no such header, which is all the audit trail needs. Nothing else on this
+      # path logs the URL: `sqlalchemy.engine` is pinned to WARNING in `alembic.ini` and
+      # `migrations/env.py` never prints it.
       - name: Applied revision (before)
-        run: uv run alembic current --verbose
+        run: uv run alembic current
 
+      # `--verbose` IS safe here: `history` reads the migration files and never opens a
+      # connection, so there is no URL for it to put in the header.
       - name: Revision history
         if: ${{ inputs.action == 'history' }}
         run: uv run alembic history --verbose
@@ -89,10 +114,11 @@ jobs:
         run: uv run alembic upgrade head
 
       # The "after" half. The two together are the record of what this run actually
-      # moved, which matters because nothing else logs it.
+      # moved, which matters because nothing else logs it. Bare `current` again — same
+      # reason as above.
       - name: Applied revision (after)
         if: ${{ inputs.action == 'upgrade' }}
-        run: uv run alembic current --verbose
+        run: uv run alembic current
 
       # The same seed module CI, local development and production all use. Upserts and
       # never deletes, so re-running it is safe and cheap.
