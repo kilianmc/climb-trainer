@@ -65,11 +65,18 @@ package.json        root — the version source of truth (web/ and pyproject sta
 vercel.json         framework:null + build command + /api and SPA rewrites
 pyproject.toml      Python deps (no requirements.txt, deliberately)
 uv.lock             committed lockfile
+alembic.ini         Alembic config (URL comes from the environment, never this file)
 api/index.py        thin Vercel Python entrypoint -> server.app:app
+migrations/         Alembic env.py + versions/
 server/
   app.py            the FastAPI application
-  settings.py       env-driven config (CORS allowlist, production detection)
-tests/              backend tests (pytest)
+  settings.py       env-driven config (CORS allowlist, the two Neon URLs)
+  db.py             engine + session wiring, tuned for serverless + Neon billing
+  models.py         SQLAlchemy 2 models, constraint naming convention, TIMESTAMPTZ
+  seed.py           reference-data seed (the same module CI and production run)
+  domain/
+    grades.py       the grade ordinal ladder — pure Python, no DB
+tests/              backend tests (pytest; DB tests skip without DATABASE_URL)
 web/
   index.html
   vite.config.ts    dev server + /api proxy to :8000
@@ -90,8 +97,15 @@ Requires Node per `.nvmrc` (24) and [`uv`](https://docs.astral.sh/uv/) for Pytho
 # once
 npm --prefix web ci
 uv sync --all-groups
-cp .env.example .env
+cp .env.example .env      # then fill in the Neon URLs
 ```
+
+`.env` is **loaded automatically** by `server/settings.py`, so the API, `alembic`,
+`pytest` and `python -m server.seed` all pick it up with no `--env-file` flag. An
+exported environment variable always overrides the file, and the load is skipped
+entirely on Vercel so a stray `.env` can never shadow production config. Quote any
+value containing `&` (Neon appends `&channel_binding=require`) if you also shell-source
+the file.
 
 Then run both halves — the API on `:8000`, the SPA on `:5173` with Vite proxying
 `/api` across so the two share an origin exactly as they do in production:
@@ -114,10 +128,16 @@ One command runs the same checks CI does:
 
 ```bash
 npm run check          # web: format:check, lint, typecheck, test, build
-                       # server: ruff check, ruff format --check, pytest
+                       # server: ruff check, ruff format --check, mypy, pytest
 npm run check:web      # just the frontend half
 npm run check:server   # just the backend half
 ```
+
+The local gate needs **no database**: the Postgres-backed tests skip cleanly when
+`DATABASE_URL` is unset. CI runs them for real against a pinned `postgres:17-alpine`
+service container, after `alembic upgrade head` — so **CI is what proves the
+migrations** — plus `alembic check` to catch model drift. SQLite is never substituted;
+the schema depends on native enums, `text[]`, `GENERATED … STORED` and GIN.
 
 CI (`.github/workflows/ci.yml`) enforces three required jobs: **`web`**, **`server`**,
 and **`secrets`** (gitleaks over full history). `npm run check` covers the first two;

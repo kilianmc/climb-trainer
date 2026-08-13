@@ -49,10 +49,18 @@ pyproject.toml        Python deps (requires-python = ">=3.13"). NO requirements.
 uv.lock               committed
 .python-version       "3.13"
 .nvmrc                24
+alembic.ini           Alembic config. NO `sqlalchemy.url` — env.py reads the env.
 api/index.py          thin Vercel entrypoint: sys.path.insert + `from server.app import app`
+migrations/           Alembic env.py + versions/
 server/               the FastAPI application actually lives here
+  app.py              the FastAPI app
+  settings.py         env config (CORS allowlist, the two DB URLs) + loads `.env` once
+  db.py               engine + session wiring. READ ITS DOCSTRING before touching it.
+  models.py           SQLAlchemy 2 models, naming convention, TIMESTAMPTZ default
+  seed.py             reference-data seed — the same module CI and production use
+  domain/             PURE Python: no DB, no clock, no RNG, no I/O
 web/                  the Vite SPA, built to web/dist
-tests/                pytest (backend)
+tests/                pytest (backend). conftest.py skips DB tests without DATABASE_URL.
 ```
 
 `server/` being importable from `api/index.py` was genuinely uncertain before S0 — it
@@ -273,12 +281,37 @@ recorded it as a side effect, batch it.**
 - `GET /api/library?v=<buildId>` is user-independent and immutable per deploy — serve
   `public, s-maxage=31536000, immutable` with `staleTime: Infinity`. Zero DB time and
   zero invocations after the first request per deploy.
-- Pool config: `pool_pre_ping=True`, `pool_recycle=300` (matches the 5-min
-  autosuspend), `pool_size=2`, and psycopg3 with
-  `connect_args={"prepare_threshold": None}` — server-side prepares are what break
-  intermittently behind a transaction-mode pooler.
-- **Two connection strings**: the pooled `-pooler` endpoint for the app, the **direct**
-  endpoint for Alembic (DDL and `CREATE TYPE` need a real session).
+- **Two connection strings**: the pooled `-pooler` endpoint for the app
+  (`DATABASE_URL`), the **direct** endpoint for Alembic (`DATABASE_URL_UNPOOLED`) —
+  DDL and `CREATE TYPE` need a real session, and a migration through the pooler tends
+  to **hang rather than error**.
+
+### Engine config — the omissions are the point (revised 2026-08-12)
+
+`server/db.py` is the authority; its module docstring carries the full reasoning. In
+short, and superseding the earlier `pool_pre_ping` / `pool_recycle=300` / `pool_size=2`
+line that appeared in the original plan:
+
+- **`NullPool`.** A serverless invocation is frozen between requests, so a live pool is
+  just idle connections nobody can use — and Neon's pooled endpoint already pools.
+- **No `pool_pre_ping`** (it is a `SELECT 1`, i.e. a query that restarts the 5-minute
+  awake window), **no `pool_recycle`** (a timer that can fire on its own), **no
+  keepalive or warm-up traffic of any kind**, and **no connect at import** — the engine
+  is built lazily on first use. `/api/health` deliberately does **not** touch the DB.
+- **Prepared statements stay ENABLED.** The folklore that PgBouncer transaction mode
+  breaks them is out of date: SQL-level `PREPARE`/`EXECUTE` are unsupported, but
+  **protocol-level** prepared statements — what psycopg3 actually uses — are supported
+  (PgBouncer ≥ 1.22; Neon runs `max_prepared_statements=1000`). **So there is no
+  `prepare_threshold=None`, deliberately.** Verified against
+  <https://neon.com/docs/connect/connection-pooling>, 2026-08-12. Do not "restore" it
+  from an older draft of the plan.
+- Other transaction-mode pooler limits, for later PRs: session-level `SET`/`RESET`,
+  `LISTEN`/`NOTIFY`, `WITH HOLD` cursors and session-level advisory locks do not work
+  pooled. Transaction-scoped **`SET LOCAL` does** — which is what the demo path's
+  `SET LOCAL transaction_read_only` relies on. Keep it `SET LOCAL`, never a bare `SET`.
+- **`TIMESTAMPTZ`, never naive.** `Base.type_annotation_map` pins `datetime` to
+  `TIMESTAMP(timezone=True)` repo-wide, so every future `Mapped[datetime]` gets it
+  without anyone remembering. Store aware, convert at the edge.
 
 ### Migrations run out-of-band
 
@@ -289,6 +322,11 @@ recorded it as a side effect, batch it.**
 - **Expand → deploy → contract**, always, for the same reason.
 - In FastAPI's `lifespan`, only **READ** `alembic_version` and **warn** on mismatch.
   Never migrate at startup.
+- Seeding reference data is `uv run python -m server.seed`, run **after** a migration.
+  `server/seed.py` is the **single** seed module — CI, local work and production all
+  call it, because a test fixture with hand-written rows tests a table production never
+  has. It **upserts and never deletes**: user rows reference `grade.id`, so retiring a
+  grade is a deliberate migration, not a side effect of editing a tuple.
 
 ### SQLite is disqualified for tests
 
@@ -474,6 +512,30 @@ uv run uvicorn server.app:app --port 8000 --reload
 npm --prefix web run dev
 ```
 
+### `.env` is loaded for you — but only outside Vercel
+
+`cp .env.example .env`, fill it in, done. **`server/settings.py` loads it at import time
+via python-dotenv**, and every entrypoint imports that module, so the API, `alembic`,
+`pytest` and `python -m server.seed` all see it with **no `--env-file` flag and no
+shell-sourcing**. Four properties worth knowing, all in `_load_local_dotenv()`:
+
+- **An exported environment variable always beats the file** (`override=False`). Vercel
+  and GitHub Actions inject the real values and must win.
+- **Skipped entirely when `VERCEL` / `VERCEL_ENV` is set**, so a stray `.env` inside a
+  deployment can never shadow production config, and cold starts pay no file probe.
+- **Silent no-op if `.env` is absent** — CI has none and stays green.
+- **An explicit repo-root path**, not `find_dotenv()`, which walks *up* from the cwd and
+  would pick up an unrelated `.env` from the shared `Projects/` tree.
+
+> This was a real bug, found on 2026-08-12: the docs and the error messages both said
+> "copy `.env.example` to `.env`" while **nothing in the repo actually loaded it**, so
+> following the documented steps produced `RuntimeError: No database URL` telling you to
+> do what you had just done. If you ever change the loading, change these docs and the
+> two error messages (`server/db.py`, `migrations/env.py`) in the same edit.
+
+Quote any value containing `&` in `.env` — Neon appends `&channel_binding=require`, and
+while python-dotenv handles it bare, `set -a; . ./.env` does not.
+
 `CORS_ORIGINS` must be set for the server (see `.env.example`); with the proxy in play
 requests are same-origin from the browser's point of view, so CORS mostly doesn't fire
 locally — which is itself a reason to be careful:
@@ -489,7 +551,7 @@ locally — which is itself a reason to be careful:
 
 ## Quality gate
 
-**One command, and it is the same eight checks CI runs:**
+**One command, and it is the same nine checks CI runs:**
 
 ```bash
 npm run check          # == check:web && check:server
@@ -499,7 +561,7 @@ Or the halves / individual checks:
 
 ```bash
 npm run check:web      # format:check -> lint -> typecheck -> test -> build
-npm run check:server   # ruff check -> ruff format --check -> pytest
+npm run check:server   # ruff check -> ruff format --check -> mypy -> pytest
 
 npm --prefix web run format:check   # Prettier
 npm --prefix web run lint           # ESLint (type-aware — see the TS 6.x note)
@@ -508,8 +570,15 @@ npm --prefix web run test           # Vitest once
 npm --prefix web run build
 uv run ruff check .
 uv run ruff format --check .
+uv run mypy                         # strict; files come from pyproject.toml
 CORS_ORIGINS=http://localhost:5173 uv run pytest -q
 ```
+
+**The local gate passes with no database, on purpose.** There is no local Postgres and
+no Docker on the dev machine, so `tests/conftest.py` **skips** the DB-backed tests when
+`DATABASE_URL` is unset. Never make the local gate depend on a database, and never
+substitute SQLite to avoid the skip — a skip is visible, a false pass is not. CI is
+where the migrations and the seed are actually executed.
 
 **Batch your edits and run `npm run check` once at the end**, not once per file.
 
@@ -521,8 +590,14 @@ If you read "one required check named `lint-build`" in the original plan, that w
 is superseded.
 
 `npm run check` covers `web` + `server`. The `secrets` job is CI-only (gitleaks isn't a
-project dependency) — so the local gate is 8 checks and CI is 9. Don't try to fake the
-third locally; just never commit a secret.
+project dependency) — so the local gate is 9 checks and CI is 12: gitleaks, plus
+`alembic upgrade head` and `alembic check` against the `postgres:17-alpine` service
+container, which only exist in CI. Don't try to fake those locally; just never commit a
+secret, and let CI prove the migrations.
+
+**The job names `web`, `server` and `secrets` are required status checks in a GitHub
+ruleset. Renaming one silently breaks the merge gate** — the rule waits forever for a
+check that will never report. Add steps to a job freely; never rename a job.
 
 `web/src/test/setup.ts` is where jsdom stubs for the device APIs go as they arrive
 (`navigator.wakeLock`, `AudioContext`, `navigator.vibrate`, `navigator.onLine`),
