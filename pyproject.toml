@@ -4,7 +4,15 @@ version = "0.0.0"
 description = "climb-trainer API — versioning lives in the root package.json"
 requires-python = ">=3.13"
 dependencies = [
+    "alembic==1.19.1",
     "fastapi==0.128.8",
+    # psycopg3 (NOT asyncpg) — see server/db.py for why. The [binary] extra ships a
+    # wheel with libpq bundled, so the Vercel Python image needs no system libpq.
+    "psycopg[binary]==3.3.4",
+    # A runtime dep, not a dev one, on purpose: server/settings.py imports it, and a
+    # dev-only dep would make production depend on the Vercel guard never regressing.
+    "python-dotenv==1.2.2",
+    "sqlalchemy==2.0.52",
 ]
 
 # No requirements.txt, deliberately: if both exist, pyproject wins and the
@@ -13,13 +21,14 @@ dependencies = [
 [dependency-groups]
 dev = [
     "httpx==0.28.1",
+    "mypy==2.3.0",
     "pytest==9.0.1",
     "ruff==0.15.1",
     "uvicorn==0.39.0",
 ]
 
 [tool.setuptools]
-packages = ["server"]
+packages = ["server", "server.domain"]
 
 [tool.ruff]
 target-version = "py313"
@@ -29,6 +38,13 @@ line-length = 100
 select = ["E", "F", "I", "UP", "B", "S", "ASYNC"]
 # S101: pytest needs bare asserts.
 per-file-ignores = { "tests/*" = ["S101"] }
+
+[tool.mypy]
+python_version = "3.13"
+strict = true
+files = ["api", "server", "tests", "migrations"]
+# SQLAlchemy 2 ships PEP 561 types. The old sqlalchemy2-stubs / mypy plugin is
+# obsolete and actively wrong against `Mapped[...]` annotations — no plugin here.
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -1,6 +1,6 @@
 {
   "name": "climb-trainer",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "private": true,
   "description": "Climbing training app — plan generator, guided session player, training diary",
   "engines": {
@@ -15,7 +15,7 @@
     "test": "npm --prefix web run test",
     "format:check": "npm --prefix web run format:check",
     "check:web": "npm --prefix web run format:check && npm --prefix web run lint && npm --prefix web run typecheck && npm --prefix web run test && npm --prefix web run build",
-    "check:server": "uv run ruff check . && uv run ruff format --check . && CORS_ORIGINS=http://localhost:5173 uv run pytest -q",
+    "check:server": "uv run ruff check . && uv run ruff format --check . && uv run mypy && CORS_ORIGINS=http://localhost:5173 uv run pytest -q",
     "check": "npm run check:web && npm run check:server",
     "version:dev": "npm version minor --no-git-tag-version",
     "version:release": "npm version major --no-git-tag-version"
