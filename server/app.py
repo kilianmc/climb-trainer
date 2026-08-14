@@ -15,6 +15,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from server.auth.deps import enforce_auth
 from server.auth.routes import router as auth_router
+from server.security_headers import SecurityHeadersMiddleware
 from server.settings import app_version, get_settings
 
 settings = get_settings()
@@ -46,6 +47,16 @@ if settings.cors_origins:
         allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
         allow_headers=["content-type", "authorization"],
     )
+
+# Swagger UI loads its assets from the jsdelivr CDN, which the API's `default-src 'none'`
+# would block. Derived from the configured docs URLs, not literals, so it follows
+# `_docs_enabled`: both are None in production, making this set empty there.
+_CSP_EXEMPT_PATHS = frozenset(p for p in (app.docs_url, app.openapi_url) if p is not None)
+
+# Added last, so it is the outermost middleware (`add_middleware` prepends) and also
+# covers the preflight responses CORS answers itself. It writes only its own header
+# names, never `Access-Control-*` or `Vary`.
+app.add_middleware(SecurityHeadersMiddleware, csp_exempt_paths=_CSP_EXEMPT_PATHS)
 
 
 app.include_router(auth_router)

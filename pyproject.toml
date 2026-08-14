@@ -11,7 +11,11 @@ dependencies = [
     # Pydantic's EmailStr is a no-op stub without it — it raises at model definition
     # time rather than validating, so this is a hard runtime dep, not an extra.
     "email-validator==2.3.0",
-    "fastapi==0.128.8",
+    # 0.141.x is the first line that allows starlette >= 1.0: FastAPI 0.128 pinned
+    # `starlette<1.0.0`, so the six Dependabot alerts against starlette 0.52.1 could not
+    # be closed without moving FastAPI too. See CLAUDE.md for what the 0.x -> 1.x jump
+    # actually required (0.132's strict_content_type is the one that touches us).
+    "fastapi==0.141.1",
     # psycopg3 (NOT asyncpg) — see server/db.py for why. The [binary] extra ships a
     # wheel with libpq bundled, so the Vercel Python image needs no system libpq.
     "psycopg[binary]==3.3.4",
@@ -31,9 +35,9 @@ dependencies = [
 dev = [
     "httpx==0.28.1",
     "mypy==2.3.0",
-    "pytest==9.0.1",
-    "ruff==0.15.1",
-    "uvicorn==0.39.0",
+    "pytest==9.1.1",
+    "ruff==0.16.3",
+    "uvicorn==0.52.3",
 ]
 
 [tool.setuptools]
