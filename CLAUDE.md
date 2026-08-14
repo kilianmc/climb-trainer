@@ -928,6 +928,38 @@ unnoticed with alerting fully enabled.
 
 Covered: `uv` at `/`, `npm` at `/web`, `github-actions` at `/`; weekly, grouped per ecosystem.
 
+**Two `ignore` entries, for different reasons.** `@types/node` is held at the runtime major
+(staleness is the *correct* state). `typescript` majors are held because of the 6.x capability
+hold above — and the entry matters more than it looks: the `web` group is `patterns: ["*"]`,
+so with TS 7 in scope **every** grouped web PR inherits its blocked peer range. PR #11 arrived
+carrying nothing but TypeScript and could not be merged; without the ignore, that recurs weekly
+and takes real updates hostage.
+
+### ⚠️ Pinned actions Dependabot can never bump (2026-08-14)
+
+**`astral-sh/setup-uv` stopped publishing major and minor tags at v8.0.0**, deliberately, as a
+supply-chain measure after the tj-actions compromise. There is no `v8`/`v9`/`v10` tag, so a
+reference to `@v7` has nowhere to move and **Dependabot goes silent rather than failing** — it
+sat 3 majors behind while the actions group reported itself up to date. Both workflows now pin
+the exact **`@v10.0.1`**, which Dependabot can bump, and which is as safe as a SHA because v8+
+are immutable releases whose tags cannot be repointed.
+
+Generalise: **an action pinned to a floating major is only watched while that major tag keeps
+being published.** When an action moves to exact-tag-only releases, our pin silently freezes.
+Neither a green gate nor an empty Dependabot queue distinguishes "current" from "abandoned" —
+so when an actions-group PR omits an action, check the action's tag list before assuming it is
+already current.
+
+Neither v9 nor v10's breaking changes affect us: v9 changed the `prune-cache` default and v10
+disables caching for `pull_request_target` / `workflow_run` / `release` under
+`enable-cache: auto`. Both workflows set `enable-cache: true` explicitly and neither uses those
+events.
+
+**Deadline already met, worth knowing why:** `gitleaks/gitleaks-action@v3` is *only* a Node
+20→24 runtime bump, no input or behaviour change. It is not optional — GitHub removes Node 20
+from hosted runners on **2026-09-16**, after which `@v2` stops working regardless of any
+opt-out flag.
+
 ## Local development
 
 Two processes. The API on 8000, the SPA on 5173 with Vite proxying `/api` to it:

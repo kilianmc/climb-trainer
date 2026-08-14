@@ -70,7 +70,7 @@ jobs:
 
     steps:
       - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v7
+      - uses: astral-sh/setup-uv@v10.0.1
         with:
           enable-cache: true
       # --frozen fails if uv.lock is stale, so the lockfile can never drift from
