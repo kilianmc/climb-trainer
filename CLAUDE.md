@@ -499,6 +499,71 @@ Non-negotiable. The realistic threat is bulk data extraction, not defacement.
     Public Suffix List, so a preview URL is genuinely **cross-site** and the cookie
     cannot work there. Previews fall back to demo mode.
 
+### Security response headers (v1.3.0)
+
+Two delivery points, because their coverage differs: `vercel.json` `headers` for what the
+**CDN** serves (SPA document, JS, CSS), and `server/security_headers.py` for **`/api/*`
+JSON** — in-process, so it also applies under bare `uvicorn` and is assertable in CI. The
+overlap is deliberate: a header set stops being sent without anything failing.
+
+| Header | Document (`vercel.json`) | `/api/*` (middleware) |
+| --- | --- | --- |
+| `Strict-Transport-Security` | **not ours** — Vercel sends `max-age=63072000` | same |
+| `X-Content-Type-Options` | `nosniff` | `nosniff` |
+| `Referrer-Policy` | `no-referrer` | `no-referrer` |
+| `X-Frame-Options` | `DENY` | `DENY` |
+| `Cross-Origin-Opener-Policy` | `same-origin` | `same-origin` |
+| `Permissions-Policy` | deny list below | same |
+| `Content-Security-Policy` | document policy below | `default-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'` |
+| `Cross-Origin-Resource-Policy` / `-Embedder-Policy` | **never set** | **never set** |
+
+Document CSP, enforcing (not Report-Only):
+
+```text
+default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:;
+font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none';
+form-action 'none'; frame-src 'none'; frame-ancestors 'none';
+upgrade-insecure-requests
+```
+
+- **No `unsafe-*` anywhere, `style-src` included.** React's `style={{…}}` writes through
+  **CSSOM, which CSP does not govern**; only literal `style=` attributes in served markup
+  need `'unsafe-inline'`, and SCSS compiles to external files. If something ever does need
+  it, `vite preview` fails loudly — re-add one token then, with a reason. An `unsafe-*` kept
+  "just in case" is how a CSP stays permanently weak.
+- **`img-src data:`** — Vite inlines assets under 4 KB as `data:` URLs.
+- **We do not set HSTS.** Vercel already sends `max-age=63072000` (verified `curl -sI`,
+  2026-08-14), and duplicate STS fields are **not merged** — RFC 6797 §8.1 processes only
+  the first. Cost: it is the one header we do not own, hence item 9.
+- **⚠️ Never set `Cross-Origin-Resource-Policy`.** `same-origin` would stop kilianmc.com
+  loading `/remoteEntry.js` and `/assets/*`. **This, not `frame-ancestors`, is the header
+  that breaks the federated mount.** `cross-origin` is a no-op, and on `/api/*` a
+  restrictive value sits in the path of the federated app's credentialed `fetch()` for no
+  gain over CORS + Bearer. No `Cross-Origin-Embedder-Policy` either — `require-corp` blocks
+  every cross-origin subresource and nothing needs `SharedArrayBuffer`. No `sandbox` in the
+  API CSP: without `allow-downloads` it would break a future export endpoint.
+- **`Permissions-Policy` lists only what we restrict; unlisted keeps the browser default.**
+  `camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), bluetooth=(),
+  midi=(), display-capture=(), idle-detection=()`. ⚠️ **`screen-wake-lock`, `fullscreen`
+  and `autoplay` must stay absent** — the session player needs all three. Tested, because
+  "deny everything unused" is the change that would add them.
+- **The `/api/docs` CSP exemption is derived from `app.docs_url` / `app.openapi_url`, never
+  hardcoded** — both are `None` in production, so the exempt set is empty there. Swagger UI
+  loads its assets from a CDN that `default-src 'none'` would block. Tested.
+- **Middleware ordering:** `add_middleware` prepends, so the last added is outermost. The
+  headers middleware is added last, outside CORS, and writes only its own header names —
+  never `Access-Control-*` or `Vary`. Wrapping `send` is what covers the 401 / 403 / 404 /
+  422 no endpoint produced. The two layers' coverage is not identical; hence both.
+- **`vercel.json`'s `/(.*)` block intentionally overlaps `/api/*`.** Whether Vercel
+  overwrites or appends on function responses is **unverified** — item 9 must `curl -sI` an
+  `/api/*` path on the real deploy and check no header appears twice.
+- **`vite dev` deliberately gets no CSP** — its inline client and HMR websocket would need a
+  laxer policy than production, proving less. `vite preview` serves the real build with the
+  real headers, read out of `vercel.json` by `web/vite.config.ts` so the two cannot drift.
+- **For PR #5:** the *shell's* CSP governs the federated mount, not ours. `portfolio-shell`
+  has none today; if it gains one it needs `script-src` **and** `connect-src` for
+  `https://climb.kilianmc.com`.
+
 ### Auth implementation (PR #3) — where each piece lives
 
 `server/auth/` — `passwords.py`, `tokens.py`, `refresh.py`, `cookies.py`,
@@ -599,9 +664,16 @@ against the **production deploy**, not a preview: previews are cross-site
   8. **Login rate limit** — it trips; the 429 is byte-identical for a real and a
      non-existent address; it self-heals within the window and no account is ever
      disabled.
-  9. **Security response headers** — once that PR has landed: HSTS, CSP,
-     `Referrer-Policy`, `X-Content-Type-Options`, and **verify `frame-ancestors` does not
-     break the federated mount inside `portfolio-shell`** (this is the one that will).
+  9. **Security response headers** — landed in v1.3.0; see the baseline section above. On
+     the real deploy check that the `vercel.json` layer reaches **`/api/*`** and that no
+     header (notably `Strict-Transport-Security`) appears **twice**, and that the document
+     CSP logs no console violations on a real page load.
+     - **CORRECTED 2026-08-14:** the original wording predicted `frame-ancestors` would
+       break the federated mount. It cannot. The shell mounts us as a **script**
+       (`React.lazy(() => import('climbTrainer/App'))`), never in an iframe — verified in
+       `portfolio-shell/src/components/ProjectViewer.tsx`, whose `<iframe>` branch is the
+       *other* pattern (`kind: 'embedded'`). **`Cross-Origin-Resource-Policy` is the header
+       that would break it**; verify it is still set nowhere.
   10. **No secret in the client bundle** — grep the built `web/dist` for any value of a
       non-`VITE_` env var, and for anything resembling `AUTH_SECRET`.
 - **Infra, outside the repo — these are the ones nothing else can catch:**
@@ -614,6 +686,12 @@ against the **production deploy**, not a preview: previews are cross-site
   13. **Zero open Dependabot alerts**, or each remaining one triaged with a written
       reason it does not apply. On 2026-08-13 there were 6 (starlette + pytest) and none
       were exploitable here, but "not exploitable" needs re-deciding per alert, not once.
+      v1.3.0 raises `starlette` to 1.6.0 and `pytest` to 9.1.1 without changing that
+      reasoning — still no `request.form()`, no `StaticFiles`, no `HTTPEndpoint`, and
+      nothing reading `request.url.path` or the Host header (`server/security_headers.py`
+      matches `scope["path"]`, the ASGI request target, by exact equality). **Alerts are
+      raised against the default branch, so they clear at the first promotion to `main`,
+      not on merge to `dev`.** Also confirm the Dependabot config is actually opening PRs.
   14. **2FA still enabled on GitHub, Vercel, Neon and Cloudflare.**
   15. **Neon CU-hours for the month match the model** in the compute-budget section. A
       figure well above it means something is waking the database — that is the signal.
@@ -735,13 +813,94 @@ in Python** — that was a fourth version string that would have drifted on the 
 
 ## Branch model
 
-Two long-lived branches: **`dev`** (integration, the default branch) and **`main`**
-(production, `climb.kilianmc.com`). **All feature PRs target `dev`.** `main` receives
-only `dev`→`main` promotion PRs, merged by Kilian after he has tested the dev deploy.
+Two long-lived branches: **`dev`** (integration) and **`main`** (production,
+`climb.kilianmc.com`). **All feature PRs target `dev`.** `main` receives only
+`dev`→`main` promotion PRs, merged by Kilian after he has tested the dev deploy.
 Conventional Commits (`feat:`, `fix:`, `chore:`, `test:`, `docs:`); branches mirror
 the type (`feat/…`, `chore/…`).
 
+> **⚠️ `main` is the GitHub DEFAULT branch, not `dev`** (verified 2026-08-14,
+> `gh repo view --json defaultBranchRef`). GitHub reads several things **only** from the
+> default branch, so anything in that class needs a two-sided `dev` + `main` copy: so far
+> `.github/workflows/*.yml` (`workflow_dispatch` registration), `.github/dependabot.yml`,
+> and Dependabot **alerts**. This is the confusion behind the `migrate.yml` trap above.
+
 ---
+
+## 🧹 TODO — comment and docs deep clean (its own PR, AFTER PR #19)
+
+**Kilian's call, 2026-08-14: verbosity is FINE during development — do not spend review
+turns trimming prose while the project is still being built.** The clean-up is a single
+deliberate pass **once the project is done**, and it needs its own review, so it is not
+folded into the 1.0.0 promotion. Two goals, in this order:
+
+1. **Trim everything to the minimum.** Source comments: delete what restates the code and
+   all historical narrative; keep one-line constraints. **Convert "don't change this or X
+   breaks" into a test or a lint rule** rather than deleting it. `CLAUDE.md` / `README`:
+   trim narrative, **keep every trap and hard rule**.
+2. **Move the important stuff into a PRIVATE file so it is protected.** Design reasoning may
+   stay public; the **security control map, thresholds and infra topology go private**.
+   ⚠️ A public repo has **no per-file access control** and git history is permanent, so
+   anything moved **was already public** and must be re-thought or rotated, not just deleted
+   — which is the reason this is a real task and not a `git mv`.
+
+- **The dev journal stays public** — design and product decisions only, never where the
+  controls live or what their limits are.
+
+## Dependency policy (set by Kilian, 2026-08-14)
+
+**Pin every dependency to the latest stable version verified against the registry at pin
+time — never one recalled from memory.** Check PyPI / npm in the same turn you write the pin.
+This repo was scaffolded with `fastapi` 6 months, `starlette` 7 and `pytest` 9 months stale,
+which produced 6 Dependabot alerts and turned a day-one patch bump into a 0.x→1.x migration.
+
+Two exceptions: **runtimes track LTS** (Node 24, Python 3.13), and **`@types/*` match the
+runtime major, not the newest** — `@types/node` is held at 24 via an `ignore` entry, because
+type-checking against a runtime we do not run is a defect TypeScript accepts silently. The
+TypeScript 6.x hold in the frontend rules is a capability decision, not a staleness one.
+
+**Four upgrade traps, each already paid for:**
+
+- **`uv lock` will not move a transitive pin.** Bumping `fastapi` reported success and left
+  `starlette` at the vulnerable version. Needs `uv lock --upgrade-package starlette`, and
+  verify with `uv pip list`, not the `uv lock` output. `starlette` stays un-pinned in
+  `pyproject.toml`: it is FastAPI's dependency and a second pin could contradict its range.
+- **Since FastAPI 0.137, walk routes with `fastapi.routing.iter_route_contexts`, never
+  `app.routes`.** `include_router` stores a tree node, so direct iteration hides every
+  router-mounted endpoint — which made the deny-by-default walk in
+  `tests/test_auth_routes_enumerated.py` vacuous **while it still passed**. A canary test
+  now asserts a protected included route is in the walk; if it fails, fix the walk.
+- **`strict_content_type` is on by default since FastAPI 0.132**: a POST without
+  `content-type: application/json` is a 422. **PR #6 must send it** — `apiFetch` sets only
+  `accept`.
+- **`httpx2` replaces the `httpx` + `starlette.testclient` pairing** before Starlette 2.0,
+  where today's deprecation warning becomes an error. A package swap, not a version bump.
+
+### `.github/dependabot.yml`
+
+**Alerts alone open no pull requests** — which is why 6 stale-dependency alerts sat
+unnoticed with alerting fully enabled.
+
+- **⚠️ The file is read from the DEFAULT branch only**, i.e. `main`: *"The `dependabot.yml`
+  file must be present on the **default branch** … regardless of which branch you specify as
+  the target."* **A copy on `dev` alone is inert**, the same failure as `migrate.yml`. So it
+  needs the **byte-identical twin** treatment: two PRs, and **no comments in the YAML** (any
+  byte difference is an add/add conflict at the first promotion), which is why its reasoning
+  lives here.
+- **⚠️ Dependabot ALERTS are also raised against the default branch.** `main` still carries
+  the vulnerable `starlette`, so merging to `dev` does not clear the 6 open alerts — they
+  clear at the first promotion to `main`.
+- **`target-branch` and security updates conflict and cannot both be satisfied.**
+  `target-branch: dev` is set, because version-update PRs must not land on `main`. The docs:
+  *"Pull requests for security updates still target the default branch"*, and *"you should
+  not specify a `target-branch`"* for security updates. So security PRs ignore this config's
+  grouping and `ignore` rules and target `main`. **Currently theoretical —
+  `automated-security-fixes` is disabled on the repo**; enabling it is what makes this bite.
+  The alternative shape (a second block with no `target-branch` and
+  `open-pull-requests-limit: 0`) is unshipped because the docs do not say whether two blocks
+  may share an ecosystem + directory.
+
+Covered: `uv` at `/`, `npm` at `/web`, `github-actions` at `/`; weekly, grouped per ecosystem.
 
 ## Local development
 

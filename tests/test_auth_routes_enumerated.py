@@ -24,6 +24,7 @@ import re
 from collections.abc import Iterator
 
 import pytest
+from fastapi.routing import iter_route_contexts
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
@@ -33,6 +34,11 @@ from server.auth.tokens import issue_access_token
 from server.db import get_session
 
 _PATH_PARAM = re.compile(r"\{[^}]+\}")
+
+# A route that exists today, is NOT public, and is reached through `include_router`.
+# `test_the_walk_actually_sees_routes_behind_include_router` asserts the walk finds it —
+# see that test for the incident it guards.
+_CANARY_PROTECTED_ROUTE = ("GET", "/api/auth/me")
 
 client = TestClient(
     app,
@@ -59,19 +65,44 @@ def _no_database() -> Iterator[None]:
 def _registered_routes() -> list[tuple[str, str]]:
     """Every `(method, path)` the application actually serves.
 
+    **Must go through `iter_route_contexts`, not `app.routes`.** Since FastAPI 0.137,
+    `include_router` stores an intermediate node instead of copying routes onto the
+    parent, so `app.routes` is a tree and iterating it directly returns one opaque object
+    in place of every router-mounted endpoint. `iter_route_contexts` flattens it and
+    yields the effective path, with the router prefix applied.
+
     HEAD and OPTIONS are dropped: Starlette synthesises HEAD from GET and the CORS
     middleware owns OPTIONS, so neither is a route anyone declared.
     """
     routes: list[tuple[str, str]] = []
-    for route in app.routes:
-        path = getattr(route, "path", None)
-        methods = getattr(route, "methods", None)
+    for route in iter_route_contexts(app.routes):
+        path = route.path
+        methods = route.methods
         if not isinstance(path, str) or not methods:
             continue
         routes.extend(
             (method, path) for method in sorted(methods) if method not in {"HEAD", "OPTIONS"}
         )
     return routes
+
+
+def test_the_walk_actually_sees_routes_behind_include_router() -> None:
+    """A floor under the other tests here: an empty walk must fail, not pass vacuously.
+
+    Every assertion below is decided by the route table, so they all succeed trivially if
+    `_registered_routes()` stops finding routes. A change that hid only the *protected*
+    routes would break nothing else in this file.
+    """
+    registered = set(_registered_routes())
+    assert _CANARY_PROTECTED_ROUTE in registered, (
+        f"{_CANARY_PROTECTED_ROUTE} is registered by server/auth/routes.py but the walk "
+        f"did not find it, so the other tests here are passing vacuously. Found: "
+        f"{sorted(registered)}. Fix `_registered_routes()` — do not update this canary."
+    )
+    assert _CANARY_PROTECTED_ROUTE not in PUBLIC_ROUTES, (
+        f"{_CANARY_PROTECTED_ROUTE} is now public, so it no longer canaries the protected "
+        f"half of the walk. Point this at another protected route."
+    )
 
 
 def _requestable(path: str) -> str:
