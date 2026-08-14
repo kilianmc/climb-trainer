@@ -213,14 +213,40 @@ after 30 days.
 
 ### TypeScript stays on 6.x
 
-`typescript-eslint`'s peer range is **`>=4.8.4 <6.1.0`**. Upgrading to TypeScript 7
-would silently drop **type-aware linting**, and with it
-`@typescript-eslint/no-floating-promises` and `no-misused-promises` — the two rules an
-app built on optimistic writes and a background outbox needs most. The loss is silent:
-the lint still passes, it just stops checking.
+`typescript-eslint@8.67.0` peers **`typescript: >=4.8.4 <6.1.0`**, and the blocker is
+upstream, not upstream slowness: TS 7 is the Go port, `require('typescript')` exposes
+only `version` and `versionMajorMinor`, so `typescript-estree` has no compiler API to
+read. Forcing it does not degrade quietly — `npm ci` fails on the peer range, and
+`npm install` followed by a lint crashes inside `typescript-estree`
+(typescript-eslint#12518, closed `not_planned`; tracking issue #10940, open).
 
-**Decision taken 2026-08-12: stay on TS 6.x. Not planned to change.** Revisit only
-when `typescript-eslint` widens its peer range, and re-verify both rules still fire.
+The TS6-for-lint / TS7-for-`tsc` side-by-side alias works but is rejected here: it would
+typecheck and lint against different compilers, so the two can disagree.
+
+**ESLint 10 is a separate axis and is not blocked** — the same release peers
+`eslint: ^8.57.0 || ^9.0.0 || ^10.0.0`. Bumping ESLint does nothing for TS 7.
+
+**Decision 2026-08-12, re-verified 2026-08-14: stay on TS 6.x.** Revisit when #10940
+closes, then re-verify `no-floating-promises` and `no-misused-promises` still fire —
+they are the two rules an app built on optimistic writes and a background outbox needs
+most.
+
+### ESLint 10 rests on a forced jsx-a11y peer
+
+`web/package.json` carries an `overrides` block forcing `eslint-plugin-jsx-a11y`'s
+`eslint` peer to ours. Without it `npm ci` fails `ERESOLVE`: the plugin's range stops at
+`^9` and 6.10.2 (2024-10-26) is the newest that exists.
+
+Unlike the TS 7 case above this is **stale metadata, not a missing API** — verified
+2026-08-14 before forcing it: none of the ten APIs ESLint 10 removed appear anywhere in
+the plugin's source, and on ESLint 10.8.1 four of its rules still produce correct
+diagnostics. The override is scoped to that one package deliberately; `--legacy-peer-deps`
+would let unrelated peer conflicts through unnoticed.
+
+**Delete the override** when jsx-a11y publishes an `^10` peer, and re-run the lint
+against a known-bad component to confirm the rules still fire — a plugin that fails to
+register is silent, and an a11y lint that checks nothing looks exactly like one that
+passes.
 
 ---
 
