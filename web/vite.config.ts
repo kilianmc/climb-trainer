@@ -60,9 +60,10 @@ export default defineConfig({
       },
     }),
   ],
-  // MF's runtime uses top-level await, so the target has to be modern enough to keep
-  // it rather than down-level it. Mirrors ai-portfolio-project1.
-  build: { outDir: 'dist', emptyOutDir: true, sourcemap: true, target: 'chrome89' },
+  // No explicit `build.target`: Vite 8's default (`baseline-widely-available`, chrome111+)
+  // already supports the top-level await MF emits. ai-portfolio-project1 pins `chrome89`
+  // because it predates that default; copying it here would only LOWER the baseline.
+  build: { outDir: 'dist', emptyOutDir: true, sourcemap: true },
   server: {
     port: 5173,
     // Local stand-in for Vercel's /api/* rewrite, so the SPA and API share an

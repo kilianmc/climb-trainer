@@ -53,16 +53,20 @@
   &__nav {
     display: flex;
     flex-wrap: wrap;
-    gap: 0.25rem 1rem;
+    gap: 0.5rem 1rem;
     margin-block-end: 1.5rem;
 
     a {
       color: var(--ct-muted);
       text-decoration: none;
-      // ≥44px touch targets, per the accessibility rules in CLAUDE.md.
+      // The 44x44 floor from CLAUDE.md's accessibility rules — BOTH axes, because a
+      // short label ("Plan") is only ~31px wide on its own. PR #7 owns real hit-area
+      // and spacing design; this is the floor, not a finished nav.
       min-block-size: 44px;
+      min-inline-size: 44px;
       display: inline-flex;
       align-items: center;
+      justify-content: center;
 
       &[aria-current='page'] {
         color: var(--ct-accent);

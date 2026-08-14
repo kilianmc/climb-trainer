@@ -5,5 +5,8 @@ import '@testing-library/jest-dom/vitest';
 // onLine) — mirroring the convention already used in portfolio-shell.
 
 // TanStack Router scrolls on navigation and jsdom has no scrollTo, which otherwise
-// prints "Not implemented" for every router test.
-window.scrollTo = () => undefined;
+// prints "Not implemented" for every router test. Guarded because setup files also run
+// for `@vitest-environment node` files, which have no `window`.
+if (typeof window !== 'undefined') {
+  window.scrollTo = () => undefined;
+}

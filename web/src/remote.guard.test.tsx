@@ -1,25 +1,75 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
 
-import ClimbTrainerApp from './remote';
-
 /**
- * The federated mount runs on the kilianmc.com origin, so each of these would damage
- * the live portfolio rather than this app: a service worker scoped to kilianmc.com
- * intercepting its requests, a navigation yanking the shell to another URL, or an
- * un-namespaced key colliding with the portfolio's own storage.
+ * The federated mount runs on the kilianmc.com origin, so each of these damages the live
+ * portfolio rather than this app: a service worker scoped to kilianmc.com intercepting
+ * its requests, a navigation yanking the shell to another URL, or storage writes and
+ * deletions hitting the portfolio's own keys.
  *
  * Low likelihood, severe blast radius, and nothing in the type system or a lint rule
- * catches it — which is why it is a test. Spies rather than a source scan, because the
- * realistic regression is PR #7 putting SW registration in a module BOTH entries
- * import, and only a runtime check sees that.
+ * catches it. Spies and final-state checks rather than a source scan, because the
+ * realistic regression is a module BOTH entries import.
  */
+
+/** Stands in for a key the portfolio already owns on this origin. */
+const HOST_KEY = 'portfolio-theme';
+const HOST_VALUE = 'dark';
+
 let register: MockInstance;
 let pushState: MockInstance<History['pushState']>;
 let replaceState: MockInstance<History['replaceState']>;
 let setItem: MockInstance<Storage['setItem']>;
+let removeItem: MockInstance<Storage['removeItem']>;
+let clear: MockInstance<Storage['clear']>;
+
+/**
+ * Storage has four mutation paths and they fail differently, so all four are watched:
+ * `Object.keys` catches the final state (including `localStorage.foo = 'x'`, which writes
+ * the value while bypassing `Storage.prototype.setItem` entirely — verified under jsdom
+ * 30), the `setItem` spy catches a write that is later removed, and `clear`/`removeItem`
+ * catch destruction, which leaves no trace in the final state at all.
+ */
+function foreignKeys(): string[] {
+  return Object.keys(localStorage).filter((key) => key !== HOST_KEY && !key.startsWith('ct:'));
+}
+
+/**
+ * jsdom is already `readyState: 'complete'` when a test runs, so a listener registered
+ * during render never fires on its own. `vite-plugin-pwa`'s `virtual:pwa-register`
+ * registers its service worker from exactly such a `load` listener, which makes it the
+ * most likely PR #7 regression — and without this dispatch the guard cannot see it.
+ */
+async function settle() {
+  window.dispatchEvent(new Event('DOMContentLoaded'));
+  window.dispatchEvent(new Event('load'));
+  await act(async () => {
+    await Promise.resolve();
+  });
+}
+
+/**
+ * The entry is imported HERE, not at the top of the file, and `vi.resetModules()` below
+ * re-evaluates the route tree for every test. A module-scope side effect — `localStorage
+ * .clear()` at the top of `__root.tsx`, say — otherwise runs once when this file's static
+ * imports are hoisted, i.e. before any spy exists, and the guard cannot see it. Module
+ * evaluation has to happen inside the observation window.
+ */
+async function mount() {
+  const { default: ClimbTrainerApp } = await import('./remote');
+  const view = render(<ClimbTrainerApp />);
+  await screen.findByRole('heading', { name: 'climb-trainer' });
+  await settle();
+  return view;
+}
 
 beforeEach(() => {
+  vi.resetModules();
+
+  // Before the spies, so the reset is not itself recorded as a violation.
+  localStorage.clear();
+  localStorage.setItem(HOST_KEY, HOST_VALUE);
+
   register = vi.fn();
   // jsdom has no ServiceWorkerContainer at all, so it has to be supplied to be spied on.
   Object.defineProperty(navigator, 'serviceWorker', {
@@ -30,6 +80,8 @@ beforeEach(() => {
   pushState = vi.spyOn(window.history, 'pushState');
   replaceState = vi.spyOn(window.history, 'replaceState');
   setItem = vi.spyOn(Storage.prototype, 'setItem');
+  removeItem = vi.spyOn(Storage.prototype, 'removeItem');
+  clear = vi.spyOn(Storage.prototype, 'clear');
 
   vi.stubGlobal(
     'fetch',
@@ -49,9 +101,8 @@ afterEach(() => {
 describe('the federated entry', () => {
   it('mounts, navigates and unmounts without touching the host origin', async () => {
     const before = window.location.href;
-    const { unmount } = render(<ClimbTrainerApp />);
+    const { unmount } = await mount();
 
-    await screen.findByRole('heading', { name: 'climb-trainer' });
     // A real navigation is the case that would reach history.pushState if this entry
     // were ever handed a browser history by mistake.
     fireEvent.click(screen.getByRole('link', { name: 'Plan' }));
@@ -64,11 +115,44 @@ describe('the federated entry', () => {
     expect(window.location.href).toBe(before);
   });
 
-  it('writes no un-namespaced localStorage key', async () => {
-    render(<ClimbTrainerApp />);
-    await screen.findByRole('heading', { name: 'climb-trainer' });
+  it("leaves the portfolio's localStorage exactly as it found it", async () => {
+    await mount();
 
-    const keys = setItem.mock.calls.map(([key]) => key);
-    expect(keys.filter((key) => !key.startsWith('ct:'))).toEqual([]);
+    expect(foreignKeys()).toEqual([]);
+    expect(setItem.mock.calls.filter(([key]) => !key.startsWith('ct:'))).toEqual([]);
+    expect(clear).not.toHaveBeenCalled();
+    expect(removeItem).not.toHaveBeenCalled();
+    // Property assignment could overwrite the host's own key without adding a new one.
+    expect(localStorage.getItem(HOST_KEY)).toBe(HOST_VALUE);
+  });
+
+  it('positive control: every detector above can actually see its violation', async () => {
+    // Without this the guards above pass on an empty set, and would look identical if a
+    // spy were mis-wired or an event never dispatched. Same class of defect as the
+    // vacuous route-enumeration walk recorded in CLAUDE.md, so it gets the same
+    // treatment: prove the detector fires before trusting that it stayed silent.
+    let registeredOnLoad = false;
+    window.addEventListener('load', () => {
+      registeredOnLoad = true;
+      void navigator.serviceWorker.register('/sw.js');
+    });
+    await settle();
+    expect(registeredOnLoad).toBe(true);
+    expect(register).toHaveBeenCalled();
+
+    (localStorage as unknown as Record<string, string>)['injected'] = 'x';
+    expect(foreignKeys()).toEqual(['injected']);
+
+    localStorage.setItem('ct:allowed', '1');
+    expect(foreignKeys()).toEqual(['injected']);
+
+    localStorage.removeItem('injected');
+    expect(removeItem).toHaveBeenCalled();
+
+    localStorage.clear();
+    expect(clear).toHaveBeenCalled();
+
+    window.history.pushState({}, '', '/hijacked');
+    expect(pushState).toHaveBeenCalled();
   });
 });
