@@ -167,6 +167,42 @@ So `apiFetch` does two things and both must stay:
 Never replace this with a bare relative `fetch('/api/…')`, and never "simplify away"
 the content-type check.
 
+### Routing: one tree, two histories (PR #4)
+
+`src/router.tsx` builds the router from a passed-in history and is the only place router
+or Query defaults live. `main.tsx` gives it `createBrowserHistory`, `remote.tsx`
+`createMemoryHistory`. The history is the *only* difference between the mounts.
+
+- **`src/routeTree.gen.ts` is COMMITTED, and must stay committed.** `web/vitest.config.ts`
+  **replaces** `web/vite.config.ts` rather than merging it, so the router plugin never
+  runs under Vitest and cannot regenerate the tree. Verified by deleting it and watching
+  `vitest` fail with no regeneration. It is excluded from ESLint (`ignores`) and Prettier
+  (`.prettierignore`) — it ships without semicolons, so `format:check` fails on it
+  otherwise. Never hand-edit it.
+- **⚠️ A lazy leaf must be named `<route>.lazy.tsx`.** `createLazyFileRoute` inside a
+  plain `plan.tsx` **still builds, emits no warning, and is bundled EAGERLY** — verified
+  2026-08-14: no separate chunk appears. Only the `.lazy.tsx` filename makes the
+  generator emit `.lazy(() => import(…))`. Renaming one of those files silently deletes
+  its code-splitting. (The other valid shape is `autoCodeSplitting: true` with plain
+  `createFileRoute`; the two must not be mixed.)
+- **`defaultPreloadStaleTime: 0`** because Query is the single source of staleness truth.
+  Raising it gives the router a second cache with its own expiry and the two disagree.
+- **No query-cache `localStorage` persistence** — PR #14, because the demo-scope
+  exclusion needs auth state that does not exist until PR #6. Do not leave a persister
+  half-built.
+- Query retries skip 4xx and `NotJsonError`: both are unwinnable, and every retry is
+  another Neon wake-up.
+- **Router-plugin × MF-plugin ordering is not sensitive** — all four orderings of
+  `tanstackRouter` / `react` / `federation` were verified to build, emit `remoteEntry.js`
+  and split the lazy leaves (2026-08-14). `tanstackRouter` is listed first as the
+  documented order, not a required one. Neither plugin needs a CSP `unsafe-*`: the built
+  output contains no `eval`, no `new Function`, no `blob:` and no inline script or style.
+- **Styles are split by mount**, which is what keeps the `.ct-app` rule honest:
+  `styles/app.scss` is imported from `routes/__root.tsx` (so both mounts get it, and it
+  contains zero `:root`/`body` rules), `styles/global.scss` only from `main.tsx` (the
+  document reset, which must never reach the shell). The built remote's stylesheet was
+  checked for `:root` leakage.
+
 ### Never register a service worker from `remote.tsx`
 
 A service worker registered from the federated entry would be **scoped to
@@ -587,8 +623,10 @@ upgrade-insecure-requests
   laxer policy than production, proving less. `vite preview` serves the real build with the
   real headers, read out of `vercel.json` by `web/vite.config.ts` so the two cannot drift.
 - **For PR #5:** the *shell's* CSP governs the federated mount, not ours. `portfolio-shell`
-  has none today; if it gains one it needs `script-src` **and** `connect-src` for
-  `https://climb.kilianmc.com`.
+  has none today; if it gains one it needs `script-src`, `connect-src` **and `style-src`**
+  for `https://climb.kilianmc.com` — the exposed `./App` chunk carries a reference to its
+  own stylesheet (`app.scss`), so MF injects a cross-origin `<link>`, which is also why
+  `/assets/*` needs the `Access-Control-Allow-Origin` header and not just `/remoteEntry.js`.
 
 ### Auth implementation (PR #3) — where each piece lives
 

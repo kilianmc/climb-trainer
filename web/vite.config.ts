@@ -1,6 +1,8 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
+import { federation } from '@module-federation/vite';
+import { tanstackRouter } from '@tanstack/router-plugin/vite';
 import react from '@vitejs/plugin-react';
 import { defineConfig } from 'vite';
 
@@ -33,8 +35,34 @@ function productionHeaders(): Record<string, string> {
 }
 
 export default defineConfig({
-  plugins: [react()],
-  build: { outDir: 'dist', emptyOutDir: true, sourcemap: true },
+  // Note this file is NOT merged into vitest.config.ts — that one replaces it — so
+  // neither plugin below is active in tests. Hence `src/routeTree.gen.ts` is committed.
+  plugins: [
+    // Generator first: it must have written the route tree before react() transforms
+    // the modules that import it. All four orderings were verified to build, so this
+    // is the documented order rather than a required one.
+    tanstackRouter({ target: 'react' }),
+    react(),
+    federation({
+      name: 'climbTrainer',
+      filename: 'remoteEntry.js',
+      dts: false,
+      exposes: { './App': './src/remote.tsx' },
+      shared: {
+        // The scoped `react/` and `react-dom/` entries are not decoration: without
+        // them `react/jsx-runtime` and `react-dom/client` resolve to a SECOND copy of
+        // React while `react` itself is shared, and hooks fail in ways that look
+        // unrelated. See the MF section of CLAUDE.md.
+        react: { singleton: true, requiredVersion: '^19.0.0' },
+        'react/': { singleton: true, requiredVersion: '^19.0.0' },
+        'react-dom': { singleton: true, requiredVersion: '^19.0.0' },
+        'react-dom/': { singleton: true, requiredVersion: '^19.0.0' },
+      },
+    }),
+  ],
+  // MF's runtime uses top-level await, so the target has to be modern enough to keep
+  // it rather than down-level it. Mirrors ai-portfolio-project1.
+  build: { outDir: 'dist', emptyOutDir: true, sourcemap: true, target: 'chrome89' },
   server: {
     port: 5173,
     // Local stand-in for Vercel's /api/* rewrite, so the SPA and API share an
