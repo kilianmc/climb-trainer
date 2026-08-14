@@ -29,12 +29,10 @@ export default tseslint.config(
     },
   },
 
-  // Config files run in Node and are outside the app's tsconfig project.
-  {
-    files: ['*.config.{ts,js}'],
-    languageOptions: { globals: globals.node },
-    ...tseslint.configs.disableTypeChecked,
-  },
+  // Config files run in Node and are outside the app's tsconfig project. Two objects, not one:
+  // the spread carries its own languageOptions, so merging it in place would drop one side.
+  { files: ['*.config.{ts,js}'], ...tseslint.configs.disableTypeChecked },
+  { files: ['*.config.{ts,js}'], languageOptions: { globals: globals.node } },
 
   prettier,
 );
