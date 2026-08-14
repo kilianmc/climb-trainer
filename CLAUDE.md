@@ -167,12 +167,76 @@ So `apiFetch` does two things and both must stay:
 Never replace this with a bare relative `fetch('/api/…')`, and never "simplify away"
 the content-type check.
 
+### Routing: one tree, two histories (PR #4)
+
+`src/router.tsx` builds the router from a passed-in history and is the only place router
+or Query defaults live. `main.tsx` gives it `createBrowserHistory`, `remote.tsx`
+`createMemoryHistory`. The history is the *only* difference between the mounts.
+
+- **`src/routeTree.gen.ts` is COMMITTED, and must stay committed.** `web/vitest.config.ts`
+  **replaces** `web/vite.config.ts` rather than merging it, so the router plugin never
+  runs under Vitest and cannot regenerate the tree. Verified by deleting it and watching
+  `vitest` fail with no regeneration. It is excluded from ESLint (`ignores`) and Prettier
+  (`.prettierignore`) — it ships without semicolons, so `format:check` fails on it
+  otherwise. Never hand-edit it.
+- **⚠️ A lazy leaf must be named `<route>.lazy.tsx`.** `createLazyFileRoute` inside a
+  plain `plan.tsx` **still builds, emits no warning, and is bundled EAGERLY** — verified
+  2026-08-14: no separate chunk appears. Only the `.lazy.tsx` filename makes the
+  generator emit `.lazy(() => import(…))`. Renaming one of those files silently deletes
+  its code-splitting: `format:check`, `lint`, `typecheck`, `test` and `build` all stay
+  green. (The other valid shape is `autoCodeSplitting: true` with plain `createFileRoute`;
+  the two must not be mixed.) **`web/src/routeTree.lazy.test.ts` asserts it** via router
+  state — an unloaded `options.component` — rather than by reading `dist/`, because
+  `vitest` runs before `build` and a `dist`-reading test would skip itself on a clean
+  checkout. Note `routeTree` is a module singleton whose route objects `.lazy()` mutates in
+  place, so that file needs `resetModules` + dynamic import to stay order-independent.
+- **`defaultPreloadStaleTime: 0`** because Query is the single source of staleness truth.
+  Raising it gives the router a second cache with its own expiry and the two disagree.
+- **No query-cache `localStorage` persistence** — PR #14, because the demo-scope
+  exclusion needs auth state that does not exist until PR #6. Do not leave a persister
+  half-built.
+- Query retries skip 4xx and `NotJsonError`: both are unwinnable, and every retry is
+  another Neon wake-up.
+- **Router-plugin × MF-plugin ordering is not sensitive** — all four orderings of
+  `tanstackRouter` / `react` / `federation` were verified to build, emit `remoteEntry.js`
+  and split the lazy leaves (2026-08-14). `tanstackRouter` is listed first as the
+  documented order, not a required one. Neither plugin needs a CSP `unsafe-*`: the built
+  output contains no `eval`, no `new Function`, no `blob:` and no inline script or style.
+- **Styles are split by mount**, which is what keeps the `.ct-app` rule honest:
+  `styles/app.scss` is imported from `routes/__root.tsx` (so both mounts get it, and it
+  contains zero `:root`/`body` rules), `styles/global.scss` only from `main.tsx` (the
+  document reset, which must never reach the shell). The built remote's stylesheet was
+  checked for `:root` leakage.
+
 ### Never register a service worker from `remote.tsx`
 
 A service worker registered from the federated entry would be **scoped to
 kilianmc.com** and start intercepting the production portfolio's requests. Low
 likelihood, severe blast radius. **SW registration lives in `main.tsx` only** —
 PR #7 (PWA) must keep it there.
+
+`web/src/remote.guard.test.tsx` enforces this plus the `localStorage` rules below. It
+shipped **vacuous** and was hardened on 2026-08-14; three jsdom facts caused that, and all
+three will catch the next person out too:
+
+- **`document.readyState` is already `'complete'` when a test runs**, so a listener added
+  during `render()` never fires. `vite-plugin-pwa`'s `virtual:pwa-register` registers from
+  a `window` `load` listener, which made the most likely PR #7 regression the one the guard
+  could not see. The test dispatches `load` itself.
+- **`localStorage.foo = 'x'` writes the value while completely bypassing
+  `Storage.prototype.setItem`**, so a `setItem` spy misses it. Assert on
+  `Object.keys(localStorage)`, not only on recorded calls.
+- **`clear()` and `removeItem()` leave no trace in the final state** — and a remote calling
+  `localStorage.clear()` wipes the *portfolio's* storage, which is worse than one bad key.
+  Spy both.
+- Module-scope side effects run when the test file's static imports are hoisted, i.e.
+  **before any spy exists**. The entry is therefore imported dynamically, with
+  `resetModules` per test, so module evaluation happens inside the observation window.
+
+**It also carries a positive control asserting each detector can see its own violation.**
+Keep it. Every storage assertion there passes on an empty set, so a mis-wired spy or an
+undispatched event is indistinguishable from compliance — the same vacuity that hid the
+FastAPI 0.137 route-walk defect while its test still passed.
 
 ### In the federated mount, `localStorage` is the SHELL's storage
 
@@ -203,9 +267,15 @@ scenario. Verify the shell console is warning-free at Track 0 step 5.
 Remote contract (mirrors `ai-portfolio-project1/vite.config.js`):
 `filename: 'remoteEntry.js'`, `dts: false`, react/react-dom singletons at `^19.0.0`
 **plus scoped `'react/'` and `'react-dom/'` shares** so `react/jsx-runtime` and
-`react-dom/client` resolve from the one instance, modern `build.target` (MF needs
-top-level `await`), and `Access-Control-Allow-Origin: *` on `/remoteEntry.js` +
-`/assets/*` only.
+`react-dom/client` resolve from the one instance, and `Access-Control-Allow-Origin: *` on
+`/remoteEntry.js` + `/assets/*` only — see the two reasons in the CSP section.
+
+**No explicit `build.target` — corrected 2026-08-14.** Earlier wording here required a
+"modern `build.target`" on the grounds that MF needs top-level `await`. **That is false on
+Vite 8**, whose default target (`baseline-widely-available`, i.e. chrome111+) already
+supports it: removing the option leaves the top-level `await` in the output untouched, with
+no warning. `ai-portfolio-project1` pins `chrome89` because it predates that default, so
+copying it here would only **lower** our baseline. Do not re-add it "for MF".
 
 `VITE_TRAINER_REMOTE_URL` in the shell must point at a **stable alias** (git-branch
 alias or custom domain), never a deployment-specific URL — Hobby prunes deployments
@@ -587,8 +657,23 @@ upgrade-insecure-requests
   laxer policy than production, proving less. `vite preview` serves the real build with the
   real headers, read out of `vercel.json` by `web/vite.config.ts` so the two cannot drift.
 - **For PR #5:** the *shell's* CSP governs the federated mount, not ours. `portfolio-shell`
-  has none today; if it gains one it needs `script-src` **and** `connect-src` for
-  `https://climb.kilianmc.com`.
+  has none today; if it gains one it needs `script-src`, `connect-src` **and `style-src`**
+  for `https://climb.kilianmc.com`.
+- **⚠️ `Access-Control-Allow-Origin` on `/remoteEntry.js` alone is NOT enough — two
+  independent reasons, both proved by deleting the rule (2026-08-14):**
+  1. `remoteEntry.js` is a two-line stub that **statically imports**
+     `/assets/virtual_mf-REMOTE_ENTRY_ID….js`. Without the header on `/assets/*` the very
+     first `import()` rejects with `TypeError: Failed to fetch dynamically imported
+     module`, before any CSS is involved.
+  2. The exposed `./App` chunk also references its own stylesheet (`app.scss`), which MF
+     loads as a cross-origin `<link>`; with the header on everything except the emitted
+     `.css`, `get('./App')` rejects with `Unable to preload CSS`. This is the `style-src`
+     half above.
+
+  So dropping the stylesheet would **not** make the `/assets/*` rule unnecessary. Both
+  rules are asserted by `web/src/mf-contract.test.ts`, which also asserts the wildcard is
+  on those two sources and nowhere else — deleting either one otherwise kills the federated
+  mount on the live portfolio, from this repo, with a fully green gate.
 
 ### Auth implementation (PR #3) — where each piece lives
 

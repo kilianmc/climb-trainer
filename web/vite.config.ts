@@ -1,6 +1,8 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
+import { federation } from '@module-federation/vite';
+import { tanstackRouter } from '@tanstack/router-plugin/vite';
 import react from '@vitejs/plugin-react';
 import { defineConfig } from 'vite';
 
@@ -33,7 +35,34 @@ function productionHeaders(): Record<string, string> {
 }
 
 export default defineConfig({
-  plugins: [react()],
+  // Note this file is NOT merged into vitest.config.ts — that one replaces it — so
+  // neither plugin below is active in tests. Hence `src/routeTree.gen.ts` is committed.
+  plugins: [
+    // Generator first: it must have written the route tree before react() transforms
+    // the modules that import it. All four orderings were verified to build, so this
+    // is the documented order rather than a required one.
+    tanstackRouter({ target: 'react' }),
+    react(),
+    federation({
+      name: 'climbTrainer',
+      filename: 'remoteEntry.js',
+      dts: false,
+      exposes: { './App': './src/remote.tsx' },
+      shared: {
+        // The scoped `react/` and `react-dom/` entries are not decoration: without
+        // them `react/jsx-runtime` and `react-dom/client` resolve to a SECOND copy of
+        // React while `react` itself is shared, and hooks fail in ways that look
+        // unrelated. See the MF section of CLAUDE.md.
+        react: { singleton: true, requiredVersion: '^19.0.0' },
+        'react/': { singleton: true, requiredVersion: '^19.0.0' },
+        'react-dom': { singleton: true, requiredVersion: '^19.0.0' },
+        'react-dom/': { singleton: true, requiredVersion: '^19.0.0' },
+      },
+    }),
+  ],
+  // No explicit `build.target`: Vite 8's default (`baseline-widely-available`, chrome111+)
+  // already supports the top-level await MF emits. ai-portfolio-project1 pins `chrome89`
+  // because it predates that default; copying it here would only LOWER the baseline.
   build: { outDir: 'dist', emptyOutDir: true, sourcemap: true },
   server: {
     port: 5173,

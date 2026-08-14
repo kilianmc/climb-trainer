@@ -1,0 +1,91 @@
+// Everything here is scoped to the single `.ct-app` root, tokens included. In the
+// federated mount this stylesheet is injected into kilianmc.com's document, so a
+// `:root` or `body` rule would restyle the shell — and a full-screen session player
+// will fight the shell's ProjectViewer chrome if it escapes this element.
+//
+// Deliberately minimal: the design system (surfaces, elevation, bento grid,
+// container queries) is PR #7's, not this PR's.
+
+.ct-app {
+  --ct-bg: #fbfbfa;
+  --ct-fg: #16181d;
+  --ct-muted: #5c6270;
+  --ct-accent: #1f6f4a;
+  --ct-danger: #b3261e;
+
+  @media (prefers-color-scheme: dark) {
+    --ct-bg: #101216;
+    --ct-fg: #eef0f3;
+    --ct-muted: #9aa1ad;
+    --ct-accent: #63c295;
+    --ct-danger: #f2b8b5;
+  }
+
+  box-sizing: border-box;
+
+  *,
+  *::before,
+  *::after {
+    box-sizing: border-box;
+  }
+
+  background: var(--ct-bg);
+  color: var(--ct-fg);
+  font:
+    16px/1.55 -apple-system,
+    BlinkMacSystemFont,
+    system-ui,
+    sans-serif;
+
+  // Mobile-first, and honest about safe-area insets from the start: this app is used
+  // one-handed on a phone in a gym, often in landscape on a bouldering mat.
+  padding: max(1rem, env(safe-area-inset-top)) max(1.25rem, env(safe-area-inset-right))
+    max(1.5rem, env(safe-area-inset-bottom)) max(1.25rem, env(safe-area-inset-left));
+  max-inline-size: 34rem;
+  margin-inline: auto;
+
+  h1 {
+    margin: 0 0 0.25rem;
+    font-size: 1.5rem;
+    letter-spacing: -0.01em;
+  }
+
+  &__nav {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem 1rem;
+    margin-block-end: 1.5rem;
+
+    a {
+      color: var(--ct-muted);
+      text-decoration: none;
+      // The 44x44 floor from CLAUDE.md's accessibility rules — BOTH axes, because a
+      // short label ("Plan") is only ~31px wide on its own. PR #7 owns real hit-area
+      // and spacing design; this is the floor, not a finished nav.
+      min-block-size: 44px;
+      min-inline-size: 44px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+
+      &[aria-current='page'] {
+        color: var(--ct-accent);
+      }
+    }
+  }
+
+  &__muted {
+    margin: 0 0 1.5rem;
+    color: var(--ct-muted);
+  }
+
+  &__status {
+    margin: 0;
+    font-size: 0.95rem;
+    color: var(--ct-muted);
+
+    &--error {
+      color: var(--ct-danger);
+    }
+  }
+}
