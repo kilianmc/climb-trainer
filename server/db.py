@@ -25,6 +25,14 @@ omissions below:
 - **Lazy engine, no connect at import.** `get_engine()` builds the engine on first
   use; nothing here opens a socket when the module is imported.
 
+## The request session is bound lazily, not at construction
+
+Sessions come from an *unbound* sessionmaker and resolve the engine on their first
+statement. FastAPI resolves dependencies before it validates the request body, so a
+sessionmaker that needed `DATABASE_URL` turned a malformed body into a 500 instead of a
+422 — and made `npm run check` fail on a clone with no database, which the gate promises
+it will not.
+
 ## Sync SQLAlchemy + psycopg3, not async, not asyncpg
 
 Sync, with `def` endpoints running in FastAPI's anyio threadpool: latency (Neon
@@ -63,6 +71,7 @@ transaction_read_only` relies on (PR #3). Keep it `SET LOCAL`, never a bare `SET
 from collections.abc import Iterator
 from contextlib import contextmanager
 from functools import lru_cache
+from typing import Any
 
 from sqlalchemy import Engine, create_engine
 from sqlalchemy.orm import Session, sessionmaker
@@ -129,12 +138,22 @@ def get_engine() -> Engine:
     )
 
 
+class LazyBindSession(Session):
+    """A session that asks for the engine when it first runs a statement, not before."""
+
+    def get_bind(self, *args: Any, **kwargs: Any) -> Engine:
+        return get_engine()
+
+
 @lru_cache(maxsize=1)
 def get_sessionmaker() -> sessionmaker[Session]:
+    # No `bind=`: see the docstring. Scripts and seeds therefore hit the missing-URL
+    # error at their first query rather than at session construction — same message.
+    #
     # expire_on_commit=False: after committing, a response serialiser reading an
     # attribute would otherwise trigger a fresh SELECT, i.e. a second round trip to a
     # database we are trying to keep asleep.
-    return sessionmaker(bind=get_engine(), expire_on_commit=False, autoflush=False)
+    return sessionmaker(class_=LazyBindSession, expire_on_commit=False, autoflush=False)
 
 
 @contextmanager
