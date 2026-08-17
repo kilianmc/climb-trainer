@@ -1,13 +1,16 @@
 import { Link, Outlet, createRootRoute } from '@tanstack/react-router';
 
-import { RouteError, RouteNotFound } from '../ui/status';
+import { CtAppScope, RouteError, RouteNotFound } from '../ui/status';
 import '../styles/app.scss';
 
 /**
  * The app shell, and the `.ct-app` element. Every style and every design token hangs off
  * it rather than `:root`/`body`, because in the federated mount this tree is injected
- * into kilianmc.com's document and anything global restyles the shell. `RootError` below
- * is the only other place that may render it.
+ * into kilianmc.com's document and anything global restyles the shell.
+ *
+ * A root-level error, not-found or pending render replaces this component, so the three
+ * status renders re-establish `.ct-app` themselves (issue #15) — `CtAppScope` is what
+ * tells them not to when they render inside the outlet instead. See `ui/status.tsx`.
  *
  * `app.scss` is imported here, not in the entries, so both mounts get it from the
  * single route tree.
@@ -24,21 +27,10 @@ function RootLayout() {
         <Link to="/login">Log in</Link>
       </nav>
       <main className="ct-app__main">
-        <Outlet />
+        <CtAppScope>
+          <Outlet />
+        </CtAppScope>
       </main>
-    </div>
-  );
-}
-
-/**
- * A root-level error replaces `RootLayout`, so `.ct-app` has to be re-established here or
- * the error renders unstyled straight into the shell's document — every rule in
- * `app.scss` is `.ct-app`-prefixed, tokens included (issue #15).
- */
-function RootError({ error }: { error: Error }) {
-  return (
-    <div className="ct-app">
-      <RouteError error={error} />
     </div>
   );
 }
@@ -46,5 +38,5 @@ function RootError({ error }: { error: Error }) {
 export const Route = createRootRoute({
   component: RootLayout,
   notFoundComponent: RouteNotFound,
-  errorComponent: RootError,
+  errorComponent: RouteError,
 });
