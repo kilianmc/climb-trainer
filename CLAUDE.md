@@ -171,14 +171,28 @@ the content-type check.
 
 `src/router.tsx` builds the router from a passed-in history and is the only place router
 or Query defaults live. `main.tsx` gives it `createBrowserHistory`, `remote.tsx`
-`createMemoryHistory`. The history is the *only* difference between the mounts.
+`createRemoteHistory()`. The history is the *only* difference between the mounts.
+
+- **The federated mount renders ABSOLUTE hrefs (decided for PR #5, issue #16).**
+  `createMemoryHistory`'s `createHref` is the identity function, so `<Link to="/plan">`
+  emitted `href="/plan"`, which the browser resolves against the **host** document —
+  cmd-click, middle-click and "copy link address" left the viewer for `kilianmc.com/plan`,
+  a 404 on the portfolio. `src/remoteHistory.ts` therefore overrides `createHref` with
+  `STANDALONE_ORIGIN` (`https://climb.kilianmc.com`), the single place that origin is
+  written. Only `<Link>` reads `createHref`, so left-clicks are still intercepted and
+  navigate in place. **The standalone entry is unchanged — relative hrefs there**; both
+  arms are asserted (`remote.guard.test.tsx`, `router.test.tsx`). `createMemoryHistory`
+  accepts no `createHref` option, hence the assignment; never *spread* a history object,
+  whose `location`/`length` getters a copy would freeze.
 
 - **`src/routeTree.gen.ts` is COMMITTED, and must stay committed.** `web/vitest.config.ts`
   **replaces** `web/vite.config.ts` rather than merging it, so the router plugin never
   runs under Vitest and cannot regenerate the tree. Verified by deleting it and watching
   `vitest` fail with no regeneration. It is excluded from ESLint (`ignores`) and Prettier
   (`.prettierignore`) — it ships without semicolons, so `format:check` fails on it
-  otherwise. Never hand-edit it.
+  otherwise. Never hand-edit it. **CI runs `git diff --exit-code -- src/routeTree.gen.ts`
+  after the build**, so a stale committed tree fails the `web` job instead of being
+  silently rewritten by the gate (regeneration is byte-identical).
 - **⚠️ A lazy leaf must be named `<route>.lazy.tsx`.** `createLazyFileRoute` inside a
   plain `plan.tsx` **still builds, emits no warning, and is bundled EAGERLY** — verified
   2026-08-14: no separate chunk appears. Only the `.lazy.tsx` filename makes the
@@ -247,7 +261,10 @@ The remote runs on the kilianmc.com origin, so it shares storage with the portfo
 - **Skip query-cache persistence in demo scope.**
 
 Also scope the remote's CSS under a single **`.ct-app`** root, with design tokens as
-custom properties **on that element** — not on `:root`/`body`. `fund-dashboard` gets
+custom properties **on that element** — not on `:root`/`body`. **A root-level error
+replaces the layout, taking that element with it, so `__root.tsx`'s `errorComponent`
+re-establishes it** (issue #15) — otherwise the error renders unstyled straight into the
+portfolio's DOM. `rootError.test.tsx` asserts it. `fund-dashboard` gets
 away with a global reset because it lives inside a full-viewport overlay; a
 full-screen session player will fight the shell's `ProjectViewer` chrome.
 
@@ -279,6 +296,17 @@ Widen the range *before* any React major or canary bump, then re-narrow.
 PR #5.** Since a mismatched remote renders correctly and only complains to the console,
 that check is the *only* signal the contract is intact — a working mount proves nothing.
 
+**Done locally for PR #5 (2026-08-17), cross-origin (real `vite build` on one port, the
+shell on another), in both the shell's dev server and a production build: zero bridge
+failures, one React instance, no rules outside `.ct-app`.** The detector was proved
+non-vacuous first: setting our `requiredVersion` to `^18.0.0` produced **six**
+`Failed to bridge external shared module` lines (`react`, `react/jsx-runtime`,
+`react-dom`, `react-dom/client`, plus two from the failed container init) **while the
+remote still mounted and looked correct**. It is still owed against the real deployment
+after this repo's first production promotion — `climb.kilianmc.com/remoteEntry.js`
+currently answers `200 text/html` from the SPA rewrite, and preview URLs are SSO-gated,
+so no deployed remote was reachable.
+
 Remote contract (mirrors `ai-portfolio-project1/vite.config.js`):
 `filename: 'remoteEntry.js'`, `dts: false`, react/react-dom singletons at `^19.0.0`
 with `strictVersion: true` to match the host, **plus scoped `'react/'` and
@@ -293,9 +321,9 @@ supports it: removing the option leaves the top-level `await` in the output unto
 no warning. `ai-portfolio-project1` pins `chrome89` because it predates that default, so
 copying it here would only **lower** our baseline. Do not re-add it "for MF".
 
-`VITE_TRAINER_REMOTE_URL` in the shell must point at a **stable alias** (git-branch
-alias or custom domain), never a deployment-specific URL — Hobby prunes deployments
-after 30 days.
+**`VITE_CLIMB_REMOTE_URL`** in the shell (PR #5's name for it) must point at a **stable
+alias** (git-branch alias or custom domain), never a deployment-specific URL — Hobby
+prunes deployments after 30 days.
 
 ### TypeScript stays on 6.x
 

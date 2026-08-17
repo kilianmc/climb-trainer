@@ -32,6 +32,10 @@ jobs:
       - run: npm run typecheck
       - run: npm run test
       - run: npm run build
+      # `vite build` rewrites the committed route tree, so a stale one is only visible as
+      # a dirty tree after the build. Regeneration is deterministic, hence exit-code 0 on
+      # an up-to-date file.
+      - run: git diff --exit-code -- src/routeTree.gen.ts
 
   # NOTE: the job names `web`, `server` and `secrets` are required status checks in a
   # GitHub ruleset. RENAMING ONE SILENTLY BREAKS THE MERGE GATE — the rule then waits

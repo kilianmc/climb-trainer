@@ -4,9 +4,10 @@ import { RouteError, RouteNotFound } from '../ui/status';
 import '../styles/app.scss';
 
 /**
- * The app shell, and the ONE `.ct-app` element. Every style and every design token
- * hangs off it rather than `:root`/`body`, because in the federated mount this tree
- * is injected into kilianmc.com's document and anything global restyles the shell.
+ * The app shell, and the `.ct-app` element. Every style and every design token hangs off
+ * it rather than `:root`/`body`, because in the federated mount this tree is injected
+ * into kilianmc.com's document and anything global restyles the shell. `RootError` below
+ * is the only other place that may render it.
  *
  * `app.scss` is imported here, not in the entries, so both mounts get it from the
  * single route tree.
@@ -29,8 +30,21 @@ function RootLayout() {
   );
 }
 
+/**
+ * A root-level error replaces `RootLayout`, so `.ct-app` has to be re-established here or
+ * the error renders unstyled straight into the shell's document — every rule in
+ * `app.scss` is `.ct-app`-prefixed, tokens included (issue #15).
+ */
+function RootError({ error }: { error: Error }) {
+  return (
+    <div className="ct-app">
+      <RouteError error={error} />
+    </div>
+  );
+}
+
 export const Route = createRootRoute({
   component: RootLayout,
   notFoundComponent: RouteNotFound,
-  errorComponent: RouteError,
+  errorComponent: RootError,
 });
