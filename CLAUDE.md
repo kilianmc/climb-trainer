@@ -263,12 +263,17 @@ later and look completely unrelated.
 
 **Track 0 is landed (2026-08-17): React 19 is in production in both
 `portfolio-shell` and `ai-portfolio-project1`,** and the portfolio contract is now
-`^19.0.0` + `strictVersion: true`. But **enforcement is asymmetric, and this repo is on
-the weak side of it** (verified by experiment 2026-08-17): only the *host's own* share
-resolution throws. A **remote** whose `requiredVersion` does not match has its throw
-caught by `@module-federation/vite`, which logs `Failed to bridge external shared module`
-and **mounts anyway**. So strict does not protect us here — it upgrades the warning to a
-`console.error` and nothing more.
+`^19.0.0` + `strictVersion: true`, which we now match. **Enforcement follows bootstrap
+order, not host vs. remote** (verified by experiment 2026-08-17): the container that boots
+**first, with an empty shared-module cache**, throws on a range it cannot satisfy, and the
+throw rejects the entry wrapper so the app entry never imports — blank page. A container
+initialising **after** the cache is seeded only logs
+`Failed to bridge external shared module`, four lines, one per shared key, and **mounts
+anyway**. Our exposure is therefore **standalone**: served on our own origin we boot first,
+so a range our installed React cannot satisfy blanks our own deployment. Federated into
+the shell, the shell boots first, so the same mistake only logs. Note `strictVersion` is
+**inert without `singleton: true`**.
+Widen the range *before* any React major or canary bump, then re-narrow.
 
 **Therefore: verify the shell console is clean when wiring the `climbTrainer` remote in
 PR #5.** Since a mismatched remote renders correctly and only complains to the console,
