@@ -254,20 +254,36 @@ full-screen session player will fight the shell's `ProjectViewer` chrome.
 ### Module Federation shared singletons — the silent one
 
 With `singleton: true` and no explicit `strictVersion`, MF defaults to
-`strictVersion: false`. A React version mismatch is therefore **only a console
-warning** — then MF **silently hoists the highest React** and hands it to code
-compiled against the other version. Failures surface later and look completely
-unrelated.
+`strictVersion: false` (confirmed in `@module-federation/runtime-core@2.7.0`,
+`dist/utils/share.js` — the shareConfig defaults set `strictVersion: false`, and the
+mismatch branch is `if (shareConfig.strictVersion) error(msg); else warn(msg)`). A React
+version mismatch is therefore **only a console warning** — then MF **silently hoists the
+highest React** and hands it to code compiled against the other version. Failures surface
+later and look completely unrelated.
 
-**Consequence: Track 0 (React 19 in `portfolio-shell` and `ai-portfolio-project1`)
-MUST land before PR #5** (adding the `climbTrainer` remote to the shell). This repo is
-already on React 19; shipping the remote into an 18 host is exactly the silent-hoist
-scenario. Verify the shell console is warning-free at Track 0 step 5.
+**Track 0 is landed (2026-08-17): React 19 is in production in both
+`portfolio-shell` and `ai-portfolio-project1`,** and the portfolio contract is now
+`^19.0.0` + `strictVersion: true`, which we now match. **Enforcement follows bootstrap
+order, not host vs. remote** (verified by experiment 2026-08-17): the container that boots
+**first, with an empty shared-module cache**, throws on a range it cannot satisfy, and the
+throw rejects the entry wrapper so the app entry never imports — blank page. A container
+initialising **after** the cache is seeded only logs
+`Failed to bridge external shared module`, four lines, one per shared key, and **mounts
+anyway**. Our exposure is therefore **standalone**: served on our own origin we boot first,
+so a range our installed React cannot satisfy blanks our own deployment. Federated into
+the shell, the shell boots first, so the same mistake only logs. Note `strictVersion` is
+**inert without `singleton: true`**.
+Widen the range *before* any React major or canary bump, then re-narrow.
+
+**Therefore: verify the shell console is clean when wiring the `climbTrainer` remote in
+PR #5.** Since a mismatched remote renders correctly and only complains to the console,
+that check is the *only* signal the contract is intact — a working mount proves nothing.
 
 Remote contract (mirrors `ai-portfolio-project1/vite.config.js`):
 `filename: 'remoteEntry.js'`, `dts: false`, react/react-dom singletons at `^19.0.0`
-**plus scoped `'react/'` and `'react-dom/'` shares** so `react/jsx-runtime` and
-`react-dom/client` resolve from the one instance, and `Access-Control-Allow-Origin: *` on
+with `strictVersion: true` to match the host, **plus scoped `'react/'` and
+`'react-dom/'` shares** so `react/jsx-runtime` and `react-dom/client` resolve from the
+one instance, and `Access-Control-Allow-Origin: *` on
 `/remoteEntry.js` + `/assets/*` only — see the two reasons in the CSP section.
 
 **No explicit `build.target` — corrected 2026-08-14.** Earlier wording here required a

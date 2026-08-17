@@ -53,10 +53,10 @@ export default defineConfig({
         // them `react/jsx-runtime` and `react-dom/client` resolve to a SECOND copy of
         // React while `react` itself is shared, and hooks fail in ways that look
         // unrelated. See the MF section of CLAUDE.md.
-        react: { singleton: true, requiredVersion: '^19.0.0' },
-        'react/': { singleton: true, requiredVersion: '^19.0.0' },
-        'react-dom': { singleton: true, requiredVersion: '^19.0.0' },
-        'react-dom/': { singleton: true, requiredVersion: '^19.0.0' },
+        react: { singleton: true, requiredVersion: '^19.0.0', strictVersion: true },
+        'react/': { singleton: true, requiredVersion: '^19.0.0', strictVersion: true },
+        'react-dom': { singleton: true, requiredVersion: '^19.0.0', strictVersion: true },
+        'react-dom/': { singleton: true, requiredVersion: '^19.0.0', strictVersion: true },
       },
     }),
   ],
