@@ -176,12 +176,15 @@ One route tree, two entries:
 | Mount          | Entry        | History                | Notes                                                               |
 | -------------- | ------------ | ---------------------- | ------------------------------------------------------------------- |
 | **Standalone** | `main.tsx`   | `createBrowserHistory` | `climb.kilianmc.com`, deep links, PWA-installable. Real product.    |
-| **Federated**  | `remote.tsx` | `createMemoryHistory`  | Remote `climbTrainer`, exposes `./App`, mounted by portfolio-shell. |
+| **Federated**  | `remote.tsx` | `createRemoteHistory`  | Remote `climbTrainer`, exposes `./App`, mounted by portfolio-shell. |
 
 The federated mount runs on the **kilianmc.com origin**, which is why every
 `localStorage` key is namespaced `ct:`, no service worker is ever registered from
-`remote.tsx`, and the API base is resolved from `import.meta.url` rather than a
-relative path. Auth works identically in both mounts because `climb.kilianmc.com` and
+`remote.tsx`, the API base is resolved from `import.meta.url` rather than a relative
+path, and `<Link>` hrefs are rewritten to absolute `climb.kilianmc.com` URLs so a
+cmd-click opens the standalone app instead of 404-ing on the portfolio (a left-click
+still navigates in place). Auth works identically in both mounts because
+`climb.kilianmc.com` and
 `kilianmc.com` share a registrable domain and are therefore same-site: an httpOnly
 `SameSite=Lax; Secure` refresh cookie plus an in-memory access token, with no tokens
 in `localStorage` anywhere.

@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
 
 /**
@@ -113,6 +113,30 @@ describe('the federated entry', () => {
     expect(pushState).not.toHaveBeenCalled();
     expect(replaceState).not.toHaveBeenCalled();
     expect(window.location.href).toBe(before);
+  });
+
+  /**
+   * A relative href resolves against the HOST document, so cmd-click, middle-click and
+   * "copy link address" would land on kilianmc.com/plan — a 404 on the portfolio. The
+   * literal origin is asserted rather than imported: a typo in the constant is exactly
+   * what this has to catch. The standalone arm lives in `router.test.tsx`. Issue #16.
+   */
+  it('renders absolute standalone hrefs, so a cmd-click leaves for the real app', async () => {
+    await mount();
+
+    const nav = screen.getByRole('navigation', { name: 'Main' });
+    const hrefs = within(nav)
+      .getAllByRole('link')
+      .map((link) => link.getAttribute('href'));
+
+    expect(hrefs).toEqual([
+      'https://climb.kilianmc.com/',
+      'https://climb.kilianmc.com/plan',
+      'https://climb.kilianmc.com/session',
+      'https://climb.kilianmc.com/diary',
+      'https://climb.kilianmc.com/profile',
+      'https://climb.kilianmc.com/login',
+    ]);
   });
 
   it("leaves the portfolio's localStorage exactly as it found it", async () => {

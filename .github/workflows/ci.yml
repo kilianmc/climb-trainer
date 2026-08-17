@@ -32,6 +32,13 @@ jobs:
       - run: npm run typecheck
       - run: npm run test
       - run: npm run build
+      # `vite build` rewrites the committed route tree, so a stale one is only visible as
+      # a dirty tree after the build. Regeneration is deterministic, hence exit-code 0 on
+      # an up-to-date file. `git diff --exit-code` also exits 0 on a pathspec that matches
+      # NOTHING, so the file's existence is asserted first — otherwise a rename or a move
+      # of this step out of the `web` job leaves the check passing forever.
+      - run: git ls-files --error-unmatch src/routeTree.gen.ts
+      - run: git diff --exit-code -- src/routeTree.gen.ts
 
   # NOTE: the job names `web`, `server` and `secrets` are required status checks in a
   # GitHub ruleset. RENAMING ONE SILENTLY BREAKS THE MERGE GATE — the rule then waits

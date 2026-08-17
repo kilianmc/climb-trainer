@@ -171,14 +171,35 @@ the content-type check.
 
 `src/router.tsx` builds the router from a passed-in history and is the only place router
 or Query defaults live. `main.tsx` gives it `createBrowserHistory`, `remote.tsx`
-`createMemoryHistory`. The history is the *only* difference between the mounts.
+`createRemoteHistory()`. The history is the *only* difference between the mounts.
+
+- **The federated mount renders ABSOLUTE hrefs (decided for PR #5, issue #16).**
+  `createMemoryHistory`'s `createHref` is the identity function, so `<Link to="/plan">`
+  emitted `href="/plan"`, which the browser resolves against the **host** document —
+  cmd-click, middle-click and "copy link address" left the viewer for `kilianmc.com/plan`,
+  a 404 on the portfolio. `src/remoteHistory.ts` therefore overrides `createHref` with
+  `STANDALONE_ORIGIN` (`https://climb.kilianmc.com`), the single place in runtime code that
+  origin is written — deliberately a **constant**, not `import.meta.url` as the API base
+  is: a link the user opens outside the shell must land on the canonical public app, not on
+  whichever ephemeral deployment served the chunk. Note the consequence — a cmd-click from
+  a *dev* federated mount opens *production*, with production data once auth lands (PR #6).
+  Only `<Link>` reads `createHref`, so left-clicks are still intercepted and
+  navigate in place. **The standalone entry is unchanged — relative hrefs there**; both
+  arms are asserted (`remote.guard.test.tsx`, `router.test.tsx`). `createMemoryHistory`
+  accepts no `createHref` option, hence the assignment; never *spread* a history object,
+  whose `location`/`length` getters a copy would freeze.
 
 - **`src/routeTree.gen.ts` is COMMITTED, and must stay committed.** `web/vitest.config.ts`
   **replaces** `web/vite.config.ts` rather than merging it, so the router plugin never
   runs under Vitest and cannot regenerate the tree. Verified by deleting it and watching
   `vitest` fail with no regeneration. It is excluded from ESLint (`ignores`) and Prettier
   (`.prettierignore`) — it ships without semicolons, so `format:check` fails on it
-  otherwise. Never hand-edit it.
+  otherwise. Never hand-edit it. **CI asserts the file exists (`git ls-files
+  --error-unmatch`) and then runs `git diff --exit-code -- src/routeTree.gen.ts` after the
+  build**, so a stale committed tree fails the `web` job instead of being silently rewritten
+  (regeneration is byte-identical). The existence step is not decoration: `git diff
+  --exit-code` exits **0** on a pathspec matching nothing, so a rename would leave the check
+  green forever. It is **CI-only on purpose** — see the Quality gate section.
 - **⚠️ A lazy leaf must be named `<route>.lazy.tsx`.** `createLazyFileRoute` inside a
   plain `plan.tsx` **still builds, emits no warning, and is bundled EAGERLY** — verified
   2026-08-14: no separate chunk appears. Only the `.lazy.tsx` filename makes the
@@ -247,7 +268,14 @@ The remote runs on the kilianmc.com origin, so it shares storage with the portfo
 - **Skip query-cache persistence in demo scope.**
 
 Also scope the remote's CSS under a single **`.ct-app`** root, with design tokens as
-custom properties **on that element** — not on `:root`/`body`. `fund-dashboard` gets
+custom properties **on that element** — not on `:root`/`body`. **A root-level error,
+not-found or pending render replaces the layout and takes that element with it**, so all
+three status renders in `ui/status.tsx` re-establish `.ct-app` themselves — and skip it when
+`RootLayout`'s `CtAppScope` says they are already inside one, because nesting that element
+insets the layout twice (issue #15; `rootStatusScope.test.tsx` asserts both directions).
+Wrapping only `errorComponent` was the half fix: the pending path escapes too, via the
+ROOT route's `pendingComponent ?? defaultPendingComponent`, which the router also uses for
+its two root-level Suspense fallbacks. `fund-dashboard` gets
 away with a global reset because it lives inside a full-viewport overlay; a
 full-screen session player will fight the shell's `ProjectViewer` chrome.
 
@@ -279,6 +307,22 @@ Widen the range *before* any React major or canary bump, then re-narrow.
 PR #5.** Since a mismatched remote renders correctly and only complains to the console,
 that check is the *only* signal the contract is intact — a working mount proves nothing.
 
+**Done locally for PR #5 (2026-08-17), cross-origin (real `vite build` on one port, the
+shell on another), in both the shell's dev server and a production build: zero bridge
+failures, no rules outside `.ct-app`.** The detector was proved non-vacuous first: setting
+our `requiredVersion` to `^18.0.0` logged **four** `Failed to bridge external shared module`
+lines against a production build of the shell, **one per shared key** (`react`,
+`react/jsx-runtime`, `react-dom`, `react-dom/client`), all at initial page load — **while
+the remote still mounted and looked correct**. **Grep for the string; do not assert a
+count**: against the shell's *dev server* the same control split into two lines at load
+(wrapped in a `#RUNTIME-015` container-init error) plus four at first card open, because the
+dev server materializes a share on first import rather than at bootstrap. Nothing else
+differs between the arms — that control forces an unsatisfiable *range* while both sides run
+the same React 19.2.8, so the console is the only place it can show. It is still owed
+against the real deployment after this repo's first production promotion —
+`climb.kilianmc.com/remoteEntry.js` currently answers `200 text/html` from the SPA rewrite,
+and preview URLs are SSO-gated, so no deployed remote was reachable.
+
 Remote contract (mirrors `ai-portfolio-project1/vite.config.js`):
 `filename: 'remoteEntry.js'`, `dts: false`, react/react-dom singletons at `^19.0.0`
 with `strictVersion: true` to match the host, **plus scoped `'react/'` and
@@ -293,9 +337,9 @@ supports it: removing the option leaves the top-level `await` in the output unto
 no warning. `ai-portfolio-project1` pins `chrome89` because it predates that default, so
 copying it here would only **lower** our baseline. Do not re-add it "for MF".
 
-`VITE_TRAINER_REMOTE_URL` in the shell must point at a **stable alias** (git-branch
-alias or custom domain), never a deployment-specific URL — Hobby prunes deployments
-after 30 days.
+**`VITE_CLIMB_REMOTE_URL`** in the shell (PR #5's name for it) must point at a **stable
+alias** (git-branch alias or custom domain), never a deployment-specific URL — Hobby
+prunes deployments after 30 days.
 
 ### TypeScript stays on 6.x
 
@@ -1112,7 +1156,7 @@ locally — which is itself a reason to be careful:
 
 ## Quality gate
 
-**One command, and it is the same nine checks CI runs:**
+**One command, and it is the nine checks CI runs on the code:**
 
 ```bash
 npm run check          # == check:web && check:server
@@ -1150,11 +1194,21 @@ page, and a leaked-secret failure should never be indistinguishable from a lint 
 If you read "one required check named `lint-build`" in the original plan, that wording
 is superseded.
 
-`npm run check` covers `web` + `server`. The `secrets` job is CI-only (gitleaks isn't a
-project dependency) — so the local gate is 9 checks and CI is 12: gitleaks, plus
+`npm run check` covers `web` + `server`. **The local gate is 9 checks and CI is 14** — the
+same 9, plus five that only make sense there: gitleaks (not a project dependency),
 `alembic upgrade head` and `alembic check` against the `postgres:17-alpine` service
-container, which only exist in CI. Don't try to fake those locally; just never commit a
-secret, and let CI prove the migrations.
+container, and the two-step `src/routeTree.gen.ts` freshness check. Don't try to fake the
+Alembic ones locally; just never commit a secret, and let CI prove the migrations.
+
+**Why the route-tree check is CI-only, deliberately.** It compares the worktree with the
+index, which in CI equals the commit — so it means "the committed tree was stale". Locally
+it would mean "the regenerated tree differs from what you have staged", which is the normal,
+correct state of any branch that adds or removes a route file and, per the standing
+convention, leaves its changes unstaged for review. Adding it to `check:web` would therefore
+turn the local gate red on ordinary route work, which trains people to ignore it. **The
+residue is real and worth knowing: `npm run check` still rewrites `src/routeTree.gen.ts` in
+place and says nothing** — so after a route change, look at the file in source control
+rather than trusting a green local gate.
 
 **The job names `web`, `server` and `secrets` are required status checks in a GitHub
 ruleset. Renaming one silently breaks the merge gate** — the rule waits forever for a
