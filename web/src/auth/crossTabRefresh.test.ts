@@ -14,20 +14,40 @@ import { createSessionStore, type SessionStore } from './session';
  * - the browser attaches the cookie **at send time**, which is why `presented` is captured
  *   synchronously before any latency;
  * - `Set-Cookie` reaches the jar **when the response arrives**, not when it is sent;
- * - presenting an already-rotated token is **reuse**, and reuse revokes the whole family —
- *   killing the token the winner just received, not merely failing the loser.
+ * - presenting an already-rotated token **inside the grace window** is a lost race: a 409,
+ *   with no state changed at all, and — *usually*, see `graceRefreshesTheJar` — the jar
+ *   already holding the winner's fresh token;
+ * - presenting a token that is neither live nor recently retired is **reuse**, and reuse
+ *   revokes the whole family — killing the token the winner received, not merely failing the
+ *   loser.
  *
- * Both arms run the same scenario. The locked arm is the guarantee; the unlocked arm is the
- * permanent record of what the `navigator.locks` fallback does and does not cover, and it is
- * what makes the locked arm non-vacuous.
+ * The locked arm is the same-origin guarantee. The unlocked arm is now the **two-origin** arm
+ * (issue #27), where the server's grace window is the only thing in play — and it is also what
+ * keeps the locked arm honest, since the difference between them is one round trip and one
+ * Postgres write rather than a working session versus a dead one.
  */
 const REFRESH_URL = '/api/auth/refresh';
 
 /** What the browser would send, and what the server considers live. */
 let jar: string | null;
 let live: string | null;
+/** Tokens rotated away recently, i.e. inside the server's `REPLAY_GRACE`. */
+let retired: Set<string>;
+/**
+ * Whether a 409 finds the winner's rotated cookie already in the jar.
+ *
+ * ⚠️ **Usually true, and only usually.** The winner's response is dispatched after the
+ * `commit()` that releases the row lock, and the loser then pays its own commit round trip
+ * before answering — so the winner leads by about one database round trip. That is a margin,
+ * not an ordering guarantee, and the two responses then travel independently. Turning this off
+ * models the loser-first ordering, which is exactly the case where the retry re-presents the
+ * same token and the mount gives up.
+ */
+let graceRefreshesTheJar: boolean;
 let rotations: number;
 let sends: number;
+/** When set, the API answers with the SPA shell at this status — a bad rewrite, not a race. */
+let htmlShellStatus: number | null;
 /** Ordered log of sends and receipts, so interleaving is visible rather than inferred. */
 let events: string[];
 
@@ -41,11 +61,18 @@ function json(body: unknown, status = 200): Response {
 function rotate(presented: string | null): Response {
   if (presented === null) return json({ detail: 'Not authenticated.' }, 401);
   if (presented !== live) {
+    if (retired.has(presented)) {
+      // The grace window: a lost race, not theft. NOTHING is written — and the jar already
+      // holds the winner's token, because the winner's response landed before this one.
+      if (graceRefreshesTheJar) jar = live;
+      return json({ detail: 'Refresh token superseded. Retry with the current cookie.' }, 409);
+    }
     // Reuse detection. The family dies, which is what also invalidates the winner.
     live = null;
     jar = null;
     return json({ detail: 'Not authenticated.' }, 401);
   }
+  retired.add(presented);
   rotations += 1;
   live = `refresh-${rotations + 1}`;
   jar = live;
@@ -95,12 +122,13 @@ function removeLocks(): void {
 /**
  * Two independent mounts — separate stores, separate `inFlight` closures, one shared jar.
  *
- * ⚠️ **This models two tabs of the SAME ORIGIN, which is the only arm the lock covers.** Web
- * Locks are partitioned per storage key, so the standalone app (climb.kilianmc.com) and the
- * federated mount (kilianmc.com) get two different lock managers while sharing one refresh
- * cookie — and jsdom cannot model two origins, so that arm is untestable here. It behaves like
- * the unlocked arm below and is tracked in issue #27; the fix is a server-side replay grace
- * window in `rotate()`, not anything this file can assert.
+ * ⚠️ **jsdom cannot model two origins, so what the arms below vary is the LOCK REALM, not the
+ * origin.** Web Locks are partitioned per storage key, so two tabs of climb.kilianmc.com share
+ * one lock manager while the standalone app and the federated mount (kilianmc.com) get two
+ * independent ones. Two independent managers exclude nothing from each other, which is
+ * behaviourally identical to having none — so `installLocks()` is the same-origin arm and
+ * `removeLocks()` is the two-origin arm. The shared jar is the one thing both have in common,
+ * and it is the real situation: same site, one browser profile.
  */
 function twoTabs(): [SessionStore, SessionStore, () => Promise<[boolean, boolean]>] {
   const a = createSessionStore();
@@ -113,6 +141,9 @@ function twoTabs(): [SessionStore, SessionStore, () => Promise<[boolean, boolean
 beforeEach(() => {
   jar = 'refresh-1';
   live = 'refresh-1';
+  retired = new Set();
+  graceRefreshesTheJar = true;
+  htmlShellStatus = null;
   rotations = 0;
   sends = 0;
   events = [];
@@ -129,7 +160,13 @@ beforeEach(() => {
       const id = `#${sends}`;
       events.push(`${id} send(${presented ?? 'no-cookie'})`);
       await new Promise((resolve) => setTimeout(resolve, 0));
-      const response = rotate(presented);
+      const response =
+        htmlShellStatus === null
+          ? rotate(presented)
+          : new Response('<!doctype html>', {
+              status: htmlShellStatus,
+              headers: { 'content-type': 'text/html' },
+            });
       events.push(`${id} recv`);
       return response;
     }),
@@ -158,21 +195,35 @@ describe('two mounts refreshing at once', () => {
     expect(a.get().token).not.toBe(b.get().token);
   });
 
-  it('documents the fallback boundary: without navigator.locks the family is revoked', async () => {
-    // Not an endorsement — this is the state the code is in wherever the API is missing, and
-    // it is what makes the assertion above mean something. Both tabs read the same
-    // pre-rotation cookie, so the second is indistinguishable from theft.
+  /**
+   * The arm this file could not reach before issue #27: two mounts in **two separate lock
+   * realms**, so nothing in the browser serialises them and the server's grace window is the
+   * only mechanism left. Before it, this scenario ended with the family revoked and both
+   * sessions dead — a standalone tab plus the climb-trainer card open on the portfolio.
+   */
+  it('lets two mounts in separate lock realms both refresh, through the 409 and one retry', async () => {
     removeLocks();
     const [a, b, run] = twoTabs();
 
-    const outcomes = await run();
+    expect(await run()).toEqual([true, true]);
 
+    // Both presented the pre-rotation cookie. The loser got a 409, sent again, and rotated the
+    // token the winner had left in the shared jar — an ordinary rotation, not a replay.
     expect(events.slice(0, 2)).toEqual(['#1 send(refresh-1)', '#2 send(refresh-1)']);
-    expect(outcomes).toContain(false);
-    expect(rotations).toBe(1);
-    // The loser's reuse revoked the family, so the winner's brand-new token is dead too.
-    expect(live).toBeNull();
-    expect([a.get().token, b.get().token]).toContain(null);
+    expect(events.at(-2)).toBe('#3 send(refresh-2)');
+    expect(sends).toBe(3);
+    expect(rotations).toBe(2);
+
+    // The family is intact. This is the whole fix: nothing was revoked, so both mounts hold a
+    // usable token and neither user is logged out.
+    expect(live).not.toBeNull();
+    expect(a.get().token).not.toBeNull();
+    expect(b.get().token).not.toBeNull();
+    expect(a.get().token).not.toBe(b.get().token);
+
+    // And the cost of having no lock, stated as a number: one extra round trip and one extra
+    // Postgres write against the locked arm's two sends. That is why the lock is kept.
+    expect(sends).toBeGreaterThan(2);
   });
 
   /**
@@ -196,7 +247,9 @@ describe('two mounts refreshing at once', () => {
     // The refresh still happened, so the refusal was not mistaken for a dead cookie.
     expect(outcomes[0]).toBe(true);
     expect(a.get().token).toBe('access-1');
-    expect(rotations).toBe(1);
+    // Two rotations, not one: a refused lock serialises nothing, so the second mount lost the
+    // race and reached its token through the server's 409 rather than being revoked.
+    expect(rotations).toBe(2);
   });
 
   it.each([
@@ -212,6 +265,32 @@ describe('two mounts refreshing at once', () => {
     expect(a.get().token).toBe('access-1');
   });
 
+  it('retries the 409 inside the lock, so a waiting tab still cannot interleave', async () => {
+    installLocks();
+    // The mount starts from a cookie that another realm rotated away a moment ago.
+    jar = 'refresh-0';
+    retired.add('refresh-0');
+    const [a, b, run] = twoTabs();
+
+    expect(await run()).toEqual([true, true]);
+
+    // Three sends, B's last. ⚠️ The event log is NOT what discriminates here: a variant that
+    // takes the lock per POST produces a byte-identical log, because the mock's grace path
+    // refreshes the jar, so nobody ever sends a stale cookie. What changes is ROTATION
+    // OWNERSHIP — with the retry outside the lock, B slips in between A's two sends and takes
+    // the first rotation, so A ends up with `access-2`. Hence the assertion below.
+    expect(events).toEqual([
+      '#1 send(refresh-0)',
+      '#1 recv',
+      '#2 send(refresh-1)',
+      '#2 recv',
+      '#3 send(refresh-2)',
+      '#3 recv',
+    ]);
+    expect(a.get().token).toBe('access-1');
+    expect(b.get().token).toBe('access-2');
+  });
+
   it('releases the lock when a refresh rejects, so the next tab is not wedged', async () => {
     installLocks();
     jar = null; // no cookie: every attempt 401s
@@ -221,5 +300,89 @@ describe('two mounts refreshing at once', () => {
 
     // Both got to send. A lock held past a rejection would leave the second pending forever.
     expect(events).toEqual(['#1 send(no-cookie)', '#1 recv', '#2 send(no-cookie)', '#2 recv']);
+  });
+});
+
+/**
+ * The single-mount half of the 409 contract. Two properties, and the second one is why the
+ * retry has to live inside `mint`:
+ *
+ * - exactly ONE retry, so a server that keeps answering 409 cannot spin the client;
+ * - an intermediate 409 must not consume the `exhausted` failure memo, which would disable
+ *   refresh for the rest of the page load over a race that was already handled.
+ *
+ * `exhausted` is a closure local with no getter, and a successful refresh clears it through the
+ * store's subscriber, so its state after a *successful* attempt cannot be read directly. The
+ * observable proxy is the pair below: the intermediate case ends with a token after two sends,
+ * and the genuinely-failing case stops sending altogether on the next attempt — which is the
+ * latch doing its job. A naive retry placed outside `mint` fails the first of those, because the
+ * 409 reaches `mint`'s catch, latches, and reports the page as logged out.
+ */
+describe('a 409 from the refresh endpoint', () => {
+  function oneMount(): [SessionStore, () => Promise<boolean>] {
+    const store = createSessionStore();
+    const { reauthenticate } = createAuthedFetch(store);
+    return [store, () => reauthenticate(null)];
+  }
+
+  it('is retried once, and the retry rotates the cookie the winner left in the jar', async () => {
+    jar = 'refresh-0';
+    retired.add('refresh-0');
+    const [store, refreshOnce] = oneMount();
+
+    expect(await refreshOnce()).toBe(true);
+
+    expect(events).toEqual(['#1 send(refresh-0)', '#1 recv', '#2 send(refresh-1)', '#2 recv']);
+    expect(store.get().token).toBe('access-1');
+    expect(rotations).toBe(1);
+  });
+
+  it('does not retry when the 409 is really an HTML shell from a bad rewrite', async () => {
+    // `NotJsonError` extends `ApiError` and carries the HTML response's status, so a 409 from a
+    // misconfigured rewrite is indistinguishable from a lost race by status alone. It is a
+    // broken deployment, not a race: retrying it would double the requests to a path that
+    // cannot answer, and the exclusion is checked BEFORE the status for that reason.
+    htmlShellStatus = 409;
+    const [store, refreshOnce] = oneMount();
+
+    expect(await refreshOnce()).toBe(false);
+
+    expect(sends).toBe(1);
+    expect(store.get().token).toBeNull();
+  });
+
+  it('does not retry a 401, and the family really is dead behind it', async () => {
+    // Drives the mock's reuse arm, which nothing else reaches: a token that is neither live nor
+    // recently retired is theft as far as the server is concerned, so the family dies. A 401 is
+    // an answer, not a race — retrying it would be a second Postgres write for nothing.
+    jar = 'captured-last-week';
+    const [store, refreshOnce] = oneMount();
+
+    expect(await refreshOnce()).toBe(false);
+
+    expect(sends).toBe(1);
+    expect(live).toBeNull();
+    expect(store.get().token).toBeNull();
+  });
+
+  it('stops after that one retry, and does not keep minting attempts afterwards', async () => {
+    // The retry presents a retired token again. Two ways to get here, both real: a THIRD
+    // same-site realm rotating in between (one retry converges exactly two, so the second
+    // loser has none left), or the loser's 409 being processed before the winner's 200 lands
+    // in the jar. The cap is deliberate — every extra attempt is a Postgres write and another
+    // five-minute Neon window — so the contract is that the mount stops and reports failure.
+    graceRefreshesTheJar = false;
+    jar = 'refresh-0';
+    retired.add('refresh-0');
+    const [store, refreshOnce] = oneMount();
+
+    expect(await refreshOnce()).toBe(false);
+
+    expect(sends).toBe(2);
+    expect(store.get().token).toBeNull();
+
+    // A second 409 IS a real failure, so the memo latches here — no further Postgres writes.
+    expect(await refreshOnce()).toBe(false);
+    expect(sends).toBe(2);
   });
 });

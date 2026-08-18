@@ -203,14 +203,25 @@ or Query defaults live. `main.tsx` gives it `createBrowserHistory`, `remote.tsx`
 - **⚠️ A lazy leaf must be named `<route>.lazy.tsx`.** `createLazyFileRoute` inside a
   plain `plan.tsx` **still builds, emits no warning, and is bundled EAGERLY** — verified
   2026-08-14: no separate chunk appears. Only the `.lazy.tsx` filename makes the
-  generator emit `.lazy(() => import(…))`. Renaming one of those files silently deletes
-  its code-splitting: `format:check`, `lint`, `typecheck`, `test` and `build` all stay
-  green. (The other valid shape is `autoCodeSplitting: true` with plain `createFileRoute`;
-  the two must not be mixed.) **`web/src/routeTree.lazy.test.ts` asserts it** via router
-  state — an unloaded `options.component` — rather than by reading `dist/`, because
-  `vitest` runs before `build` and a `dist`-reading test would skip itself on a clean
-  checkout. Note `routeTree` is a module singleton whose route objects `.lazy()` mutates in
-  place, so that file needs `resetModules` + dynamic import to stay order-independent.
+  generator emit `.lazy(() => import(…))`. Renaming one of those files deletes its
+  code-splitting, and `format:check`, `lint`, `typecheck` and `build` all stay green — the
+  build even **rewrites the source**, swapping `createLazyFileRoute` for `createFileRoute`
+  to match the new filename, so afterwards nothing in the file hints it was ever lazy
+  (observed 2026-08-18 while proving issue #26). What catches it is `test`, now that the
+  gate builds first: against a freshly generated tree the assertion below fails with
+  `expected [Function Plan] to be undefined`. Against a *stale* committed tree the same
+  rename fails loudly for a different reason — the tree still holds
+  `import('./routes/_authed/plan.lazy')`, which Vite cannot resolve — 14 transform errors,
+  loud but pointing at the wrong thing. (The other valid shape is `autoCodeSplitting: true`
+  with plain `createFileRoute`; the two must not be mixed.)
+  **`web/src/routeTree.lazy.test.ts` asserts it** via router state — an unloaded
+  `options.component` — rather than by reading `dist/`, because `vitest` also runs on its
+  own (`npm --prefix web run test`, a watch run, a clean checkout with no `dist/`) and a
+  `dist`-reading test would skip itself there, i.e. be vacuous in the one situation it is
+  most likely to be run. Since issue #26 the *gate* does build first, so
+  a stale committed tree can no longer hide behind it. Note `routeTree` is a module singleton
+  whose route objects `.lazy()` mutates in place, so that file needs `resetModules` + a dynamic
+  import to stay order-independent.
 - **`defaultPreloadStaleTime: 0`** because Query is the single source of staleness truth.
   Raising it gives the router a second cache with its own expiry and the two disagree.
 - **No query-cache `localStorage` persistence** — PR #14, because the demo-scope
@@ -750,7 +761,11 @@ this is the map, not a substitute for reading them.
 - **Refresh token** — opaque, 32 random bytes, stored only as a **sha256 hex digest**,
   30-day lifetime, in an httpOnly `SameSite=Lax` host-only cookie scoped to
   `path=/api/auth`. Rotated on every use, in a **family**; presenting an
-  already-rotated or revoked token **revokes the whole family** (`refresh.rotate`).
+  already-rotated or revoked token **revokes the whole family** (`refresh.rotate`) —
+  **except** for an unrevoked row rotated less than `REPLAY_GRACE` (10 s) ago, which is a
+  lost race between the two mounts sharing one cookie and answers **409, writing nothing**.
+  See the grace-window section of `server/auth/refresh.py` for the reasoning and for the
+  narrowing it accepts.
   sha256 rather than argon2 because the token is already 256 bits of entropy.
   `rotate()` reads its row **`FOR UPDATE`** — without the lock two simultaneous
   presentations of the same token both pass the reuse check and reuse goes undetected,
@@ -815,12 +830,12 @@ protected by living there.
   `/api/auth/refresh` hits the write-ban and 403s — a failure that looks nothing like an
   expiry. `refresh.ts` branches on scope for that reason.
 - **Serialising the refresh is a correctness requirement, not a request-count optimisation —
-  and it needs TWO mechanisms, because the two scopes differ.** `refresh.rotate` reads
-  `FOR UPDATE` and treats a second presentation of an already-rotated token as theft, revoking
-  the whole family. Note what the row lock does: it **serialises** two presentations, it does
-  not deduplicate them, so the loser is *guaranteed* to re-read the row after the winner
-  commits, see `rotated_at` set, and revoke the family — killing the winner's brand-new token
-  too. Both callers end up unable to refresh.
+  and it takes THREE mechanisms, one per realm.** `refresh.rotate` reads `FOR UPDATE` and
+  treats a second presentation of an already-rotated token as theft, revoking the whole
+  family. Note what the row lock does: it **serialises** two presentations, it does not
+  deduplicate them, so the loser is *guaranteed* to re-read the row after the winner commits
+  and see `rotated_at` set. Before the grace window below, that revoked the family — killing
+  the winner's brand-new token too, leaving both callers unable to refresh.
   - **Within a mount:** `inFlight` in `createAuthedFetch`, so N concurrent 401s share one
     attempt. `reauthenticate` joins it **before** comparing tokens — `mint` clears the store
     synchronously before it awaits, so the comparison-first ordering made a second waiter
@@ -836,12 +851,38 @@ protected by living there.
     `kilianmc.com`, they get two different lock managers, and they share one cookie *because*
     they are same-site — which is the entire reason auth works federated at all. **Never describe
     the lock as covering "tabs and mounts".**
-  - **Residual, tracked in issue #27:** a standalone tab plus the climb-trainer card open on the
-    portfolio is the unlocked arm, and the family still gets revoked. `crossTabRefresh.test.ts`
-    cannot see it — jsdom models one origin. The realm-independent fix is a **server-side replay
-    grace window in `rotate()`**, which would cover all three realms where the lock covers one.
-    The lock is therefore a deliberate **partial trade**, and it must stay visible as a trade
-    rather than get written up as a solved problem.
+  - **⚠️ Across the two ORIGINS (issue #27, NARROWED — not eliminated — in v1.11.0): a
+    SERVER-side grace window, and nothing the client can do.** A standalone tab plus the
+    climb-trainer card open on the portfolio is the arm no lock reaches, so both mounts present
+    the same pre-rotation cookie. `rotate()` now answers the loser with **409 and no write at
+    all**, and `refresh.ts` retries the POST **exactly once** — the browser attaches the token
+    the winner rotated into the shared jar, so the retry is an ordinary legitimate rotation.
+    Realm-independent because the server sees presentations, not origins. **No migration was
+    needed**: `rotated_at` already existed, and the successor's plaintext is never stored, so
+    "hand back the same replacement token" (what the issue originally proposed) was not
+    implementable and was not implemented.
+    - **Three bounds, and they must stay written down.** (1) The winner leads the loser by
+      about one database round trip — its response goes out after the `commit()` that releases
+      the row lock, and the loser then pays its own commit — which is a **margin, not an
+      ordering guarantee**; if the 409 is processed first, the retry re-presents the same token,
+      gets a second 409, and that mount stops refreshing until the page reloads. (2) One retry
+      converges **exactly two** realms; a third same-site origin (or an unusable lock making
+      two tabs behave as separate realms) leaves the second loser with no retry left. Revisit
+      the count if a third origin ever mounts this app. (3) A loser that takes longer than the
+      10-second window to get from reading the cookie to reaching `rotate()` — stalled radio,
+      queued cold start — still trips reuse detection and **still revokes the family**. That is
+      the original issue #27 on a much smaller target, which is why "fixed" is the wrong word.
+    - **The trade, which is a real loss and must not be written up as a free win:** inside the
+      window a replayed token no longer revokes its family, so a genuine theft landing there
+      goes **undetected**. The replayer gains no token — the 409 carries none and the successor
+      is only reachable by whoever already holds the shared cookie jar. Accepted because the
+      alternative is that our own two-origin configuration logs real users out. `revoked_at`
+      rows are **never** graced, at any age.
+    - The Web Lock is **kept** and is now an optimisation rather than the correctness
+      mechanism: it saves the extra POST — and therefore a Postgres write and another
+      five-minute Neon window — that the 409-plus-retry costs a losing same-origin tab.
+    - `crossTabRefresh.test.ts` still cannot model two origins in jsdom, so it varies the
+      **lock realm** instead: no lock manager behaves exactly as two independent ones do.
   - The cross-tab fix is narrower than it looks. The race only breaks because both tabs read
     the same **pre-rotation** cookie, so serialising is sufficient by itself: the waiting tab
     wakes, sends the *already-rotated* cookie and performs a legitimate rotation of its own.
@@ -904,11 +945,13 @@ convention protects a leaf by where its file sits, so the failure mode is **omis
 route created next to `login.tsx` instead of inside `_authed/` is silently public and nothing
 else in the gate notices. Every route must be in `PUBLIC_ROUTE_IDS` or under `_authed`.
 
-**It checks the union of the generated tree and the ids the route FILES declare**, and that is
-not belt-and-braces. `routeTree.gen.ts` is only regenerated by a build and `check:web` runs
-`test` before `build`, so a tree-only check was blind on the exact change it exists to catch:
-adding `routes/settings.tsx` left it green until a build had run, and the first CI failure was
-the post-build stale-file check — naming a stale file rather than an unguarded route. The
+**It checks the union of the generated tree and the ids the route FILES declare.**
+`routeTree.gen.ts` is only regenerated by a build, and when this guard was written `check:web`
+ran `test` **before** `build` — so a tree-only check was blind on the exact change it exists to
+catch: adding `routes/settings.tsx` left it green until a build had run, and the first CI failure
+was the post-build stale-file check, naming a stale file rather than an unguarded route. Issue
+#26 has since put `build` first, but the union stays: `vitest` is run on its own constantly, and
+a security guard must not depend on the order of two npm scripts. The
 declared id is the literal the author passed to `createFileRoute`, which the router plugin
 already validates against the file's path, so this reads an authored fact rather than
 re-deriving the generator's naming rules.
@@ -1310,25 +1353,61 @@ npm run check          # == check:web && check:server
 Or the halves / individual checks:
 
 ```bash
-npm run check:web      # format:check -> lint -> typecheck -> test -> build
+npm run check:web      # format:check -> lint -> typecheck -> build -> test
 npm run check:server   # ruff check -> ruff format --check -> mypy -> pytest
 
 npm --prefix web run format:check   # Prettier
 npm --prefix web run lint           # ESLint (type-aware — see the TS 6.x note)
 npm --prefix web run typecheck      # tsc -b (strict)
-npm --prefix web run test           # Vitest once
 npm --prefix web run build
+npm --prefix web run test           # Vitest once — AFTER the build, see below
 uv run ruff check .
 uv run ruff format --check .
 uv run mypy                         # strict; files come from pyproject.toml
 CORS_ORIGINS=http://localhost:5173 uv run pytest -q
 ```
 
-**The local gate passes with no database, on purpose.** There is no local Postgres and
-no Docker on the dev machine, so `tests/conftest.py` **skips** the DB-backed tests when
-`DATABASE_URL` is unset. Never make the local gate depend on a database, and never
-substitute SQLite to avoid the skip — a skip is visible, a false pass is not. CI is
-where the migrations and the seed are actually executed.
+**`build` runs BEFORE `test`, in both the local gate and CI (issue #26).** `vite build`
+regenerates `src/routeTree.gen.ts` and several tests assert against that tree, so tests
+should read a freshly generated one rather than whatever happens to be committed. **In CI
+the route-tree freshness check still runs after the build**; only `test` and `build` swapped.
+
+**What the swap does NOT do is turn a silent green red — measured, 2026-08-18.** Renaming
+`plan.lazy.tsx` to `plan.tsx` gives, in the old order, **14 failures** at
+`vite:import-analysis` (`Failed to resolve import "./routes/_authed/plan.lazy"`), because
+the stale committed tree still holds that dynamic import; in the new order, **2 failures**
+reading `expected [Function Plan] to be undefined`. The gain is diagnostic — a transform
+error that names the wrong thing becomes two assertions that name the lost code-splitting —
+plus the ordering dependency `web/src/publicRoutes.test.ts` had to work around is gone. If
+you are looking for a case that was silently green before and is red now, there isn't one in
+today's suite; do not claim otherwise.
+
+Cost: nothing on a green run, since `npm run build` already runs `tsc -b`. On a **red** run
+every test failure now waits out a full build first, locally as well as in CI.
+
+**The local gate passes with no database, and `check:server` now ENFORCES that rather
+than hoping for it.** `tests/conftest.py` skips the DB-backed tests when `DATABASE_URL` is
+unset, but that is not the same as the gate being database-free: `.env` is loaded for every
+entrypoint, so on a machine with real Neon credentials in it the "local" gate quietly ran
+those tests **against the live dev database** — ~37 s of woken Neon compute on every run,
+and the same leak sent a stray `alembic upgrade head` at production's neighbour on
+2026-08-18. So `check:server` hard-empties both URLs:
+
+```jsonc
+DATABASE_URL="${CT_TEST_DATABASE_URL:-}" DATABASE_URL_UNPOOLED="${CT_TEST_DATABASE_URL:-}"
+```
+
+- **Locally**: both empty, the 30 DB-backed tests skip, nothing connects. A skip is visible;
+  a silent connection to someone's real database is not.
+- **Deliberately, against a throwaway Postgres**: `CT_TEST_DATABASE_URL=postgresql://…
+  npm run check:server`. That is the only way to opt in, and it cannot happen by accident.
+- **CI**: the `server` job runs `uv run pytest -q` directly with `DATABASE_URL` pointing at
+  its `postgres:17-alpine` service, so it never goes through this script and still runs the
+  full set. **CI is the only place the DB-backed tests execute, by design** — do not weaken
+  them on the assumption that nothing runs them.
+
+Never make the local gate *depend* on a database, and never substitute SQLite to avoid the
+skip. CI is where the migrations and the seed are actually executed.
 
 **Batch your edits and run `npm run check` once at the end**, not once per file.
 

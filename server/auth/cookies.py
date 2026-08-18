@@ -83,5 +83,27 @@ def clear_refresh_cookie(response: Response) -> None:
     )
 
 
+def clear_refresh_cookie_header() -> str:
+    """The same `Set-Cookie` as `clear_refresh_cookie`, as a header value for a handler
+    that **raises**.
+
+    ⚠️ Writing a cookie onto the injected `Response` and then raising `HTTPException` is
+    **inert**: FastAPI builds a fresh response for the exception and the injected one's
+    headers are dropped, so the deletion never reaches the browser. Verified 2026-08-18 —
+    the 401 reuse path in `routes.py` had been silently doing nothing since PR #3, which
+    left a revoked family's cookie in the jar and turned every subsequent refresh into a
+    `ratelimit` write and another five-minute Neon wake. `HTTPException(headers=...)` is
+    the mechanism that works, and this is the only place its value is built.
+
+    Built by letting `clear_refresh_cookie` write onto a throwaway `Response` and reading
+    the header back, rather than by formatting a second string: a deletion whose `path`,
+    `secure`, `httponly` or `samesite` do not match the original is a *different* cookie to
+    the browser and leaves the real one in place, so the two must not be able to drift.
+    """
+    probe = Response()
+    clear_refresh_cookie(probe)
+    return probe.headers["set-cookie"]
+
+
 def read_refresh_cookie(request: Request) -> str | None:
     return request.cookies.get(REFRESH_COOKIE_NAME)
