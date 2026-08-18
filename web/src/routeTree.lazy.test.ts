@@ -18,12 +18,21 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
  * `resetModules` + dynamic import per test: without it these assertions would silently
  * depend on which test navigated first.
  */
-const LAZY = ['/plan', '/session', '/diary', '/profile'] as const;
-const EAGER = ['/', '/login', '/$'] as const;
+// Route IDS, which carry the pathless `_authed` segment; the URL paths are still /plan etc.
+const LAZY = ['/_authed/plan', '/_authed/session', '/_authed/diary', '/_authed/profile'] as const;
+const EAGER = ['/', '/login', '/register', '/$', '/_authed/dashboard'] as const;
+
+async function freshRouter() {
+  const { createAppRouter, createQueryClient } = await import('./router');
+  const { createAuth } = await import('./auth/AuthProvider');
+  return createAppRouter(createMemoryHistory({ initialEntries: ['/'] }), {
+    auth: createAuth(),
+    queryClient: createQueryClient(),
+  });
+}
 
 async function freshRoutes() {
-  const { createAppRouter } = await import('./router');
-  return createAppRouter(createMemoryHistory({ initialEntries: ['/'] })).routesById;
+  return (await freshRouter()).routesById;
 }
 
 beforeEach(() => {
@@ -42,12 +51,13 @@ describe('the four heavy leaves are code-split', () => {
   });
 
   it('resolves a lazy component once navigated to, so it is split and not just missing', async () => {
-    const { createAppRouter } = await import('./router');
-    const router = createAppRouter(createMemoryHistory({ initialEntries: ['/'] }));
-    expect(router.routesById['/plan'].options.component).toBeUndefined();
+    const router = await freshRouter();
+    // Signed in, or the guard would redirect to /login and the chunk would never load.
+    router.options.context.auth.session.set('live-token', 'user');
+    expect(router.routesById['/_authed/plan'].options.component).toBeUndefined();
 
     await router.navigate({ to: '/plan' });
 
-    expect(router.routesById['/plan'].options.component).toBeTypeOf('function');
+    expect(router.routesById['/_authed/plan'].options.component).toBeTypeOf('function');
   });
 });

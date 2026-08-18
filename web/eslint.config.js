@@ -28,6 +28,18 @@ export default tseslint.config(
       '@typescript-eslint/no-floating-promises': 'error',
       '@typescript-eslint/no-misused-promises': 'error',
       '@typescript-eslint/consistent-type-imports': 'error',
+      // `throw redirect({ to })` is how TanStack Router's route guards work, and `Redirect`
+      // is deliberately not an Error — it is control flow the router catches, not a failure.
+      // Allowed by TYPE NAME, so the rule keeps rejecting every other non-Error throw.
+      '@typescript-eslint/only-throw-error': [
+        'error',
+        {
+          allow: [
+            { from: 'package', package: '@tanstack/router-core', name: 'Redirect' },
+            { from: 'package', package: '@tanstack/react-router', name: 'Redirect' },
+          ],
+        },
+      ],
     },
   },
 

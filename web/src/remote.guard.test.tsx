@@ -104,9 +104,14 @@ describe('the federated entry', () => {
     const { unmount } = await mount();
 
     // A real navigation is the case that would reach history.pushState if this entry
-    // were ever handed a browser history by mistake.
-    fireEvent.click(screen.getByRole('link', { name: 'Plan' }));
-    await screen.findByRole('heading', { name: 'Plan' });
+    // were ever handed a browser history by mistake. An anonymous destination, because the
+    // mount starts signed out and the in-app leaves are behind the route guard.
+    fireEvent.click(
+      within(screen.getByRole('navigation', { name: 'Main' })).getByRole('link', {
+        name: 'Create account',
+      }),
+    );
+    await screen.findByRole('heading', { name: 'Create account' });
     unmount();
 
     expect(register).not.toHaveBeenCalled();
@@ -125,18 +130,56 @@ describe('the federated entry', () => {
     await mount();
 
     const nav = screen.getByRole('navigation', { name: 'Main' });
-    const hrefs = within(nav)
-      .getAllByRole('link')
-      .map((link) => link.getAttribute('href'));
-
-    expect(hrefs).toEqual([
+    expect(
+      within(nav)
+        .getAllByRole('link')
+        .map((link) => link.getAttribute('href')),
+    ).toEqual([
       'https://climb.kilianmc.com/',
-      'https://climb.kilianmc.com/plan',
-      'https://climb.kilianmc.com/session',
-      'https://climb.kilianmc.com/diary',
-      'https://climb.kilianmc.com/profile',
       'https://climb.kilianmc.com/login',
+      'https://climb.kilianmc.com/register',
     ]);
+
+    // The landing page's calls to action are the links a visitor in the shell is most likely
+    // to cmd-click, so they get the same guarantee as the nav.
+    expect(
+      within(screen.getByRole('main'))
+        .getAllByRole('link')
+        .map((link) => link.getAttribute('href')),
+    ).toEqual(['https://climb.kilianmc.com/login', 'https://climb.kilianmc.com/register']);
+  });
+
+  it('holds the access token in a closure, never in the host origin storage', async () => {
+    await mount();
+
+    fireEvent.click(within(screen.getByRole('main')).getByRole('link', { name: 'Log in' }));
+    await screen.findByRole('heading', { name: 'Log in' });
+
+    // A real token body, so this is not vacuous: the store genuinely holds a token by the
+    // end, and the assertions below are about where it is NOT.
+    vi.mocked(fetch).mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          access_token: 'header.payload.signature',
+          token_type: 'bearer',
+          expires_in: 10_800,
+          scope: 'user',
+        }),
+        { headers: { 'content-type': 'application/json' } },
+      ),
+    );
+
+    fireEvent.change(screen.getByLabelText('Email'), { target: { value: 'a@b.example' } });
+    fireEvent.change(screen.getByLabelText('Password'), { target: { value: 'x'.repeat(12) } });
+    fireEvent.click(screen.getByRole('button', { name: 'Log in' }));
+    await settle();
+
+    // The login response above is the stubbed token body. Nothing token-shaped may land in
+    // the portfolio's storage — see item 4 of the security verification list in CLAUDE.md.
+    expect(await screen.findByRole('heading', { name: 'Dashboard' })).toBeInTheDocument();
+    expect(foreignKeys()).toEqual([]);
+    expect(setItem).not.toHaveBeenCalled();
+    expect(clear).not.toHaveBeenCalled();
   });
 
   it("leaves the portfolio's localStorage exactly as it found it", async () => {

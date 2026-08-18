@@ -13,12 +13,15 @@ import { createFileRoute } from '@tanstack/react-router'
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as SplatRouteImport } from './routes/$'
+import { Route as AuthedRouteImport } from './routes/_authed'
 import { Route as LoginRouteImport } from './routes/login'
+import { Route as RegisterRouteImport } from './routes/register'
+import { Route as AuthedDashboardRouteImport } from './routes/_authed/dashboard'
 
-const DiaryLazyRouteImport = createFileRoute('/diary')()
-const PlanLazyRouteImport = createFileRoute('/plan')()
-const ProfileLazyRouteImport = createFileRoute('/profile')()
-const SessionLazyRouteImport = createFileRoute('/session')()
+const AuthedDiaryLazyRouteImport = createFileRoute('/_authed/diary')()
+const AuthedPlanLazyRouteImport = createFileRoute('/_authed/plan')()
+const AuthedProfileLazyRouteImport = createFileRoute('/_authed/profile')()
+const AuthedSessionLazyRouteImport = createFileRoute('/_authed/session')()
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -30,85 +33,128 @@ const SplatRoute = SplatRouteImport.update({
   path: '/$',
   getParentRoute: () => rootRouteImport,
 } as any)
-const DiaryLazyRoute = DiaryLazyRouteImport.update({
-  id: '/diary',
-  path: '/diary',
+const AuthedRoute = AuthedRouteImport.update({
+  id: '/_authed',
   getParentRoute: () => rootRouteImport,
-} as any).lazy(() => import('./routes/diary.lazy').then((d) => d.Route))
+} as any)
 const LoginRoute = LoginRouteImport.update({
   id: '/login',
   path: '/login',
   getParentRoute: () => rootRouteImport,
 } as any)
-const PlanLazyRoute = PlanLazyRouteImport.update({
+const RegisterRoute = RegisterRouteImport.update({
+  id: '/register',
+  path: '/register',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AuthedDashboardRoute = AuthedDashboardRouteImport.update({
+  id: '/dashboard',
+  path: '/dashboard',
+  getParentRoute: () => AuthedRoute,
+} as any)
+const AuthedDiaryLazyRoute = AuthedDiaryLazyRouteImport.update({
+  id: '/diary',
+  path: '/diary',
+  getParentRoute: () => AuthedRoute,
+} as any).lazy(() => import('./routes/_authed/diary.lazy').then((d) => d.Route))
+const AuthedPlanLazyRoute = AuthedPlanLazyRouteImport.update({
   id: '/plan',
   path: '/plan',
-  getParentRoute: () => rootRouteImport,
-} as any).lazy(() => import('./routes/plan.lazy').then((d) => d.Route))
-const ProfileLazyRoute = ProfileLazyRouteImport.update({
+  getParentRoute: () => AuthedRoute,
+} as any).lazy(() => import('./routes/_authed/plan.lazy').then((d) => d.Route))
+const AuthedProfileLazyRoute = AuthedProfileLazyRouteImport.update({
   id: '/profile',
   path: '/profile',
-  getParentRoute: () => rootRouteImport,
-} as any).lazy(() => import('./routes/profile.lazy').then((d) => d.Route))
-const SessionLazyRoute = SessionLazyRouteImport.update({
+  getParentRoute: () => AuthedRoute,
+} as any).lazy(() =>
+  import('./routes/_authed/profile.lazy').then((d) => d.Route),
+)
+const AuthedSessionLazyRoute = AuthedSessionLazyRouteImport.update({
   id: '/session',
   path: '/session',
-  getParentRoute: () => rootRouteImport,
-} as any).lazy(() => import('./routes/session.lazy').then((d) => d.Route))
+  getParentRoute: () => AuthedRoute,
+} as any).lazy(() =>
+  import('./routes/_authed/session.lazy').then((d) => d.Route),
+)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/$': typeof SplatRoute
   '/login': typeof LoginRoute
-  '/diary': typeof DiaryLazyRoute
-  '/plan': typeof PlanLazyRoute
-  '/profile': typeof ProfileLazyRoute
-  '/session': typeof SessionLazyRoute
+  '/register': typeof RegisterRoute
+  '/dashboard': typeof AuthedDashboardRoute
+  '/diary': typeof AuthedDiaryLazyRoute
+  '/plan': typeof AuthedPlanLazyRoute
+  '/profile': typeof AuthedProfileLazyRoute
+  '/session': typeof AuthedSessionLazyRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/$': typeof SplatRoute
   '/login': typeof LoginRoute
-  '/diary': typeof DiaryLazyRoute
-  '/plan': typeof PlanLazyRoute
-  '/profile': typeof ProfileLazyRoute
-  '/session': typeof SessionLazyRoute
+  '/register': typeof RegisterRoute
+  '/dashboard': typeof AuthedDashboardRoute
+  '/diary': typeof AuthedDiaryLazyRoute
+  '/plan': typeof AuthedPlanLazyRoute
+  '/profile': typeof AuthedProfileLazyRoute
+  '/session': typeof AuthedSessionLazyRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/$': typeof SplatRoute
+  '/_authed': typeof AuthedRouteWithChildren
   '/login': typeof LoginRoute
-  '/diary': typeof DiaryLazyRoute
-  '/plan': typeof PlanLazyRoute
-  '/profile': typeof ProfileLazyRoute
-  '/session': typeof SessionLazyRoute
+  '/register': typeof RegisterRoute
+  '/_authed/dashboard': typeof AuthedDashboardRoute
+  '/_authed/diary': typeof AuthedDiaryLazyRoute
+  '/_authed/plan': typeof AuthedPlanLazyRoute
+  '/_authed/profile': typeof AuthedProfileLazyRoute
+  '/_authed/session': typeof AuthedSessionLazyRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
-    '/' | '/$' | '/login' | '/diary' | '/plan' | '/profile' | '/session'
-  fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/$' | '/login' | '/diary' | '/plan' | '/profile' | '/session'
-  id:
-    | '__root__'
     | '/'
     | '/$'
     | '/login'
+    | '/register'
+    | '/dashboard'
     | '/diary'
     | '/plan'
     | '/profile'
     | '/session'
+  fileRoutesByTo: FileRoutesByTo
+  to:
+    | '/'
+    | '/$'
+    | '/login'
+    | '/register'
+    | '/dashboard'
+    | '/diary'
+    | '/plan'
+    | '/profile'
+    | '/session'
+  id:
+    | '__root__'
+    | '/'
+    | '/$'
+    | '/_authed'
+    | '/login'
+    | '/register'
+    | '/_authed/dashboard'
+    | '/_authed/diary'
+    | '/_authed/plan'
+    | '/_authed/profile'
+    | '/_authed/session'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   SplatRoute: typeof SplatRoute
+  AuthedRoute: typeof AuthedRouteWithChildren
   LoginRoute: typeof LoginRoute
-  DiaryLazyRoute: typeof DiaryLazyRoute
-  PlanLazyRoute: typeof PlanLazyRoute
-  ProfileLazyRoute: typeof ProfileLazyRoute
-  SessionLazyRoute: typeof SessionLazyRoute
+  RegisterRoute: typeof RegisterRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -127,11 +173,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SplatRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/diary': {
-      id: '/diary'
-      path: '/diary'
-      fullPath: '/diary'
-      preLoaderRoute: typeof DiaryLazyRouteImport
+    '/_authed': {
+      id: '/_authed'
+      path: ''
+      fullPath: '/'
+      preLoaderRoute: typeof AuthedRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/login': {
@@ -141,38 +187,76 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LoginRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/plan': {
-      id: '/plan'
+    '/register': {
+      id: '/register'
+      path: '/register'
+      fullPath: '/register'
+      preLoaderRoute: typeof RegisterRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/_authed/dashboard': {
+      id: '/_authed/dashboard'
+      path: '/dashboard'
+      fullPath: '/dashboard'
+      preLoaderRoute: typeof AuthedDashboardRouteImport
+      parentRoute: typeof AuthedRoute
+    }
+    '/_authed/diary': {
+      id: '/_authed/diary'
+      path: '/diary'
+      fullPath: '/diary'
+      preLoaderRoute: typeof AuthedDiaryLazyRouteImport
+      parentRoute: typeof AuthedRoute
+    }
+    '/_authed/plan': {
+      id: '/_authed/plan'
       path: '/plan'
       fullPath: '/plan'
-      preLoaderRoute: typeof PlanLazyRouteImport
-      parentRoute: typeof rootRouteImport
+      preLoaderRoute: typeof AuthedPlanLazyRouteImport
+      parentRoute: typeof AuthedRoute
     }
-    '/profile': {
-      id: '/profile'
+    '/_authed/profile': {
+      id: '/_authed/profile'
       path: '/profile'
       fullPath: '/profile'
-      preLoaderRoute: typeof ProfileLazyRouteImport
-      parentRoute: typeof rootRouteImport
+      preLoaderRoute: typeof AuthedProfileLazyRouteImport
+      parentRoute: typeof AuthedRoute
     }
-    '/session': {
-      id: '/session'
+    '/_authed/session': {
+      id: '/_authed/session'
       path: '/session'
       fullPath: '/session'
-      preLoaderRoute: typeof SessionLazyRouteImport
-      parentRoute: typeof rootRouteImport
+      preLoaderRoute: typeof AuthedSessionLazyRouteImport
+      parentRoute: typeof AuthedRoute
     }
   }
 }
 
+interface AuthedRouteChildren {
+  AuthedDashboardRoute: typeof AuthedDashboardRoute
+  AuthedDiaryLazyRoute: typeof AuthedDiaryLazyRoute
+  AuthedPlanLazyRoute: typeof AuthedPlanLazyRoute
+  AuthedProfileLazyRoute: typeof AuthedProfileLazyRoute
+  AuthedSessionLazyRoute: typeof AuthedSessionLazyRoute
+}
+
+const AuthedRouteChildren: AuthedRouteChildren = {
+  AuthedDashboardRoute: AuthedDashboardRoute,
+  AuthedDiaryLazyRoute: AuthedDiaryLazyRoute,
+  AuthedPlanLazyRoute: AuthedPlanLazyRoute,
+  AuthedProfileLazyRoute: AuthedProfileLazyRoute,
+  AuthedSessionLazyRoute: AuthedSessionLazyRoute,
+}
+
+const AuthedRouteWithChildren =
+  AuthedRoute._addFileChildren(AuthedRouteChildren)
+
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   SplatRoute: SplatRoute,
+  AuthedRoute: AuthedRouteWithChildren,
   LoginRoute: LoginRoute,
-  DiaryLazyRoute: DiaryLazyRoute,
-  PlanLazyRoute: PlanLazyRoute,
-  ProfileLazyRoute: ProfileLazyRoute,
-  SessionLazyRoute: SessionLazyRoute,
+  RegisterRoute: RegisterRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

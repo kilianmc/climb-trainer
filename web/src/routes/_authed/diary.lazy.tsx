@@ -10,4 +10,4 @@ function Diary() {
   );
 }
 
-export const Route = createLazyFileRoute('/diary')({ component: Diary });
+export const Route = createLazyFileRoute('/_authed/diary')({ component: Diary });

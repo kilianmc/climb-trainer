@@ -768,7 +768,8 @@ neither listed nor 401-ing.
 `POST /api/auth/demo`, enumerated in `DEMO_WRITE_EXEMPT_ROUTES`), **and**
 `get_request_session` issues `SET LOCAL transaction_read_only = on` for a demo
 principal. A consequence for the auth UI: a client in demo mode must **drop its demo
-token before calling login or register**, or those calls 403.
+token before every `POST /api/auth/*`** — see the Auth UI section below, which corrects the
+narrower "login or register" wording this line used to carry.
 
 `AUTH_SECRET` (≥32 chars) is read lazily via `server/settings.py::auth_secret()`, never
 at import time, and must be set in Vercel for every scope.
@@ -789,6 +790,79 @@ The 429 is identical whichever bucket tripped, and the email counter increments 
 addresses that do not exist, so it is not an account-existence oracle. It is an **abuse**
 control only; see the correction in the compute-budget section for why it does not
 protect awake time.
+
+### Auth UI (PR #6) — the client half of the contract
+
+`web/src/auth/` — `session.ts` (the in-memory token store), `authClient.ts` (the five
+credential calls), `refresh.ts` (single-flight silent refresh), `AuthProvider.tsx`
+(composition + `bootstrap()` + `useAuth()`), `redirectTarget.ts`, `messages.ts`. The guard is
+the pathless layout route `web/src/routes/_authed.tsx`; everything under `routes/_authed/` is
+protected by living there.
+
+**Five rules, each of which is a failure the obvious implementation ships:**
+
+- **⚠️ Drop the token before EVERY `POST /api/auth/*`, not just login and register.**
+  `enforce_auth` applies the demo write-ban **before** its public-route check, so a `demo`
+  bearer 403s on `register`, `login`, `logout` **and** `refresh` alike — every mutating auth
+  route except `POST /api/auth/demo`, the sole entry in `DEMO_WRITE_EXEMPT_ROUTES`. The
+  earlier wording of this rule said "login or register" and was too narrow.
+- **Demo scope RE-MINTS; it cannot refresh.** `POST /api/auth/demo` takes no `Response` and
+  sets no cookie, so a demo session has no family to rotate, and sending its 1 h token to
+  `/api/auth/refresh` hits the write-ban and 403s — a failure that looks nothing like an
+  expiry. `refresh.ts` branches on scope for that reason.
+- **Single-flight is a correctness requirement, not a request-count optimisation.**
+  `refresh.rotate` reads `FOR UPDATE` and treats a second presentation of an already-rotated
+  token as theft, revoking the whole family: two concurrent 401s racing two refreshes log the
+  user out of every device. `reauthenticate` therefore joins an in-flight attempt **before**
+  comparing tokens — `mint` clears the store synchronously before it awaits, so the
+  comparison-first ordering made a second waiter conclude someone else had already finished
+  and give up. That ordering is the whole bug; `auth/refresh.test.ts` pins it.
+- **`bootstrap()` is called from `_authed`'s `beforeLoad` and nowhere else, at most once per
+  app load.** A refresh is a Postgres write, so doing it at mount would wake Neon for every
+  anonymous visitor who merely reads the landing page. `routes/index.tsx` checks only the
+  in-memory token. **Accepted consequence: a signed-in user opening `/` cold sees the public
+  landing page**, and is signed back in when they enter the app. The server helps —
+  `refresh_tokens` 401s on a missing cookie *before* it touches the rate-limit table, so a
+  cookie-less visitor costs no SQL.
+- **No pre-emptive refresh timer off `expires_in`.** Lazy, on 401 only. A timer is a periodic
+  database write for the length of a whole training session, which is the largest avoidable
+  consumer of the compute budget.
+
+**The route guard must not assume a mount.** It never reads `window.location` (in the
+federated mount that is kilianmc.com's) and never builds a URL: `location.href` in
+`beforeLoad` is TanStack's own path + search string, and `redirect()` does not go through
+`createHref`, so no origin can leak. `?redirect=` is re-validated by `internalPath` on the way
+in *and* out — an open redirect here would fire from the portfolio's own address bar. `/login`
+navigates the successful case with `router.history.push`, not `navigate({ to })`, because the
+target is a validated runtime string and `to` is typed to the tree's literal paths.
+
+**`web/src/publicRoutes.test.ts` is the client mirror of
+`tests/test_auth_routes_enumerated.py`**, and exists for the same reason: the directory
+convention protects a leaf by where its file sits, so the failure mode is **omission** — a
+route created next to `login.tsx` instead of inside `_authed/` is silently public and nothing
+else in the gate notices. Every route must be in `PUBLIC_ROUTE_IDS` or under `_authed`.
+
+**`GET /api/auth/me` stays SQL-free.** It reads the token's claims and issues **zero** SQL,
+which is what lets a session bootstrap not wake Neon. Adding `email` to `MeResponse` would
+need a row read per call, so the nav shows the *scope* ("Demo — read only") and never an
+address. Do not "improve" it by returning the user's email.
+
+**`apiFetch` changed shape in this PR**: `headers` is a plain `Record<string, string>`, never a
+`Headers` instance (it is spread into an object literal, and spreading a `Headers` yields `{}`,
+silently dropping `accept` and `authorization`); `json` sets the `content-type` FastAPI's
+`strict_content_type` requires; and a 422's **array-shaped** `detail` is joined rather than
+stringified, which used to put `[object Object]` in front of the user on every validation
+failure.
+
+**Where PR #6 stops and PR #7 starts.** The landing page and the auth screens are built to
+their **final structure** — hero, positioning line, three value sections, an "explore the
+demo" section, the three calls to action, and placeholder image slots for screenshots that
+need PR #8 and PR #15a to exist. They are styled with the five existing `.ct-app` tokens plus
+exactly four new primitives: **one input, one button (with real `:active` / `:focus-visible`),
+one error, one badge**, plus the block layout the sections and slots need. Deliberately
+absent, and PR #7's to add: cards, grid or bento areas, a shadow scale, container queries, and
+any new design token. Kilian's call — PR #7 then styles a structure that is already correct
+instead of inventing one late.
 
 ### 🔒 TODO — the end-to-end security verification pass (Kilian's call, 2026-08-13)
 

@@ -2,7 +2,8 @@ import { createMemoryHistory } from '@tanstack/react-router';
 import { render, screen } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 
-import { createAppRouter } from './router';
+import { createAuth } from './auth/AuthProvider';
+import { createAppRouter, createQueryClient } from './router';
 import { Route } from './routes/__root';
 import { CtAppScope, RouteError, RouteNotFound, RoutePending } from './ui/status';
 
@@ -47,7 +48,10 @@ describe.each(renders)('%s', (_name, element, text) => {
 it('wires every root-level slot to a scoped render', () => {
   expect(Route.options.errorComponent).toBe(RouteError);
   expect(Route.options.notFoundComponent).toBe(RouteNotFound);
-  expect(
-    createAppRouter(createMemoryHistory({ initialEntries: ['/'] })).options.defaultPendingComponent,
-  ).toBe(RoutePending);
+  const router = createAppRouter(createMemoryHistory({ initialEntries: ['/'] }), {
+    auth: createAuth(),
+    queryClient: createQueryClient(),
+  });
+
+  expect(router.options.defaultPendingComponent).toBe(RoutePending);
 });

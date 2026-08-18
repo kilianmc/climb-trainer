@@ -137,7 +137,7 @@ def register(
     worked while no account exists, with no way to discover that they already have one.
     Being honest here is worth more than hiding a fact that `/api/auth/login` timing and
     a password-reset flow would eventually expose anyway. **Rate limiting is the
-    mitigation**: `REGISTER` is 5 per hour per client, which makes enumerating a list of
+    mitigation**: `REGISTER` is 3 per hour per client, which makes enumerating a list of
     addresses impractical.
     """
     ratelimit.enforce(session, request, ratelimit.REGISTER)

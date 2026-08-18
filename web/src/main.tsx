@@ -3,6 +3,7 @@ import { RouterProvider, createBrowserHistory } from '@tanstack/react-router';
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 
+import { AuthProvider, createAuth } from './auth/AuthProvider';
 import { createAppRouter, createQueryClient } from './router';
 import './styles/global.scss';
 
@@ -17,6 +18,12 @@ import './styles/global.scss';
 const container = document.getElementById('root');
 if (!container) throw new Error('#root is missing from index.html');
 
+// One `Auth` for the router context and for React, so the guard and the nav can never
+// disagree about who is signed in. No token ever leaves this closure.
+const auth = createAuth();
+const queryClient = createQueryClient();
+const router = createAppRouter(createBrowserHistory(), { auth, queryClient });
+
 createRoot(container, {
   // Without these a failed mount is a blank page and a silent console, which is the
   // hardest failure to diagnose in a client-only SPA.
@@ -24,8 +31,10 @@ createRoot(container, {
   onUncaughtError: (error) => console.error('[climb-trainer] uncaught', error),
 }).render(
   <StrictMode>
-    <QueryClientProvider client={createQueryClient()}>
-      <RouterProvider router={createAppRouter(createBrowserHistory())} />
-    </QueryClientProvider>
+    <AuthProvider auth={auth}>
+      <QueryClientProvider client={queryClient}>
+        <RouterProvider router={router} />
+      </QueryClientProvider>
+    </AuthProvider>
   </StrictMode>,
 );
