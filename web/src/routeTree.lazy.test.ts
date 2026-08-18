@@ -2,16 +2,23 @@ import { createMemoryHistory } from '@tanstack/react-router';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 /**
- * The `.lazy.tsx` naming trap has no other guard: renaming `plan.lazy.tsx` to `plan.tsx`
- * keeps `format:check`, `lint`, `typecheck`, `test` AND `build` green while silently
- * folding the route into the eager router chunk with no separate chunk emitted. A comment
- * cannot catch that; this can.
+ * The `.lazy.tsx` naming trap has no other guard: renaming `plan.lazy.tsx` to `plan.tsx` folds
+ * the route into the eager router chunk, emitting no separate chunk, and `format:check`, `lint`,
+ * `typecheck` and `build` all stay green — the build even rewrites the source's
+ * `createLazyFileRoute` to `createFileRoute` to match the new filename, so afterwards the file
+ * itself no longer hints it was ever lazy. **`test` is what catches it**, and since issue #26
+ * the gate builds first, so this file reads a freshly generated tree: measured 2026-08-18, the
+ * rename fails here with `expected [Function Plan] to be undefined`. (Run against a *stale*
+ * committed tree the same rename fails much earlier and less usefully — 14 transform errors on
+ * the unresolvable `import('./routes/_authed/plan.lazy')`. It was never silently green; it was
+ * loudly wrong about the reason.)
  *
- * Asserted on router state, not on emitted chunk files, because `vitest` runs BEFORE
- * `build` in `check:web` — a test reading `dist/` would either fail on a clean checkout or
- * skip itself, i.e. be vacuous in exactly the way this suite exists to avoid. An unloaded
- * `options.component` IS the runtime consequence of code-splitting, so this measures the
- * property that matters with no build required.
+ * Asserted on router state, not on emitted chunk files: `vitest` is routinely run on its own
+ * (`npm --prefix web run test`, a watch run, a clean checkout), so a test reading `dist/` would
+ * either fail there or skip itself — vacuous in exactly the way this suite exists to avoid. An
+ * unloaded `options.component` IS the runtime consequence of code-splitting, so this measures
+ * the property that matters with no build required. Since issue #26 `check:web` does build
+ * first, so the *committed* tree this file imports is a freshly generated one.
  *
  * `routeTree` is a module-level singleton and `.lazy()` mutates its route objects in
  * place, so a resolved import stays resolved for every later router built from it. Hence

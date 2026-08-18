@@ -31,7 +31,12 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from server.auth import ratelimit, refresh
-from server.auth.cookies import clear_refresh_cookie, read_refresh_cookie, set_refresh_cookie
+from server.auth.cookies import (
+    clear_refresh_cookie,
+    clear_refresh_cookie_header,
+    read_refresh_cookie,
+    set_refresh_cookie,
+)
 from server.auth.deps import CurrentUser
 from server.auth.passwords import hash_password, needs_rehash, verify_dummy, verify_password
 from server.auth.tokens import Scope, issue_access_token
@@ -48,6 +53,10 @@ DbSession = Annotated[Session, Depends(get_session)]
 # One message for "no such account" and for "wrong password". Anything more specific is
 # an account-enumeration oracle; `verify_dummy()` makes the *timing* match too.
 _GENERIC_LOGIN_FAILURE: Final = "Incorrect email or password."
+
+# The 409 body for a refresh that lost a concurrent rotation. The client matches on the
+# STATUS, not on this string — it is here for a human reading a failed request.
+_SUPERSEDED_REFRESH_DETAIL: Final = "Refresh token superseded. Retry with the current cookie."
 
 # 254 is the RFC 5321 maximum and matches `app_user.email`.
 _MAX_EMAIL_LENGTH: Final = 254
@@ -229,6 +238,12 @@ def refresh_tokens(
     The client calls this **lazily, only after a 401** — never on a timer. A periodic
     refresh is a periodic database write, which is the largest avoidable consumer of the
     compute budget (CLAUDE.md).
+
+    **409** means the cookie presented was rotated seconds ago by another mount or tab and
+    the client should simply send it again; **401** means there is no usable family left.
+    Documented here rather than in a `responses=` block because no route in this module
+    declares one — `register`'s 409 and `login`'s 401 are described the same way, and
+    `/openapi.json` is off in production anyway.
     """
     presented = read_refresh_cookie(request)
     if presented is None:
@@ -238,14 +253,43 @@ def refresh_tokens(
 
     try:
         issued = refresh.rotate(session, presented)
+    except refresh.RefreshSupersededError:
+        # 409, deliberately NOT 401. A 401 says "your credentials are gone", and here the
+        # opposite is true: the credentials are fine and NEWER than what this request sent.
+        # The correct client reaction is to retry, which a 401 would never prompt.
+        #
+        # ⚠️ DO NOT clear the refresh cookie here. It is shared with the mount that just
+        # won the rotation — it holds that mount's brand-new token — so clearing it would
+        # destroy a live credential and recreate the very bug this path exists to fix, from
+        # the other end. The 401 path below now clears it through
+        # `HTTPException(headers=...)`, which is the mechanism that actually reaches a
+        # browser, so this path's silence is a real difference and not an accident of how
+        # the header is written. `test_auth_refresh.py` asserts both directions.
+        #
+        # The commit is not protecting a write of `rotate`'s: the grace path writes nothing,
+        # and `ratelimit.enforce` above already committed its own upsert (`enforce_all`:
+        # "This commits."). It ends the transaction, releasing the `FOR UPDATE` lock on the
+        # presented row before the client's retry arrives to take it.
+        session.commit()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail=_SUPERSEDED_REFRESH_DETAIL
+        ) from None
     except refresh.RefreshRejectedError:
         # `rotate` may have revoked an entire family on the reuse path. That revocation
         # is a WRITE and it has to be committed before the 401 goes out — rolling it back
         # would leave the stolen chain live, which is the whole point of detecting reuse.
         session.commit()
-        clear_refresh_cookie(response)
+        # The cookie is dead, so clearing it is what makes the NEXT request free: without
+        # the `Set-Cookie`, `read_refresh_cookie` keeps returning a value, the
+        # `presented is None` short-circuit above is never taken, and every later 401 pays a
+        # `ratelimit.enforce` upsert — one Postgres write and one restarted five-minute Neon
+        # window each, until the 30/hour bucket 429s. It goes through the exception's headers
+        # because a cookie written onto `response` is discarded on a raising path; see
+        # `cookies.clear_refresh_cookie_header`.
         raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated."
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Not authenticated.",
+            headers={"set-cookie": clear_refresh_cookie_header()},
         ) from None
 
     session.commit()

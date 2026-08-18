@@ -146,7 +146,7 @@ npm --prefix web run dev          # http://localhost:5173
 One command runs the same checks CI does:
 
 ```bash
-npm run check          # web: format:check, lint, typecheck, test, build
+npm run check          # web: format:check, lint, typecheck, build, test
                        # server: ruff check, ruff format --check, mypy, pytest
 npm run check:web      # just the frontend half
 npm run check:server   # just the backend half
@@ -177,12 +177,18 @@ explored end to end without registering.
 
 The access token is held **in memory only**, never in `localStorage` or `sessionStorage`, and
 the refresh token is an httpOnly host-only cookie the browser attaches to `/api/auth` alone.
-Refresh happens **lazily, on a 401**, never on a timer, and is serialised on two axes because
-rotation detects reuse by design — two racing refreshes would revoke the whole token family.
-Within a tab, concurrent 401s share one in-flight refresh; across tabs, which share the cookie
-but not that closure, a Web Lock makes the second tab wait and then rotate legitimately in its
-turn. No token is ever shared between tabs. Demo sessions have no refresh cookie and re-mint
-instead.
+Refresh happens **lazily, on a 401**, never on a timer, and is guarded on three axes, because
+rotation detects reuse by design and two racing refreshes would otherwise revoke the whole
+token family. Within a tab, concurrent 401s share one in-flight refresh. Across tabs of one
+origin, which share the cookie but not that closure, a Web Lock makes the second tab wait and
+then rotate legitimately in its turn. Across the **two origins** — the standalone app and the
+federated mount, which share a cookie but get separate lock managers — the server answers the
+loser of a race with a 409 inside a 10-second window and the client retries once, rotating
+whatever the shared cookie jar now holds. That is a strong mitigation rather than a guarantee:
+one retry converges exactly two origins, and a loser delayed past the window is still read as a
+replay. When it does not converge, the mount reports a signed-out session and a reload fixes it
+— the token family survives. No token is ever shared between tabs. Demo sessions
+have no refresh cookie and re-mint instead.
 
 Everything under `web/src/routes/_authed/` is behind a route guard that redirects to `/login`
 with the intended path, and `web/src/publicRoutes.test.ts` asserts no route can become public

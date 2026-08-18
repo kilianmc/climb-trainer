@@ -30,8 +30,23 @@ jobs:
       - run: npm run format:check
       - run: npm run lint
       - run: npm run typecheck
-      - run: npm run test
+      # BUILD BEFORE TEST, deliberately (issue #26). `vite build` is what regenerates
+      # `src/routeTree.gen.ts`, and several tests assert against that tree, so tests should
+      # read a freshly generated one rather than whatever is committed.
+      #
+      # What this does NOT do is convert a silent green into a red — measured 2026-08-18 by
+      # renaming `plan.lazy.tsx` to `plan.tsx`. Old order: 14 failures, all at
+      # `vite:import-analysis` (`Failed to resolve import "./routes/_authed/plan.lazy"`),
+      # because the stale committed tree still holds that dynamic import. New order: 2
+      # failures, `expected [Function Plan] to be undefined`. So the win is diagnostic —
+      # a transform error that names the wrong thing becomes two assertions that name the
+      # lost code-splitting — plus removing the ordering dependency that
+      # `web/src/publicRoutes.test.ts` had to work around by reading the route files.
+      #
+      # Costs no wall-clock on a GREEN run, since `npm run build` already runs `tsc -b`. On a
+      # red one every test failure now waits out a full build first, locally too.
       - run: npm run build
+      - run: npm run test
       # `vite build` rewrites the committed route tree, so a stale one is only visible as
       # a dirty tree after the build. Regeneration is deterministic, hence exit-code 0 on
       # an up-to-date file. `git diff --exit-code` also exits 0 on a pathspec that matches

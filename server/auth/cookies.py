@@ -71,8 +71,14 @@ def set_refresh_cookie(response: Response, token: str) -> None:
 def clear_refresh_cookie(response: Response) -> None:
     """Expire the cookie.
 
-    The attributes have to match the ones it was set with or the browser treats it as a
-    different cookie and leaves the original in place.
+    **`Path` is the attribute that decides whether this deletes anything.** RFC 6265 §5.3
+    keys the cookie store on **(name, domain, path)** and nothing else, so a deletion sent
+    with the wrong path is a *different* cookie and the real one survives — which is why
+    `REFRESH_COOKIE_PATH` is a constant shared with `set_refresh_cookie` rather than a
+    literal repeated here. `httponly` and `samesite` are **not** part of that key and a
+    mismatch would still delete; `secure` only matters across schemes, which is moot on an
+    HTTPS-only site. They are passed anyway so the two calls cannot drift apart — cheap,
+    and it keeps the pair readable as one thing.
     """
     response.delete_cookie(
         key=REFRESH_COOKIE_NAME,
@@ -81,6 +87,30 @@ def clear_refresh_cookie(response: Response) -> None:
         httponly=True,
         samesite=_SAMESITE,
     )
+
+
+def clear_refresh_cookie_header() -> str:
+    """The same `Set-Cookie` as `clear_refresh_cookie`, as a header value for a handler
+    that **raises**.
+
+    ⚠️ Writing a cookie onto the injected `Response` and then raising `HTTPException` is
+    **inert**: FastAPI builds a fresh response for the exception and the injected one's
+    headers are dropped, so the deletion never reaches the browser. Verified 2026-08-18 —
+    the 401 reuse path in `routes.py` had been silently doing nothing since PR #3, which
+    left a revoked family's cookie in the jar and turned every subsequent refresh into a
+    `ratelimit` write and another five-minute Neon wake. `HTTPException(headers=...)` is
+    the mechanism that works, and this is the only place its value is built.
+
+    Built by letting `clear_refresh_cookie` write onto a throwaway `Response` and reading the
+    header back, rather than by formatting a second string. The load-bearing part is `Path`:
+    RFC 6265 §5.3 keys the cookie store on (name, domain, path), so a hand-written header
+    with a different path deletes nothing and the real cookie survives. The other attributes
+    are not part of that key — they come along because deriving the whole header from the one
+    function is how it stays identical, not because the browser compares them.
+    """
+    probe = Response()
+    clear_refresh_cookie(probe)
+    return probe.headers["set-cookie"]
 
 
 def read_refresh_cookie(request: Request) -> str | None:
