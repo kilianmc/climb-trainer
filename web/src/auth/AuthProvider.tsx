@@ -37,17 +37,17 @@ export interface Auth {
 export function createAuth(): Auth {
   const session = createSessionStore();
   const { request, reauthenticate } = createAuthedFetch(session);
-  let attempted = false;
-  let pending: Promise<boolean> | null = null;
 
+  /**
+   * `reauthenticate` owns both caps now — the in-flight join and the post-failure memo — so
+   * this is a thin wrapper rather than a second bookkeeping site. It used to keep its own
+   * `attempted`/`pending` pair, which meant the "at most once" rule held for the bootstrap and
+   * silently did not hold for `request()`: two memos with overlapping meaning, one of them
+   * missing. See the `exhausted` comment in `refresh.ts`.
+   */
   function bootstrap(): Promise<boolean> {
     if (session.get().token !== null) return Promise.resolve(true);
-    if (attempted) return Promise.resolve(false);
-    pending ??= reauthenticate(null).finally(() => {
-      attempted = true;
-      pending = null;
-    });
-    return pending;
+    return reauthenticate(null);
   }
 
   return { session, client: createAuthClient(session), request, bootstrap };

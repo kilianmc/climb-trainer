@@ -36,10 +36,26 @@ export interface SessionStore {
   readonly subscribe: (listener: () => void) => () => void;
   /** `Authorization` when we hold a token, an empty object when we do not. */
   readonly header: () => Record<string, string>;
+  /**
+   * Counts **deliberate session transitions** — every `set` and every `clear`, whether or not
+   * the snapshot visibly changed. It exists so an in-flight refresh can tell whether the
+   * session it is about to write into is still the one it started from.
+   *
+   * Without it, a refresh that resolves *after* a logout re-populates the store with a token
+   * whose refresh family the server has already revoked: the nav shows a signed-in user who
+   * cannot refresh, and the refresh response's `Set-Cookie` lands after logout cleared the
+   * jar. The same read applies to a login or an "explore the demo" click landing mid-refresh
+   * — in every case the deliberate action wins and the refresh must not resurrect anything.
+   *
+   * Bumped on `clear()` **unconditionally**, including from an already-anonymous store: a
+   * demo mint starting from anonymous still has to invalidate a bootstrap refresh in flight.
+   */
+  readonly generation: () => number;
 }
 
 export function createSessionStore(): SessionStore {
   let snapshot: SessionSnapshot = ANONYMOUS;
+  let generation = 0;
   const listeners = new Set<() => void>();
 
   function emit(): void {
@@ -48,15 +64,19 @@ export function createSessionStore(): SessionStore {
 
   return {
     get: () => snapshot,
+    generation: () => generation,
 
     set: (token, scope) => {
+      generation += 1;
       snapshot = Object.freeze({ token, scope });
       emit();
     },
 
     clear: () => {
-      // Guarded so a no-op clear does not re-render every subscriber. `dropToken` in
-      // `authClient.ts` runs before every POST /api/auth/*, most of them anonymous.
+      // The generation bump is UNCONDITIONAL — see its docstring. Only the notification is
+      // guarded, so a no-op clear does not re-render every subscriber; `authClient.ts` clears
+      // before every POST /api/auth/*, most of them from an already-anonymous store.
+      generation += 1;
       if (snapshot === ANONYMOUS) return;
       snapshot = ANONYMOUS;
       emit();

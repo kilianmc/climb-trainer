@@ -3,15 +3,36 @@ import type { TokenResponse } from './authClient';
 import type { SessionStore } from './session';
 
 /**
- * Silent refresh, single-flight, lazy.
+ * Silent refresh: serialised, lazy, and capped after a failure.
  *
- * ## Why single-flight is a correctness requirement, not an optimisation
+ * ## Why serialising is a correctness requirement, not an optimisation
  *
  * `server/auth/refresh.py::rotate` reads its row `FOR UPDATE` and treats a second
- * presentation of an already-rotated token as **theft**, revoking the whole family. So two
- * concurrent refreshes triggered by two concurrent 401s do not merely waste a request —
- * the loser presents a token the winner already consumed and the user is logged out of
- * every device. One in-flight attempt, shared by every waiter.
+ * presentation of an already-rotated token as **theft**, revoking the whole family. Note what
+ * the row lock does and does not do: it **serialises** two presentations of the same token, it
+ * does not deduplicate them. So the loser is *guaranteed* — not merely likely — to re-read the
+ * row after the winner commits, see `rotated_at` set, and revoke the family, killing the
+ * winner's brand-new token too. Both callers end up logged out with no way to refresh.
+ *
+ * That has to be prevented on **two** axes, because the refresh cookie is scoped to the
+ * browser profile while this closure is scoped to one mount:
+ *
+ * 1. **Within a mount** — `inFlight`, so N concurrent 401s share one attempt.
+ * 2. **Across tabs and mounts** — the **Web Locks API**, because two tabs on
+ *    climb.kilianmc.com have two independent `inFlight` closures and one shared cookie.
+ *
+ * The cross-tab fix is narrower than it looks, and the reason matters: the race only breaks
+ * because both tabs read the same **pre-rotation** cookie. Serialising is therefore sufficient
+ * on its own — the waiting tab wakes up, sends the *already-rotated* cookie, and performs a
+ * legitimate rotation of its own. It gets a valid token, reuse detection is never tripped, and
+ * no server change is needed. The cost is one extra Postgres write per additional tab, which
+ * is correct behaviour rather than a bug.
+ *
+ * **Tokens are deliberately NOT shared between tabs.** A `BroadcastChannel` would be the
+ * obvious way to save that write, and it is rejected: in the federated mount the origin is
+ * kilianmc.com, so the channel is shared with the shell and every other remote on the
+ * portfolio, and putting an access token on it would give away the property this design
+ * exists to hold — the token is in no storage, no URL, no `postMessage` and no React prop.
  *
  * ## Lazy, and never on a timer
  *
@@ -19,6 +40,24 @@ import type { SessionStore } from './session';
  * the compute up for the length of a whole training session for no benefit, which CLAUDE.md
  * records as the largest avoidable consumer of the budget. Access tokens live 3 h precisely
  * so that a 401 is rare. **Do not add a pre-emptive timer off `expires_in`.**
+ *
+ * ## The lock, concretely
+ *
+ * - **Name-spaced `climb-trainer:auth-refresh`.** Lock names are scoped to the ORIGIN, which
+ *   in the federated mount is kilianmc.com — shared with the rest of the portfolio.
+ * - **Held across the FULL round trip, response body included.** `Set-Cookie` is only in the
+ *   jar once the response has been received, so releasing before `res.json()` resolves would
+ *   let the next waiter send the pre-rotation cookie and reintroduce the exact race.
+ * - **Only the refresh path takes it.** `POST /api/auth/demo` presents no cookie and cannot
+ *   race, so serialising demo mints would cost latency for nothing.
+ * - **Released on rejection and on tab close**, by the API's own contract: the lock is held
+ *   for exactly as long as the callback's promise is pending, and a closed tab releases it.
+ *   The one residual case is a refresh that *hangs* rather than failing — it holds the lock
+ *   until `fetch` settles or the tab goes away, which is the correct trade against the race.
+ * - **⚠️ Fallback where `navigator.locks` is absent** (no browser we support today; jsdom, and
+ *   any non-secure context): behave exactly as before — the per-mount `inFlight` dedupe still
+ *   holds, and the cross-tab guarantee is simply not available. It degrades to the previous
+ *   behaviour rather than throwing, and never to something worse.
  *
  * ## Demo scope re-mints; it cannot refresh
  *
@@ -41,6 +80,25 @@ const CREDENTIAL_PATHS: ReadonlySet<string> = new Set([
   '/api/auth/logout',
 ]);
 
+const REFRESH_PATH = '/api/auth/refresh';
+const DEMO_PATH = '/api/auth/demo';
+
+/** Origin-scoped, so it is namespaced: the federated mount shares kilianmc.com. */
+const REFRESH_LOCK = 'climb-trainer:auth-refresh';
+
+/**
+ * Runs `attempt` while holding the cross-tab refresh lock, or straight through where the API
+ * is unavailable. `'locks' in navigator` rather than a truthiness check because the DOM lib
+ * types `navigator.locks` as non-optional, so this is the honest feature test.
+ */
+function withRefreshLock<T>(attempt: () => Promise<T>): Promise<T> {
+  if (!('locks' in navigator)) return attempt();
+  // The lock is held for exactly as long as this promise is pending — so the whole round
+  // trip, `res.json()` included, which is what puts the rotated Set-Cookie in the jar before
+  // the next waiter sends. Rejection and tab-close both release it.
+  return navigator.locks.request(REFRESH_LOCK, attempt);
+}
+
 export interface AuthedFetch {
   /** `apiFetch` plus the bearer, one silent refresh on 401, and exactly one retry. */
   <T>(path: string, init?: ApiRequestInit): Promise<T>;
@@ -59,20 +117,53 @@ export interface Reauthenticator {
 export function createAuthedFetch(session: SessionStore): Reauthenticator {
   let inFlight: Promise<boolean> | null = null;
 
+  /**
+   * Set once a refresh has genuinely failed, cleared the moment a token arrives by any other
+   * route. **This is not an optimisation.** `bootstrap()` used to carry its own `attempted`
+   * cap while `request()` carried none, so once the session was anonymous `stale` and
+   * `current` were both `null`, the early-out never fired, and *every* subsequent 401 minted
+   * another attempt. Each one is a `ratelimit.enforce` upsert whenever a cookie is present but
+   * invalid — one Postgres write and one restarted five-minute Neon window per 401, burning
+   * the 30/hour `REFRESH` bucket until the user 429s. One memo, shared by both entry points.
+   */
+  let exhausted = false;
+
+  // Re-arm on a login, a registration, or entering the demo. A token in hand means the
+  // cookie situation may have changed, so a later 401 deserves a fresh attempt.
+  session.subscribe(() => {
+    if (session.get().token !== null) exhausted = false;
+  });
+
   async function mint(): Promise<boolean> {
-    const path = session.get().scope === 'demo' ? '/api/auth/demo' : '/api/auth/refresh';
+    const demo = session.get().scope === 'demo';
     // Read the scope first, then drop the token: see the "drop before every POST" rule in
     // `authClient.ts`. A dead token has no value to preserve, and the cookie is what
     // authenticates a refresh.
     session.clear();
+    // Captured AFTER our own clear, so this attempt does not invalidate itself.
+    const epoch = session.generation();
+
     try {
-      const token = await apiFetch<TokenResponse>(path, { method: 'POST' });
-      session.set(token.access_token, token.scope);
-      return true;
+      const token = demo
+        ? await apiFetch<TokenResponse>(DEMO_PATH, { method: 'POST' })
+        : await withRefreshLock(() => apiFetch<TokenResponse>(REFRESH_PATH, { method: 'POST' }));
+
+      if (session.generation() === epoch) {
+        session.set(token.access_token, token.scope);
+        return true;
+      }
     } catch {
-      session.clear();
-      return false;
+      if (session.generation() === epoch) {
+        session.clear();
+        exhausted = true;
+      }
     }
+
+    // Abandoned mid-flight: a logout, a login, or an "explore the demo" click landed while we
+    // were in the air. The deliberate action wins — never write over it, and never mark the
+    // refresh exhausted on its account. Report whether the app now holds a usable token, so a
+    // caller whose request 401ed still retries when a login supplied one.
+    return session.get().token !== null;
   }
 
   function reauthenticate(stale: string | null): Promise<boolean> {
@@ -87,6 +178,8 @@ export function createAuthedFetch(session: SessionStore): Reauthenticator {
     const current = session.get().token;
     if (current !== stale) return Promise.resolve(current !== null);
 
+    if (exhausted) return Promise.resolve(false);
+
     inFlight = mint().finally(() => {
       inFlight = null;
     });
@@ -95,7 +188,12 @@ export function createAuthedFetch(session: SessionStore): Reauthenticator {
 
   function send<T>(path: string, init: ApiRequestInit | undefined, token: string | null) {
     const headers: Record<string, string> = { ...init?.headers };
-    if (token !== null) headers.authorization = `Bearer ${token}`;
+    // The demo-drop rule, enforced STRUCTURALLY rather than by call-site discipline: the
+    // write-ban 403s a demo bearer on every mutating /api/auth/* route, so this function must
+    // be unable to attach one. `authClient` clears the store before each of those POSTs, which
+    // is correct but is a property of its call sites; this is a property of the code path.
+    // `/api/auth/me` is deliberately not in the set — a GET legitimately keeps its bearer.
+    if (token !== null && !CREDENTIAL_PATHS.has(path)) headers.authorization = `Bearer ${token}`;
     return apiFetch<T>(path, { ...init, headers });
   }
 

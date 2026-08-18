@@ -32,22 +32,41 @@ const OK: Reply = { status: 200, body: { ok: true } };
 let replies: Map<string, Reply[]>;
 let calls: string[];
 let session: SessionStore;
+/** When set, the refresh reply is withheld until it resolves — a refresh held mid-flight. */
+let holdRefresh: Promise<void> | null;
 
 function reply(path: string, ...queued: Reply[]) {
   replies.set(path, queued);
 }
 
+function headersSentTo(path: string): Record<string, string>[] {
+  return vi
+    .mocked(fetch)
+    .mock.calls.filter(([url]) => urlOf(url).endsWith(path))
+    .map(([, init]) => (init?.headers ?? {}) as Record<string, string>);
+}
+
+/** A promise plus its resolver, for holding a request open across other work. */
+function gate(): { blocked: Promise<void>; release: () => void } {
+  let release = () => undefined as void;
+  const blocked = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  return { blocked, release };
+}
+
 beforeEach(() => {
   replies = new Map();
   calls = [];
+  holdRefresh = null;
   session = createSessionStore();
 
   vi.stubGlobal(
     'fetch',
-    // eslint-disable-next-line @typescript-eslint/require-await
     vi.fn(async (url: string) => {
       const path = new URL(url, 'https://climb.kilianmc.com').pathname;
       calls.push(path);
+      if (path === '/api/auth/refresh' && holdRefresh !== null) await holdRefresh;
       // The last queued reply repeats, so a test only lists the replies that differ.
       const queued = replies.get(path);
       const chosen =
@@ -150,6 +169,111 @@ describe('createAuthedFetch', () => {
     expect(calls).toEqual(['/api/bootstrap', '/api/auth/demo', '/api/bootstrap']);
     expect(calls).not.toContain('/api/auth/refresh');
     expect(session.get()).toEqual({ token: 'demo-fresh', scope: 'demo' });
+  });
+
+  /**
+   * The memo. `bootstrap()` used to cap itself while `request()` capped nothing, so once the
+   * store was anonymous `stale` and `current` were both `null`, the early-out never fired, and
+   * every 401 minted another attempt. `refresh_tokens` checks the cookie before the rate
+   * limiter, so a cookie-less visitor is free — but a cookie that is present and INVALID (the
+   * state after a revoked family) falls through to a `ratelimit.enforce` upsert. That is one
+   * Postgres write and one restarted five-minute Neon window per 401, until the 30/hour bucket
+   * 429s.
+   */
+  it('refreshes at most ONCE after a failure, however many 401s follow', async () => {
+    session.set('stale', 'user');
+    reply('/api/plans', UNAUTHORISED);
+    reply('/api/auth/refresh', UNAUTHORISED);
+
+    const { request } = createAuthedFetch(session);
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      await expect(request('/api/plans')).rejects.toBeInstanceOf(ApiError);
+    }
+
+    expect(calls.filter((path) => path === '/api/plans')).toHaveLength(3);
+    expect(calls.filter((path) => path === '/api/auth/refresh')).toHaveLength(1);
+  });
+
+  it('re-arms once a token arrives by another route, so a login is not a dead end', async () => {
+    session.set('stale', 'user');
+    reply('/api/plans', UNAUTHORISED, UNAUTHORISED, OK);
+    reply('/api/auth/refresh', UNAUTHORISED, TOKEN('user', 'second-chance'));
+
+    const { request } = createAuthedFetch(session);
+    await expect(request('/api/plans')).rejects.toBeInstanceOf(ApiError);
+    expect(calls.filter((path) => path === '/api/auth/refresh')).toHaveLength(1);
+
+    // Stands in for a successful login: `authClient` sets a token on the same store.
+    session.set('from-login', 'user');
+    await request('/api/plans');
+
+    expect(calls.filter((path) => path === '/api/auth/refresh')).toHaveLength(2);
+  });
+
+  /**
+   * A refresh that resolves after a deliberate session change must not write into it. Without
+   * the generation check the nav shows a signed-in user who just logged out, holding an access
+   * token whose refresh family the server has already revoked — and the refresh response's
+   * `Set-Cookie` lands after logout cleared the jar.
+   */
+  it('does not resurrect the session when a logout lands mid-refresh', async () => {
+    session.set('stale', 'user');
+    reply('/api/auth/refresh', TOKEN('user', 'resurrected'));
+    const { blocked, release } = gate();
+    holdRefresh = blocked;
+
+    const { reauthenticate } = createAuthedFetch(session);
+    const attempt = reauthenticate('stale');
+
+    // What `authClient.logout()` does first, and the thing that bumps the generation.
+    session.clear();
+    release();
+
+    await expect(attempt).resolves.toBe(false);
+    expect(session.get()).toEqual({ token: null, scope: null });
+  });
+
+  it('lets a login that lands mid-refresh win, and still reports success', async () => {
+    session.set('stale', 'user');
+    reply('/api/auth/refresh', TOKEN('user', 'from-refresh'));
+    const { blocked, release } = gate();
+    holdRefresh = blocked;
+
+    const { reauthenticate } = createAuthedFetch(session);
+    const attempt = reauthenticate('stale');
+
+    session.clear();
+    session.set('from-login', 'user');
+    release();
+
+    // True, because the app DOES hold a usable token — so a request that 401ed still retries.
+    await expect(attempt).resolves.toBe(true);
+    expect(session.get().token).toBe('from-login');
+  });
+
+  /**
+   * `CREDENTIAL_PATHS` suppresses the retry; it has to suppress the HEADER too. The demo
+   * write-ban 403s a demo bearer on every mutating `/api/auth/*` route, and `authClient`
+   * clearing the store beforehand is a property of its call sites, not of this code path.
+   */
+  it('attaches no bearer to a credential path, even holding a demo token', async () => {
+    session.set('demo-token', 'demo');
+    reply('/api/auth/logout', OK);
+
+    const { request } = createAuthedFetch(session);
+    await request('/api/auth/logout', { method: 'POST' });
+
+    expect(headersSentTo('/api/auth/logout')[0]).not.toHaveProperty('authorization');
+  });
+
+  it('positive control: it does attach one to /api/auth/me, which is a read', async () => {
+    session.set('demo-token', 'demo');
+    reply('/api/auth/me', OK);
+
+    const { request } = createAuthedFetch(session);
+    await request('/api/auth/me');
+
+    expect(headersSentTo('/api/auth/me')[0]?.authorization).toBe('Bearer demo-token');
   });
 
   it('skips the refresh entirely if a concurrent waiter already got a token', async () => {

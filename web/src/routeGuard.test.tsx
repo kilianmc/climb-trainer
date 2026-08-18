@@ -58,6 +58,13 @@ function signedIn(scope: 'user' | 'demo' = 'user') {
   return auth;
 }
 
+function tokenResponse(token: string, scope: 'user' | 'demo') {
+  return new Response(
+    JSON.stringify({ access_token: token, token_type: 'bearer', expires_in: 10_800, scope }),
+    { headers: { 'content-type': 'application/json' } },
+  );
+}
+
 beforeEach(() => {
   vi.stubGlobal('fetch', vi.fn());
 });
@@ -189,6 +196,51 @@ describe('the _authed guard', () => {
     // Clearing the session does not re-run `beforeLoad`, so without the navigation the
     // visitor would sit on /plan with an anonymous nav and no way back.
     expect(await screen.findByRole('heading', { name: 'climb-trainer' })).toBeInTheDocument();
+    expect(router.state.location.pathname).toBe('/');
+  });
+
+  /**
+   * The badge test below injects the token directly, so it says nothing about the path a
+   * visitor actually takes. This drives the real one: the click, the `POST /api/auth/demo`,
+   * the navigation and the read-only state — issue #24's acceptance criterion.
+   */
+  it('mints a demo token from the landing page and arrives read-only on the dashboard', async () => {
+    vi.mocked(fetch).mockResolvedValue(tokenResponse('demo-token', 'demo'));
+    const auth = createAuth();
+    const router = mount('/', auth);
+    await screen.findByRole('heading', { name: 'climb-trainer' });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Explore the demo' }));
+
+    expect(await screen.findByRole('heading', { name: 'Dashboard' })).toBeInTheDocument();
+    expect(router.state.location.pathname).toBe('/dashboard');
+    expect(auth.session.get().scope).toBe('demo');
+    expect(screen.getByText('Demo — read only')).toBeInTheDocument();
+    expect(screen.getByText(/Everything is read-only/)).toBeInTheDocument();
+
+    // Exactly one call, to the one mutating auth route a demo token is exempt from — and with
+    // no bearer on it, because the store is cleared before every POST /api/auth/*.
+    const [url, init] = vi.mocked(fetch).mock.calls[0] ?? [];
+    expect(urlOf(url)).toContain('/api/auth/demo');
+    expect((init?.headers ?? {}) as Record<string, string>).not.toHaveProperty('authorization');
+    expect(vi.mocked(fetch)).toHaveBeenCalledTimes(1);
+  });
+
+  it('surfaces a failed demo mint on the landing page instead of navigating', async () => {
+    vi.mocked(fetch).mockResolvedValue(
+      new Response(JSON.stringify({ detail: 'nope' }), {
+        status: 429,
+        headers: { 'content-type': 'application/json' },
+      }),
+    );
+    const router = mount('/', createAuth());
+    await screen.findByRole('heading', { name: 'climb-trainer' });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Explore the demo' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Too many attempts from this network. Please wait a little and try again.',
+    );
     expect(router.state.location.pathname).toBe('/');
   });
 

@@ -806,24 +806,67 @@ protected by living there.
   bearer 403s on `register`, `login`, `logout` **and** `refresh` alike — every mutating auth
   route except `POST /api/auth/demo`, the sole entry in `DEMO_WRITE_EXEMPT_ROUTES`. The
   earlier wording of this rule said "login or register" and was too narrow.
+  `authedFetch`'s `send()` also refuses to attach a bearer to any `CREDENTIAL_PATHS` entry, so
+  the rule holds **structurally** and not only by call-site discipline — that set used to
+  suppress the retry-on-401 but not the header, which is precisely the footgun the rule exists
+  to prevent. `/api/auth/me` is deliberately outside the set: a GET keeps its bearer.
 - **Demo scope RE-MINTS; it cannot refresh.** `POST /api/auth/demo` takes no `Response` and
   sets no cookie, so a demo session has no family to rotate, and sending its 1 h token to
   `/api/auth/refresh` hits the write-ban and 403s — a failure that looks nothing like an
   expiry. `refresh.ts` branches on scope for that reason.
-- **Single-flight is a correctness requirement, not a request-count optimisation.**
-  `refresh.rotate` reads `FOR UPDATE` and treats a second presentation of an already-rotated
-  token as theft, revoking the whole family: two concurrent 401s racing two refreshes log the
-  user out of every device. `reauthenticate` therefore joins an in-flight attempt **before**
-  comparing tokens — `mint` clears the store synchronously before it awaits, so the
-  comparison-first ordering made a second waiter conclude someone else had already finished
-  and give up. That ordering is the whole bug; `auth/refresh.test.ts` pins it.
-- **`bootstrap()` is called from `_authed`'s `beforeLoad` and nowhere else, at most once per
-  app load.** A refresh is a Postgres write, so doing it at mount would wake Neon for every
-  anonymous visitor who merely reads the landing page. `routes/index.tsx` checks only the
-  in-memory token. **Accepted consequence: a signed-in user opening `/` cold sees the public
-  landing page**, and is signed back in when they enter the app. The server helps —
-  `refresh_tokens` 401s on a missing cookie *before* it touches the rate-limit table, so a
-  cookie-less visitor costs no SQL.
+- **Serialising the refresh is a correctness requirement, not a request-count optimisation —
+  and it needs TWO mechanisms, because the two scopes differ.** `refresh.rotate` reads
+  `FOR UPDATE` and treats a second presentation of an already-rotated token as theft, revoking
+  the whole family. Note what the row lock does: it **serialises** two presentations, it does
+  not deduplicate them, so the loser is *guaranteed* to re-read the row after the winner
+  commits, see `rotated_at` set, and revoke the family — killing the winner's brand-new token
+  too. Both callers end up unable to refresh.
+  - **Within a mount:** `inFlight` in `createAuthedFetch`, so N concurrent 401s share one
+    attempt. `reauthenticate` joins it **before** comparing tokens — `mint` clears the store
+    synchronously before it awaits, so the comparison-first ordering made a second waiter
+    conclude someone else had already finished and give up. That ordering is the whole bug.
+  - **⚠️ Across tabs:** the **Web Locks API**, `climb-trainer:auth-refresh`. `inFlight` is a
+    closure local, so two tabs have two of them, while the refresh cookie is scoped to the
+    **browser profile**. An earlier draft of this file stated the single-flight guarantee
+    unqualified, which was wrong and is the wording to avoid restoring: per-mount dedupe covers
+    strictly less ground than the failure it prevents.
+  - The cross-tab fix is narrower than it looks. The race only breaks because both tabs read
+    the same **pre-rotation** cookie, so serialising is sufficient by itself: the waiting tab
+    wakes, sends the *already-rotated* cookie and performs a legitimate rotation of its own.
+    Valid token, reuse never tripped, **no server change**. Cost is one extra Postgres write
+    per additional tab, which is correct behaviour rather than a bug.
+  - **Tokens are deliberately NOT shared between tabs.** `BroadcastChannel` would save that
+    write and is rejected: in the federated mount the origin is kilianmc.com, so the channel is
+    shared with the shell and every other remote, and an access token on it would give away the
+    property the design holds — token in no storage, no URL, no `postMessage`, no React prop.
+  - The lock is held across the **full** round trip, `res.json()` included, because `Set-Cookie`
+    only reaches the jar on receipt; releasing earlier reintroduces the exact race. Only the
+    refresh path takes it — `POST /api/auth/demo` presents no cookie and cannot race.
+  - **Where `navigator.locks` is absent** (jsdom; any non-secure context) it degrades to the
+    per-mount dedupe and the cross-tab guarantee is simply unavailable — never to something
+    worse, and never a throw. `auth/crossTabRefresh.test.ts` asserts both arms; the no-locks arm
+    is the permanent record of that boundary and is what keeps the locked arm honest.
+- **One failure memo, shared by `bootstrap()` and `request()`.** `bootstrap()` used to carry its
+  own `attempted` cap while `request()` carried none, so once the store was anonymous `stale`
+  and `current` were both `null`, the early-out never fired, and **every** subsequent 401 minted
+  another refresh. `refresh_tokens` checks the cookie before the rate limiter, so a cookie-less
+  visitor is free — but a cookie that is present and *invalid* (the state after a revoked
+  family) reaches a `ratelimit.enforce` upsert: one Postgres write and one restarted five-minute
+  Neon window per 401, until the 30/hour bucket 429s. `exhausted` lives in `createAuthedFetch`
+  and is cleared the moment a token arrives by another route, so a login is never a dead end.
+  Two memos with overlapping meaning is how one of them ends up missing.
+- **⚠️ A refresh that resolves after a deliberate session change must not write into it.**
+  `SessionStore.generation()` counts every `set` and `clear`; `mint` captures it after its own
+  clear and re-checks before writing. Without that, a logout landing mid-refresh is silently
+  undone — the nav shows a signed-in user holding a token whose family the server already
+  revoked, and the refresh's `Set-Cookie` lands after logout cleared the jar. The same check
+  makes a login or an "explore the demo" click that lands mid-refresh **win**, and `mint`
+  reports whether the app now holds a usable token rather than whether its own attempt won.
+- **`bootstrap()` is called from `_authed`'s `beforeLoad` and nowhere else.** A refresh is a
+  Postgres write, so doing it at mount would wake Neon for every anonymous visitor who merely
+  reads the landing page. `routes/index.tsx` checks only the in-memory token. **Accepted
+  consequence: a signed-in user opening `/` cold sees the public landing page**, and is signed
+  back in when they enter the app.
 - **No pre-emptive refresh timer off `expires_in`.** Lazy, on 401 only. A timer is a periodic
   database write for the length of a whole training session, which is the largest avoidable
   consumer of the compute budget.
@@ -841,6 +884,15 @@ target is a validated runtime string and `to` is typed to the tree's literal pat
 convention protects a leaf by where its file sits, so the failure mode is **omission** — a
 route created next to `login.tsx` instead of inside `_authed/` is silently public and nothing
 else in the gate notices. Every route must be in `PUBLIC_ROUTE_IDS` or under `_authed`.
+
+**It checks the union of the generated tree and the ids the route FILES declare**, and that is
+not belt-and-braces. `routeTree.gen.ts` is only regenerated by a build and `check:web` runs
+`test` before `build`, so a tree-only check was blind on the exact change it exists to catch:
+adding `routes/settings.tsx` left it green until a build had run, and the first CI failure was
+the post-build stale-file check — naming a stale file rather than an unguarded route. The
+declared id is the literal the author passed to `createFileRoute`, which the router plugin
+already validates against the file's path, so this reads an authored fact rather than
+re-deriving the generator's naming rules.
 
 **`GET /api/auth/me` stays SQL-free.** It reads the token's claims and issues **zero** SQL,
 which is what lets a session bootstrap not wake Neon. Adding `email` to `MeResponse` would

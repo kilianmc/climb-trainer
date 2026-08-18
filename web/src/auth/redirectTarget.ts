@@ -22,11 +22,37 @@
  */
 const SAFE_PATH = /^\/[\u0021-\u007e]*$/;
 
+/** A `.` or `..` path segment, which the URL parser collapses before anyone sees it. */
+const DOT_SEGMENT = /(?:^|\/)\.\.?(?:\/|$)/;
+
 export function internalPath(value: unknown): string | null {
   if (typeof value !== 'string') return null;
   if (!SAFE_PATH.test(value)) return null;
-  if (value.startsWith('//')) return null;
   // Printable, so the allowlist admits it; browsers normalise `/\` to `//`.
   if (value.includes('\\')) return null;
+
+  // Checked on the PATH only, so a query string keeping a `//` in a future param is not
+  // collateral damage. Both checks close the dot-segment-collapse family — `/..//host`,
+  // `/.//host`, `/%2e%2e//host` — which is **not** an origin escape (the leading `/` has
+  // already committed the parse to a path), but does let a crafted link put
+  // `climb.kilianmc.com//host` in the address bar on a not-found page. Cosmetic; closed
+  // because normalising here is a line and a half.
+  const path = value.split(/[?#]/, 1)[0] ?? '';
+  if (path.includes('//')) return null;
+  if (DOT_SEGMENT.test(decodeSegments(path))) return null;
+
   return value;
+}
+
+/**
+ * Percent-decodes just enough to see a hidden dot segment (`%2e%2e`). Deliberately narrow and
+ * failure-tolerant: `decodeURIComponent` throws on a lone `%`, and a malformed escape is not a
+ * reason to reject a path the allowlist already vetted.
+ */
+function decodeSegments(path: string): string {
+  try {
+    return decodeURIComponent(path);
+  } catch {
+    return path;
+  }
 }

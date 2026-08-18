@@ -177,9 +177,12 @@ explored end to end without registering.
 
 The access token is held **in memory only**, never in `localStorage` or `sessionStorage`, and
 the refresh token is an httpOnly host-only cookie the browser attaches to `/api/auth` alone.
-Refresh happens **lazily, on a 401**, never on a timer, and concurrent 401s share a single
-in-flight refresh: rotation detects reuse by design, so two racing refreshes would revoke the
-whole token family. Demo sessions have no refresh cookie and re-mint instead.
+Refresh happens **lazily, on a 401**, never on a timer, and is serialised on two axes because
+rotation detects reuse by design — two racing refreshes would revoke the whole token family.
+Within a tab, concurrent 401s share one in-flight refresh; across tabs, which share the cookie
+but not that closure, a Web Lock makes the second tab wait and then rotate legitimately in its
+turn. No token is ever shared between tabs. Demo sessions have no refresh cookie and re-mint
+instead.
 
 Everything under `web/src/routes/_authed/` is behind a route guard that redirects to `/login`
 with the intended path, and `web/src/publicRoutes.test.ts` asserts no route can become public
