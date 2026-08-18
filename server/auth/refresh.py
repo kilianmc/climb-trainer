@@ -81,10 +81,9 @@ must stay written down rather than be discovered later.
 **The security trade, stated plainly, because it is a loss and not a free win.** This is
 separate from the three bounds above: those are cases the fix does not reach, this is
 ground the fix gives up. Inside the window, replaying an already-rotated token no longer
-revokes the family. What a
-replayer gains: nothing directly. The 409 carries no token, and the successor is only
-reachable by whoever already holds the shared cookie jar — i.e. the browser. What is
-lost: a genuine theft whose replay happens to land inside the window goes **undetected**,
+revokes the family. What a replayer gains: nothing directly. The 409 carries no token, and
+the successor is only reachable by whoever already holds the shared cookie jar — i.e. the
+browser. What is lost: a genuine theft whose replay lands inside the window goes **undetected**,
 where it would previously have burned the family. Reuse detection is therefore narrower
 than it was. Accepted, because the alternative is that the portfolio's own two-origin
 configuration logs real users out for free. Outside the window — and for a revoked row at
@@ -247,7 +246,15 @@ def rotate(session: Session, presented_token: str) -> IssuedRefresh:
     # begins, so a rotation that happened well before this request started still measures
     # old and is still rejected. ⚠️ The one way to widen that bias is to do other database
     # work in this transaction before calling `rotate` — that would age `now()` by however
-    # long the work takes. Don't.
+    # long the work takes. Don't, in production.
+    #
+    # The test fixture breaks that invariant **by construction**, and the difference is worth
+    # knowing before someone "fixes" the wrong side: `tests/conftest.py` joins one long-lived
+    # transaction as a savepoint, so `now()` is frozen when that transaction begins and is
+    # already ancient by the time `rotate` runs. That is harmless there — the tests stamp
+    # `rotated_at` from the *same* frozen clock, so their arithmetic is exact (see
+    # `tests/test_auth_refresh.py::_db_now`) — and it is exactly what must never happen in a
+    # request handler, where the two sides of the comparison come from different invocations.
     found = session.execute(
         select(AuthSession, func.now())
         .where(AuthSession.token_hash == presented_digest)

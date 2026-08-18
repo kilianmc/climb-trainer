@@ -6,7 +6,9 @@ import { createSessionStore, type SessionStore } from './session';
 /**
  * Two tabs, one cookie jar. This is the failure the per-mount `inFlight` dedupe cannot see:
  * `inFlight` is a local of `createAuthedFetch`, so two mounts have two of them, while the
- * refresh cookie is scoped to the whole browser profile.
+ * refresh cookie is one entry in one jar — stored host-only against climb.kilianmc.com, but
+ * *sent* by the federated mount on kilianmc.com too, because `SameSite=Lax` is a **site**
+ * rule and not an origin one.
  *
  * The model below is the part that makes the test meaningful, so it is worth stating what it
  * reproduces from the real server (`server/auth/refresh.py::rotate`):
@@ -125,10 +127,11 @@ function removeLocks(): void {
  * ⚠️ **jsdom cannot model two origins, so what the arms below vary is the LOCK REALM, not the
  * origin.** Web Locks are partitioned per storage key, so two tabs of climb.kilianmc.com share
  * one lock manager while the standalone app and the federated mount (kilianmc.com) get two
- * independent ones. Two independent managers exclude nothing from each other, which is
- * behaviourally identical to having none — so `installLocks()` is the same-origin arm and
- * `removeLocks()` is the two-origin arm. The shared jar is the one thing both have in common,
- * and it is the real situation: same site, one browser profile.
+ * independent ones — over the one refresh cookie both of them send. Two independent managers
+ * exclude nothing from each other, which is behaviourally identical to having none — so
+ * `installLocks()` is the same-origin arm and `removeLocks()` is the two-origin arm. The shared
+ * jar is the one thing both arms have in common, and it is the real situation: one cookie,
+ * host-only, sent by both origins because they are same-site.
  */
 function twoTabs(): [SessionStore, SessionStore, () => Promise<[boolean, boolean]>] {
   const a = createSessionStore();

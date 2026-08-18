@@ -1391,16 +1391,24 @@ unset, but that is not the same as the gate being database-free: `.env` is loade
 entrypoint, so on a machine with real Neon credentials in it the "local" gate quietly ran
 those tests **against the live dev database** — ~37 s of woken Neon compute on every run,
 and the same leak sent a stray `alembic upgrade head` at production's neighbour on
-2026-08-18. So `check:server` hard-empties both URLs:
+2026-08-18. So `check:server` overrides both URLs, and they are **not** symmetrical:
 
 ```jsonc
-DATABASE_URL="${CT_TEST_DATABASE_URL:-}" DATABASE_URL_UNPOOLED="${CT_TEST_DATABASE_URL:-}"
+DATABASE_URL="${CT_TEST_DATABASE_URL:-}" DATABASE_URL_UNPOOLED=""
 ```
 
-- **Locally**: both empty, the 30 DB-backed tests skip, nothing connects. A skip is visible;
+- **Locally**: both empty, the 31 DB-backed tests skip, nothing connects. A skip is visible;
   a silent connection to someone's real database is not.
 - **Deliberately, against a throwaway Postgres**: `CT_TEST_DATABASE_URL=postgresql://…
   npm run check:server`. That is the only way to opt in, and it cannot happen by accident.
+- **`DATABASE_URL_UNPOOLED` has no opt-in and is pinned EMPTY, on purpose.** It is the
+  *direct* endpoint, its only consumer is Alembic (`migrations/env.py`), and the gate never
+  runs Alembic — so there is nothing for a value to be useful for, and it is precisely the
+  variable that leaked out of `.env` and pointed a stray `alembic upgrade head` at Neon.
+  Giving it `CT_TEST_DATABASE_URL` too would also be wrong on the merits: against Neon the
+  pooled and direct endpoints are genuinely *different* hosts, so one variable cannot stand
+  for both. `direct_database_url()` falls back to the pooled URL when it is unset, which is
+  the documented CI/local-Postgres path, so nothing needs it.
 - **CI**: the `server` job runs `uv run pytest -q` directly with `DATABASE_URL` pointing at
   its `postgres:17-alpine` service, so it never goes through this script and still runs the
   full set. **CI is the only place the DB-backed tests execute, by design** — do not weaken

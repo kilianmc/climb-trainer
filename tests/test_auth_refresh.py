@@ -17,15 +17,20 @@ cannot see because they backdate relative to the constant. Widening any of them 
 window in which a real theft goes undetected, which is a security regression no other test
 in the suite would notice.
 
+**No `datetime.now()` anywhere in this module, deliberately.** Every timestamp it writes and
+every timestamp it compares comes from the **database** clock, through `_db_now` — because
+that is the clock `rotate()` uses, and mixing the two turned a boundary assertion into a race
+against the test's own runtime. See `_db_now` and `_backdate_rotation`.
+
 **Skips without `DATABASE_URL`** (see `conftest.py`). CI runs them for real.
 """
 
 import threading
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import Engine, delete, select
+from sqlalchemy import Engine, delete, func, select
 from sqlalchemy.orm import Session
 
 from server.auth import refresh
@@ -61,16 +66,42 @@ def _row(session: Session, token: str) -> AuthSession:
     ).one()
 
 
-def _age_rotation(session: Session, token: str) -> None:
-    """Backdate a retired row's `rotated_at` to just outside the grace window.
+def _db_now(session: Session) -> datetime:
+    """`transaction_timestamp()` — the exact clock `rotate()` compares against.
 
-    The only way to reach the reuse path deliberately: a replay in a test arrives
-    microseconds after the rotation, i.e. always inside the window.
+    ⚠️ Under `db_session` this value is **frozen for the whole test**, and fixed when the
+    fixture's transaction begins (in practice, at the first statement the test issues). The
+    fixture opens one transaction that the session joins as a SAVEPOINT, so a handler's
+    `commit()` is only a `RELEASE SAVEPOINT`, the outer transaction never ends — and Postgres
+    `now()` is transaction-start time, not statement time. That is a property to exploit rather
+    than to work around: every timestamp a test writes and every timestamp `rotate()` reads
+    come from this one value, so the arithmetic below is exact rather than a race against the
+    test's own runtime.
     """
-    _row(session, token).rotated_at = (
-        datetime.now(UTC) - refresh.REPLAY_GRACE - timedelta(seconds=1)
-    )
+    stamped: datetime | None = session.scalar(select(func.now()))
+    # `scalar()` is typed as optional; `select now()` cannot return no row.
+    assert stamped is not None
+    return stamped
+
+
+def _backdate_rotation(session: Session, token: str, age: timedelta) -> None:
+    """Set a retired row's `rotated_at` to exactly `age` before the database clock.
+
+    **Not `datetime.now(UTC)`, and that was a real flake.** `rotate()` compares against
+    `transaction_timestamp()`, which under this fixture is fixed at the test's first SQL
+    statement, while a Python clock keeps moving. Backdating by `REPLAY_GRACE + 1s` from a
+    moving clock therefore left a measured age of `11s - elapsed`, so the reuse path was only
+    reachable while the test had spent under a second — and two of the tests that need it
+    call `register` first, which pays a full argon2 hash. One clock on both sides removes the
+    budget entirely.
+    """
+    _row(session, token).rotated_at = _db_now(session) - age
     session.flush()
+
+
+def _age_rotation(session: Session, token: str) -> None:
+    """Push a rotation just OUTSIDE the grace window, so the next replay is read as theft."""
+    _backdate_rotation(session, token, refresh.REPLAY_GRACE + timedelta(seconds=1))
 
 
 def _sessions_snapshot(session: Session) -> list[tuple[object, ...]]:
@@ -146,12 +177,13 @@ def test_the_grace_window_stays_small() -> None:
 
 
 def test_the_clear_cookie_header_matches_the_cookie_it_deletes() -> None:
-    """The raising paths clear the cookie through a header; it must be the SAME cookie.
+    """The raising paths clear the cookie through a header; it must delete the SAME cookie.
 
-    A deletion whose `path` / `secure` / `httponly` / `samesite` differ from the original is
-    a different cookie to the browser, and the real one stays in the jar — a failure with no
-    symptom on the server side at all. `clear_refresh_cookie_header` therefore renders the
-    header by driving `clear_refresh_cookie` itself; this asserts the result actually deletes.
+    **`Path` is the assertion that matters.** RFC 6265 §5.3 keys the cookie store on
+    (name, domain, path), so a header rendered with a different path deletes nothing and the
+    real cookie stays in the jar — a failure with no symptom on the server side at all.
+    `HttpOnly` is checked as a cheap regression on the flags travelling together, not because
+    a mismatch there would stop the deletion; it would not.
 
     Needs no database.
     """
@@ -197,6 +229,30 @@ def test_a_replay_inside_the_grace_window_is_superseded_and_writes_nothing(
     assert third.family_id == first.family_id
 
 
+def test_a_replay_late_in_the_grace_window_is_still_superseded(db_session: Session) -> None:
+    """The grace side of the boundary, measured at a NON-ZERO age.
+
+    Worth having because its neighbour above cannot see the window at all: `rotate()` stamps
+    `rotated_at` from the same frozen `transaction_timestamp()` the replay is then measured
+    against, so that test observes an age of **exactly zero** and would pass with
+    `REPLAY_GRACE = 0`. Backdating to one second inside the window is what makes an
+    in-fixture test compare two genuinely different timestamps, and together with
+    `_age_rotation`'s +1s on the other side it brackets the boundary to ±1 s.
+
+    Deterministic despite looking like a timing test: both sides come from `_db_now`, which
+    the fixture freezes, so this is arithmetic and not a race.
+    """
+    user_id = _a_user(db_session, "late@example.com")
+    first = refresh.issue(db_session, user_id)
+    refresh.rotate(db_session, first.token)
+    _backdate_rotation(db_session, first.token, refresh.REPLAY_GRACE - timedelta(seconds=1))
+
+    with pytest.raises(refresh.RefreshSupersededError):
+        refresh.rotate(db_session, first.token)
+
+    assert all(row.revoked_at is None for row in _family(db_session, first.family_id))
+
+
 def test_a_revoked_row_is_never_graced_even_inside_the_window(db_session: Session) -> None:
     """The guard against widening the grace condition.
 
@@ -229,9 +285,9 @@ def test_a_rotated_row_whose_token_has_expired_is_not_graced(db_session: Session
     user_id = _a_user(db_session, "expired@example.com")
     issued = refresh.issue(db_session, user_id)
     row = _row(db_session, issued.token)
-    stamp = datetime.now(UTC)
-    # Rotated one second ago — squarely inside the window — on a token that expired a minute
-    # ago. The minute is slack against clock differences between this process and Postgres.
+    # Both stamps come from the database clock, so "one second inside the window" and
+    # "expired a minute ago" are exact rather than relative to this process's clock.
+    stamp = _db_now(db_session)
     row.rotated_at = stamp - timedelta(seconds=1)
     row.expires_at = stamp - timedelta(minutes=1)
     db_session.flush()
@@ -452,6 +508,14 @@ def test_two_simultaneous_rotations_of_one_token_cannot_both_succeed(seeded: Eng
 
     This test does NOT use `db_session`: proving a row lock needs two real transactions on
     two real connections, so the rows are committed and cleaned up by hand.
+
+    ⚠️ **It is therefore the only test in this file that exercises two genuinely distinct
+    `transaction_timestamp()` values, which makes it the sole cover for the database-clock
+    comparison the grace window is built on.** Everything under `db_session` shares one
+    frozen clock by construction (see `_db_now`), so a bug that only shows up when the
+    stamping transaction and the measuring transaction are different — the exact case
+    two serverless invocations produce — would be invisible everywhere else. Do not "simplify"
+    this onto the `db_session` fixture, and do not let it be deleted as slow.
 
     (The `is_alive` check below is only a guard against the degenerate ordering where the
     second finishes before the first commits; on its own it proves nothing, because an
