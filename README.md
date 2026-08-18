@@ -65,11 +65,18 @@ package.json        root — the version source of truth (web/ and pyproject sta
 vercel.json         framework:null + build command + /api and SPA rewrites
 pyproject.toml      Python deps (no requirements.txt, deliberately)
 uv.lock             committed lockfile
+alembic.ini         Alembic config (URL comes from the environment, never this file)
 api/index.py        thin Vercel Python entrypoint -> server.app:app
+migrations/         Alembic env.py + versions/
 server/
   app.py            the FastAPI application
-  settings.py       env-driven config (CORS allowlist, production detection)
-tests/              backend tests (pytest)
+  settings.py       env-driven config (CORS allowlist, the two Neon URLs)
+  db.py             engine + session wiring, tuned for serverless + Neon billing
+  models.py         SQLAlchemy 2 models, constraint naming convention, TIMESTAMPTZ
+  seed.py           reference-data seed (the same module CI and production run)
+  domain/
+    grades.py       the grade ordinal ladder — pure Python, no DB
+tests/              backend tests (pytest; DB tests skip without DATABASE_URL)
 web/
   index.html
   vite.config.ts    dev server + /api proxy to :8000
@@ -90,8 +97,34 @@ Requires Node per `.nvmrc` (24) and [`uv`](https://docs.astral.sh/uv/) for Pytho
 # once
 npm --prefix web ci
 uv sync --all-groups
-cp .env.example .env
+cp .env.example .env      # then fill in the Neon URLs and AUTH_SECRET
 ```
+
+`.env` is **loaded automatically** by `server/settings.py`, so the API, `alembic`,
+`pytest` and `python -m server.seed` all pick it up with no `--env-file` flag. An
+exported environment variable always overrides the file, and the load is skipped
+entirely on Vercel so a stray `.env` can never shadow production config. Quote any
+value containing `&` (Neon appends `&channel_binding=require`) if you also shell-source
+the file.
+
+The variables, all documented inline in `.env.example`:
+
+| Variable                | What it is                                                            |
+| ----------------------- | --------------------------------------------------------------------- |
+| `CORS_ORIGINS`          | Comma-separated allowlist. A `*` fails at startup.                    |
+| `DATABASE_URL`          | Neon **pooled** endpoint (host contains `-pooler`) — the app.         |
+| `DATABASE_URL_UNPOOLED` | Neon **direct** endpoint — Alembic only.                              |
+| `AUTH_SECRET`           | HS256 signing key for access tokens. **≥32 chars**, generate it.      |
+| `COOKIE_SECURE`         | Optional. Defaults to `true`; set `false` only for http on localhost. |
+
+Generate a signing key with
+`python -c "import secrets; print(secrets.token_urlsafe(48))"`. It has to be set in
+Vercel too, for every scope you deploy to — `.env` is not read inside a deployment.
+Nothing secret may ever carry a `VITE_` prefix: that prefix is inlined into the public
+client bundle.
+
+Database migrations are **not** run from a laptop against production. Use the manual
+**Migrate** workflow (Actions → Migrate); see `CLAUDE.md`.
 
 Then run both halves — the API on `:8000`, the SPA on `:5173` with Vite proxying
 `/api` across so the two share an origin exactly as they do in production:
@@ -113,11 +146,17 @@ npm --prefix web run dev          # http://localhost:5173
 One command runs the same checks CI does:
 
 ```bash
-npm run check          # web: format:check, lint, typecheck, test, build
-                       # server: ruff check, ruff format --check, pytest
+npm run check          # web: format:check, lint, typecheck, build, test
+                       # server: ruff check, ruff format --check, mypy, pytest
 npm run check:web      # just the frontend half
 npm run check:server   # just the backend half
 ```
+
+The local gate needs **no database**: the Postgres-backed tests skip cleanly when
+`DATABASE_URL` is unset. CI runs them for real against a pinned `postgres:17-alpine`
+service container, after `alembic upgrade head` — so **CI is what proves the
+migrations** — plus `alembic check` to catch model drift. SQLite is never substituted;
+the schema depends on native enums, `text[]`, `GENERATED … STORED` and GIN.
 
 CI (`.github/workflows/ci.yml`) enforces three required jobs: **`web`**, **`server`**,
 and **`secrets`** (gitleaks over full history). `npm run check` covers the first two;
@@ -130,6 +169,33 @@ compiler, the player clock), and regressions. Presentational UI, pass-through wr
 and anything the type system already guarantees are deliberately left untested. See
 [`CLAUDE.md`](CLAUDE.md) for the full rule.
 
+## Signing in
+
+The same public landing page serves both mounts. From it you can log in, create an account, or
+open the **demo** — a seeded, read-only account that needs no email address, so the app can be
+explored end to end without registering.
+
+The access token is held **in memory only**, never in `localStorage` or `sessionStorage`, and
+the refresh token is an httpOnly host-only cookie the browser attaches to `/api/auth` alone.
+Refresh happens **lazily, on a 401**, never on a timer, and is guarded on three axes, because
+rotation detects reuse by design and two racing refreshes would otherwise revoke the whole
+token family. Within a tab, concurrent 401s share one in-flight refresh. Across tabs of one
+origin, which share the cookie but not that closure, a Web Lock makes the second tab wait and
+then rotate legitimately in its turn. Across the **two origins** — the standalone app and the
+federated mount, which share a cookie but get separate lock managers — the server answers the
+loser of a race with a 409 inside a 10-second window and the client retries once, rotating
+whatever the shared cookie jar now holds. That is a strong mitigation rather than a guarantee:
+one retry converges exactly two origins, and a loser delayed past the window is still read as a
+replay. When it does not converge, the mount reports a signed-out session and a reload fixes it
+— the token family survives. No token is ever shared between tabs. Demo sessions
+have no refresh cookie and re-mint instead.
+
+Everything under `web/src/routes/_authed/` is behind a route guard that redirects to `/login`
+with the intended path, and `web/src/publicRoutes.test.ts` asserts no route can become public
+by being filed in the wrong directory. Discovering an existing session costs a database write,
+so it is attempted only when a guarded route is entered — never for a visitor who is just
+reading the landing page.
+
 ## Dual mount
 
 One route tree, two entries:
@@ -137,12 +203,15 @@ One route tree, two entries:
 | Mount          | Entry        | History                | Notes                                                               |
 | -------------- | ------------ | ---------------------- | ------------------------------------------------------------------- |
 | **Standalone** | `main.tsx`   | `createBrowserHistory` | `climb.kilianmc.com`, deep links, PWA-installable. Real product.    |
-| **Federated**  | `remote.tsx` | `createMemoryHistory`  | Remote `climbTrainer`, exposes `./App`, mounted by portfolio-shell. |
+| **Federated**  | `remote.tsx` | `createRemoteHistory`  | Remote `climbTrainer`, exposes `./App`, mounted by portfolio-shell. |
 
 The federated mount runs on the **kilianmc.com origin**, which is why every
 `localStorage` key is namespaced `ct:`, no service worker is ever registered from
-`remote.tsx`, and the API base is resolved from `import.meta.url` rather than a
-relative path. Auth works identically in both mounts because `climb.kilianmc.com` and
+`remote.tsx`, the API base is resolved from `import.meta.url` rather than a relative
+path, and `<Link>` hrefs are rewritten to absolute `climb.kilianmc.com` URLs so a
+cmd-click opens the standalone app instead of 404-ing on the portfolio (a left-click
+still navigates in place). Auth works identically in both mounts because
+`climb.kilianmc.com` and
 `kilianmc.com` share a registrable domain and are therefore same-site: an httpOnly
 `SameSite=Lax; Secure` refresh cookie plus an in-memory access token, with no tokens
 in `localStorage` anywhere.

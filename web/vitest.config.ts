@@ -8,5 +8,9 @@ export default defineConfig({
     globals: true,
     setupFiles: ['./src/test/setup.ts'],
     css: false,
+    // Vitest 4 no longer excludes dist/ by default.
+    exclude: ['**/node_modules/**', '**/dist/**'],
+    // jsdom >=28 dropped the ResourceLoader export Vitest still imports, so setting
+    // environmentOptions.jsdom.userAgent throws. Use jsdom's `resources: { userAgent }`.
   },
 });

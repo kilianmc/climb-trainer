@@ -1,21 +1,40 @@
+import { QueryClientProvider } from '@tanstack/react-query';
+import { RouterProvider, createBrowserHistory } from '@tanstack/react-router';
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 
-import App from './App';
+import { AuthProvider, createAuth } from './auth/AuthProvider';
+import { createAppRouter, createQueryClient } from './router';
 import './styles/global.scss';
 
 /**
- * Standalone entry (climb.kilianmc.com). The federated entry lands in PR #4 as a
- * separate `remote.tsx` sharing one route tree.
+ * Standalone entry (climb.kilianmc.com): browser history, so deep links and the back
+ * button work. `remote.tsx` is the federated entry and shares the route tree.
  *
- * A service worker must NEVER be registered from the federated entry — its scope
- * would be kilianmc.com and it would hijack the production portfolio.
+ * ⚠️ This is the ONLY file that may ever register a service worker. From `remote.tsx`
+ * the scope would be kilianmc.com and it would intercept the live portfolio's
+ * requests. PR #7 (PWA) registers it below, and nowhere else.
  */
-const root = document.getElementById('root');
-if (!root) throw new Error('#root is missing from index.html');
+const container = document.getElementById('root');
+if (!container) throw new Error('#root is missing from index.html');
 
-createRoot(root).render(
+// One `Auth` for the router context and for React, so the guard and the nav can never
+// disagree about who is signed in. No token ever leaves this closure.
+const auth = createAuth();
+const queryClient = createQueryClient();
+const router = createAppRouter(createBrowserHistory(), { auth, queryClient });
+
+createRoot(container, {
+  // Without these a failed mount is a blank page and a silent console, which is the
+  // hardest failure to diagnose in a client-only SPA.
+  onCaughtError: (error) => console.error('[climb-trainer] error boundary caught', error),
+  onUncaughtError: (error) => console.error('[climb-trainer] uncaught', error),
+}).render(
   <StrictMode>
-    <App />
+    <AuthProvider auth={auth}>
+      <QueryClientProvider client={queryClient}>
+        <RouterProvider router={router} />
+      </QueryClientProvider>
+    </AuthProvider>
   </StrictMode>,
 );

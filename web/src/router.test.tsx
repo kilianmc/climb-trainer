@@ -1,0 +1,102 @@
+import { QueryClientProvider } from '@tanstack/react-query';
+import { RouterProvider, createBrowserHistory, createMemoryHistory } from '@tanstack/react-router';
+import { render, screen, within } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+import { AuthProvider, createAuth, type Auth } from './auth/AuthProvider';
+import { createAppRouter, createQueryClient } from './router';
+
+/**
+ * Memory history is what makes these nearly free: no jsdom URL plumbing, and it is the
+ * same history the federated mount runs on.
+ *
+ * These also guard a build-level invariant: vitest.config.ts REPLACES vite.config.ts,
+ * so the router plugin is not running here. If `src/routeTree.gen.ts` ever stops being
+ * committed, this file is what fails.
+ */
+function renderWith(auth: Auth, path: string, browser = false) {
+  const queryClient = createQueryClient();
+  const router = createAppRouter(
+    browser ? createBrowserHistory() : createMemoryHistory({ initialEntries: [path] }),
+    { auth, queryClient },
+  );
+  render(
+    <AuthProvider auth={auth}>
+      <QueryClientProvider client={queryClient}>
+        <RouterProvider router={router} />
+      </QueryClientProvider>
+    </AuthProvider>,
+  );
+  return router;
+}
+
+/** Signed in, so the guarded leaves and the authenticated nav are reachable. */
+function signedIn(): Auth {
+  const auth = createAuth();
+  auth.session.set('live-token', 'user');
+  return auth;
+}
+
+beforeEach(() => {
+  // Nothing in the tree fetches on mount any more (the dashboard's /api/health probe went
+  // with PR #6), but an unstubbed fetch would still turn any regression into a network error
+  // rather than a readable assertion failure.
+  vi.stubGlobal('fetch', vi.fn());
+});
+
+afterEach(() => vi.unstubAllGlobals());
+
+describe('createAppRouter', () => {
+  it('renders the public landing page at /', async () => {
+    renderWith(createAuth(), '/');
+    expect(await screen.findByRole('heading', { name: 'climb-trainer' })).toBeInTheDocument();
+  });
+
+  it('navigates to a lazy leaf, loading its chunk on demand', async () => {
+    const router = renderWith(signedIn(), '/dashboard');
+    await screen.findByRole('heading', { name: 'Dashboard' });
+
+    await router.navigate({ to: '/plan' });
+
+    expect(await screen.findByRole('heading', { name: 'Plan' })).toBeInTheDocument();
+    // The shell survives the hop — the nav is outside the outlet.
+    expect(screen.getByRole('navigation', { name: 'Main' })).toBeInTheDocument();
+  });
+
+  /**
+   * The standalone mount serves its own origin, so its hrefs stay relative. The federated
+   * mount rewrites them to absolute standalone URLs (`remote.guard.test.tsx`); that must
+   * never leak into this entry, which is the one `main.tsx` uses. Issue #16.
+   *
+   * Asserted on the authenticated nav: it is the longer of the two and the one that carries
+   * the in-app destinations, so it is where an absolute href would do the damage.
+   */
+  it('keeps hrefs relative on the standalone (browser-history) mount', async () => {
+    window.history.replaceState({}, '', '/dashboard');
+    renderWith(signedIn(), '/dashboard', true);
+
+    const nav = await screen.findByRole('navigation', { name: 'Main' });
+    const hrefs = within(nav)
+      .getAllByRole('link')
+      .map((link) => link.getAttribute('href'));
+
+    expect(hrefs).toEqual(['/dashboard', '/plan', '/session', '/diary', '/profile']);
+  });
+
+  it('keeps the anonymous nav relative too', async () => {
+    window.history.replaceState({}, '', '/');
+    renderWith(createAuth(), '/', true);
+
+    const nav = await screen.findByRole('navigation', { name: 'Main' });
+    const hrefs = within(nav)
+      .getAllByRole('link')
+      .map((link) => link.getAttribute('href'));
+
+    expect(hrefs).toEqual(['/', '/login', '/register']);
+  });
+
+  it('lands an unmatched path on the catch-all rather than a blank outlet', async () => {
+    renderWith(createAuth(), '/no-such-page');
+    expect(await screen.findByRole('heading', { name: 'Not found' })).toBeInTheDocument();
+  });
+});

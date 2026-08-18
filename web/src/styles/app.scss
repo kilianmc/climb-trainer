@@ -1,0 +1,258 @@
+// Everything here is scoped to the single `.ct-app` root, tokens included. In the
+// federated mount this stylesheet is injected into kilianmc.com's document, so a
+// `:root` or `body` rule would restyle the shell — and a full-screen session player
+// will fight the shell's ProjectViewer chrome if it escapes this element.
+//
+// Deliberately minimal: the design system (surfaces, elevation, bento grid,
+// container queries) is PR #7's, not this PR's.
+//
+// PR #6 draws that line explicitly. The landing page and the auth screens are built to
+// their FINAL STRUCTURE, styled with the five tokens below plus exactly four new
+// primitives — one input, one button, one error, one badge — and the small amount of
+// block layout the landing page's sections and image slots need. Deliberately absent, and
+// PR #7's to add: cards, grid or bento areas, a shadow scale, container queries, any new
+// design token, and anything outside `.ct-app`.
+
+.ct-app {
+  --ct-bg: #fbfbfa;
+  --ct-fg: #16181d;
+  --ct-muted: #5c6270;
+  --ct-accent: #1f6f4a;
+  --ct-danger: #b3261e;
+
+  @media (prefers-color-scheme: dark) {
+    --ct-bg: #101216;
+    --ct-fg: #eef0f3;
+    --ct-muted: #9aa1ad;
+    --ct-accent: #63c295;
+    --ct-danger: #f2b8b5;
+  }
+
+  box-sizing: border-box;
+
+  *,
+  *::before,
+  *::after {
+    box-sizing: border-box;
+  }
+
+  background: var(--ct-bg);
+  color: var(--ct-fg);
+  font:
+    16px/1.55 -apple-system,
+    BlinkMacSystemFont,
+    system-ui,
+    sans-serif;
+
+  // Mobile-first, and honest about safe-area insets from the start: this app is used
+  // one-handed on a phone in a gym, often in landscape on a bouldering mat.
+  padding: max(1rem, env(safe-area-inset-top)) max(1.25rem, env(safe-area-inset-right))
+    max(1.5rem, env(safe-area-inset-bottom)) max(1.25rem, env(safe-area-inset-left));
+  max-inline-size: 34rem;
+  margin-inline: auto;
+
+  h1 {
+    margin: 0 0 0.25rem;
+    font-size: 1.5rem;
+    letter-spacing: -0.01em;
+  }
+
+  h2 {
+    margin: 0 0 0.5rem;
+    font-size: 1.15rem;
+    letter-spacing: -0.005em;
+  }
+
+  &__nav {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem 1rem;
+    margin-block-end: 1.5rem;
+
+    a {
+      color: var(--ct-muted);
+      text-decoration: none;
+      // The 44x44 floor from CLAUDE.md's accessibility rules — BOTH axes, because a
+      // short label ("Plan") is only ~31px wide on its own. PR #7 owns real hit-area
+      // and spacing design; this is the floor, not a finished nav.
+      min-block-size: 44px;
+      min-inline-size: 44px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+
+      &[aria-current='page'] {
+        color: var(--ct-accent);
+      }
+    }
+  }
+
+  &__muted {
+    margin: 0 0 1.5rem;
+    color: var(--ct-muted);
+  }
+
+  &__status {
+    margin: 0;
+    font-size: 0.95rem;
+    color: var(--ct-muted);
+
+    &--error {
+      color: var(--ct-danger);
+    }
+  }
+
+  // --- Landing page structure. Block flow only, no grid: see the note at the top. ---
+
+  &__lede {
+    margin: 0 0 1.5rem;
+    font-size: 1.1rem;
+    color: var(--ct-muted);
+  }
+
+  &__section {
+    margin-block-end: 2.5rem;
+
+    p {
+      margin: 0 0 1rem;
+    }
+  }
+
+  &__actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+  }
+
+  &__figure {
+    margin: 0;
+  }
+
+  // Placeholder for a screenshot that cannot exist yet — the plan UI and the session
+  // player are later PRs. Obviously a placeholder on purpose: a mocked-up screenshot of
+  // software that does not run would be worse than an empty frame.
+  &__shot {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    aspect-ratio: 16 / 9;
+    border: 1px dashed var(--ct-muted);
+    border-radius: 0.5rem;
+    color: var(--ct-muted);
+    font-size: 0.9rem;
+  }
+
+  figcaption {
+    margin-block-start: 0.5rem;
+    font-size: 0.85rem;
+  }
+
+  // --- The four primitives. ---
+
+  &__button {
+    // Touch target first, per the accessibility rules: this is a one-handed, chalky-fingers
+    // app and a 32px button is unusable mid-session.
+    min-block-size: 44px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding-inline: 1rem;
+    border: 1px solid var(--ct-muted);
+    border-radius: 0.5rem;
+    background: transparent;
+    color: var(--ct-fg);
+    font: inherit;
+    text-decoration: none;
+    cursor: pointer;
+
+    // A visible press state is the single biggest contributor to the app feeling tactile,
+    // and unlike a shadow scale it costs nothing to render. `:focus-visible` rather than
+    // `:focus` so a mouse click does not leave a ring behind.
+    &:active {
+      transform: translateY(1px);
+    }
+
+    &:focus-visible {
+      outline: 2px solid var(--ct-accent);
+      outline-offset: 2px;
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      &:active {
+        transform: none;
+      }
+    }
+
+    &:disabled {
+      color: var(--ct-muted);
+      cursor: default;
+    }
+
+    &--primary {
+      border-color: var(--ct-accent);
+      background: var(--ct-accent);
+      color: var(--ct-bg);
+
+      &:disabled {
+        border-color: var(--ct-muted);
+        background: transparent;
+        color: var(--ct-muted);
+      }
+    }
+
+    // Sits in the nav next to links, so it must not read as a call to action.
+    &--quiet {
+      border-color: transparent;
+      padding-inline: 0;
+      color: var(--ct-muted);
+    }
+  }
+
+  &__form {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 1rem;
+    max-inline-size: 22rem;
+  }
+
+  &__field {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+    color: var(--ct-muted);
+    font-size: 0.9rem;
+  }
+
+  &__input {
+    min-block-size: 44px;
+    padding-inline: 0.75rem;
+    border: 1px solid var(--ct-muted);
+    border-radius: 0.5rem;
+    background: var(--ct-bg);
+    color: var(--ct-fg);
+    font: inherit;
+
+    &:focus-visible {
+      outline: 2px solid var(--ct-accent);
+      outline-offset: 1px;
+    }
+  }
+
+  &__error {
+    margin: 0;
+    color: var(--ct-danger);
+    font-size: 0.95rem;
+  }
+
+  &__badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.15rem 0.5rem;
+    border: 1px solid var(--ct-accent);
+    border-radius: 999px;
+    color: var(--ct-accent);
+    font-size: 0.8rem;
+  }
+}
