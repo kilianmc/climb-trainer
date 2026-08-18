@@ -1,4 +1,4 @@
-import { ApiError, apiFetch, type ApiRequestInit } from '../api/client';
+import { ApiError, NotJsonError, apiFetch, type ApiRequestInit } from '../api/client';
 import type { TokenResponse } from './authClient';
 import type { SessionStore } from './session';
 
@@ -14,19 +14,43 @@ import type { SessionStore } from './session';
  * row after the winner commits, see `rotated_at` set, and revoke the family, killing the
  * winner's brand-new token too. Both callers end up logged out with no way to refresh.
  *
- * That has to be prevented on **two** axes, because the refresh cookie is scoped to the
- * browser profile while this closure is scoped to one mount:
+ * Three realms are in play and **they do not line up**, which is the whole shape of this
+ * problem. Getting them the wrong way round is how the guarantee gets overstated:
+ *
+ * | Thing                | Realm                                            |
+ * | -------------------- | ------------------------------------------------ |
+ * | `inFlight` below     | one **mount** (a closure local)                  |
+ * | a Web Lock           | one **origin** (partitioned by storage key)      |
+ * | the refresh cookie   | one **site**, i.e. the whole browser profile     |
+ *
+ * So there are two mechanisms and they cover two of the three gaps:
  *
  * 1. **Within a mount** — `inFlight`, so N concurrent 401s share one attempt.
- * 2. **Across tabs and mounts** — the **Web Locks API**, because two tabs on
+ * 2. **Across tabs of ONE origin** — the **Web Locks API**, because two tabs on
  *    climb.kilianmc.com have two independent `inFlight` closures and one shared cookie.
  *
- * The cross-tab fix is narrower than it looks, and the reason matters: the race only breaks
- * because both tabs read the same **pre-rotation** cookie. Serialising is therefore sufficient
- * on its own — the waiting tab wakes up, sends the *already-rotated* cookie, and performs a
- * legitimate rotation of its own. It gets a valid token, reuse detection is never tripped, and
- * no server change is needed. The cost is one extra Postgres write per additional tab, which
- * is correct behaviour rather than a bug.
+ * ⚠️ **The lock does NOT cover mounts, and must not be described as if it did.** The standalone
+ * app is `https://climb.kilianmc.com` and the federated mount runs on `https://kilianmc.com`,
+ * so they get two *different* lock managers — `climb-trainer:auth-refresh` in one excludes
+ * nothing in the other — while sharing **one** refresh cookie. And that cookie sharing is not
+ * incidental: same registrable domain, therefore same-*site*, therefore `SameSite=Lax` sends it,
+ * which is the entire reason auth works in the federated mount (see `remote.tsx`). Exactly the
+ * same origin asymmetry that rules out `BroadcastChannel` below.
+ *
+ * **Residual, tracked in issue #27:** a standalone tab open *and* the climb-trainer card open on
+ * the portfolio is the **unlocked** arm — both read the same pre-rotation cookie, the second
+ * presentation is indistinguishable from theft, family revoked. `crossTabRefresh.test.ts` cannot
+ * see it, because jsdom models one origin. The realm-independent fix is a **server-side replay
+ * grace window in `rotate()`**, which would have covered all three realms where the lock covers
+ * one; it is a server + migration change, so the lock is a deliberate partial trade and should
+ * stay visible as a trade rather than as a solved problem.
+ *
+ * Where the lock does apply, the fix is narrower than it looks, and the reason matters: the race
+ * only breaks because both tabs read the same **pre-rotation** cookie. Serialising is therefore
+ * sufficient on its own — the waiting tab wakes up, sends the *already-rotated* cookie, and
+ * performs a legitimate rotation of its own. It gets a valid token, reuse detection is never
+ * tripped, and no server change is needed. The cost is one extra Postgres write per additional
+ * tab, which is correct behaviour rather than a bug.
  *
  * **Tokens are deliberately NOT shared between tabs.** A `BroadcastChannel` would be the
  * obvious way to save that write, and it is rejected: in the federated mount the origin is
@@ -44,7 +68,8 @@ import type { SessionStore } from './session';
  * ## The lock, concretely
  *
  * - **Name-spaced `climb-trainer:auth-refresh`.** Lock names are scoped to the ORIGIN, which
- *   in the federated mount is kilianmc.com — shared with the rest of the portfolio.
+ *   in the federated mount is kilianmc.com — shared with the rest of the portfolio, hence the
+ *   prefix, and *not* shared with the standalone app, hence issue #27.
  * - **Held across the FULL round trip, response body included.** `Set-Cookie` is only in the
  *   jar once the response has been received, so releasing before `res.json()` resolves would
  *   let the next waiter send the pre-rotation cookie and reintroduce the exact race.
@@ -54,10 +79,12 @@ import type { SessionStore } from './session';
  *   for exactly as long as the callback's promise is pending, and a closed tab releases it.
  *   The one residual case is a refresh that *hangs* rather than failing — it holds the lock
  *   until `fetch` settles or the tab goes away, which is the correct trade against the race.
- * - **⚠️ Fallback where `navigator.locks` is absent** (no browser we support today; jsdom, and
- *   any non-secure context): behave exactly as before — the per-mount `inFlight` dedupe still
- *   holds, and the cross-tab guarantee is simply not available. It degrades to the previous
- *   behaviour rather than throwing, and never to something worse.
+ * - **⚠️ Fallback where the lock is unavailable** (jsdom; an opaque or sandboxed origin, where
+ *   the property exists but `request()` rejects): behave exactly as before — the per-mount
+ *   `inFlight` dedupe still holds, and the same-origin cross-tab guarantee is simply not
+ *   available. It degrades to the previous behaviour rather than throwing, and never to
+ *   something worse. Presence alone cannot tell you the lock is *usable*, so `withRefreshLock`
+ *   detects the difference by observing whether its callback ever ran.
  *
  * ## Demo scope re-mints; it cannot refresh
  *
@@ -87,16 +114,47 @@ const DEMO_PATH = '/api/auth/demo';
 const REFRESH_LOCK = 'climb-trainer:auth-refresh';
 
 /**
- * Runs `attempt` while holding the cross-tab refresh lock, or straight through where the API
- * is unavailable. `'locks' in navigator` rather than a truthiness check because the DOM lib
- * types `navigator.locks` as non-optional, so this is the honest feature test.
+ * The lock manager, if there is a usable-looking one. A shape check rather than `'locks' in
+ * navigator`: the DOM lib types `navigator.locks` as non-optional, so presence proves nothing,
+ * and a property that is not a callable `request` is not a lock manager.
  */
-function withRefreshLock<T>(attempt: () => Promise<T>): Promise<T> {
-  if (!('locks' in navigator)) return attempt();
-  // The lock is held for exactly as long as this promise is pending — so the whole round
-  // trip, `res.json()` included, which is what puts the rotated Set-Cookie in the jar before
-  // the next waiter sends. Rejection and tab-close both release it.
-  return navigator.locks.request(REFRESH_LOCK, attempt);
+function lockManager(): LockManager | null {
+  const candidate: unknown = 'locks' in navigator ? navigator.locks : undefined;
+  if (typeof candidate !== 'object' || candidate === null) return null;
+  return typeof (candidate as LockManager).request === 'function'
+    ? (candidate as LockManager)
+    : null;
+}
+
+/**
+ * Runs `attempt` while holding the same-origin refresh lock, falling back to running it
+ * unlocked where no lock is available.
+ *
+ * **Presence is not usability and cannot be made into it** — in an opaque or sandboxed origin
+ * the property exists, looks right, and `request()` rejects. There is no feature test for that,
+ * so this does not pretend to have one: it passes a callback that records having been entered,
+ * and on a rejection uses `started` to tell the two cases apart. If the callback never ran,
+ * nothing was sent, the lock manager itself refused, and the honest response is to degrade to
+ * the unlocked path — not to report the page as logged out, which is what attributing an
+ * infrastructure refusal to `mint`'s failure branch would do.
+ */
+async function withRefreshLock<T>(attempt: () => Promise<T>): Promise<T> {
+  const locks = lockManager();
+  if (locks === null) return attempt();
+
+  let started = false;
+  try {
+    // The lock is held for exactly as long as this promise is pending — so the whole round
+    // trip, `res.json()` included, which is what puts the rotated Set-Cookie in the jar before
+    // the next waiter sends. Rejection and tab-close both release it.
+    return await locks.request(REFRESH_LOCK, () => {
+      started = true;
+      return attempt();
+    });
+  } catch (error) {
+    if (started) throw error;
+    return attempt();
+  }
 }
 
 export interface AuthedFetch {
@@ -152,10 +210,16 @@ export function createAuthedFetch(session: SessionStore): Reauthenticator {
         session.set(token.access_token, token.scope);
         return true;
       }
-    } catch {
+    } catch (error) {
       if (session.generation() === epoch) {
         session.clear();
-        exhausted = true;
+        // Latch ONLY when the API itself answered. `exhausted` exists to stop an unbounded
+        // Postgres write per 401, and a write can only have happened if the request reached
+        // FastAPI's rate limiter — which needs a real JSON response. A dropped connection or an
+        // HTML shell from a bad rewrite never got there, so there is nothing to protect against
+        // and latching would report an infrastructure fault as a logged-out session, disabling
+        // refresh for the rest of the page load over a blip.
+        if (error instanceof ApiError && !(error instanceof NotJsonError)) exhausted = true;
       }
     }
 

@@ -92,7 +92,16 @@ function removeLocks(): void {
   Reflect.deleteProperty(navigator, 'locks');
 }
 
-/** Two independent mounts — separate stores, separate `inFlight` closures, one shared jar. */
+/**
+ * Two independent mounts — separate stores, separate `inFlight` closures, one shared jar.
+ *
+ * ⚠️ **This models two tabs of the SAME ORIGIN, which is the only arm the lock covers.** Web
+ * Locks are partitioned per storage key, so the standalone app (climb.kilianmc.com) and the
+ * federated mount (kilianmc.com) get two different lock managers while sharing one refresh
+ * cookie — and jsdom cannot model two origins, so that arm is untestable here. It behaves like
+ * the unlocked arm below and is tracked in issue #27; the fix is a server-side replay grace
+ * window in `rotate()`, not anything this file can assert.
+ */
 function twoTabs(): [SessionStore, SessionStore, () => Promise<[boolean, boolean]>] {
   const a = createSessionStore();
   const b = createSessionStore();
@@ -164,6 +173,43 @@ describe('two mounts refreshing at once', () => {
     // The loser's reuse revoked the family, so the winner's brand-new token is dead too.
     expect(live).toBeNull();
     expect([a.get().token, b.get().token]).toContain(null);
+  });
+
+  /**
+   * Presence is not usability: in an opaque or sandboxed origin `navigator.locks` exists, looks
+   * right, and `request()` rejects. No feature test can see that, so `withRefreshLock` tells the
+   * cases apart by whether its callback was entered. A refusal must degrade to the unlocked path
+   * — not surface as a failed refresh, which would clear the session and report an
+   * infrastructure problem to the user as a logged-out one.
+   */
+  it('degrades to unlocked when the lock manager refuses without running the callback', async () => {
+    Object.defineProperty(navigator, 'locks', {
+      value: {
+        request: () => Promise.reject(new DOMException('denied', 'SecurityError')),
+      },
+      configurable: true,
+    });
+    const [a, , run] = twoTabs();
+
+    const outcomes = await run();
+
+    // The refresh still happened, so the refusal was not mistaken for a dead cookie.
+    expect(outcomes[0]).toBe(true);
+    expect(a.get().token).toBe('access-1');
+    expect(rotations).toBe(1);
+  });
+
+  it.each([
+    ['a non-callable request', { request: 'nope' }],
+    ['an empty object', {}],
+    ['a primitive', 'locks'],
+  ])('treats %s as no lock manager at all rather than throwing', async (_label, value) => {
+    Object.defineProperty(navigator, 'locks', { value, configurable: true });
+    const [a, , run] = twoTabs();
+
+    await run();
+
+    expect(a.get().token).toBe('access-1');
   });
 
   it('releases the lock when a refresh rejects, so the next tab is not wedged', async () => {

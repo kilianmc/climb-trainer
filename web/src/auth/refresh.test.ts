@@ -19,7 +19,12 @@ import { createSessionStore, type SessionStore } from './session';
  * - **demo scope re-mints.** `POST /api/auth/demo` sets no cookie, so there is nothing to
  *   rotate, and sending its token to `/api/auth/refresh` hits the demo write-ban and 403s.
  */
-type Reply = { status: number; body: unknown };
+type Reply = {
+  status: number;
+  body: unknown;
+  /** `'html'` makes `apiFetch` raise `NotJsonError`; `'offline'` makes `fetch` itself reject. */
+  as?: 'html' | 'offline';
+};
 
 const TOKEN = (scope: 'user' | 'demo', value: string): Reply => ({
   status: 200,
@@ -27,6 +32,10 @@ const TOKEN = (scope: 'user' | 'demo', value: string): Reply => ({
 });
 const UNAUTHORISED: Reply = { status: 401, body: { detail: 'Not authenticated.' } };
 const OK: Reply = { status: 200, body: { ok: true } };
+/** A rewrite serving the SPA shell for an /api path: 200, but not JSON. */
+const SPA_SHELL: Reply = { status: 200, body: '<!doctype html>', as: 'html' };
+/** The network is gone — `fetch` rejects, so no request ever reached FastAPI. */
+const OFFLINE: Reply = { status: 0, body: null, as: 'offline' };
 
 /** Replies queued per path, so a test states the server's behaviour rather than a sequence. */
 let replies: Map<string, Reply[]>;
@@ -71,9 +80,12 @@ beforeEach(() => {
       const queued = replies.get(path);
       const chosen =
         (queued !== undefined && queued.length > 1 ? queued.shift() : queued?.[0]) ?? OK;
-      return new Response(JSON.stringify(chosen.body), {
+
+      if (chosen.as === 'offline') throw new TypeError('Failed to fetch');
+      const html = chosen.as === 'html';
+      return new Response(html ? String(chosen.body) : JSON.stringify(chosen.body), {
         status: chosen.status,
-        headers: { 'content-type': 'application/json' },
+        headers: { 'content-type': html ? 'text/html; charset=utf-8' : 'application/json' },
       });
     }),
   );
@@ -191,6 +203,40 @@ describe('createAuthedFetch', () => {
     }
 
     expect(calls.filter((path) => path === '/api/plans')).toHaveLength(3);
+    expect(calls.filter((path) => path === '/api/auth/refresh')).toHaveLength(1);
+  });
+
+  /**
+   * `exhausted` protects against an unbounded Postgres write per 401, and a write only happens
+   * if the request reached FastAPI's rate limiter — which needs a real JSON response. Neither of
+   * these got there, so latching would disable refresh for the rest of the page load over an
+   * infrastructure blip, while reporting it to the user as a logged-out session.
+   */
+  it.each([
+    ['a dropped connection', OFFLINE],
+    ['an HTML shell from a bad rewrite', SPA_SHELL],
+  ])('does not latch on %s, because no rate-limit write happened', async (_label, failure) => {
+    session.set('stale', 'user');
+    reply('/api/plans', UNAUTHORISED);
+    reply('/api/auth/refresh', failure, failure, TOKEN('user', 'recovered'));
+
+    const { request } = createAuthedFetch(session);
+    await expect(request('/api/plans')).rejects.toThrow();
+    await expect(request('/api/plans')).rejects.toThrow();
+
+    // Two attempts, not one — the opposite of the 401 case immediately above.
+    expect(calls.filter((path) => path === '/api/auth/refresh')).toHaveLength(2);
+  });
+
+  it('positive control: a real 401 from the API DOES latch', async () => {
+    session.set('stale', 'user');
+    reply('/api/plans', UNAUTHORISED);
+    reply('/api/auth/refresh', UNAUTHORISED);
+
+    const { request } = createAuthedFetch(session);
+    await expect(request('/api/plans')).rejects.toThrow();
+    await expect(request('/api/plans')).rejects.toThrow();
+
     expect(calls.filter((path) => path === '/api/auth/refresh')).toHaveLength(1);
   });
 

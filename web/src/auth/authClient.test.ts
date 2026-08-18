@@ -102,6 +102,67 @@ describe('internalPath', () => {
     expect(internalPath(value)).toBeNull();
   });
 
+  /**
+   * The dot-segment family. None of these is an origin escape — the leading `/` has already
+   * committed the parse to a path — but each one collapses to `climb.kilianmc.com//evil.example`
+   * in the address bar, so they are normalised away rather than left as scruff.
+   */
+  it.each([
+    '/..//evil.example',
+    '/.//evil.example',
+    '/%2e%2e//evil.example',
+    '/~/..//evil.example',
+  ])('rejects the dot-segment collapse %j', (value) => {
+    expect(internalPath(value)).toBeNull();
+  });
+
+  it.each(['/../evil.example', '/a/../../evil.example', '/%2E%2E/evil.example', '/a/./b'])(
+    'rejects the dot segment %j even without a double slash',
+    (value) => {
+      expect(internalPath(value)).toBeNull();
+    },
+  );
+
+  /**
+   * ⚠️ **The literal `//` check runs on the UNDECODED value, and that ordering is load-bearing.**
+   * `decodeSegments` is throw-tolerant, so a trailing `%` makes `decodeURIComponent` fail and the
+   * dot-segment check then runs against the raw string, finds no literal `..`, and passes. The
+   * value below is only harmless because the undecoded `//` check already rejected it.
+   *
+   * So: never move the `//` check after the decode, never make it operate on the decoded string,
+   * and never make `decodeSegments` the sole gate. Producing a `//` by collapse requires a
+   * literal `//` in the input, which is precisely what the earlier check catches.
+   */
+  it('rejects a dot segment hidden behind a decode failure, via the undecoded check', () => {
+    expect(internalPath('/%2e%2e//evil.example%')).toBeNull();
+    // The proof that the decode really does fail on this input, so the case above is reaching
+    // the fallback rather than being caught by the decoded check.
+    expect(() => decodeURIComponent('/%2e%2e//evil.example%')).toThrow();
+  });
+
+  /**
+   * Exactly one level of decoding, which is what the URL parser does: `%2e` is a dot segment to
+   * the parser, `%252e` is not. So a double-encoded value stays a literal path segment and is
+   * correctly accepted rather than over-rejected.
+   */
+  it('accepts a double-encoded dot segment, which the parser never collapses', () => {
+    expect(internalPath('/%252e%252e/plan')).toBe('/%252e%252e/plan');
+  });
+
+  // The segment anchoring must not eat file extensions, dotfiles, version numbers or an
+  // encoded percent in a query string.
+  it.each(['/plan.html', '/a/.well-known/x', '/v1.2/x', '/x?q=100%25', '/diary?page=2#top'])(
+    'still accepts the legitimate %j',
+    (value) => {
+      expect(internalPath(value)).toBe(value);
+    },
+  );
+
+  // A `//` in a QUERY string is not a path traversal, so the checks are path-scoped.
+  it('leaves a double slash inside a query string alone', () => {
+    expect(internalPath('/diary?next=a//b')).toBe('/diary?next=a//b');
+  });
+
   it.each([undefined, null, 42, {}, ['/plan']])('rejects the non-string %j', (value) => {
     expect(internalPath(value)).toBeNull();
   });

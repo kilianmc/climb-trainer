@@ -825,11 +825,23 @@ protected by living there.
     attempt. `reauthenticate` joins it **before** comparing tokens — `mint` clears the store
     synchronously before it awaits, so the comparison-first ordering made a second waiter
     conclude someone else had already finished and give up. That ordering is the whole bug.
-  - **⚠️ Across tabs:** the **Web Locks API**, `climb-trainer:auth-refresh`. `inFlight` is a
-    closure local, so two tabs have two of them, while the refresh cookie is scoped to the
-    **browser profile**. An earlier draft of this file stated the single-flight guarantee
-    unqualified, which was wrong and is the wording to avoid restoring: per-mount dedupe covers
-    strictly less ground than the failure it prevents.
+  - **⚠️ Across tabs of ONE origin:** the **Web Locks API**, `climb-trainer:auth-refresh`.
+    `inFlight` is a closure local, so two tabs have two of them, while the refresh cookie is
+    scoped to the **browser profile**. An earlier draft of this file stated the single-flight
+    guarantee unqualified, which was wrong and is the wording to avoid restoring: per-mount
+    dedupe covers strictly less ground than the failure it prevents.
+  - **⚠️ Three realms are in play and they do not line up** — `inFlight` is per **mount**, a Web
+    Lock is per **origin** (partitioned by storage key), the refresh cookie is per **site**. So
+    the lock does **not** cover mounts: standalone is `climb.kilianmc.com`, the federated mount is
+    `kilianmc.com`, they get two different lock managers, and they share one cookie *because*
+    they are same-site — which is the entire reason auth works federated at all. **Never describe
+    the lock as covering "tabs and mounts".**
+  - **Residual, tracked in issue #27:** a standalone tab plus the climb-trainer card open on the
+    portfolio is the unlocked arm, and the family still gets revoked. `crossTabRefresh.test.ts`
+    cannot see it — jsdom models one origin. The realm-independent fix is a **server-side replay
+    grace window in `rotate()`**, which would cover all three realms where the lock covers one.
+    The lock is therefore a deliberate **partial trade**, and it must stay visible as a trade
+    rather than get written up as a solved problem.
   - The cross-tab fix is narrower than it looks. The race only breaks because both tabs read
     the same **pre-rotation** cookie, so serialising is sufficient by itself: the waiting tab
     wakes, sends the *already-rotated* cookie and performs a legitimate rotation of its own.
@@ -842,10 +854,17 @@ protected by living there.
   - The lock is held across the **full** round trip, `res.json()` included, because `Set-Cookie`
     only reaches the jar on receipt; releasing earlier reintroduces the exact race. Only the
     refresh path takes it — `POST /api/auth/demo` presents no cookie and cannot race.
-  - **Where `navigator.locks` is absent** (jsdom; any non-secure context) it degrades to the
-    per-mount dedupe and the cross-tab guarantee is simply unavailable — never to something
-    worse, and never a throw. `auth/crossTabRefresh.test.ts` asserts both arms; the no-locks arm
-    is the permanent record of that boundary and is what keeps the locked arm honest.
+  - **Where the lock is unavailable** it degrades to the per-mount dedupe and the same-origin
+    guarantee is simply unavailable — never to something worse, and never a throw.
+    `auth/crossTabRefresh.test.ts` asserts both arms; the no-locks arm is the permanent record of
+    that boundary and is what keeps the locked arm honest. **Presence is not usability and cannot
+    be made into it**: in an opaque or sandboxed origin the property exists, looks right, and
+    `request()` rejects. `withRefreshLock` therefore tells the cases apart by whether its callback
+    was entered, and a refusal falls back to running unlocked.
+  - **`exhausted` latches only when the API itself answered.** A dropped connection or an HTML
+    shell from a bad rewrite never reached FastAPI's rate limiter, so there is no Postgres write
+    to protect against — and latching would disable refresh for the rest of the page load over a
+    blip, while reporting an infrastructure fault to the user as a logged-out session.
 - **One failure memo, shared by `bootstrap()` and `request()`.** `bootstrap()` used to carry its
   own `attempted` cap while `request()` carried none, so once the store was anonymous `stale`
   and `current` were both `null`, the early-out never fired, and **every** subsequent 401 minted
