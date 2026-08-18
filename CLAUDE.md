@@ -768,7 +768,8 @@ neither listed nor 401-ing.
 `POST /api/auth/demo`, enumerated in `DEMO_WRITE_EXEMPT_ROUTES`), **and**
 `get_request_session` issues `SET LOCAL transaction_read_only = on` for a demo
 principal. A consequence for the auth UI: a client in demo mode must **drop its demo
-token before calling login or register**, or those calls 403.
+token before every `POST /api/auth/*`** — see the Auth UI section below, which corrects the
+narrower "login or register" wording this line used to carry.
 
 `AUTH_SECRET` (≥32 chars) is read lazily via `server/settings.py::auth_secret()`, never
 at import time, and must be set in Vercel for every scope.
@@ -789,6 +790,150 @@ The 429 is identical whichever bucket tripped, and the email counter increments 
 addresses that do not exist, so it is not an account-existence oracle. It is an **abuse**
 control only; see the correction in the compute-budget section for why it does not
 protect awake time.
+
+### Auth UI (PR #6) — the client half of the contract
+
+`web/src/auth/` — `session.ts` (the in-memory token store), `authClient.ts` (the five
+credential calls), `refresh.ts` (single-flight silent refresh), `AuthProvider.tsx`
+(composition + `bootstrap()` + `useAuth()`), `redirectTarget.ts`, `messages.ts`. The guard is
+the pathless layout route `web/src/routes/_authed.tsx`; everything under `routes/_authed/` is
+protected by living there.
+
+**Five rules, each of which is a failure the obvious implementation ships:**
+
+- **⚠️ Drop the token before EVERY `POST /api/auth/*`, not just login and register.**
+  `enforce_auth` applies the demo write-ban **before** its public-route check, so a `demo`
+  bearer 403s on `register`, `login`, `logout` **and** `refresh` alike — every mutating auth
+  route except `POST /api/auth/demo`, the sole entry in `DEMO_WRITE_EXEMPT_ROUTES`. The
+  earlier wording of this rule said "login or register" and was too narrow.
+  `authedFetch`'s `send()` also refuses to attach a bearer to any `CREDENTIAL_PATHS` entry, so
+  the rule holds **structurally** and not only by call-site discipline — that set used to
+  suppress the retry-on-401 but not the header, which is precisely the footgun the rule exists
+  to prevent. `/api/auth/me` is deliberately outside the set: a GET keeps its bearer.
+- **Demo scope RE-MINTS; it cannot refresh.** `POST /api/auth/demo` takes no `Response` and
+  sets no cookie, so a demo session has no family to rotate, and sending its 1 h token to
+  `/api/auth/refresh` hits the write-ban and 403s — a failure that looks nothing like an
+  expiry. `refresh.ts` branches on scope for that reason.
+- **Serialising the refresh is a correctness requirement, not a request-count optimisation —
+  and it needs TWO mechanisms, because the two scopes differ.** `refresh.rotate` reads
+  `FOR UPDATE` and treats a second presentation of an already-rotated token as theft, revoking
+  the whole family. Note what the row lock does: it **serialises** two presentations, it does
+  not deduplicate them, so the loser is *guaranteed* to re-read the row after the winner
+  commits, see `rotated_at` set, and revoke the family — killing the winner's brand-new token
+  too. Both callers end up unable to refresh.
+  - **Within a mount:** `inFlight` in `createAuthedFetch`, so N concurrent 401s share one
+    attempt. `reauthenticate` joins it **before** comparing tokens — `mint` clears the store
+    synchronously before it awaits, so the comparison-first ordering made a second waiter
+    conclude someone else had already finished and give up. That ordering is the whole bug.
+  - **⚠️ Across tabs of ONE origin:** the **Web Locks API**, `climb-trainer:auth-refresh`.
+    `inFlight` is a closure local, so two tabs have two of them, while the refresh cookie is
+    scoped to the **browser profile**. An earlier draft of this file stated the single-flight
+    guarantee unqualified, which was wrong and is the wording to avoid restoring: per-mount
+    dedupe covers strictly less ground than the failure it prevents.
+  - **⚠️ Three realms are in play and they do not line up** — `inFlight` is per **mount**, a Web
+    Lock is per **origin** (partitioned by storage key), the refresh cookie is per **site**. So
+    the lock does **not** cover mounts: standalone is `climb.kilianmc.com`, the federated mount is
+    `kilianmc.com`, they get two different lock managers, and they share one cookie *because*
+    they are same-site — which is the entire reason auth works federated at all. **Never describe
+    the lock as covering "tabs and mounts".**
+  - **Residual, tracked in issue #27:** a standalone tab plus the climb-trainer card open on the
+    portfolio is the unlocked arm, and the family still gets revoked. `crossTabRefresh.test.ts`
+    cannot see it — jsdom models one origin. The realm-independent fix is a **server-side replay
+    grace window in `rotate()`**, which would cover all three realms where the lock covers one.
+    The lock is therefore a deliberate **partial trade**, and it must stay visible as a trade
+    rather than get written up as a solved problem.
+  - The cross-tab fix is narrower than it looks. The race only breaks because both tabs read
+    the same **pre-rotation** cookie, so serialising is sufficient by itself: the waiting tab
+    wakes, sends the *already-rotated* cookie and performs a legitimate rotation of its own.
+    Valid token, reuse never tripped, **no server change**. Cost is one extra Postgres write
+    per additional tab, which is correct behaviour rather than a bug.
+  - **Tokens are deliberately NOT shared between tabs.** `BroadcastChannel` would save that
+    write and is rejected: in the federated mount the origin is kilianmc.com, so the channel is
+    shared with the shell and every other remote, and an access token on it would give away the
+    property the design holds — token in no storage, no URL, no `postMessage`, no React prop.
+  - The lock is held across the **full** round trip, `res.json()` included, because `Set-Cookie`
+    only reaches the jar on receipt; releasing earlier reintroduces the exact race. Only the
+    refresh path takes it — `POST /api/auth/demo` presents no cookie and cannot race.
+  - **Where the lock is unavailable** it degrades to the per-mount dedupe and the same-origin
+    guarantee is simply unavailable — never to something worse, and never a throw.
+    `auth/crossTabRefresh.test.ts` asserts both arms; the no-locks arm is the permanent record of
+    that boundary and is what keeps the locked arm honest. **Presence is not usability and cannot
+    be made into it**: in an opaque or sandboxed origin the property exists, looks right, and
+    `request()` rejects. `withRefreshLock` therefore tells the cases apart by whether its callback
+    was entered, and a refusal falls back to running unlocked.
+  - **`exhausted` latches only when the API itself answered.** A dropped connection or an HTML
+    shell from a bad rewrite never reached FastAPI's rate limiter, so there is no Postgres write
+    to protect against — and latching would disable refresh for the rest of the page load over a
+    blip, while reporting an infrastructure fault to the user as a logged-out session.
+- **One failure memo, shared by `bootstrap()` and `request()`.** `bootstrap()` used to carry its
+  own `attempted` cap while `request()` carried none, so once the store was anonymous `stale`
+  and `current` were both `null`, the early-out never fired, and **every** subsequent 401 minted
+  another refresh. `refresh_tokens` checks the cookie before the rate limiter, so a cookie-less
+  visitor is free — but a cookie that is present and *invalid* (the state after a revoked
+  family) reaches a `ratelimit.enforce` upsert: one Postgres write and one restarted five-minute
+  Neon window per 401, until the 30/hour bucket 429s. `exhausted` lives in `createAuthedFetch`
+  and is cleared the moment a token arrives by another route, so a login is never a dead end.
+  Two memos with overlapping meaning is how one of them ends up missing.
+- **⚠️ A refresh that resolves after a deliberate session change must not write into it.**
+  `SessionStore.generation()` counts every `set` and `clear`; `mint` captures it after its own
+  clear and re-checks before writing. Without that, a logout landing mid-refresh is silently
+  undone — the nav shows a signed-in user holding a token whose family the server already
+  revoked, and the refresh's `Set-Cookie` lands after logout cleared the jar. The same check
+  makes a login or an "explore the demo" click that lands mid-refresh **win**, and `mint`
+  reports whether the app now holds a usable token rather than whether its own attempt won.
+- **`bootstrap()` is called from `_authed`'s `beforeLoad` and nowhere else.** A refresh is a
+  Postgres write, so doing it at mount would wake Neon for every anonymous visitor who merely
+  reads the landing page. `routes/index.tsx` checks only the in-memory token. **Accepted
+  consequence: a signed-in user opening `/` cold sees the public landing page**, and is signed
+  back in when they enter the app.
+- **No pre-emptive refresh timer off `expires_in`.** Lazy, on 401 only. A timer is a periodic
+  database write for the length of a whole training session, which is the largest avoidable
+  consumer of the compute budget.
+
+**The route guard must not assume a mount.** It never reads `window.location` (in the
+federated mount that is kilianmc.com's) and never builds a URL: `location.href` in
+`beforeLoad` is TanStack's own path + search string, and `redirect()` does not go through
+`createHref`, so no origin can leak. `?redirect=` is re-validated by `internalPath` on the way
+in *and* out — an open redirect here would fire from the portfolio's own address bar. `/login`
+navigates the successful case with `router.history.push`, not `navigate({ to })`, because the
+target is a validated runtime string and `to` is typed to the tree's literal paths.
+
+**`web/src/publicRoutes.test.ts` is the client mirror of
+`tests/test_auth_routes_enumerated.py`**, and exists for the same reason: the directory
+convention protects a leaf by where its file sits, so the failure mode is **omission** — a
+route created next to `login.tsx` instead of inside `_authed/` is silently public and nothing
+else in the gate notices. Every route must be in `PUBLIC_ROUTE_IDS` or under `_authed`.
+
+**It checks the union of the generated tree and the ids the route FILES declare**, and that is
+not belt-and-braces. `routeTree.gen.ts` is only regenerated by a build and `check:web` runs
+`test` before `build`, so a tree-only check was blind on the exact change it exists to catch:
+adding `routes/settings.tsx` left it green until a build had run, and the first CI failure was
+the post-build stale-file check — naming a stale file rather than an unguarded route. The
+declared id is the literal the author passed to `createFileRoute`, which the router plugin
+already validates against the file's path, so this reads an authored fact rather than
+re-deriving the generator's naming rules.
+
+**`GET /api/auth/me` stays SQL-free.** It reads the token's claims and issues **zero** SQL,
+which is what lets a session bootstrap not wake Neon. Adding `email` to `MeResponse` would
+need a row read per call, so the nav shows the *scope* ("Demo — read only") and never an
+address. Do not "improve" it by returning the user's email.
+
+**`apiFetch` changed shape in this PR**: `headers` is a plain `Record<string, string>`, never a
+`Headers` instance (it is spread into an object literal, and spreading a `Headers` yields `{}`,
+silently dropping `accept` and `authorization`); `json` sets the `content-type` FastAPI's
+`strict_content_type` requires; and a 422's **array-shaped** `detail` is joined rather than
+stringified, which used to put `[object Object]` in front of the user on every validation
+failure.
+
+**Where PR #6 stops and PR #7 starts.** The landing page and the auth screens are built to
+their **final structure** — hero, positioning line, three value sections, an "explore the
+demo" section, the three calls to action, and placeholder image slots for screenshots that
+need PR #8 and PR #15a to exist. They are styled with the five existing `.ct-app` tokens plus
+exactly four new primitives: **one input, one button (with real `:active` / `:focus-visible`),
+one error, one badge**, plus the block layout the sections and slots need. Deliberately
+absent, and PR #7's to add: cards, grid or bento areas, a shadow scale, container queries, and
+any new design token. Kilian's call — PR #7 then styles a structure that is already correct
+instead of inventing one late.
 
 ### 🔒 TODO — the end-to-end security verification pass (Kilian's call, 2026-08-13)
 

@@ -3,17 +3,24 @@ import { createRouter, type RouterHistory } from '@tanstack/react-router';
 
 import { routeTree } from './routeTree.gen';
 import { ApiError, NotJsonError } from './api/client';
+import type { AppContext } from './routes/__root';
 import { RouteError, RouteNotFound, RoutePending } from './ui/status';
 
 /**
  * One route tree, two histories. `main.tsx` passes a browser history, `remote.tsx` a
  * memory history — the history is the only difference between the two mounts, so
  * everything else lives here and cannot drift between them.
+ *
+ * `context` is required rather than defaulted: `_authed`'s `beforeLoad` runs outside React
+ * and reads auth from here, so a router built without it would render an app whose guard
+ * silently could not see the session. The entries pass the same `Auth` instance they give
+ * `<AuthProvider>`, which is what keeps the two views of the session from disagreeing.
  */
-export function createAppRouter(history: RouterHistory) {
+export function createAppRouter(history: RouterHistory, context: AppContext) {
   return createRouter({
     routeTree,
     history,
+    context,
     defaultPreload: 'intent',
     // Query owns staleness. Leaving this above 0 would give the router a second,
     // independent cache with its own expiry, and the two would disagree.

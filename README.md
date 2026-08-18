@@ -169,6 +169,27 @@ compiler, the player clock), and regressions. Presentational UI, pass-through wr
 and anything the type system already guarantees are deliberately left untested. See
 [`CLAUDE.md`](CLAUDE.md) for the full rule.
 
+## Signing in
+
+The same public landing page serves both mounts. From it you can log in, create an account, or
+open the **demo** — a seeded, read-only account that needs no email address, so the app can be
+explored end to end without registering.
+
+The access token is held **in memory only**, never in `localStorage` or `sessionStorage`, and
+the refresh token is an httpOnly host-only cookie the browser attaches to `/api/auth` alone.
+Refresh happens **lazily, on a 401**, never on a timer, and is serialised on two axes because
+rotation detects reuse by design — two racing refreshes would revoke the whole token family.
+Within a tab, concurrent 401s share one in-flight refresh; across tabs, which share the cookie
+but not that closure, a Web Lock makes the second tab wait and then rotate legitimately in its
+turn. No token is ever shared between tabs. Demo sessions have no refresh cookie and re-mint
+instead.
+
+Everything under `web/src/routes/_authed/` is behind a route guard that redirects to `/login`
+with the intended path, and `web/src/publicRoutes.test.ts` asserts no route can become public
+by being filed in the wrong directory. Discovering an existing session costs a database write,
+so it is attempted only when a guarded route is entered — never for a visitor who is just
+reading the landing page.
+
 ## Dual mount
 
 One route tree, two entries:

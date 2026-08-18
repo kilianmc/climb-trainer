@@ -3,6 +3,7 @@ import { RouterProvider, createBrowserHistory, createMemoryHistory } from '@tans
 import { render, screen, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { AuthProvider, createAuth, type Auth } from './auth/AuthProvider';
 import { createAppRouter, createQueryClient } from './router';
 
 /**
@@ -13,39 +14,47 @@ import { createAppRouter, createQueryClient } from './router';
  * so the router plugin is not running here. If `src/routeTree.gen.ts` ever stops being
  * committed, this file is what fails.
  */
-function renderAt(path: string) {
-  const router = createAppRouter(createMemoryHistory({ initialEntries: [path] }));
+function renderWith(auth: Auth, path: string, browser = false) {
+  const queryClient = createQueryClient();
+  const router = createAppRouter(
+    browser ? createBrowserHistory() : createMemoryHistory({ initialEntries: [path] }),
+    { auth, queryClient },
+  );
   render(
-    <QueryClientProvider client={createQueryClient()}>
-      <RouterProvider router={router} />
-    </QueryClientProvider>,
+    <AuthProvider auth={auth}>
+      <QueryClientProvider client={queryClient}>
+        <RouterProvider router={router} />
+      </QueryClientProvider>
+    </AuthProvider>,
   );
   return router;
 }
 
+/** Signed in, so the guarded leaves and the authenticated nav are reachable. */
+function signedIn(): Auth {
+  const auth = createAuth();
+  auth.session.set('live-token', 'user');
+  return auth;
+}
+
 beforeEach(() => {
-  // The dashboard probes /api/health; an unstubbed fetch would reject and retry.
-  vi.stubGlobal(
-    'fetch',
-    vi.fn().mockResolvedValue(
-      new Response(JSON.stringify({ status: 'ok' }), {
-        headers: { 'content-type': 'application/json' },
-      }),
-    ),
-  );
+  // Nothing in the tree fetches on mount any more (the dashboard's /api/health probe went
+  // with PR #6), but an unstubbed fetch would still turn any regression into a network error
+  // rather than a readable assertion failure.
+  vi.stubGlobal('fetch', vi.fn());
 });
 
 afterEach(() => vi.unstubAllGlobals());
 
 describe('createAppRouter', () => {
-  it('renders the dashboard at /', async () => {
-    renderAt('/');
+  it('renders the public landing page at /', async () => {
+    renderWith(createAuth(), '/');
     expect(await screen.findByRole('heading', { name: 'climb-trainer' })).toBeInTheDocument();
   });
 
   it('navigates to a lazy leaf, loading its chunk on demand', async () => {
-    const router = renderAt('/');
-    await screen.findByRole('heading', { name: 'climb-trainer' });
+    const router = renderWith(signedIn(), '/dashboard');
+    await screen.findByRole('heading', { name: 'Dashboard' });
 
     await router.navigate({ to: '/plan' });
 
@@ -58,24 +67,36 @@ describe('createAppRouter', () => {
    * The standalone mount serves its own origin, so its hrefs stay relative. The federated
    * mount rewrites them to absolute standalone URLs (`remote.guard.test.tsx`); that must
    * never leak into this entry, which is the one `main.tsx` uses. Issue #16.
+   *
+   * Asserted on the authenticated nav: it is the longer of the two and the one that carries
+   * the in-app destinations, so it is where an absolute href would do the damage.
    */
   it('keeps hrefs relative on the standalone (browser-history) mount', async () => {
-    render(
-      <QueryClientProvider client={createQueryClient()}>
-        <RouterProvider router={createAppRouter(createBrowserHistory())} />
-      </QueryClientProvider>,
-    );
+    window.history.replaceState({}, '', '/dashboard');
+    renderWith(signedIn(), '/dashboard', true);
 
     const nav = await screen.findByRole('navigation', { name: 'Main' });
     const hrefs = within(nav)
       .getAllByRole('link')
       .map((link) => link.getAttribute('href'));
 
-    expect(hrefs).toEqual(['/', '/plan', '/session', '/diary', '/profile', '/login']);
+    expect(hrefs).toEqual(['/dashboard', '/plan', '/session', '/diary', '/profile']);
+  });
+
+  it('keeps the anonymous nav relative too', async () => {
+    window.history.replaceState({}, '', '/');
+    renderWith(createAuth(), '/', true);
+
+    const nav = await screen.findByRole('navigation', { name: 'Main' });
+    const hrefs = within(nav)
+      .getAllByRole('link')
+      .map((link) => link.getAttribute('href'));
+
+    expect(hrefs).toEqual(['/', '/login', '/register']);
   });
 
   it('lands an unmatched path on the catch-all rather than a blank outlet', async () => {
-    renderAt('/no-such-page');
+    renderWith(createAuth(), '/no-such-page');
     expect(await screen.findByRole('heading', { name: 'Not found' })).toBeInTheDocument();
   });
 });

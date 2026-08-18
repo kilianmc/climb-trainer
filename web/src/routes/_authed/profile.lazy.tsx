@@ -10,4 +10,4 @@ function Profile() {
   );
 }
 
-export const Route = createLazyFileRoute('/profile')({ component: Profile });
+export const Route = createLazyFileRoute('/_authed/profile')({ component: Profile });

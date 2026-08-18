@@ -28,6 +28,25 @@ export default tseslint.config(
       '@typescript-eslint/no-floating-promises': 'error',
       '@typescript-eslint/no-misused-promises': 'error',
       '@typescript-eslint/consistent-type-imports': 'error',
+      // `throw redirect({ to })` and `throw notFound()` are how TanStack Router's route guards
+      // work, and neither return type is an Error — they are control flow the router catches,
+      // not failures. Allowed by TYPE NAME so the rule keeps rejecting every other non-Error
+      // throw: `throw new Response(...)`, and a locally-declared type that merely shares the
+      // name, are both still errors (verified by trying them).
+      //
+      // Both entries resolve in `@tanstack/router-core`, where the two functions are declared
+      // (`redirect.d.ts`, `not-found.d.ts`). An `@tanstack/react-router` entry looks like
+      // belt-and-braces and is inert — the re-export does not change the declaring package —
+      // so it is deliberately absent rather than kept "just in case".
+      '@typescript-eslint/only-throw-error': [
+        'error',
+        {
+          allow: [
+            { from: 'package', package: '@tanstack/router-core', name: 'Redirect' },
+            { from: 'package', package: '@tanstack/router-core', name: 'NotFoundError' },
+          ],
+        },
+      ],
     },
   },
 

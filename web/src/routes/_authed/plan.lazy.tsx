@@ -10,4 +10,4 @@ function Plan() {
   );
 }
 
-export const Route = createLazyFileRoute('/plan')({ component: Plan });
+export const Route = createLazyFileRoute('/_authed/plan')({ component: Plan });

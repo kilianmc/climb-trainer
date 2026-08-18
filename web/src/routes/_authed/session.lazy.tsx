@@ -10,4 +10,4 @@ function Session() {
   );
 }
 
-export const Route = createLazyFileRoute('/session')({ component: Session });
+export const Route = createLazyFileRoute('/_authed/session')({ component: Session });

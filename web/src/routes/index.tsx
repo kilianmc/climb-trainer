@@ -1,33 +1,47 @@
-import { useQuery } from '@tanstack/react-query';
-import { createFileRoute } from '@tanstack/react-router';
+import { createFileRoute, redirect, useRouter } from '@tanstack/react-router';
+import { useState } from 'react';
 
-import { apiFetch } from '../api/client';
-
-type Health = { status: string };
+import { authMessage } from '../auth/messages';
+import { useAuth } from '../auth/AuthProvider';
+import { Marketing } from '../ui/Marketing';
 
 /**
- * Dashboard placeholder — PR #8 onward fills it in.
+ * The public landing page — the same page in both mounts, with no per-mount branching and no
+ * auto-enter-demo path. A visitor reads it and then chooses: log in, register, or step into
+ * the demo.
  *
- * The one non-stub part is the health probe carried over from the PR #1 shell. It is
- * the only code path that exercises `apiFetch` resolving its base from
- * `import.meta.url`, which is what makes the federated mount reach climb.kilianmc.com
- * instead of the shell's SPA rewrite. Deleting it would leave that untested in a
- * browser until PR #6.
+ * `beforeLoad` only checks the token **already in memory**; it deliberately does not call
+ * `bootstrap()`. Doing so would fire a refresh rotation — a Postgres write — for every
+ * anonymous visitor who merely reads this page, which is the write-per-request pattern the
+ * compute budget forbids. The accepted consequence: a signed-in user opening `/` cold sees
+ * this page rather than their dashboard, and is signed back in as soon as they enter the app.
  */
-function Dashboard() {
-  const health = useQuery({ queryKey: ['health'], queryFn: () => apiFetch<Health>('/api/health') });
+function Landing() {
+  const router = useRouter();
+  const { client } = useAuth();
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  return (
-    <>
-      <h1>climb-trainer</h1>
-      <p className="ct-app__muted">Training plans that follow the aspects of climbing.</p>
-      <p className="ct-app__status" role="status">
-        {health.isPending && 'Checking the API…'}
-        {health.isSuccess && 'API reachable — SPA and FastAPI are the same origin.'}
-        {health.isError && health.error.message}
-      </p>
-    </>
-  );
+  function exploreDemo() {
+    setPending(true);
+    setError(null);
+    void client
+      .demo()
+      .then(() => router.navigate({ to: '/dashboard' }))
+      .catch((cause: unknown) => {
+        setError(authMessage(cause));
+      })
+      .finally(() => {
+        setPending(false);
+      });
+  }
+
+  return <Marketing onExploreDemo={exploreDemo} demoPending={pending} demoError={error} />;
 }
 
-export const Route = createFileRoute('/')({ component: Dashboard });
+export const Route = createFileRoute('/')({
+  beforeLoad: ({ context }) => {
+    if (context.auth.session.get().token !== null) throw redirect({ to: '/dashboard' });
+  },
+  component: Landing,
+});
