@@ -23,6 +23,7 @@ from datetime import datetime
 from sqlalchemy import (
     TIMESTAMP,
     Boolean,
+    CheckConstraint,
     Enum,
     ForeignKey,
     Index,
@@ -33,6 +34,7 @@ from sqlalchemy import (
     UniqueConstraint,
     Uuid,
     func,
+    text,
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
@@ -130,6 +132,8 @@ class AppUser(Base):
     `password_hash` is **nullable on purpose**. The seeded demo account has no password
     and must never be loggable through `/api/auth/login`; a NULL here is what makes that
     structural rather than a check the login handler could forget.
+
+    `invite_id` is attribution: which invite this account was created from.
     """
 
     __tablename__ = "app_user"
@@ -140,6 +144,13 @@ class AppUser(Base):
     # profile in server/auth/passwords.py. 255 leaves room for a future parameter bump.
     password_hash: Mapped[str | None] = mapped_column(String(255), nullable=True)
     is_demo: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=func.false())
+    # NULLABLE because the demo account and every account predating the gate have no invite.
+    # RESTRICT, not SET NULL or CASCADE: an invite that was used must not be deletable, or a
+    # tidy-up erases the attribution this column exists for. Revoking is the supported
+    # operation on a spent invite; deleting is not.
+    invite_id: Mapped[int | None] = mapped_column(
+        ForeignKey("invite.id", ondelete="RESTRICT"), nullable=True
+    )
     # `Mapped[datetime]` picks up TIMESTAMPTZ from `type_annotation_map` above. The
     # default is a SERVER default so the timestamp is the database's clock, not a
     # serverless function's — the two disagree often enough to matter for ordering.
@@ -183,6 +194,51 @@ class AuthSession(Base):
         Index("ix_auth_session_family_id", "family_id"),
         # "this user's live sessions", for a future device list and for logout-everywhere.
         Index("ix_auth_session_user_id_family_id", "user_id", "family_id"),
+    )
+
+
+class Invite(Base):
+    """A registration invite. One per person, hashed, revocable, and countable.
+
+    Registration is invite-only — see `server/auth/invites.py`. `EmailStr` proves an address
+    is syntactically valid and nothing more, so without this table anyone can create an
+    account on climb.kilianmc.com.
+
+    `code_hash` stores a **sha256 hex digest, never the code**, for the same reason
+    `AuthSession.token_hash` does: a database dump must not be a set of working invites.
+    sha256 rather than argon2 because a code is 128 bits of CSPRNG output — there is no
+    dictionary, and nothing for a work factor to slow down.
+
+    `label` is what makes a use **attributable** ("Bob, from the gym"). Codes are per person,
+    so revoking one revokes exactly one invitation and leaves everyone else's working. It is
+    never returned to a caller.
+
+    `max_uses` / `uses` are a counter rather than a boolean `used` flag because a code for a
+    couple, or for a coach and two clients, is the same code used twice. The CHECK constraints
+    below are the database's own half of the limit: `server/auth/invites.py` takes a row lock
+    so two concurrent registrations cannot both spend the last use, and `ck_invite_uses_within_max`
+    means a bug in that logic fails loudly instead of over-issuing.
+    """
+
+    __tablename__ = "invite"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    # 64 hex characters, exactly — sha256. Unique because it is the lookup key on every
+    # registration, and because two rows sharing a digest would make "which invite" ambiguous.
+    code_hash: Mapped[str] = mapped_column(String(64), unique=True)
+    label: Mapped[str] = mapped_column(String(64))
+    max_uses: Mapped[int] = mapped_column(SmallInteger, server_default=text("1"))
+    uses: Mapped[int] = mapped_column(SmallInteger, server_default=text("0"))
+    # NULL means "no expiry". Aware, like every datetime here.
+    expires_at: Mapped[datetime | None] = mapped_column(nullable=True)
+    revoked_at: Mapped[datetime | None] = mapped_column(nullable=True)
+    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
+
+    __table_args__ = (
+        CheckConstraint("max_uses >= 1", name="max_uses_positive"),
+        # The structural limit. An invite can never be spent more times than it was issued
+        # for, whatever the application layer believes.
+        CheckConstraint("uses >= 0 AND uses <= max_uses", name="uses_within_max"),
     )
 
 

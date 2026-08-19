@@ -58,6 +58,8 @@ server/               the FastAPI application actually lives here
   db.py               engine + session wiring. READ ITS DOCSTRING before touching it.
   models.py           SQLAlchemy 2 models, naming convention, TIMESTAMPTZ default
   seed.py             reference-data seed — the same module CI and production use
+  devseed.py          ten LOCAL test accounts. DEV ONLY; refuses to run in CI. Not seed.py.
+  admin.py            operator CLI: create-invite, set-password. No workflow runs it.
   domain/             PURE Python: no DB, no clock, no RNG, no I/O
 web/                  the Vite SPA, built to web/dist
 tests/                pytest (backend). conftest.py skips DB tests without DATABASE_URL.
@@ -910,6 +912,85 @@ addresses that do not exist, so it is not an account-existence oracle. It is an 
 control only; see the correction in the compute-budget section for why it does not
 protect awake time.
 
+### Registration is invite-gated (issue #35)
+
+`POST /api/auth/register` requires a valid, unexpired, unrevoked, not-exhausted invite code.
+`EmailStr` validates *syntax*, so before this anyone could create an account on
+climb.kilianmc.com; email verification would not have fixed it (it proves an inbox exists,
+not that its owner is someone Kilian knows) and is deliberately still deferred.
+
+`server/auth/invites.py` carries the reasoning. The parts a reader would otherwise reverse:
+
+- **Per-person codes in a table, never a shared env secret.** `invite` holds a **sha256
+  digest, never the code** (same reasoning as `auth_session.token_hash`; sha256 rather than
+  argon2 because a code is 128 bits of CSPRNG output), plus a human `label`, `max_uses`,
+  `uses`, `expires_at` and `revoked_at`. One person's code can be revoked without touching
+  anyone else's, and the count makes a use attributable.
+- **One failure for four causes.** Unknown, expired, revoked and exhausted are all
+  `InviteRejectedError` and all one **400** with one message. Never split them: "expired"
+  confirms a code exists. The shape matches too — one indexed statement either way, nothing
+  committed on any rejection path, and no fast path for "no such code". Two residues are
+  written down in the module and are **not** worth changing behaviour for: `FOR UPDATE` stamps
+  `xmax`, so a found code is write-free in round trips but not in storage; and two
+  *concurrent* presentations of one guess distinguish "row exists" from "no row" because only
+  the former blocks. Both are noise at 128 bits behind 3/hour.
+- **400, not 403.** 403 already means "demo mode is read-only" on every auth route, so
+  reusing it would leave the client unable to write correct copy for either.
+- **⚠️ The message names a way out, and that half is not decoration.** The commonest cause of
+  a rejection is not an attacker: it is someone re-entering the single-use code they already
+  registered with, or retrying after a lost response. `REGISTER` is 3/hour, so they get few
+  goes at working it out. `_INVITE_REJECTED` therefore ends "If you already have an account,
+  log in instead" — true for all four causes, distinguishing none of them, and the only thing
+  that stops a returning invitee asking for a code they do not need. **`web/src/auth/messages.ts`
+  has no `case 400` on purpose**: the server's sentence is already right, and `authMessage` is
+  shared with `/login`, which has no invite field.
+- **Attribution is a column, not just a counter.** `app_user.invite_id` is a nullable FK set
+  from the row `consume()` locked (never from the request). `ondelete=RESTRICT`, so a spent
+  invite cannot be deleted out from under the record of who used it — revoking is the supported
+  way to retire one. Nullable because the demo account and every pre-gate account have none.
+- **`consume()` takes the row `FOR UPDATE` and never commits.** The lock is what stops two
+  concurrent registrations both spending the last use; sharing the handler's transaction is
+  what stops a *failed* registration burning one. `ck_invite_uses_within_max` is the
+  database's own backstop. `tests/test_auth_invites.py` proves both, the second with two real
+  connections.
+- **⚠️ `web/src/registerSubmit.test.tsx` is a core-user-path test, not a render test of
+  presentational UI** — do not delete it under the `CredentialsForm` policy exclusion. It exists
+  because the glue mapping the form's `inviteCode` onto the request's `invite_code` was the one
+  part of the path nothing covered, and `invite_code: ''` shipped green while making sign-up
+  impossible for every invitee (an empty code gets the same 400 as a wrong one). It is the only
+  render test of that form, deliberately.
+- **Minting is a CLI, because the plaintext exists only in the generating process** —
+  `python -m server.admin create-invite --label "..."`, printed once. Revoking needs no
+  secret and therefore no command: `UPDATE invite SET revoked_at = now() WHERE id = ...`.
+- **Migration `0003` creates an empty table** and adds a nullable `app_user.invite_id`, so
+  after it and before the gated deploy, registration still works as it did and no existing row
+  changes. Expand → deploy → contract, as usual.
+
+### Local accounts, and the two things that are NOT `server/seed.py`
+
+`server/seed.py` is called by CI, local development **and production** —
+`.github/workflows/migrate.yml` runs `python -m server.seed` whenever its `seed` input is
+on. So neither of these may ever move into it:
+
+- **`server/devseed.py`** — ten accounts (`<name>@dev.climb-trainer.example`) whose passwords
+  are `<name>` + digits + one special character, randomised per user and **padded to
+  `MIN_PASSWORD_LENGTH`** because a shorter one would be an account `/api/auth/register` and
+  every future reset would refuse. It prints the credentials **once, to the terminal**, and
+  nothing automated invokes it.
+  **Three guards, because they answer three different questions**, and the CI check alone was
+  not enough: `CI`, `GITHUB_ACTIONS`, `VERCEL` and `VERCEL_ENV` are checked for **presence, not
+  truthiness** (`CI=` is still CI, and this repo's Actions logs are public);
+  `CLIMB_DEV_SEED` must be set, because "not CI" is not the claim "this is a throwaway
+  database" and `.env` is loaded on import, so the shell you just minted a production invite
+  from reaches production from here too; and `main()` prints the target **host** (never the URL
+  or a credential) and will not write until you type it back. Guards 1 and 2 are on
+  `seed_dev_users()` as well as `main()`. `CLIMB_DEV_SEED` is deliberately **not** in
+  `.env.example` — in `.env` it becomes standing permission.
+- **`server/admin.py`** — `set-password` (argon2id means there is no cell in Neon a
+  plaintext can be typed into; the password is read with `getpass`, never from `argv`) and
+  `create-invite`. It refuses to set a password on the demo account, whose NULL
+  `password_hash` is what makes it unloggable.
+
 ### Auth UI (PR #6) — the client half of the contract
 
 `web/src/auth/` — `session.ts` (the in-memory token store), `authClient.ts` (the five
@@ -1243,6 +1324,16 @@ hand-rolled parsing are not acceptable.
 - **Paginate every list endpoint** — a bounded `limit` (with a hard server-side
   maximum) plus a keyset cursor. "Return everything" is the injection-adjacent risk:
   resource exhaustion, and it also wakes Neon for longer than it needs to be awake.
+- **⚠️ A 422 must never echo the request back**, and FastAPI's default handler does.
+  `RequestValidationError.errors()` carries `input` for every error, so a too-short password is
+  returned as its own error's `input`, and a **missing** field — a `register` call with no
+  `invite_code` — has `input` set to the *whole body*, password included. It reaches the
+  network panel, every proxy, and anything that logs a response.
+  `server/app.py::validation_error_handler` is an **allowlist** (`type`, `loc`, `msg`) rather
+  than a redaction pass, so a future Pydantic key carrying a value cannot leak through it;
+  `ctx` is dropped too, because that is where the bounds live and the password policy is not
+  something a 422 needs to publish. `tests/test_validation_errors.py` guards it, DB-free, so it
+  runs in the local gate. Do not remove the handler to "get better validation messages".
 - Reject unknown fields (`model_config = ConfigDict(extra="forbid")`) so a typo'd or
   probing field never silently reaches the ORM. Never build an ORM object by splatting
   a client dict (`Model(**payload)`) — assign fields explicitly, or mass assignment

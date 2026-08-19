@@ -5,7 +5,7 @@ import type { Credentials } from '../auth/authClient';
 /**
  * The one email/password form, shared by `/login` and `/register`.
  *
- * `minLength={12}` mirrors `_MIN_PASSWORD_LENGTH` in `server/auth/routes.py`. The server is
+ * `minLength={12}` mirrors `MIN_PASSWORD_LENGTH` in `server/auth/routes.py`. The server is
  * still the authority — this exists because the `register` rate limit is **3 per hour per
  * IP**, so a 422 the browser could have caught costs a third of someone's whole budget.
  * Login sends no minimum (`LoginRequest` has none either, deliberately: enforcing the
@@ -16,6 +16,11 @@ import type { Credentials } from '../auth/authClient';
  * worth testing — that submitting drops a demo token, and where a success navigates to —
  * lives in `auth/` and in the guard tests.
  *
+ * `requestInviteCode` adds the third field `/register` needs (issue #35) and nothing else: one
+ * form, one submit handler, one place the CSP note below applies. `onSubmit` always receives
+ * `inviteCode`, empty on `/login` — a handler typed `(c: Credentials) => void` is still
+ * assignable to it, which is why `/login` needed no change at all.
+ *
  * The form IS the card (no wrapper element), and the submit sits in `ct-app__actionbar` — which
  * GROUPS it at the end of the form behind a hairline rule and stretches it to the card's full
  * width. It does **not** anchor it to the bottom of the viewport: that needs `position: fixed` or
@@ -23,33 +28,44 @@ import type { Credentials } from '../auth/authClient';
  * mount. See `styles/_chrome.scss` for the measurement and for why real bottom-anchoring waits
  * for the session player.
  */
+export interface CredentialsFormValues extends Credentials {
+  /** Empty unless `requestInviteCode` is set. */
+  inviteCode: string;
+}
+
 export interface CredentialsFormProps {
   submitLabel: string;
   pendingLabel: string;
   passwordAutoComplete: 'current-password' | 'new-password';
   minPasswordLength?: number;
+  requestInviteCode?: boolean;
   pending: boolean;
   error: string | null;
-  onSubmit: (credentials: Credentials) => void;
+  onSubmit: (credentials: CredentialsFormValues) => void;
 }
+
+/** `invites.MAX_CODE_LENGTH` on the server. Bounded here so a paste cannot be unbounded. */
+const MAX_INVITE_CODE_LENGTH = 64;
 
 export function CredentialsForm({
   submitLabel,
   pendingLabel,
   passwordAutoComplete,
   minPasswordLength,
+  requestInviteCode = false,
   pending,
   error,
   onSubmit,
 }: CredentialsFormProps) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [inviteCode, setInviteCode] = useState('');
 
   function submit(event: FormEvent<HTMLFormElement>) {
     // The form must never actually navigate: the document CSP sets `form-action 'none'`,
     // and in the federated mount a real submit would unload the whole portfolio.
     event.preventDefault();
-    onSubmit({ email, password });
+    onSubmit({ email, password, inviteCode });
   }
 
   return (
@@ -87,6 +103,30 @@ export function CredentialsForm({
       </label>
       {minPasswordLength !== undefined && (
         <p className="ct-app__muted">At least {minPasswordLength} characters.</p>
+      )}
+
+      {requestInviteCode && (
+        <label className="ct-app__field" htmlFor="credentials-invite-code">
+          Invite code
+          <input
+            id="credentials-invite-code"
+            className="ct-app__input"
+            type="text"
+            name="invite_code"
+            // Not a credential the browser should remember, and case-sensitive base64url, so
+            // every text-assist feature has to be off. `autoCorrect` is the one that matters
+            // on iOS — `spellCheck={false}` does not disable it, and an autocorrected code is
+            // indistinguishable from a wrong one at the server.
+            autoComplete="off"
+            autoCapitalize="none"
+            autoCorrect="off"
+            spellCheck={false}
+            required
+            maxLength={MAX_INVITE_CODE_LENGTH}
+            value={inviteCode}
+            onChange={(event) => setInviteCode(event.target.value)}
+          />
+        </label>
       )}
 
       {error !== null && (

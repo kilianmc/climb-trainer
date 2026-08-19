@@ -107,7 +107,9 @@ def test_the_seed_advances_the_id_sequence_past_the_demo_user(db_session: Sessio
     )
 
 
-def test_registering_after_the_seed_gets_a_fresh_id(api_client: TestClient) -> None:
+def test_registering_after_the_seed_gets_a_fresh_id(
+    api_client: TestClient, invite_code: str
+) -> None:
     """The behavioural half of the same guard, from the user's side.
 
     Without the sequence repair this returns **409 "already registered"** — the register
@@ -117,7 +119,11 @@ def test_registering_after_the_seed_gets_a_fresh_id(api_client: TestClient) -> N
     """
     response = api_client.post(
         "/api/auth/register",
-        json={"email": "first-real-user@example.com", "password": _PASSWORD},
+        json={
+            "email": "first-real-user@example.com",
+            "password": _PASSWORD,
+            "invite_code": invite_code,
+        },
     )
     assert response.status_code == 201, response.text
     assert decode_access_token(response.json()["access_token"]).user_id != DEMO_USER_ID

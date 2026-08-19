@@ -350,6 +350,7 @@ def test_logout_revokes_the_family_and_is_idempotent(db_session: Session) -> Non
 def test_reuse_through_the_api_kills_the_session_the_client_is_holding(
     api_client: TestClient,
     db_session: Session,
+    invite_code: str,
 ) -> None:
     """End to end: capture a cookie, let the real client rotate, then replay LATER.
 
@@ -358,7 +359,11 @@ def test_reuse_through_the_api_kills_the_session_the_client_is_holding(
     """
     registered = api_client.post(
         "/api/auth/register",
-        json={"email": "victim@example.com", "password": "a-long-enough-passphrase"},
+        json={
+            "email": "victim@example.com",
+            "password": "a-long-enough-passphrase",
+            "invite_code": invite_code,
+        },
     )
     assert registered.status_code == 201
     captured = api_client.cookies[REFRESH_COOKIE_NAME]
@@ -379,6 +384,7 @@ def test_reuse_through_the_api_kills_the_session_the_client_is_holding(
 
 def test_a_superseded_refresh_returns_409_and_never_clears_the_cookie(
     api_client: TestClient,
+    invite_code: str,
 ) -> None:
     """The route contract for a lost race, including the one header that must be absent.
 
@@ -393,7 +399,11 @@ def test_a_superseded_refresh_returns_409_and_never_clears_the_cookie(
     """
     registered = api_client.post(
         "/api/auth/register",
-        json={"email": "loser@example.com", "password": "a-long-enough-passphrase"},
+        json={
+            "email": "loser@example.com",
+            "password": "a-long-enough-passphrase",
+            "invite_code": invite_code,
+        },
     )
     assert registered.status_code == 201
     captured = api_client.cookies[REFRESH_COOKIE_NAME]
@@ -416,6 +426,7 @@ def test_a_superseded_refresh_returns_409_and_never_clears_the_cookie(
 
 def test_a_superseded_client_retrying_with_the_current_cookie_succeeds(
     api_client: TestClient,
+    invite_code: str,
 ) -> None:
     """The end-to-end shape of the fix, as the browser actually performs it.
 
@@ -424,7 +435,11 @@ def test_a_superseded_client_retrying_with_the_current_cookie_succeeds(
     """
     registered = api_client.post(
         "/api/auth/register",
-        json={"email": "retrier@example.com", "password": "a-long-enough-passphrase"},
+        json={
+            "email": "retrier@example.com",
+            "password": "a-long-enough-passphrase",
+            "invite_code": invite_code,
+        },
     )
     assert registered.status_code == 201
     captured = api_client.cookies[REFRESH_COOKIE_NAME]
@@ -446,6 +461,7 @@ def test_a_superseded_client_retrying_with_the_current_cookie_succeeds(
 def test_the_401_reuse_path_clears_the_dead_cookie(
     api_client: TestClient,
     db_session: Session,
+    invite_code: str,
 ) -> None:
     """The other direction of the cookie contract, and the reason it is not cosmetic.
 
@@ -460,7 +476,11 @@ def test_the_401_reuse_path_clears_the_dead_cookie(
     """
     registered = api_client.post(
         "/api/auth/register",
-        json={"email": "revoked@example.com", "password": "a-long-enough-passphrase"},
+        json={
+            "email": "revoked@example.com",
+            "password": "a-long-enough-passphrase",
+            "invite_code": invite_code,
+        },
     )
     assert registered.status_code == 201
     captured = api_client.cookies[REFRESH_COOKIE_NAME]

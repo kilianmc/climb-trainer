@@ -58,7 +58,7 @@ def _preload_bucket(session: Session, rule: ratelimit.Rule, subject: str, count:
     session.commit()
 
 
-def test_the_per_ip_bucket_trips_at_its_threshold(api_client: TestClient) -> None:
+def test_the_per_ip_bucket_trips_at_its_threshold(api_client: TestClient, invite_code: str) -> None:
     """The counter has to survive the endpoint's own transaction, or it never trips.
 
     `REGISTER` (3/hour) is the bucket used here because it is the tightest IP-keyed rule
@@ -68,12 +68,21 @@ def test_the_per_ip_bucket_trips_at_its_threshold(api_client: TestClient) -> Non
     for attempt in range(ratelimit.REGISTER.limit):
         response = api_client.post(
             "/api/auth/register",
-            json={"email": f"newcomer{attempt}@example.com", "password": _PASSWORD},
+            json={
+                "email": f"newcomer{attempt}@example.com",
+                "password": _PASSWORD,
+                "invite_code": invite_code,
+            },
         )
         assert response.status_code == 201, f"attempt {attempt + 1}: {response.text}"
 
     blocked = api_client.post(
-        "/api/auth/register", json={"email": "one-too-many@example.com", "password": _PASSWORD}
+        "/api/auth/register",
+        json={
+            "email": "one-too-many@example.com",
+            "password": _PASSWORD,
+            "invite_code": invite_code,
+        },
     )
     assert blocked.status_code == 429
     assert int(blocked.headers["Retry-After"]) > 0
@@ -98,7 +107,7 @@ def test_the_per_email_bucket_trips_even_though_every_request_has_a_different_ip
 
 
 def test_the_429_is_identical_for_an_existing_and_a_nonexistent_address(
-    api_client: TestClient, db_session: Session
+    api_client: TestClient, db_session: Session, invite_code: str
 ) -> None:
     """The account-keyed limit must not become an account-existence oracle.
 
@@ -108,7 +117,8 @@ def test_the_429_is_identical_for_an_existing_and_a_nonexistent_address(
     named the bucket that tripped, this would fail.
     """
     registered = api_client.post(
-        "/api/auth/register", json={"email": _KNOWN, "password": _PASSWORD}
+        "/api/auth/register",
+        json={"email": _KNOWN, "password": _PASSWORD, "invite_code": invite_code},
     )
     assert registered.status_code == 201
 
