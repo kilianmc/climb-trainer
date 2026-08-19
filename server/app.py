@@ -10,8 +10,12 @@ registering it here means a new endpoint is protected unless its `(method, path)
 added to `PUBLIC_ROUTES` in `server/auth/deps.py`, in a diff a reviewer sees.
 """
 
-from fastapi import Depends, FastAPI
+from typing import Final
+
+from fastapi import Depends, FastAPI, Request, status
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 from server.auth.deps import enforce_auth
 from server.auth.routes import router as auth_router
@@ -57,6 +61,45 @@ _CSP_EXEMPT_PATHS = frozenset(p for p in (app.docs_url, app.openapi_url) if p is
 # covers the preflight responses CORS answers itself. It writes only its own header
 # names, never `Access-Control-*` or `Vary`.
 app.add_middleware(SecurityHeadersMiddleware, csp_exempt_paths=_CSP_EXEMPT_PATHS)
+
+
+# The only keys of a Pydantic error that ever reach a client. Everything else is dropped —
+# see the handler below.
+_SAFE_VALIDATION_KEYS: Final = frozenset({"type", "loc", "msg"})
+
+
+@app.exception_handler(RequestValidationError)
+def validation_error_handler(request: Request, exc: RequestValidationError) -> JSONResponse:
+    """422s must never echo the request back. FastAPI's default one does.
+
+    **This is a credential leak, not a tidiness issue.** Every entry in
+    `RequestValidationError.errors()` carries `input`, and FastAPI serialises it: a password
+    below `MIN_PASSWORD_LENGTH` comes back in the response body, and a *missing* field — a
+    `register` call with no `invite_code` — has `input` set to the **whole body**, so the
+    plaintext password is returned to the caller and into whatever logged the response. It
+    reaches the browser's network panel, any proxy in between, and any error reporter the
+    client grows later.
+
+    So the handler is an **allowlist, not a redaction pass**: `type`, `loc` and `msg` are kept
+    and everything else is discarded, which means a future Pydantic version adding another
+    value-bearing key cannot leak through it. `ctx` goes too — it is where the bounds live
+    (`{"min_length": 12}`), and the password policy is not something a 422 needs to publish.
+    (`url` never gets this far: FastAPI 0.141 already drops it. Which is the argument for an
+    allowlist — if that ever changes, nothing here has to be edited to keep up.)
+
+    `web/src/api/client.ts::detailMessage` reads `msg` out of this array, so the client's
+    copy is unaffected. Registered on the app rather than per-route because the leak is a
+    property of the framework's default, not of any one endpoint.
+    """
+    return JSONResponse(
+        status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+        content={
+            "detail": [
+                {key: value for key, value in error.items() if key in _SAFE_VALIDATION_KEYS}
+                for error in exc.errors()
+            ]
+        },
+    )
 
 
 app.include_router(auth_router)

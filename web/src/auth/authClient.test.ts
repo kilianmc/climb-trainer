@@ -47,8 +47,11 @@ describe('the credential calls', () => {
       session.set('demo-token', 'demo');
       const client = createAuthClient(session);
 
+      const credentials = { email: 'a@b.example', password: 'x'.repeat(12) };
       if (method === 'logout') await client.logout();
-      else await client[method]({ email: 'a@b.example', password: 'x'.repeat(12) });
+      else if (method === 'register')
+        await client.register({ ...credentials, invite_code: 'an-invite-code' });
+      else await client.login(credentials);
 
       expect(headersOf(0)).not.toHaveProperty('authorization');
     },
@@ -60,6 +63,22 @@ describe('the credential calls', () => {
     expect(headersOf(0)['content-type']).toBe('application/json');
     expect(vi.mocked(fetch).mock.calls[0]?.[1]?.body).toBe(
       JSON.stringify({ email: 'a@b.example', password: 'x'.repeat(12) }),
+    );
+  });
+
+  it('sends the invite code register is gated on, in the body the server forbids extras in', async () => {
+    await createAuthClient(session).register({
+      email: 'a@b.example',
+      password: 'x'.repeat(12),
+      invite_code: 'an-invite-code',
+    });
+
+    expect(vi.mocked(fetch).mock.calls[0]?.[1]?.body).toBe(
+      JSON.stringify({
+        email: 'a@b.example',
+        password: 'x'.repeat(12),
+        invite_code: 'an-invite-code',
+      }),
     );
   });
 

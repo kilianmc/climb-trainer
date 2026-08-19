@@ -38,9 +38,18 @@ export interface Credentials {
   password: string;
 }
 
+/**
+ * `server/auth/routes.py::RegisterRequest`. Registration is invite-gated (issue #35), and the
+ * field is snake_case because it goes on the wire as-is — the model has `extra="forbid"`, so
+ * a camelCase key is a 422 rather than a silently ignored one.
+ */
+export interface RegisterCredentials extends Credentials {
+  invite_code: string;
+}
+
 /** Properties rather than methods, for the reason given on `SessionStore`. */
 export interface AuthClient {
-  readonly register: (credentials: Credentials) => Promise<void>;
+  readonly register: (credentials: RegisterCredentials) => Promise<void>;
   readonly login: (credentials: Credentials) => Promise<void>;
   readonly demo: () => Promise<void>;
   readonly logout: () => Promise<void>;

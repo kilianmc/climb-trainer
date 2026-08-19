@@ -94,6 +94,8 @@ server/
   db.py             engine + session wiring, tuned for serverless + Neon billing
   models.py         SQLAlchemy 2 models, constraint naming convention, TIMESTAMPTZ
   seed.py           reference-data seed (the same module CI and production run)
+  devseed.py        ten local test accounts — DEV ONLY, refuses to run in CI
+  admin.py          operator CLI: create-invite, set-password
   domain/
     grades.py       the grade ordinal ladder — pure Python, no DB
 tests/              backend tests (pytest; DB tests skip without DATABASE_URL)
@@ -207,6 +209,15 @@ and anything the type system already guarantees are deliberately left untested. 
 The same public landing page serves both mounts. From it you can log in, create an account, or
 open the **demo** — a seeded, read-only account that needs no email address, so the app can be
 explored end to end without registering.
+
+**Creating an account needs an invite code.** Codes are per person, stored only as a hash, and
+carry a use count, an optional expiry and a revocation flag, so one can be withdrawn without
+affecting anyone else's. The account records which invite created it, and that link cannot be
+deleted away. A code that is unknown, expired, revoked or used up gets the same answer — one
+that also points a returning invitee at the login form, since re-entering a code you already
+used is the commonest way to see it — and spending one happens in the same transaction as the
+account insert, so a failed sign-up never burns the code its holder was given. Demo mode stays
+open to everyone.
 
 The access token is held **in memory only**, never in `localStorage` or `sessionStorage`, and
 the refresh token is an httpOnly host-only cookie the browser attaches to `/api/auth` alone.
