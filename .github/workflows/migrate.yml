@@ -19,11 +19,13 @@
 # before it was registered `gh workflow run` answered `HTTP 404: not found on the
 # default branch`. But GitHub takes the job definition AND the checkout from the ref you
 # select, so pick it deliberately: run the ref whose `migrations/` directory you mean to
-# apply. Until the first `dev`->`main` promotion, `main` has no migrations and no alembic
-# dependency at all, so a run must select `dev` (`gh workflow run migrate.yml --ref dev
-# -f environment=dev -f action=current`). `environment` chooses the DATABASE; the ref
-# chooses the MIGRATIONS. They are independent, and mixing them up is how production
-# gets a revision that was never reviewed.
+# apply. `main` has carried the migrations since the v2.0.0 promotion (both branches are
+# at `0002` today), so the ref is a real choice rather than a workaround: omit it to apply
+# what production has, pass `--ref dev` to apply revisions that are on `dev` but not yet
+# promoted (`gh workflow run migrate.yml --ref dev -f environment=dev -f action=current`).
+# `environment` chooses the DATABASE; the ref chooses the MIGRATIONS. They are
+# independent, and mixing them up is how production gets a revision that was never
+# reviewed.
 name: Migrate
 
 on:

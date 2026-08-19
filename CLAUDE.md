@@ -329,10 +329,13 @@ count**: against the shell's *dev server* the same control split into two lines 
 (wrapped in a `#RUNTIME-015` container-init error) plus four at first card open, because the
 dev server materializes a share on first import rather than at bootstrap. Nothing else
 differs between the arms — that control forces an unsatisfiable *range* while both sides run
-the same React 19.2.8, so the console is the only place it can show. It is still owed
-against the real deployment after this repo's first production promotion —
-`climb.kilianmc.com/remoteEntry.js` currently answers `200 text/html` from the SPA rewrite,
-and preview URLs are SSO-gated, so no deployed remote was reachable.
+the same React 19.2.8, so the console is the only place it can show. **Verified against the
+real deployment 2026-08-19 — no longer owed.** Since this repo's v2.0.0 promotion
+`climb.kilianmc.com/remoteEntry.js` answers `200 application/javascript` with
+`access-control-allow-origin: *`, and with the shell at v4.0.0 the kilianmc.com console was
+clean **from initial page load** — the arm that matters, because a production build logs
+bridge failures during eager remote init, not on card open — and clean again on opening the
+climb card. Preview URLs stay SSO-gated, so production is the only arm there is.
 
 Remote contract (mirrors `ai-portfolio-project1/vite.config.js`):
 `filename: 'remoteEntry.js'`, `dts: false`, react/react-dom singletons at `^19.0.0`
