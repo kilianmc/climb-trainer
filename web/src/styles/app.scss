@@ -17,10 +17,12 @@
 //     much room the app got, because the federated mount's viewport is kilianmc.com's;
 //   - tokens on `.ct-app`, not `:root`.
 @use 'tokens';
+@use 'layout';
 @use 'primitives';
 @use 'card';
 @use 'bento';
 @use 'chrome';
+@use 'landing';
 
 .ct-app {
   @include tokens.declare;
@@ -45,12 +47,12 @@
 
   // Mobile-first, and honest about safe-area insets from the start: this app is used
   // one-handed on a phone in a gym, often in landscape on a bouldering mat.
-  padding: max(var(--ct-space-4), env(safe-area-inset-top))
-    max(var(--ct-space-4), env(safe-area-inset-right))
-    max(var(--ct-space-5), env(safe-area-inset-bottom))
-    max(var(--ct-space-4), env(safe-area-inset-left));
-  max-inline-size: 46rem;
-  margin-inline: auto;
+  //
+  // ⚠️ Only the BLOCK padding is here. The reading measure and the inline gutters moved into
+  // `_layout.scss` as a grid column, because nothing inside a `max-inline-size` box can reach the
+  // edge of the screen and the landing page has to — read that file before putting them back.
+  padding-block: max(var(--ct-space-4), env(safe-area-inset-top))
+    max(var(--ct-space-5), env(safe-area-inset-bottom));
 
   h1 {
     margin: 0 0 var(--ct-space-2);
@@ -69,8 +71,13 @@
     font-size: var(--ct-text-base);
   }
 
+  // `layout` first: it declares `--ct-measure` and the gutters that the rest read, and its
+  // `> *` placement rules are the ones every later, more specific rule is allowed to beat.
+  // `landing` last, for the same reason in reverse.
+  @include layout.styles;
   @include primitives.styles;
   @include card.styles;
   @include bento.styles;
   @include chrome.styles;
+  @include landing.styles;
 }

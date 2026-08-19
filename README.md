@@ -53,6 +53,26 @@ length in bad gym lighting. The guiding principle is _useful over pretty_.
 queries so the same component reflows between the standalone app and the narrower
 federated mount.
 
+The public landing page is the one screen that breaks out of that reading measure: it
+runs full-bleed photographic bands with the copy held to a ~65–75 character column. The
+breakout is a **grid column**, never `100vw` or `position: fixed` — both resolve against
+kilianmc.com's viewport in the federated mount. Its photographs are self-hosted and
+bundled because the production CSP is `img-src 'self' data:`, and icons are inline SVG
+components for the same reason.
+
+**Regenerating the landing photographs** (only needed when a photo changes):
+
+```bash
+npm --prefix web run images:landing            # fill in anything missing
+npm --prefix web run images:landing -- --force # re-encode everything
+```
+
+The originals live outside the repo (`~/Pictures/climb-trainer-photo-src`, or set
+`CT_PHOTO_SRC`; each entry's `source` is a path relative to that root); the AVIF/WebP/JPEG derivatives under `web/public/landing/` **are**
+committed, because CI and Vercel build from a clone with no photo library. Credits and
+licences: `web/PHOTO-CREDITS.md` (deliberately outside `public/` — it is a provenance
+record, not something to ship and precache).
+
 Input is deliberately **closed** wherever possible — enums, sliders, and grade pickers
 sourced from the seeded grade ladder rather than free-text fields. Diary notes are the
 only genuinely free-form input in the product, which keeps both the validation surface
@@ -85,7 +105,12 @@ web/
     main.tsx        standalone entry (browser history)
     App.tsx
     api/client.ts   API client: base from import.meta.url + content-type guard
+    publicUrl.ts    public/ asset URLs, resolved from import.meta.url (same trap)
+    ui/             components; landingImages.ts is the image ladder, icons.tsx the SVGs
     styles/         SCSS
+  public/landing/   committed responsive derivatives (nothing else — asserted)
+  PHOTO-CREDITS.md  photograph provenance: title, creator, licence, source
+  scripts/          authoring tools, never part of `build`
     test/setup.ts   jsdom setup
 ```
 

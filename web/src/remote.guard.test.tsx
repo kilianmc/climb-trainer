@@ -110,12 +110,10 @@ describe('the federated entry', () => {
 
     // A real navigation is the case that would reach history.pushState if this entry
     // were ever handed a browser history by mistake. An anonymous destination, because the
-    // mount starts signed out and the in-app leaves are behind the route guard.
-    fireEvent.click(
-      within(screen.getByRole('navigation', { name: 'Main' })).getByRole('link', {
-        name: 'Create account',
-      }),
-    );
+    // mount starts signed out and the in-app leaves are behind the route guard. Clicked in
+    // `main` because the landing page renders no nav — and the hero's call to action is the
+    // link a visitor in the shell actually clicks, so it is the better subject anyway.
+    fireEvent.click(within(screen.getByRole('main')).getByRole('link', { name: 'Create account' }));
     await screen.findByRole('heading', { name: 'Create account' });
     unmount();
 
@@ -134,9 +132,21 @@ describe('the federated entry', () => {
   it('renders absolute standalone hrefs, so a cmd-click leaves for the real app', async () => {
     await mount();
 
-    const nav = screen.getByRole('navigation', { name: 'Main' });
+    // The landing page's calls to action are the links a visitor in the shell is most likely
+    // to cmd-click. They are asserted first because `/` renders no nav.
     expect(
-      within(nav)
+      within(screen.getByRole('main'))
+        .getAllByRole('link')
+        .map((link) => link.getAttribute('href')),
+    ).toEqual(['https://climb.kilianmc.com/login', 'https://climb.kilianmc.com/register']);
+
+    // …and then the nav, on the first route that has one. Both halves of the rewrite still get
+    // asserted; only the route hosting the nav half moved.
+    fireEvent.click(within(screen.getByRole('main')).getByRole('link', { name: 'Log in' }));
+    await screen.findByRole('heading', { name: 'Log in' });
+
+    expect(
+      within(screen.getByRole('navigation', { name: 'Main' }))
         .getAllByRole('link')
         .map((link) => link.getAttribute('href')),
     ).toEqual([
@@ -144,14 +154,6 @@ describe('the federated entry', () => {
       'https://climb.kilianmc.com/login',
       'https://climb.kilianmc.com/register',
     ]);
-
-    // The landing page's calls to action are the links a visitor in the shell is most likely
-    // to cmd-click, so they get the same guarantee as the nav.
-    expect(
-      within(screen.getByRole('main'))
-        .getAllByRole('link')
-        .map((link) => link.getAttribute('href')),
-    ).toEqual(['https://climb.kilianmc.com/login', 'https://climb.kilianmc.com/register']);
   });
 
   it('holds the access token in a closure, never in the host origin storage', async () => {

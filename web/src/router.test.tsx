@@ -83,9 +83,15 @@ describe('createAppRouter', () => {
     expect(hrefs).toEqual(['/dashboard', '/plan', '/session', '/diary', '/profile']);
   });
 
+  /**
+   * Asserted on `/login`, not `/`: the landing page deliberately renders no nav (its hero carries
+   * the same two destinations), so `/` cannot host this guard any more. The nav itself is
+   * unchanged — every other anonymous route shows the same three links — so what is being
+   * asserted is identical.
+   */
   it('keeps the anonymous nav relative too', async () => {
-    window.history.replaceState({}, '', '/');
-    renderWith(createAuth(), '/', true);
+    window.history.replaceState({}, '', '/login');
+    renderWith(createAuth(), '/login', true);
 
     const nav = await screen.findByRole('navigation', { name: 'Main' });
     const hrefs = within(nav)

@@ -55,5 +55,11 @@ export default tseslint.config(
   { files: ['*.config.{ts,js}'], ...tseslint.configs.disableTypeChecked },
   { files: ['*.config.{ts,js}'], languageOptions: { globals: globals.node } },
 
+  // Same treatment for the authoring scripts, and for the same reason: `tsconfig.json` includes
+  // only `src` plus the two configs, so with `projectService: true` the parser has no program for
+  // anything under `scripts/` and errors before it lints a line.
+  { files: ['scripts/**/*.{ts,js,mjs}'], ...tseslint.configs.disableTypeChecked },
+  { files: ['scripts/**/*.{ts,js,mjs}'], languageOptions: { globals: globals.node } },
+
   prettier,
 );

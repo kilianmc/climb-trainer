@@ -108,29 +108,48 @@
     min-block-size: calc(2 * var(--ct-leading) * 1em);
   }
 
-  // A frame for a screenshot that cannot exist yet — the plan UI and the session player
-  // are later PRs, and a mocked-up screenshot of software that does not run is worse than
-  // an obviously empty frame. Sunken, dashed, and unmistakably a placeholder.
+  // A frame for one of the landing cards' images. It now holds a real photograph — a TEMPORARY
+  // stand-in for an app screenshot, per `landingImages.ts` — so it is a media frame rather than a
+  // placeholder: no dashed border, no label, no centring of a text child.
+  //
+  // Each slot's ratio is set here and the derivative is cut to the SAME ratio, so `object-fit`
+  // never crops a second time and the framing decided at generation time is the framing that
+  // ships.
+  //
+  // ⚠️ **`max-block-size: 12rem` is GONE, and removing it fixes the inherited bug it caused.**
+  // With `aspect-ratio: 16 / 9` the cap bound as soon as a card's content box passed 341.33px, so
+  // the full-width desktop tile rendered **654x192 — a 3.4:1 letterbox, not 16/9** — and the ratio
+  // above was decorative. The cap existed to stop an EMPTY placeholder taking over the screen; a
+  // photograph at a ratio chosen per slot does not need protecting from itself, and the two ratios
+  // here are the compact ones already (16/9 on the wide tile, 1/1 on the narrow pair).
   &__shot {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    // 16/9 by default: it is what a real screenshot of this app will be (it is used in landscape
-    // on a mat), and it is the compact choice, which is what a default has to be.
+    display: block;
     aspect-ratio: 16 / 9;
-    // A hard ceiling, so a placeholder can never take over the screen whatever the card's width.
-    // 12rem was chosen against the worst case that exists: 192px is 49% of a 390px LANDSCAPE
-    // viewport, which is as good as a height-blind cap gets, and 21.6% in portrait.
-    // ⚠️ Deliberately `rem`, NOT `vh`/`dvh`: this stylesheet lives in the route tree that both
-    // mounts share, and a viewport unit there resolves against kilianmc.com's viewport in the
-    // federated mount — the same trap as `position: fixed` (see `_chrome.scss`). So the cap is
-    // absolute and the *card* width is what varies.
-    max-block-size: 12rem;
-    border: 1px dashed var(--ct-border-strong);
+    overflow: hidden;
     border-radius: var(--ct-radius-2);
     background: var(--ct-bg);
-    color: var(--ct-fg-muted);
-    font-size: var(--ct-text-sm);
+
+    // `<picture>` has no box of its own until it is blockified; the `img` is its child, not the
+    // frame's, so it is selected as a descendant.
+    > picture {
+      display: block;
+      block-size: 100%;
+    }
+
+    img {
+      display: block;
+      inline-size: 100%;
+      block-size: 100%;
+      object-fit: cover;
+    }
+  }
+
+  // The two narrow bento tiles. SQUARE rather than portrait, for two measured reasons: a 3/4 crop
+  // of `shot-summit` pushes the figure on the pinnacle off the right edge, and on a phone these
+  // tiles are FULL width, where a portrait frame is ~477px of a single card. 1/1 keeps both
+  // subjects in frame and keeps the two tiles the same height as each other.
+  &__shot--square {
+    aspect-ratio: 1 / 1;
   }
 
   // The card's OWN box is sized against `.ct-app` — an element cannot query the container
@@ -146,12 +165,8 @@
   // Asks the CARD, via the `ct-card` container it establishes above. 34rem of card content is
   // reachable only by the bento's full-width tile — never by a phone, and never in the shell.
   //
-  // ⚠️ It deliberately does NOT raise `&__shot`'s cap. Tried at `16rem` and measured: a wide card
-  // is wide in LANDSCAPE too, where the viewport is 390px tall, and a 256px well is 66% of it.
-  // Card width is a bad proxy for available height, and there is no mount-safe way to ask about
-  // height here — `@media (orientation)` and `dvh` both resolve against kilianmc.com's viewport in
-  // the federated mount. So the cap stays one flat number for every card in every orientation,
-  // and only the heading, which genuinely is a width question, steps up.
+  // Only the heading steps up. `&__shot` no longer has a height cap to raise, and its ratio is a
+  // property of which slot it is (a class), not of how wide the card happens to be.
   @container ct-card (min-inline-size: 34rem) {
     &__card > h2 {
       font-size: var(--ct-text-xl);
