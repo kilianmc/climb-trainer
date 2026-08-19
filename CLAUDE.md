@@ -1628,10 +1628,12 @@ why the backend tests run against real Postgres, not SQLite).
 | --- | --- |
 | `_tokens.scss` | every token, as a `@mixin declare` — see "why a mixin" below |
 | `_mixins.scss` | `tap`, `focus-ring`, `press`, `safe-inset-block-end` |
+| `_layout.scss` | the page frame: the reading measure as a grid column, plus the full-bleed escape |
 | `_primitives.scss` | button (3 variants), input, field, error, badge, text primitives |
-| `_card.scss` | the card surface, and the only `@container` rules |
+| `_card.scss` | the card surface and its `@container` rules |
 | `_bento.scss` | the bento grid's named areas |
 | `_chrome.scss` | nav, status renders, bottom-anchored action bar |
+| `_landing.scss` | the landing page's photographic bands, detail split and icon rules |
 | `app.scss` | the `@use` entry and the `.ct-app` root; imported from `routes/__root.tsx` |
 | `global.scss` | the document reset. `main.tsx` only, and the ONLY file allowed `:root` |
 | `update-bar.scss` | the PWA update bar. `ui/UpdateBar.tsx` only, i.e. standalone only |
@@ -1735,6 +1737,95 @@ lighting.
   not. Asserted on the built remote stylesheet by `distContract.test.ts`; inline
   `style={{ position: 'fixed' }}` in a component never becomes CSS, so `designGuard.test.ts` scans
   the `.tsx` sources for that separately.
+
+### The reading measure is a GRID COLUMN, not a `max-inline-size` on `.ct-app`
+
+Changed by the landing redesign, and it is the enabling change for it — read `_layout.scss`
+before reverting any of it.
+
+`.ct-app` used to carry `padding-inline` + `max-inline-size: 46rem` + `margin-inline: auto`
+itself. **Nothing inside a box like that can reach the edge of the screen**, and the landing
+page has to: escaping a `max-inline-size` from the inside means knowing the distance to the
+edge, and the two ways of expressing that — `margin-inline: calc(50% - 50vw)` and
+`position: fixed` — are both banned here for the reason the accessibility section gives.
+
+So `.ct-app` and `.ct-app__main` are both `display: grid` with
+
+```text
+[ct-bleed-start] gutter | [ct-measure-start] measure [ct-measure-end] | gutter [ct-bleed-end]
+```
+
+children default to `ct-measure`, and `.ct-app__main > .ct-app__bleed` spans `ct-bleed`.
+**Nothing in that template refers to anything outside the grid container** — the only relative
+unit is `100%`, i.e. the container's own inline size — so it is correct in both mounts with no
+branching, and unlike the `50% - 50vw` idiom it cannot produce a horizontal scrollbar.
+
+- **Two levels, because a grid does not reach through a child.** `.ct-app` places the nav in the
+  measure and `<main>` in the bleed; `<main>` re-establishes the same grid for a route's own
+  children. A landing section is a child of `<main>`, not of `.ct-app`.
+- **App screens are unchanged to the pixel.** The measure column is
+  `min(--ct-measure, 100%)` **minus both gutters**, which reproduces the old content box exactly:
+  704px at a 1440px viewport, 358px at 390px.
+- ⚠️ **One real difference: `container: ct-app` now measures the full available width**, not the
+  capped 46rem content box, so the `34rem` thresholds in `_card.scss`/`_bento.scss` are crossed
+  ~32px of viewport earlier (two-column bento at 544px instead of 576px). Left uncompensated
+  deliberately — `ct-app` now means "how much room the app got", which is what those queries
+  ask — and it changes nothing in the federated mount, where the cap never bound.
+- **`&__prose` is `68ch`, and that is the point of the redesign.** The landing page's problem was
+  diagnosed as *missing content, not missing CSS*: it contained zero images. The fix is full-bleed
+  imagery with a ~65–75 character text column, **not** a wider `max-inline-size`. Only the landing
+  page breaks out; app screens keep the measure.
+
+### Landing imagery — self-hosted, generated out-of-band, and URL-resolved at runtime
+
+- **`img-src 'self' data:` means every image is bundled and every icon is inline SVG markup.**
+  `ui/icons.tsx` — never `<img src="…svg">`, which is both a blocked external fetch and a glyph
+  that cannot inherit `currentColor`. Every icon is `aria-hidden` + `focusable="false"` and has a
+  text label beside it; icon-only controls are deferred to the session player, per the same
+  reasoning as the update bar's "Later" button.
+- **`src/publicUrl.ts` is the image half of the `api/client.ts` bug.** A bare
+  `src="/landing/x.avif"` resolves against the DOCUMENT, which in the federated mount is
+  kilianmc.com — every photograph 404s there while working perfectly standalone. So the origin
+  comes from `import.meta.url`, exactly as `API_BASE` does. Vite-`import`ed assets would be
+  content-hashed but emitted as absolute `/assets/…` paths, i.e. the broken form; CSS `url()`
+  resolves correctly cross-origin but cannot express a `srcset`. Hence `public/` + a runtime
+  origin. **No CORS header is needed** — an `<img>` without `crossorigin` is not a CORS fetch, and
+  `mf-contract.test.ts` asserts the ACAO wildcard appears on `/remoteEntry.js` and `/assets/*`
+  and nowhere else.
+- **`web/scripts/gen-landing-images.mjs` is an authoring tool and must never enter `build`.** The
+  originals are 12–22 MB and live outside the repo; the derivatives are committed, because CI and
+  Vercel build from a clone with no photo library. `sharp` is a devDependency (0.35.x, i.e. past
+  the libvips CVEs that keep `@vite-pwa/assets-generator` out of the tree).
+- **The ladder lives in `src/ui/landingImages.ts` and the script imports that same file** (Node 24
+  strips the types natively). One source of truth, because a rung listed in one place and emitted
+  in the other is a silent 404 on the candidate a wide screen picks — `srcset` is a string and
+  `<img>` fails quietly. `src/ui/landingImages.test.ts` asserts the ladder and
+  `public/landing/` describe each other in **both** directions (a missing file, and an orphan left
+  by a shortened ladder).
+- ⚠️ **`rope-detail`'s original is 960x640 and there is no larger one.** Its ladder stops at 960
+  and its layout slot is capped at 22rem/16rem so no slot can demand more; the generator throws
+  rather than upscale.
+- **The one `100vw` on the landing page is in a `sizes` attribute**, which is resource selection,
+  not layout. In the federated mount it over-estimates and may fetch one rung more than needed —
+  bytes, never geometry.
+- ⚠️ **No text over a photograph on this page, and the scrim that made it possible is deleted.**
+  The effort band shipped first as white copy over `chimney-effort` behind a scrim. Measured in a
+  real browser — scrim off, glyphs transparent, worst pixel in the text's own box — the lightest
+  scrim clearing 4.5:1 was **alpha 0.56 at every container width from 420px to 1440px**, and
+  `object-position` bought nothing below ~1400px because until then the band is narrower than the
+  photograph is wide, so there is no spare frame to move. A 0.56 scrim leaves a photograph nobody
+  can see, which defeats the point of adding photographs. **Kilian's call: media above, copy
+  below.** The copy now inherits `--ct-fg` on `--ct-bg`, which `contrast.test.ts` already proves in
+  both schemes, and there is no contrast question left. Do not reintroduce it.
+- **The effort band's frame is deliberately TALL, and `4 / 5` is also the aspect the derivatives
+  are CUT to.** A crop taller than the original's ratio makes **height** the binding constraint on
+  the ladder (its 1920px rung needs 2400px of source height from 3840), which is why
+  `landingImages.ts` declares `sourceSize` per image, the generator asserts that declaration
+  against the real file, and the ladder test enforces the no-upscale rule **in both dimensions** —
+  in CI, where the originals do not exist. A width-only check was the earlier, weaker version.
+- **`landingImages.test.ts` also asserts `public/landing/` holds nothing but derivatives.** The
+  credits file lived there once; anything under `public/` ships in the app and is a precache
+  candidate, so provenance moved to `web/PHOTO-CREDITS.md` and this keeps it from drifting back.
 
 ### Container queries, not media queries — and tokens on `.ct-app`, not `:root`
 

@@ -1,0 +1,213 @@
+// The public landing page, and the ONLY screen that breaks out of the reading measure.
+//
+// Diagnosis this was built from: the page wasted the whole of a desktop window and read as
+// unfinished, and the root cause was **missing content, not missing CSS** — it contained no
+// imagery at all. So the answer is full-bleed photographic bands with the text held to a
+// ~65–75 character column, not a wider `max-inline-size` (see `_layout.scss`); app screens keep
+// the measure they had.
+//
+// Every `@container` query below asks `ct-app`, never `@media`: the same markup renders
+// full-width standalone and inside the shell's `ProjectViewer`, and a media query there would be
+// answering about kilianmc.com's window. None of these sections is inside a card, so `ct-app` is
+// also the nearest container — a `ct-card` query would be the wrong question and would not match.
+@mixin styles {
+  // ── The two photographic bands ────────────────────────────────────────────────────────────
+  //
+  // Identical construction, and they are the page's two moments: a dark scrimmed photograph with
+  // the copy centred on top of it. The heights differ and the scrims differ; nothing else does.
+  //
+  // The photograph is taken out of flow, so each band's height is decided by its COPY plus a rem
+  // floor. That is also the no-layout-shift story: the image contributes no intrinsic size, so it
+  // cannot move anything when it loads or when a `srcset` candidate swaps. And it is why neither
+  // uses `aspect-ratio` — a ratio grows with the container, which is how an earlier revision of
+  // the lower band reached 720px at a 1440px viewport and dwarfed the rest of the page.
+  //
+  // ⚠️ Deliberately no `vh`/`dvh` anywhere in here, for the reason `_layout.scss` documents.
+  &__hero,
+  &__band {
+    position: relative;
+    // A stacking context, so the two negative-`z-index` layers below paint above this element's
+    // own background instead of disappearing behind it.
+    isolation: isolate;
+    // Grid, not flex: the copy block centres itself with `margin-inline: auto`, which a flex item
+    // only does by accident of its content width. `align-content` handles the block axis.
+    display: grid;
+    align-content: center;
+    margin-block-end: var(--ct-space-6);
+    padding-block: var(--ct-space-6);
+    overflow: hidden;
+    background: #0d0f12;
+    color: #ffffff;
+
+    > picture {
+      position: absolute;
+      inset: 0;
+      z-index: -2;
+
+      > img {
+        display: block;
+        inline-size: 100%;
+        block-size: 100%;
+        object-fit: cover;
+      }
+    }
+
+    &::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      z-index: -1;
+      // Each band supplies its own gradient rather than two alpha stops, because the two want
+      // different SHAPES, not just different strengths — see below.
+      background: var(--ct-scrim);
+    }
+
+    h2 {
+      // Larger than the card `h2` because it is the only thing on the band, and a band heading at
+      // body-ish size reads as a caption. Steps up with the room.
+      font-size: var(--ct-text-xl);
+
+      @container ct-app (min-inline-size: 34rem) {
+        font-size: var(--ct-text-2xl);
+      }
+    }
+
+    p {
+      margin: 0;
+      font-size: var(--ct-text-lg);
+    }
+  }
+
+  // The hero. `hero-granite` is mid-toned granite, lighter than the chimney, so it carries the
+  // heavier scrim. Eyeballed, not derived: the photograph has to stay legible AS a photograph.
+  //
+  // 28rem (448px) is a FLOOR, not a target — an h1, two or three lines of lede and a button row
+  // come to roughly 250px at 1440, so the floor is what sets the height. Deliberately well below
+  // the 617px the old 21/9 crop produced.
+  &__hero {
+    // A plateau, not a ramp. `hero-granite` is mid-toned and bright in places, so a scrim heavy
+    // enough for white copy everywhere turns it into a grey rectangle — which is precisely the
+    // "the photo serves no purpose" complaint that moved it here. The copy is vertically centred,
+    // so the plateau covers the middle band at full strength and the top and bottom edges stay
+    // near-clear, where the granite is still readable AS granite. Eyeballed.
+    --ct-scrim: linear-gradient(
+      rgb(13 15 18 / 0.28),
+      rgb(13 15 18 / 0.72) 28%,
+      rgb(13 15 18 / 0.72) 72%,
+      rgb(13 15 18 / 0.28)
+    );
+
+    min-block-size: 28rem;
+
+    > picture > img {
+      // The climber sits right of centre and a little low; `50% 45%` keeps the figure and the
+      // crack line in frame at every crop this band produces.
+      object-position: 50% 45%;
+    }
+  }
+
+  // The lower band keeps the ramp it was restored with, unchanged: 0.66 at the top is the floor
+  // that clears 4.5:1 for white over any pixel `chimney-effort` can contain, and it only gets
+  // darker downward. Do not lighten it without redoing that arithmetic.
+  &__band {
+    --ct-scrim: linear-gradient(rgb(13 15 18 / 0.66), rgb(13 15 18 / 0.82));
+
+    min-block-size: 22rem;
+  }
+
+  // ⚠️ Two token-driven colours are pinned here, and ONLY these two. Both bands are dark in the
+  // light scheme as well as the dark one, so a consumer reading `--ct-fg-muted` (the lede) or
+  // `--ct-danger` (the demo error) would put a dark tone on a dark photograph in light mode —
+  // `#565c68` on scrimmed granite, unreadable.
+  //
+  // Re-pointing the TOKENS on `&__hero` instead was tried and is wrong: `&__button` reads
+  // `--ct-fg` for its label and `--ct-surface-3` for its face, so overriding `--ct-fg` alone gave
+  // a white label on a white button in light mode. Buttons are opaque surfaces and keep their own
+  // tokens, which is why this patches the two text classes by hand.
+  &__hero &__lede,
+  &__band &__lede {
+    color: #ffffff;
+  }
+
+  &__hero &__error {
+    color: #f3b3af;
+  }
+
+  // ── The detail section ────────────────────────────────────────────────────────────────────
+  //
+  // Two columns once there is room for two, so a wide window carries text and photograph side by
+  // side instead of one narrow column with 700px of nothing beside it.
+  //
+  // ⚠️ `rope-detail`'s original is 960px wide and there is no larger one, so this slot must never
+  // ask for more than 480 CSS px (480 x DPR 2 = 960). `22rem` = 352px, which leaves headroom at
+  // DPR 2 and is why the tile is capped here rather than left to stretch with the card. Do not
+  // replace this with `1fr` and do not move this photo into a bleed section.
+  &__detail {
+    display: grid;
+    gap: var(--ct-space-4);
+
+    // `minmax(0, 1fr)`, not `1fr`: a `1fr` track floors at its content's min-content size, so a
+    // long unbroken word in the copy would push the tile out of the card.
+    @container ct-app (min-inline-size: 46rem) {
+      grid-template-columns: minmax(0, 1fr) 16rem;
+      align-items: center;
+      column-gap: var(--ct-space-5);
+    }
+  }
+
+  &__detail-media {
+    margin: 0;
+    inline-size: 100%;
+    max-inline-size: 22rem;
+    border-radius: var(--ct-radius-2);
+    overflow: hidden;
+    background: var(--ct-bg);
+
+    img {
+      display: block;
+      inline-size: 100%;
+      block-size: auto;
+      aspect-ratio: 3 / 2;
+      object-fit: cover;
+    }
+  }
+
+  // ── Iconography ───────────────────────────────────────────────────────────────────────────
+  //
+  // Sized in `em` so an icon tracks the label it sits beside; `flex-shrink: 0` because a squashed
+  // icon is worse than no icon. Icons here are always accompanied by text — `ui/icons.tsx` and
+  // CLAUDE.md's note on the update bar's "Later" button cover why icon-only is deferred.
+  &__icon {
+    flex-shrink: 0;
+    inline-size: 1.15em;
+    block-size: 1.15em;
+  }
+
+  // A heading with a leading icon, centred on the heading's FIRST LINE.
+  //
+  // `align-items: center` was the obvious version and is wrong on a heading that wraps: two of
+  // these wrap in the narrow bento tile, and the glyph then floats between the two lines instead
+  // of beside the words it introduces. `baseline` is the other obvious version, and it sits the
+  // glyph's bottom edge on the baseline, i.e. visibly high.
+  //
+  // So: align to the start and push the icon down by half the difference between the first line
+  // box and the icon. `--ct-leading * 1em` is the line box in the heading's own font size, which
+  // is the same technique `_card.scss` uses to reserve a two-line caption — deliberately not the
+  // `lh` unit, which is outside this project's browser baseline (Firefox only got it in 120).
+  &__icon-heading {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--ct-space-2);
+
+    > svg {
+      margin-block-start: calc((var(--ct-leading) * 1em - 1.15em) / 2);
+      color: var(--ct-accent);
+    }
+  }
+
+  // The hero's calls to action are centred with its copy; `_primitives.scss`'s `&__actions` keeps
+  // owning the flex row itself.
+  &__actions--centre {
+    justify-content: center;
+  }
+}
