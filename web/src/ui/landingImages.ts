@@ -63,6 +63,17 @@ export interface LandingImage {
   readonly fallbackWidths: readonly number[];
   /** The rung used for the `<img src>`, i.e. what a browser with no `srcset` support gets. */
   readonly fallbackWidth: number;
+  /**
+   * Which part of the original the crop keeps, as a sharp `position` gravity. Defaults to
+   * `centre`.
+   *
+   * ⚠️ It exists because for a slot whose displayed ratio EQUALS the derivative's ratio, the
+   * generator's crop is the final framing — `object-position` has no pixels left to recover.
+   * `shot-blue-sky` is the case: a landscape original in a 1:1 slot, with the climber centre-left
+   * and empty sky to the right, so a centred crop clips his reaching arm and fills the frame with
+   * sky. Checked by eye at all three gravities, not inferred.
+   */
+  readonly crop?: 'centre' | 'left' | 'right' | 'top' | 'bottom';
 }
 
 /**
@@ -113,9 +124,10 @@ export const LANDING_IMAGES = {
    * entries and their derivatives go with them.
    *
    * Ratios are per slot and each derivative is cut to the same ratio its slot displays, so the CSS
-   * never crops a second time. The two narrow bento tiles are **square**: a portrait crop suits
-   * `shot-ledge` but pushes the figure on `shot-summit`'s pinnacle off the right edge, and on a
-   * phone these tiles are FULL width, where a portrait frame is ~477px of a single card.
+   * never crops a second time — which also means the `crop` gravity below is the final framing.
+   * The two narrow bento tiles are **square**: a portrait crop pushes the figure on
+   * `shot-summit`'s pinnacle off the right edge, and on a phone these tiles are FULL width, where
+   * a portrait frame is ~477px of a single card.
    */
   shotPlan: {
     slug: 'shot-gym-wall',
@@ -128,14 +140,15 @@ export const LANDING_IMAGES = {
     fallbackWidth: 660,
   },
   shotSession: {
-    slug: 'shot-ledge',
-    source: 'orig-uc-1.jpg',
-    alt: 'Stand-in photograph, not a screenshot: a person sitting on a rock ledge facing a mist-filled valley.',
-    sourceSize: [4912, 7360],
+    slug: 'shot-blue-sky',
+    source: 'orig-uc-0.jpg',
+    alt: 'Stand-in photograph, not a screenshot: a climber high on a sunlit rock face against a clear blue sky.',
+    sourceSize: [5472, 3648],
     aspect: [1, 1],
     widths: [360, 540, 740],
     fallbackWidths: [540],
     fallbackWidth: 540,
+    crop: 'left',
   },
   shotDiary: {
     slug: 'shot-summit',

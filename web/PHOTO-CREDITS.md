@@ -27,11 +27,11 @@ The originals are **not** in this repository (they are 12–22 MB each); see
 (Stage 2). They are photographs of climbing, not of this software, which is why every alt text and
 every visible caption says so. They and their derivatives are removed when the screenshots land.
 
-| File stem       | Title                                     | Creator           | Licence | Slot              |
-| --------------- | ----------------------------------------- | ----------------- | ------- | ----------------- |
-| `shot-gym-wall` | `File:Expert Rock Climber (Unsplash).jpg` | Igor Ovsyannykov  | CC0     | plan card, 16:9   |
-| `shot-ledge`    | `File:Fearless Climbs (Unsplash).jpg`     | Connor McSheffrey | CC0     | session card, 1:1 |
-| `shot-summit`   | Scaling a mountain peak (Unsplash)        | Kalen Emsley      | CC0     | diary card, 1:1   |
+| File stem       | Title                                     | Creator          | Licence | Slot              |
+| --------------- | ----------------------------------------- | ---------------- | ------- | ----------------- |
+| `shot-gym-wall` | `File:Expert Rock Climber (Unsplash).jpg` | Igor Ovsyannykov | CC0     | plan card, 16:9   |
+| `shot-blue-sky` | `File:Man rock climbing (Unsplash).jpg`   | Mars Williams    | CC0     | session card, 1:1 |
+| `shot-summit`   | Scaling a mountain peak (Unsplash)        | Kalen Emsley     | CC0     | diary card, 1:1   |
 
 The collection metadata carries no landing URL for these three, so none is recorded rather than one
 being guessed. All are CC0.

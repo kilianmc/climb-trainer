@@ -123,12 +123,14 @@ async function generate(image) {
       stdout.write(`  skip  ${name}  (${kb(target)})\n`);
       continue;
     }
-    // `fit: 'cover'` with the height derived from the declared aspect, so a source whose real
-    // ratio drifts is cropped to the ratio the `<img>` announces rather than silently letterboxed.
+    // `fit: 'cover'` with the height derived from the declared aspect, so the output is always the
+    // ratio the `<img>` announces. `position` defaults to `centre`; a slot whose displayed ratio
+    // equals the derivative's has no second chance at framing, so it is declared per image.
     const pipeline = sharp(source).resize({
       width,
       height: landingHeight(image, width),
       fit: 'cover',
+      position: image.crop ?? 'centre',
     });
     await ENCODERS[extension](pipeline).toFile(target);
     stdout.write(`  write ${name}  (${kb(target)})\n`);
