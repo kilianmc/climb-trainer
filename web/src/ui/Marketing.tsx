@@ -2,18 +2,18 @@ import { Link } from '@tanstack/react-router';
 import type { ReactNode } from 'react';
 
 /**
- * The public landing page. **Structure now, styling in PR #7.**
+ * The public landing page, now on the PR #7 design system: the three value sections are cards
+ * in the bento grid, and each card's internals respond to the card's own width via
+ * `@container`, so the same component reads correctly full-width standalone and narrow inside
+ * the shell's ProjectViewer.
  *
- * Kilian's call for PR #6: build the whole page shape — hero, positioning line, the value
- * sections, the "explore the demo" section and the three calls to action — but style it with
- * nothing more than the five existing custom properties plus one input, one button, one error
- * and one badge. A visitor should be able to *read* and get the idea, or step inside and look
- * around, and PR #7's design system then styles a structure that is already correct rather
- * than inventing one late.
+ * Structure, DOM order, headings and hrefs are unchanged from PR #6 — several tests assert the
+ * exact link lists and heading order, and this PR is class and wrapper changes only.
  *
- * So, deliberately absent: cards, grid, bento areas, a shadow scale, container queries, and
- * any token outside `.ct-app`. If you are tempted to add one of those here, it belongs in
- * PR #7. See the UI design direction section of CLAUDE.md.
+ * The hero's calls to action stay in flow rather than in the bottom-anchored action bar: DOM
+ * order is fixed, and this is a page a visitor reads top to bottom, not a screen they operate
+ * one-handed mid-session. The bottom-anchored primitive is applied where it belongs, on the
+ * auth forms' submit — see `CredentialsForm.tsx`.
  *
  * The image slots are placeholders on purpose. Real screenshots need the plan UI (PR #8) and
  * the session player (PR #15a) to exist; a mocked-up screenshot of software that does not
@@ -28,24 +28,27 @@ function Shot({ label }: { label: string }) {
   );
 }
 
+/** `area` places the card in the bento's named grid; it changes no markup semantics. */
 function Section({
+  area,
   heading,
   shot,
   caption,
   children,
 }: {
+  area: 'plan' | 'session' | 'diary';
   heading: string;
   shot: string;
   caption: string;
   children: ReactNode;
 }) {
   return (
-    <section className="ct-app__section">
+    <section className={`ct-app__card ct-app__bento--${area}`}>
       <h2>{heading}</h2>
       <p>{children}</p>
       <figure className="ct-app__figure">
         <Shot label={shot} />
-        <figcaption className="ct-app__muted">{caption}</figcaption>
+        <figcaption className="ct-app__caption">{caption}</figcaption>
       </figure>
     </section>
   );
@@ -60,7 +63,7 @@ export interface MarketingProps {
 export function Marketing({ onExploreDemo, demoPending, demoError }: MarketingProps) {
   return (
     <>
-      <header className="ct-app__section">
+      <header className="ct-app__hero">
         <h1>climb-trainer</h1>
         <p className="ct-app__lede">
           Pick the grade you are training for, and get a plan that covers every aspect of climbing —
@@ -90,37 +93,42 @@ export function Marketing({ onExploreDemo, demoPending, demoError }: MarketingPr
         )}
       </header>
 
-      <Section
-        heading="A plan built around your target grade"
-        shot="Plan overview"
-        caption="Plan overview — arrives with the plan generator."
-      >
-        Tell the app the grade you want, how often you can train and what you have access to. It
-        lays out a block that spends your weeks on the aspects that actually limit you — finger
-        strength, power, endurance, technique and mobility — with deloads and a taper where they
-        belong, not wherever the calendar happens to fall.
-      </Section>
+      <div className="ct-app__bento">
+        <Section
+          area="plan"
+          heading="A plan built around your target grade"
+          shot="Plan overview"
+          caption="Plan overview — arrives with the plan generator."
+        >
+          Tell the app the grade you want, how often you can train and what you have access to. It
+          lays out a block that spends your weeks on the aspects that actually limit you — finger
+          strength, power, endurance, technique and mobility — with deloads and a taper where they
+          belong, not wherever the calendar happens to fall.
+        </Section>
 
-      <Section
-        heading="Follow along during the session"
-        shot="Session player"
-        caption="Guided session player — arrives with the session player."
-      >
-        A session is a sequence of timed sets, not a list to remember. The player counts you through
-        work and rest with a large, readable display and audible cues, so it still works with the
-        phone face-down on the mat, and you log each set as you finish it.
-      </Section>
+        <Section
+          area="session"
+          heading="Follow along during the session"
+          shot="Session player"
+          caption="Guided session player — arrives with the session player."
+        >
+          A session is a sequence of timed sets, not a list to remember. The player counts you
+          through work and rest with a large, readable display and audible cues, so it still works
+          with the phone face-down on the mat, and you log each set as you finish it.
+        </Section>
 
-      <Section
-        heading="A diary that shows whether it worked"
-        shot="Training diary"
-        caption="Training diary — arrives with the diary."
-      >
-        Every session, send and note lands in one timeline. Grades are stored on a shared ladder, so
-        a V5 and a 7A are directly comparable and progress is a line rather than a feeling.
-      </Section>
+        <Section
+          area="diary"
+          heading="A diary that shows whether it worked"
+          shot="Training diary"
+          caption="Training diary — arrives with the diary."
+        >
+          Every session, send and note lands in one timeline. Grades are stored on a shared ladder,
+          so a V5 and a 7A are directly comparable and progress is a line rather than a feeling.
+        </Section>
+      </div>
 
-      <section className="ct-app__section">
+      <section className="ct-app__card">
         <h2>Have a look around first</h2>
         <p>
           There is a demo account with a full plan and a season of training already in it. It opens
@@ -129,7 +137,7 @@ export function Marketing({ onExploreDemo, demoPending, demoError }: MarketingPr
         </p>
         <figure className="ct-app__figure">
           <Shot label="Demo" />
-          <figcaption className="ct-app__muted">
+          <figcaption className="ct-app__caption">
             The demo carries seeded data only. No real training history is ever in it.
           </figcaption>
         </figure>

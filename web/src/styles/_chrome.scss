@@ -1,0 +1,88 @@
+@use 'mixins';
+
+// Nav, the status renders, and the bottom-anchored action bar.
+@mixin styles {
+  &__nav {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--ct-space-2);
+    margin-block-end: var(--ct-space-5);
+    padding: var(--ct-space-2);
+    border: 1px solid var(--ct-border-1);
+    border-radius: var(--ct-radius-3);
+    background: var(--ct-surface-1);
+    // Step 2, not 1: the nav is persistent chrome and sits above the cards, which are step 1.
+    box-shadow: var(--ct-shadow-2);
+
+    a {
+      @include mixins.tap;
+      @include mixins.press(var(--ct-hover));
+      @include mixins.focus-ring;
+
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding-inline: var(--ct-space-3);
+      border-radius: var(--ct-radius-2);
+      color: var(--ct-fg-muted);
+      font-size: var(--ct-text-sm);
+      text-decoration: none;
+
+      &[aria-current='page'] {
+        background: var(--ct-surface-3);
+        box-shadow: inset 0 0 0 1px var(--ct-border-2);
+        color: var(--ct-accent);
+        font-weight: 500;
+      }
+    }
+  }
+
+  // Applied to the status LINE, never to the wrapping element. On `<section class="ct-app__card
+  // ct-app__status">` it won the cascade over `&__card` (equal specificity, `chrome.styles`
+  // included last) and the `<h1>` inside inherited `--ct-fg-muted` with it — "Not found" rendered
+  // muted and "Something broke" rendered in `--ct-danger`. See `ui/status.tsx`.
+  // Full size, for the same reason as `&__error`: "That page does not exist." and the root error
+  // message are what a stuck user reads, and muted-plus-small made them the least legible text on
+  // the screen.
+  &__status {
+    margin: 0;
+    color: var(--ct-fg-muted);
+    font-size: var(--ct-text-base);
+
+    &--error {
+      color: var(--ct-danger);
+    }
+  }
+
+  // A GROUPING primitive for the primary action at the end of a form: a hairline rule, and a
+  // child that stretches to the full width so the thumb target is as large as the card allows.
+  // It does not anchor anything to the viewport, and it must not claim to.
+  //
+  // ⚠️ It carried `position: sticky; inset-block-end: 0` until it was measured: as the last child
+  // of a content-sized `<form>` the sticky range is ≈0, so on the login screen the submit sat
+  // ~300px above the fold in a viewport with no scroll at all. Inert, and the docs around it said
+  // otherwise.
+  //
+  // **Real viewport bottom-anchoring is deferred, and the reason is structural.** It needs either
+  // `position: fixed` or a full-height container (`100dvh`/`100svh`), and BOTH resolve against
+  // kilianmc.com's viewport in the federated mount, because this stylesheet lives in the route
+  // tree that both mounts share — the same class of bug, with the portfolio's chrome as the blast
+  // radius. It therefore belongs to the first genuinely full-height screen, the session player
+  // (planned PR #15a), which needs a mount-aware height decision anyway. The PWA update bar may
+  // be `fixed` only because it is rendered from `main.tsx` and its stylesheet never ships to the
+  // shell. Do not "finish" this primitive with viewport units.
+  &__actionbar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--ct-space-3);
+    margin-block-start: var(--ct-space-2);
+    padding-block-start: var(--ct-space-3);
+    border-block-start: 1px solid var(--ct-border-1);
+
+    // Full-width primary: the widest possible target for a thumb, on both axes.
+    > * {
+      flex: 1 1 12rem;
+    }
+  }
+}

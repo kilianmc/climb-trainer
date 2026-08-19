@@ -16,11 +16,13 @@ function Dashboard() {
   return (
     <>
       <h1>Dashboard</h1>
-      <p className="ct-app__muted">
-        {scope === 'demo'
-          ? 'You are exploring the demo. Everything is read-only.'
-          : 'Your training plan and today’s session will appear here.'}
-      </p>
+      <div className="ct-app__card">
+        <p>
+          {scope === 'demo'
+            ? 'You are exploring the demo. Everything is read-only.'
+            : 'Your training plan and today’s session will appear here.'}
+        </p>
+      </div>
     </>
   );
 }
