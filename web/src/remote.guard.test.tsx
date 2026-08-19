@@ -35,10 +35,15 @@ function foreignKeys(): string[] {
 }
 
 /**
- * jsdom is already `readyState: 'complete'` when a test runs, so a listener registered
- * during render never fires on its own. `vite-plugin-pwa`'s `virtual:pwa-register`
- * registers its service worker from exactly such a `load` listener, which makes it the
- * most likely PR #7 regression — and without this dispatch the guard cannot see it.
+ * jsdom is already `readyState: 'complete'` when a test runs, so a listener registered during
+ * render never fires on its own — hence the dispatch.
+ *
+ * ⚠️ It is NOT `virtual:pwa-register` that needs it, contrary to what this comment said before
+ * (and what CLAUDE.md said before PR #7): `workbox-window`'s `Workbox.register` is
+ * `if (!immediate && document.readyState !== 'complete') await load`, and under jsdom that
+ * condition is always false, so the real registration happens SYNCHRONOUSLY. The dispatch stays
+ * because a hand-rolled `window.addEventListener('load', … register …)` in a shared module is
+ * still a plausible regression, and it costs nothing.
  */
 async function settle() {
   window.dispatchEvent(new Event('DOMContentLoaded'));
@@ -198,14 +203,33 @@ describe('the federated entry', () => {
     // spy were mis-wired or an event never dispatched. Same class of defect as the
     // vacuous route-enumeration walk recorded in CLAUDE.md, so it gets the same
     // treatment: prove the detector fires before trusting that it stayed silent.
-    let registeredOnLoad = false;
-    window.addEventListener('load', () => {
-      registeredOnLoad = true;
-      void navigator.serviceWorker.register('/sw.js');
+    //
+    // The service-worker arm imports the same specifier `pwa/updatePrompt.ts` does, so it
+    // exercises the module graph a stray import from the route tree would create. It is a STAND-IN
+    // for the real registration, not the real thing: `vitest.config.ts` aliases the specifier to
+    // `test/pwaRegisterStub.ts` (nothing resolves the virtual module without the plugin). The
+    // emitted URL and the plugin options are asserted from the config and the build instead — see
+    // `pwaContract.test.ts` and `distContract.test.ts` — because the arguments below are the
+    // stub's own literals.
+    //
+    // Registration is synchronous: jsdom is `readyState: 'complete'`, so upstream's
+    // `!immediate && readyState !== 'complete'` deferral never applies. See the stub.
+    const { registerSW } = await import('virtual:pwa-register');
+    registerSW();
+    expect(register).toHaveBeenCalled();
+
+    // The `load` dispatch must also not be what makes it fire, or the negative assertions above
+    // would only be true until something registered from a listener.
+    const callsBeforeLoad = register.mock.calls.length;
+    await settle();
+    expect(register.mock.calls.length).toBe(callsBeforeLoad);
+
+    // …and a listener-based registration IS still caught, which is why `settle()` dispatches.
+    window.addEventListener('load', () => void navigator.serviceWorker.register('/late-sw.js'), {
+      once: true,
     });
     await settle();
-    expect(registeredOnLoad).toBe(true);
-    expect(register).toHaveBeenCalled();
+    expect(register).toHaveBeenCalledWith('/late-sw.js');
 
     (localStorage as unknown as Record<string, string>)['injected'] = 'x';
     expect(foreignKeys()).toEqual(['injected']);

@@ -237,24 +237,63 @@ or Query defaults live. `main.tsx` gives it `createBrowserHistory`, `remote.tsx`
 - **Styles are split by mount**, which is what keeps the `.ct-app` rule honest:
   `styles/app.scss` is imported from `routes/__root.tsx` (so both mounts get it, and it
   contains zero `:root`/`body` rules), `styles/global.scss` only from `main.tsx` (the
-  document reset, which must never reach the shell). The built remote's stylesheet was
-  checked for `:root` leakage.
+  document reset, which must never reach the shell), and `styles/update-bar.scss` only from
+  `ui/UpdateBar.tsx`, which only `main.tsx` imports. **Since PR #7 this is asserted on the BUILT
+  stylesheet the shell loads, by `src/distContract.test.ts`** — not on the sources. The
+  distinction is the whole point and was measured: a per-source-file scan with per-file
+  exemptions stayed green while one added line, `@use 'global';` in `app.scss`, emitted
+  `:root{…}` and `body{…}` straight into the remote's CSS. The rule is about *which bundle a
+  declaration lands in*, and `@use` is what decides that. `styles/designGuard.test.ts` is the
+  weaker complement, kept for the reach the bundle check cannot have: a `backdrop-filter` in a
+  partial nothing `@use`s yet, and an inline `position: 'fixed'` in a component, which never
+  becomes CSS at all.
 
 ### Never register a service worker from `remote.tsx`
 
 A service worker registered from the federated entry would be **scoped to
 kilianmc.com** and start intercepting the production portfolio's requests. Low
-likelihood, severe blast radius. **SW registration lives in `main.tsx` only** —
-PR #7 (PWA) must keep it there.
+likelihood, severe blast radius. **SW registration lives in `main.tsx` only.**
+
+Since PR #7 that is a live constraint rather than a future one, and it constrains *component
+placement*, not just entry files: `pwa/updatePrompt.ts` calls `registerSW` at module scope, so
+**anything that imports it — `ui/UpdateBar.tsx` included — may be rendered from `main.tsx` and
+from nowhere in the route tree**, which `remote.tsx` shares. Putting the update bar in
+`__root.tsx` is the realistic mistake; it looks like chrome, and chrome lives in the root route.
+
+Two tests hold the line, and they need each other:
+
+- `remote.guard.test.tsx` is the negative arm. Its service-worker assertion passes on an empty
+  set, so it also carries a positive control that imports **`virtual:pwa-register` itself** and
+  proves the spy sees the registration.
+- `virtual:pwa-register` only exists while `vite-plugin-pwa` is running, and `vitest.config.ts`
+  **replaces** `vite.config.ts`, so tests resolve it through a `resolve.alias` to
+  `src/test/pwaRegisterStub.ts`. The stub copies upstream's deferral condition **verbatim**
+  (`workbox-window/src/Workbox.ts:113`: `if (!immediate && document.readyState !== 'complete')
+  await load`) — see the correction two paragraphs down for why that means it registers
+  *synchronously* under jsdom. Keep it a copy of the condition, not a summary of it.
+- `main.pwa.test.tsx` is the positive arm: without it, deleting the PWA wiring entirely leaves
+  the negative guard green. It can only assert *that* a registration happened — the URL the stub
+  reports is the stub's, so the plugin options and the emitted `sw.js` are asserted by
+  `pwaContract.test.ts` and `distContract.test.ts` instead.
 
 `web/src/remote.guard.test.tsx` enforces this plus the `localStorage` rules below. It
 shipped **vacuous** and was hardened on 2026-08-14; three jsdom facts caused that, and all
 three will catch the next person out too:
 
 - **`document.readyState` is already `'complete'` when a test runs**, so a listener added
-  during `render()` never fires. `vite-plugin-pwa`'s `virtual:pwa-register` registers from
-  a `window` `load` listener, which made the most likely PR #7 regression the one the guard
-  could not see. The test dispatches `load` itself.
+  during `render()` never fires. The test dispatches `load` itself.
+
+  ⚠️ **Correction (PR #7).** The claim here — that `vite-plugin-pwa`'s `virtual:pwa-register`
+  registers from a `window` `load` listener — was **wrong when it was written on 2026-08-14**,
+  before any PWA code existed, and it survived into PR #7's first draft. Upstream is
+  `workbox-window/src/Workbox.ts:113`: `if (!immediate && document.readyState !== 'complete')
+  await load`. jsdom is *always* `'complete'`, so under test the real registration is
+  **synchronous** and the `load` listener is never taken. Two consequences: the stub must copy
+  that condition rather than defer unconditionally (an unconditional stub made two "positive
+  controls" assert a deferral production does not have), and the `load` dispatch is justified by a
+  different risk — a **hand-rolled** `window.addEventListener('load', … register …)` in a module
+  both entries import, which is still plausible and still invisible without it. Keep the dispatch;
+  do not keep the reasoning that used to accompany it.
 - **`localStorage.foo = 'x'` writes the value while completely bypassing
   `Storage.prototype.setItem`**, so a `setItem` spy misses it. Assert on
   `Object.keys(localStorage)`, not only on recorded calls.
@@ -391,6 +430,68 @@ would let unrelated peer conflicts through unnoticed.
 against a known-bad component to confirm the rules still fire — a plugin that fails to
 register is silent, and an a11y lint that checks nothing looks exactly like one that
 passes.
+
+### PWA (PR #7) — only the decisions a reader would otherwise reverse
+
+`vite-plugin-pwa` v1, `generateSW`, configured in `web/vite.config.ts` **after** `federation()`.
+The registration lives in `main.tsx` only — see the service-worker rule above for the two tests
+that enforce it. What follows is the reasoning that is not visible in the config:
+
+- **`registerType: 'prompt'`, not `autoUpdate`.** `autoUpdate` calls `skipWaiting`, which
+  **deletes the outdated precache as the new worker activates** — so a tab left open across a
+  deploy then 404s on the next lazily-loaded route chunk, and later it could swap code under a
+  session player mid-set. The visitor takes the update, via `ui/UpdateBar.tsx`.
+- **`injectRegister: null`.** We register from `main.tsx`, and the alternative is blocked
+  anyway: the production document CSP is `script-src 'self'` with no nonce, so the `'inline'`
+  strategy's inline `<script>` would never execute. `null` also means the plugin injects nothing
+  but `<link rel="manifest">`, which is why `index.html`'s two scheme-scoped
+  `<meta name="theme-color">` tags survive the build.
+- **`workbox.inlineWorkboxRuntime: true`** — one `sw.js` rather than `sw.js` plus an unhashed
+  `workbox-*.js`, so there is one fewer root-level file for the SPA rewrite to mis-serve. Note
+  it is a *workbox-build* option; at the plugin's top level it is a type error.
+- **`navigateFallbackDenylist: [/^\/api\//]` is not optional.** `navigateFallback` otherwise
+  answers an `/api/*` navigation with `index.html`, which is deployment trap 2 recreated inside
+  the browser: `apiFetch` gets `200 text/html` and throws `NotJsonError` far from the cause.
+- **No `runtimeCaching` for `/api`, ever.** Authenticated JSON in Cache Storage is written to
+  disk, is not scoped to a session, and **survives logout** — nothing in the app clears it. The
+  service worker precaches the app shell and nothing else.
+- **`globPatterns` is explicit and narrower than the default**, because the manifest icons and
+  `includeAssets` are added by the plugin with their own revisions; globbing them too offers
+  workbox two entries for one URL. `build.sourcemap` is on and `.map` is deliberately excluded.
+  As of PR #7 the precache is **33 entries / ~426 KiB**, `remoteEntry.js` and the MF virtual
+  chunks included. ⚠️ **Those are NOT dead weight and must not be excluded**: `dist/index.html`
+  `modulepreload`s every one of them, because the MF plugin routes the *standalone* app's own React
+  through the share scope. Precaching them is what makes the standalone app work offline at all.
+  (An earlier note here said the standalone app never loads `remoteEntry.js`. It was wrong.)
+- **The four decisions above are asserted, not just recorded.** `src/pwaContract.test.ts` reads
+  `vite.config.ts` off disk (modelled on `mf-contract.test.ts`) and fails on `autoUpdate`, on a
+  non-`null` `injectRegister`, on a missing `/api` denylist, and on the *presence of the token*
+  `runtimeCaching` anywhere. Before it existed, adding `runtimeCaching` for `/api` passed the whole
+  gate. It strips comments first, because this config explains those rules in prose.
+- **Icons are generated on demand and committed.** `npm --prefix web run generate:icons` runs
+  **`npx --yes @vite-pwa/assets-generator@1.0.2`** over `web/public/mark.svg` (`minimal-2023`
+  preset). It is **not** wired into the Vite build: no image processing on Vercel, and committed
+  PNGs are deterministic (verified — a re-run is byte-identical). The manifest's `icons` array is
+  hand-written against the filenames actually on disk — check them, do not assume the preset's
+  naming.
+  - ⚠️ **The generator is deliberately NOT a devDependency**, and `pwa-assets.config.js` is
+    deliberately plain JS with a **string** preset name and no imports (so `tsc -b` never has to
+    resolve the package). It drags in `sharp <0.35.0` — four high-severity libvips CVEs,
+    GHSA-f88m-g3jw-g9cj — and ~200 packages that `npm ci` would install on **every Vercel
+    production build**, for a script that runs when the logo changes. Dependabot alerts cover
+    devDependencies and this repo is at zero; `npm audit` is 0 with the pinned-`npx` form. Do not
+    "fix" the config file by adding the import back.
+- **The update prompt must be dismissable, and its Reload needs an explicit fallback.** Both are
+  bugs that were shipped and measured, both recorded in `pwa/updatePrompt.ts`: the bar is `fixed`
+  at the bottom, so with no dismiss it permanently covered the bottom-anchored primary action; and
+  prompt mode's reload is gated on `event.isUpdate`, which is false on an **uncontrolled** client
+  (first visit, hard reload), where tapping Reload otherwise activates the worker and does nothing
+  visible. `global.scss` reserves the bar's height with `body:has(.ct-update-bar__panel)`.
+- **No `orientation` in the manifest.** The app is used in landscape on a bouldering mat as
+  often as in portrait.
+- **`vite preview` proxies `/api` too**, mirroring `server`. Production serves `/api` from this
+  origin, so without the proxy preview 404s every auth call — and preview is the only place the
+  real build meets the real production headers.
 
 ---
 
@@ -981,6 +1082,11 @@ absent, and PR #7's to add: cards, grid or bento areas, a shadow scale, containe
 any new design token. Kilian's call — PR #7 then styles a structure that is already correct
 instead of inventing one late.
 
+**PR #7 has since landed all of it** (see "UI design direction" below) as class and wrapper
+changes only: the structure recorded above is still exactly what those screens render, because
+`router.test.tsx`, `routeGuard.test.tsx`, `publicRoutes.test.ts` and `remote.guard.test.tsx`
+assert the link lists, headings and DOM order and would not have allowed otherwise.
+
 ### 🔒 TODO — the end-to-end security verification pass (Kilian's call, 2026-08-13)
 
 **Not yet done. Do not tick any of it off from memory.** Every rule in this file was
@@ -1220,6 +1326,20 @@ Two exceptions: **runtimes track LTS** (Node 24, Python 3.13), and **`@types/*` 
 runtime major, not the newest** — `@types/node` is held at 24 via an `ignore` entry, because
 type-checking against a runtime we do not run is a defect TypeScript accepts silently. The
 TypeScript 6.x hold in the frontend rules is a capability decision, not a staleness one.
+
+**A third exception, added by PR #7: a build-time-only tool with a vulnerable transitive dep does
+not have to enter the install tree at all.** `@vite-pwa/assets-generator` regenerates the PWA
+icons, which happens when the logo changes — roughly never. It depends on `sharp <0.35.0`, i.e.
+four high-severity libvips CVEs (GHSA-f88m-g3jw-g9cj), and pulls ~200 packages that `npm ci` would
+install on **every Vercel production build**. As a devDependency that is three permanent Dependabot
+alerts (they cover devDependencies) against a repo currently at zero, bought for nothing. So the
+npm script invokes it through a **version-pinned `npx --yes @vite-pwa/assets-generator@1.0.2`**,
+and `web/pwa-assets.config.js` is plain JS with a string preset name so nothing has to resolve the
+package's types. Reproducibility is kept by the exact pin plus the committed output (a re-run is
+byte-identical). `npm audit`: **0 vulnerabilities**.
+
+Generalise: **pin, but ask first whether a tool that runs by hand needs to be installed at all.**
+The test is whether anything in `build`, `lint`, `typecheck` or `test` imports it.
 
 **Four upgrade traps, each already paid for:**
 
@@ -1500,72 +1620,147 @@ be real — no snapshot-everything, no asserting on mock call counts as a proxy 
 behaviour, and integration over unit where the integration is the risky part (which is
 why the backend tests run against real Postgres, not SQLite).
 
-## UI design direction (drives PR #7 — intended direction, NOT implemented yet)
+## UI design direction — IMPLEMENTED by PR #7
 
-Recorded now so PR #7's design system is built to it, and so nothing lands before then
-that contradicts it. **Do not implement any of this ahead of PR #7** — `global.scss`
-today is a deliberate minimum.
+`web/src/styles/` is the design system. `@use`-based partials, no `@import`:
 
-**The look**: modern, blending simplicity with **tactile** elements — functional
-**bento-box** card layouts, generous touch-friendly targets, honest depth. Calm by
-default; the app should feel like a tool, not a dashboard.
+| File | What it owns |
+| --- | --- |
+| `_tokens.scss` | every token, as a `@mixin declare` — see "why a mixin" below |
+| `_mixins.scss` | `tap`, `focus-ring`, `press`, `safe-inset-block-end` |
+| `_primitives.scss` | button (3 variants), input, field, error, badge, text primitives |
+| `_card.scss` | the card surface, and the only `@container` rules |
+| `_bento.scss` | the bento grid's named areas |
+| `_chrome.scss` | nav, status renders, bottom-anchored action bar |
+| `app.scss` | the `@use` entry and the `.ct-app` root; imported from `routes/__root.tsx` |
+| `global.scss` | the document reset. `main.tsx` only, and the ONLY file allowed `:root` |
+| `update-bar.scss` | the PWA update bar. `ui/UpdateBar.tsx` only, i.e. standalone only |
 
-Guiding principle, in Kilian's words: **"we prefer useful than looking pretty."** When
-a visual flourish and legibility disagree, legibility wins without discussion.
+Guiding principle, in Kilian's words, and still the tie-breaker: **"we prefer useful than
+looking pretty."** When a visual flourish and legibility disagree, legibility wins without
+discussion. The look is bento-box cards, generous targets, honest depth; calm by default —
+a tool, not a dashboard.
+
+**Two tests hold the parts a future agent would otherwise "helpfully improve"**, and both
+carry positive controls because a silent detector is worse than none:
+
+- `styles/contrast.test.ts` parses the hex out of `_tokens.scss` per scheme and asserts every
+  documented text-on-surface pair at **4.5:1** and the control outlines at 3:1. It reads the
+  **source text**, because `vitest.config.ts` sets `css: false` and there are no computed
+  styles to read. It also asserts the two schemes declare the *same keys* — a token added to
+  light only keeps its light value in dark mode, which is how an unreadable surface ships while
+  every pair still passes.
+- **`distContract.test.ts` is the one that matters for scoping.** It derives the stylesheet the
+  federated mount loads by walking the import graph from `dist/remoteEntry.js` (there is no
+  `mf-manifest.json` to read — checked) and asserts that **every** selector list in it begins with
+  `.ct-app`, with no `:root` and no `position: fixed`. It reads `dist/`, so it needs `build` to have
+  run, and it **fails loudly rather than skipping** when it has not. That ordering dependency is
+  justified where `publicRoutes.test.ts`'s was not: this invariant is a property of *which bundle a
+  declaration lands in*, which no source file states.
+- `styles/designGuard.test.ts` scans the sources, recursively, for `backdrop-filter`, `:root`
+  outside `global.scss`, `@import`, and an inline `position: 'fixed'` in any `.tsx`. **There is no
+  stylelint in this repo**, so this is not a lint rule restated — but it is explicitly *not* the
+  scoping guard: a per-file scan cannot see `@use`, and it stayed green while `@use 'global';` in
+  `app.scss` pushed `:root` into the remote's CSS. What it adds is reach into files no bundle
+  contains yet, and into React style props, which never become CSS. It strips comments first — the
+  reasons for these rules are written in the files being scanned, so every detector would otherwise
+  fire on its own prose.
 
 ### Glassmorphism: considered and REJECTED (2026-08-12)
 
-**Do not use `backdrop-filter`. Do not reintroduce translucent "glass" surfaces
-anywhere, including as a subtle accent on chrome or cards.** This was explicitly
-evaluated and rejected by Kilian on 2026-08-12 — it is a closed decision, not an
-oversight for a future agent to helpfully improve.
+**Do not use `backdrop-filter`. Do not reintroduce translucent "glass" surfaces anywhere,
+including as a subtle accent on chrome or cards.** This was explicitly evaluated and rejected
+by Kilian on 2026-08-12 — it is a closed decision, not an oversight for a future agent to
+helpfully improve. `designGuard.test.ts` now fails the build on it.
 
 Why: `backdrop-filter` forces a separate compositing layer and a blur pass every frame,
-which is **GPU- and battery-expensive on a phone that is awake and in use partway
-through a training session**. And translucency is straightforwardly *worse* at the one
-thing that matters most here — being readable at arm's length, with sweaty or chalky
-hands, in bad gym lighting.
+which is **GPU- and battery-expensive on a phone that is awake and in use partway through a
+training session**. And translucency is straightforwardly *worse* at the one thing that
+matters most here — being readable at arm's length, with sweaty or chalky hands, in bad gym
+lighting.
 
-**Tactility comes from OPAQUE ELEVATED SURFACES instead:**
+**Tactility comes from OPAQUE ELEVATED SURFACES instead**, which is what shipped:
 
-- **Solid backgrounds.** Every surface is opaque. Elevation is expressed with a distinct
-  surface colour, not by letting content show through.
-- **Subtle borders** (a hairline in a slightly contrasting tone) to separate surfaces,
-  which reads more crisply than a blur ever does.
-- **Real press / active states** — a visible change on `:active` and on
-  `:focus-visible`, so a tap is unambiguously acknowledged. This is the single biggest
-  contributor to an app feeling tactile, and it costs nothing to render.
-- **Honest depth** — a restrained, consistent shadow scale that says which surface is
-  above which. No decorative shadows that imply an elevation that isn't real.
+- **A four-step opaque surface scale** — `--ct-bg`, `--ct-surface-1..3`, plus `--ct-hover`
+  and `--ct-pressed`. Elevation is a distinct surface *colour*, never content showing through.
+  `--ct-bg` doubles as the **sunken** tone (inputs, image wells): it is the furthest surface
+  from a card in both schemes, so one token reads as "inset" in light and in dark.
+- **A hairline per surface** (`--ct-border-bg`, `--ct-border-1..3`), because one border tone
+  reads as a smudge against white and as nothing at all against the page background. Plus
+  `--ct-border-strong` for control outlines, which carries real 3:1 non-text contrast.
+- **Real `:active` and `:focus-visible` on every interactive affordance**, via
+  `_mixins.scss`'s `press` and `focus-ring`. The single biggest contributor to the app
+  feeling tactile, and it costs nothing to render.
+- **A three-step shadow scale** (`--ct-shadow-1..3`) and no fourth — card, nav, floating update
+  bar. Honest depth: a shadow here means real elevation, and the alphas are **measured**, not
+  guessed. Composited over `--ct-bg`, step 1 is **1.22:1** against the bare page; at the 0.06 it
+  first shipped with it was 1.13:1, i.e. paint work nobody could see.
+- **⚠️ In dark mode all three shadow tokens are `none`, by arithmetic.** `--ct-bg` is `#0d0f12`,
+  relative luminance 0.0056, so the *best* contrast any shadow can reach over it is
+  **1.09:1** — `(0.0056 + 0.05) / 0.05`, with fully opaque pure black. A blurred shadow at a
+  realistic peak alpha lands at 1.04–1.06:1. The first draft of PR #7 shipped a "reduced dark
+  scale" that measured 1.05–1.07:1: three GPU-costing steps rendering as nothing. Dark elevation
+  therefore rests on the surface scale and the hairlines alone, and the floating update bar carries
+  `--ct-border-strong` (4.2:1 non-text) instead. **If you re-add dark shadows, measure them
+  first** — and note the only way to make them work is to lift `--ct-bg`, which re-opens every
+  dark contrast pair.
 
 ### Accessibility is part of the design, not a later pass
 
-- **Respect `prefers-reduced-motion`** — no transitions on the tactile affordances, and
-  the player's cues fall back to instant state changes (the cue itself must still fire;
-  reduced motion is not reduced information).
-- **WCAG AA 4.5:1** for text, which on opaque surfaces is a straightforward
-  token-vs-token check per surface — one of the practical benefits of dropping
-  translucency: contrast becomes decidable from the tokens instead of depending on
-  whatever happens to be scrolling underneath.
-- **Touch targets ≥ 44px** (44×44 CSS px minimum), with adequate spacing — this is a
-  one-handed, mid-workout, possibly-chalky-fingers app.
-- **Primary actions bottom-anchored** for one-handed thumb reach, using the
-  **safe-area insets already established in `web/src/styles/global.scss`**
-  (`env(safe-area-inset-*)` with `max()` floors, and `viewport-fit=cover` is already set
-  in `index.html`). Never put a primary action in a top corner.
+- **`prefers-reduced-motion`** guards every transform and transition. `press` puts the colour
+  change **outside** the guard and the transform **inside** it, deliberately: reduced motion
+  is not reduced information, so the tap is still acknowledged, just instantly. Deleting the
+  whole rule under the guard would leave a tap unacknowledged.
+- **WCAG AA 4.5:1**, asserted per scheme by `contrast.test.ts`. On opaque surfaces this is
+  decidable from the tokens, which is one of the practical benefits of having dropped
+  translucency.
+- **`--ct-tap: 44px`, applied on BOTH axes** by `_mixins.scss`'s `tap`. A block-size floor
+  alone leaves a tall unhittable target — "Plan" is only ~31px wide on its own.
+- **Primary actions are never in a top corner**, and `ct-app__actionbar` groups them at the end of
+  a form behind a hairline, stretched to full width for the thumb. ⚠️ **It does not yet anchor
+  anything to the bottom of the VIEWPORT, and PR #7 does not deliver that.** It shipped as
+  `position: sticky; inset-block-end: 0`, which is inert as the last child of a content-sized form
+  — measured, the login submit sat ~300px above the fold with no scroll at all — so the sticky and
+  the `env()` floor were removed rather than left looking load-bearing. Real anchoring needs
+  `position: fixed` or `100dvh`/`100svh`, and **both resolve against kilianmc.com's viewport in the
+  federated mount**, because the route tree is shared. It therefore belongs to the session player
+  (planned PR #15a), the first genuinely full-height screen, which needs a mount-aware height
+  decision anyway. `env(safe-area-inset-*)` under `max()` floors is in use on `.ct-app`'s own
+  padding and on the update bar, which may be `fixed` because `main.tsx` alone renders it.
+  `viewport-fit=cover` is already set in `index.html`.
+- **⚠️ No `position: fixed` and no viewport units anywhere the route tree can reach.** Both mounts
+  share that tree, and in the federated mount both resolve against **kilianmc.com's viewport** — a
+  `fixed` element would float over the portfolio's own chrome. Both are allowed only in the
+  `main.tsx`-only subtree, which is why the PWA update bar may use `fixed` and `_chrome.scss` may
+  not. Asserted on the built remote stylesheet by `distContract.test.ts`; inline
+  `style={{ position: 'fixed' }}` in a component never becomes CSS, so `designGuard.test.ts` scans
+  the `.tsx` sources for that separately.
 
-### Bento layouts must reflow between the two mounts
+### Container queries, not media queries — and tokens on `.ct-app`, not `:root`
 
-- **CSS grid with named areas** for the bento arrangement, plus **container queries** on
-  the cards themselves.
-- The reason is structural: the same card component renders in the **full-width
-  standalone app** and in the **smaller federated mount** inside the shell's
-  `ProjectViewer`. A media query asks about the *viewport*, which is wrong in the
-  federated case — the viewport is kilianmc.com's, not the card's. **Container queries
-  ask about the space the card actually has**, so one component serves both mounts with
-  no mount-specific branching.
-- Design tokens (surface colours, border tones, the shadow scale) go on the
-  **`.ct-app` root**, not `:root` — see the federated-mount rules above.
+Both of these are structural, not stylistic. Do not "simplify" either.
+
+- **`@container`, not `@media`,** for anything whose right answer depends on how much room
+  the app got. The same card renders in the **full-width standalone app** and in the **much
+  narrower federated mount** inside the shell's `ProjectViewer`; a media query asks about the
+  *viewport*, which in the federated case is kilianmc.com's, not the card's. So `.ct-app`
+  declares `container: ct-app / inline-size` (the bento's arrangement and the cards' padding
+  ask it) and each card declares `container: ct-card / inline-size` (its own internals ask
+  that). One component, two mounts, no mount-specific branching.
+  - **An element cannot query the container it establishes itself.** A card's padding is
+    therefore an `@container ct-app` rule, and only its *descendants* may ask `ct-card`.
+    Writing `@container ct-card { .ct-app__card { … } }` compiles, matches nothing, and
+    silently does nothing.
+- **The bento is CSS grid with NAMED AREAS**, not `auto-fit`/`minmax`: the arrangement per
+  breakpoint stays reviewable in one place, and it lets visual order change without touching
+  DOM order — which matters because DOM order here is frozen by tests.
+- **Tokens live on `.ct-app`, never `:root`** — in the federated mount `app.scss` is injected
+  into kilianmc.com's document.
+  - **Why a Sass mixin rather than a rule:** the PWA update bar is rendered from `main.tsx`
+    as a *sibling* of the router (it must be — see the service-worker rule), so it sits
+    outside `.ct-app` and inherits nothing. `_tokens.scss` therefore exposes
+    `@mixin declare`, included by both `.ct-app` and `.ct-update-bar`. A second `.ct-app`
+    element is **not** the fix: that element's padding, max-width and background would apply.
 
 ## Session player invariants (PR #15a onward)
 

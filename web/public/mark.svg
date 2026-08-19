@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" role="img" aria-label="climb-trainer">
+  <!-- Source for every generated PWA icon (see web/pwa-assets.config.ts). Opaque
+       background on purpose: a transparent icon picks up whatever the launcher puts
+       behind it, and the apple-touch variant would be composited onto white. All
+       content sits inside the centred 409px circle a maskable icon may crop to. -->
+  <rect width="512" height="512" fill="#1f6f4a"/>
+  <path d="M168 352 L232 264 L312 296 L352 176" fill="none" stroke="#0f4f33" stroke-width="18" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="168" cy="352" r="26" fill="#fbfbfa"/>
+  <circle cx="232" cy="264" r="26" fill="#fbfbfa"/>
+  <circle cx="312" cy="296" r="26" fill="#fbfbfa"/>
+  <circle cx="352" cy="176" r="34" fill="#fbfbfa"/>
+</svg>

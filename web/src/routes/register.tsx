@@ -36,7 +36,7 @@ function Register() {
   return (
     <>
       <h1>Create account</h1>
-      <p className="ct-app__muted">
+      <p className="ct-app__lede">
         Email and a password, nothing else. There is no verification email, so you are signed in
         straight away.
       </p>

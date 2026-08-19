@@ -141,6 +141,14 @@ npm --prefix web run dev          # http://localhost:5173
 > happens to look the same. Any change to routing, `vercel.json`, or the API base has
 > to be re-verified on a real deploy. See `CLAUDE.md`.
 
+The PWA icons in `web/public/` are generated and committed, not built, and the generator is
+deliberately not a dependency (see `CLAUDE.md`). Regenerate them only after editing
+`web/public/mark.svg`, and commit the result — the script downloads a pinned version on demand:
+
+```bash
+npm --prefix web run generate:icons
+```
+
 ## Tests and quality gate
 
 One command runs the same checks CI does:

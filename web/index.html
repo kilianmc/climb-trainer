@@ -4,6 +4,16 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <meta name="color-scheme" content="light dark" />
+    <!--
+      The manifest's `theme_color` is one static value, so these are what actually follow the
+      scheme. Both match the corresponding `--ct-bg` in `src/styles/_tokens.scss`, so the
+      browser chrome and the app's own background are the same colour rather than nearly so.
+    -->
+    <meta name="theme-color" media="(prefers-color-scheme: light)" content="#eef0ed" />
+    <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#0d0f12" />
+    <link rel="icon" href="/favicon.ico" sizes="48x48" />
+    <link rel="icon" href="/mark.svg" sizes="any" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon-180x180.png" />
     <title>climb-trainer</title>
   </head>
   <body>

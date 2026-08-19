@@ -5,6 +5,7 @@ import { createRoot } from 'react-dom/client';
 
 import { AuthProvider, createAuth } from './auth/AuthProvider';
 import { createAppRouter, createQueryClient } from './router';
+import { UpdateBar } from './ui/UpdateBar';
 import './styles/global.scss';
 
 /**
@@ -12,8 +13,13 @@ import './styles/global.scss';
  * button work. `remote.tsx` is the federated entry and shares the route tree.
  *
  * ⚠️ This is the ONLY file that may ever register a service worker. From `remote.tsx`
- * the scope would be kilianmc.com and it would intercept the live portfolio's
- * requests. PR #7 (PWA) registers it below, and nowhere else.
+ * the scope would be kilianmc.com and it would intercept the live portfolio's requests.
+ * `<UpdateBar>` is what pulls in `pwa/updatePrompt`, which registers it — so that component
+ * may be rendered from here and from nowhere in the route tree, which both mounts share.
+ * `remote.guard.test.tsx` asserts the negative, `main.pwa.test.tsx` the positive.
+ *
+ * It renders as a SIBLING of the router, outside `.ct-app`, hence the token mixin in
+ * `styles/_tokens.scss` rather than tokens declared on that element.
  */
 const container = document.getElementById('root');
 if (!container) throw new Error('#root is missing from index.html');
@@ -34,6 +40,7 @@ createRoot(container, {
     <AuthProvider auth={auth}>
       <QueryClientProvider client={queryClient}>
         <RouterProvider router={router} />
+        <UpdateBar />
       </QueryClientProvider>
     </AuthProvider>
   </StrictMode>,

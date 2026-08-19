@@ -1,0 +1,160 @@
+@use 'mixins';
+
+// The card surface, and the only place `@container` rules live.
+//
+// WHY CONTAINER QUERIES AND NOT MEDIA QUERIES: the same card renders full-width in the
+// standalone app AND in the much narrower federated mount inside the shell's
+// ProjectViewer. A media query asks about the VIEWPORT, which in the federated case is
+// kilianmc.com's, not the card's — so one component would need mount-specific branching
+// to look right in both. `@container` asks about the space the card actually has.
+//
+// An element cannot query its own container, so everything below the `@container` at-rule
+// styles the card's INTERNALS; the card itself is sized by the bento grid.
+//
+// ⚠️ **Every query here asks about the WIDE case, and the defaults are the compact ones.** Two
+// reasons, both learned the hard way when the internals were written the other way round:
+//
+//  1. A card that matches no query — an unsupported browser, or a card outside any container —
+//     gets the DEFAULT, so the default has to be the safe outcome. It was `4 / 3` with the
+//     letterbox behind a `min-inline-size` query, which meant every failure produced the
+//     app's *largest* placeholder.
+//  2. **A width threshold cannot separate "phone, single column" from "desktop, narrow bento
+//     tile" — they are the same width.** Measured: 324px of card content at a 390px viewport
+//     versus 294px for the side-by-side tile at 900px. Any `min-inline-size` tuned to catch the
+//     phone also catches the tile, and any threshold above the phone is simply dead (the
+//     original `22rem` = 352px of content needed a ~418px viewport, so no phone ever reached
+//     it: every phone rendered 324x243 wells, 37.1% of the landing page's height, with the
+//     first fold ending inside the first one).
+//
+// So the narrow treatment is unconditional and only genuinely roomy cards opt up. The one
+// threshold below is reachable by exactly the card it describes: the full-width `plan` tile in
+// the two-column bento (670px of content at a 900px viewport), and nothing in the federated
+// mount, which is the narrower case by definition.
+//
+// ⚠️ **`grid-template-rows: subgrid` was evaluated for the cross-card alignment below and
+// REJECTED, on a checked fact.** This project's build target is Vite 8's
+// `baseline-widely-available`, which resolves to `chrome111, edge111, firefox114, safari16.4,
+// ios16.4` (verified in `vite/dist/node/chunks/node.js`). **Subgrid needs Chrome/Edge 117**, so
+// Chrome 111–116 are inside our stated support window and outside subgrid's. It would not degrade
+// gracefully either: those versions drop `subgrid` as an invalid value but keep the
+// `grid-row: span 3` it requires, so the card would span three of the BENTO's rows and the layout
+// would break rather than merely lose alignment. It also hard-couples `_bento.scss` to "every card
+// has exactly three children" — the parent grid has to declare the rows each card spans, which
+// would mean replacing the named `grid-template-areas` with a six-row numeric template. Re-evaluate
+// when the baseline moves past Chrome 117, not before.
+@mixin styles {
+  &__card {
+    container: ct-card / inline-size;
+
+    display: flex;
+    flex-direction: column;
+    gap: var(--ct-space-3);
+    padding: var(--ct-space-4);
+    border: 1px solid var(--ct-border-1);
+    border-radius: var(--ct-radius-3);
+    background: var(--ct-surface-1);
+    box-shadow: var(--ct-shadow-1);
+
+    > h2,
+    > h3,
+    > p {
+      margin: 0;
+    }
+
+    // THE ALIGNMENT CONTRACT, half one: the last child is flush to the card's bottom.
+    //
+    // Cards in a bento row are grid items stretched to the ROW's height, so a card with less
+    // content than its neighbour used to end in dead space — measured at 1440, the diary card
+    // carried 41.91px of it while the session card carried 1px. `auto` gives that slack to the
+    // margin above the last child instead, so card CONTENT bottoms align even when the headings
+    // above them wrap to different line counts.
+    //
+    // Deliberately `:last-child` and not `&__figure`: this is a primitive that has to outlive the
+    // current landing page, and a card can legitimately end in an action row or a paragraph. It is
+    // also a no-op on a card whose height is its content — every card outside a multi-item bento
+    // row — so it costs nothing where it is not needed.
+    > :last-child {
+      margin-block-start: auto;
+    }
+  }
+
+  // The root error render. A danger-toned EDGE, not a danger-toned surface: the message itself is
+  // already `--ct-danger`, and tinting the whole card would drop every other pair rendered on it
+  // out of the contrast table.
+  &__card--danger {
+    border-color: var(--ct-danger);
+  }
+
+  &__figure {
+    display: flex;
+    flex-direction: column;
+    gap: var(--ct-space-2);
+    margin: 0;
+  }
+
+  // THE ALIGNMENT CONTRACT, half two: a caption inside a figure occupies a fixed two-line box.
+  //
+  // With the figure bottom-flush above, the media's position is measured UP from the card's
+  // bottom edge — so a caption that wraps to one line in one card and two in its neighbour moves
+  // the frame above it. Measured at 1440, that was 19.83px of the 21.08px by which the two
+  // placeholders were out of line. Reserving the box makes the media's position independent of
+  // the caption's length, which is the right dependency direction: the caption is metadata about
+  // the media, so it should not be what decides where the media sits.
+  //
+  // `min-block-size`, not a fixed height: a three-line caption still grows and is still fully
+  // readable — it degrades to today's behaviour rather than clipping, because losing information
+  // to gain alignment is the wrong trade in this app.
+  &__figure > &__caption {
+    min-block-size: calc(2 * var(--ct-leading) * 1em);
+  }
+
+  // A frame for a screenshot that cannot exist yet — the plan UI and the session player
+  // are later PRs, and a mocked-up screenshot of software that does not run is worse than
+  // an obviously empty frame. Sunken, dashed, and unmistakably a placeholder.
+  &__shot {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    // 16/9 by default: it is what a real screenshot of this app will be (it is used in landscape
+    // on a mat), and it is the compact choice, which is what a default has to be.
+    aspect-ratio: 16 / 9;
+    // A hard ceiling, so a placeholder can never take over the screen whatever the card's width.
+    // 12rem was chosen against the worst case that exists: 192px is 49% of a 390px LANDSCAPE
+    // viewport, which is as good as a height-blind cap gets, and 21.6% in portrait.
+    // ⚠️ Deliberately `rem`, NOT `vh`/`dvh`: this stylesheet lives in the route tree that both
+    // mounts share, and a viewport unit there resolves against kilianmc.com's viewport in the
+    // federated mount — the same trap as `position: fixed` (see `_chrome.scss`). So the cap is
+    // absolute and the *card* width is what varies.
+    max-block-size: 12rem;
+    border: 1px dashed var(--ct-border-strong);
+    border-radius: var(--ct-radius-2);
+    background: var(--ct-bg);
+    color: var(--ct-fg-muted);
+    font-size: var(--ct-text-sm);
+  }
+
+  // The card's OWN box is sized against `.ct-app` — an element cannot query the container
+  // it establishes itself, and `.ct-app` is the right question anyway: how much room the
+  // whole app has, which differs between the two mounts and never asks about the viewport.
+  @container ct-app (min-inline-size: 34rem) {
+    &__card {
+      gap: var(--ct-space-4);
+      padding: var(--ct-space-5);
+    }
+  }
+
+  // Asks the CARD, via the `ct-card` container it establishes above. 34rem of card content is
+  // reachable only by the bento's full-width tile — never by a phone, and never in the shell.
+  //
+  // ⚠️ It deliberately does NOT raise `&__shot`'s cap. Tried at `16rem` and measured: a wide card
+  // is wide in LANDSCAPE too, where the viewport is 390px tall, and a 256px well is 66% of it.
+  // Card width is a bad proxy for available height, and there is no mount-safe way to ask about
+  // height here — `@media (orientation)` and `dvh` both resolve against kilianmc.com's viewport in
+  // the federated mount. So the cap stays one flat number for every card in every orientation,
+  // and only the heading, which genuinely is a width question, steps up.
+  @container ct-card (min-inline-size: 34rem) {
+    &__card > h2 {
+      font-size: var(--ct-text-xl);
+    }
+  }
+}

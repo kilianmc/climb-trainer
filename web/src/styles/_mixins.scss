@@ -1,0 +1,71 @@
+// The three interaction affordances, in one place so no control can ship missing one.
+// CLAUDE.md calls a visible press and a visible focus the single biggest contributor to
+// the app feeling tactile — and they cost nothing to render.
+
+// BOTH axes, always. A short label ("Plan") is only ~31px wide on its own, so a
+// block-size floor alone leaves a target that is tall and unhittable.
+@mixin tap {
+  min-block-size: var(--ct-tap);
+  min-inline-size: var(--ct-tap);
+}
+
+// `:focus-visible`, not `:focus`, so a mouse click does not leave a ring behind.
+@mixin focus-ring($offset: 2px) {
+  &:focus-visible {
+    outline: 2px solid var(--ct-accent);
+    outline-offset: $offset;
+  }
+}
+
+// The colour change is OUTSIDE the reduced-motion guard and the transform is inside it:
+// reduced motion is not reduced information, so the acknowledgement still happens, just
+// instantly. Dropping the whole rule would leave a tap unacknowledged.
+@mixin press($pressed: var(--ct-pressed)) {
+  transition:
+    background-color var(--ct-fast) ease,
+    border-color var(--ct-fast) ease,
+    transform 60ms ease;
+
+  &:active:not(:disabled) {
+    background: $pressed;
+    transform: translateY(1px);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    transition: none;
+
+    &:active:not(:disabled) {
+      transform: none;
+    }
+  }
+}
+
+// The bottom-anchored pattern: an `env()` inset so the bar clears a home indicator, and a
+// `max()` floor so it still has real padding on a device that reports no inset at all.
+@mixin safe-inset-block-end($floor: var(--ct-space-3)) {
+  padding-block-end: max($floor, env(safe-area-inset-bottom));
+}
+
+// The update bar's own metrics, as custom properties, because TWO stylesheets need the same
+// number and neither can measure the other's boxes: `update-bar.scss` BUILDS the bar, and
+// `global.scss` has to RESERVE exactly that much room at the end of the document (the bar is
+// `fixed`, so it pushes nothing).
+//
+// ⚠️ It is a mixin rather than two hand-written `calc()`s because hand-writing it went wrong
+// once already: the reservation omitted the panel's 2x1px hairline and came out 72px against a
+// 74px bar. Every term now appears exactly once, the panel is SIZED from the same expression the
+// reservation uses, and `box-sizing: border-box` on the panel makes "sized" mean the same thing
+// on both sides of that equality.
+@mixin update-bar-metrics {
+  --ct-update-bar-hairline: 1px;
+  --ct-update-bar-pad: var(--ct-space-2);
+  --ct-update-bar-floor: var(--ct-space-3);
+  // The panel: one `--ct-tap` control, its padding on both sides, its border on both sides.
+  --ct-update-bar-panel: calc(
+    var(--ct-tap) + 2 * var(--ct-update-bar-pad) + 2 * var(--ct-update-bar-hairline)
+  );
+  // …plus the wrapper's safe-area floor beneath it. This is the document's reservation.
+  --ct-update-bar-total: calc(
+    var(--ct-update-bar-panel) + max(var(--ct-update-bar-floor), env(safe-area-inset-bottom))
+  );
+}

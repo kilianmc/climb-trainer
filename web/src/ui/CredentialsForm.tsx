@@ -15,6 +15,13 @@ import type { Credentials } from '../auth/authClient';
  * Not unit-tested, per the testing policy: it renders the props it was given. The behaviour
  * worth testing — that submitting drops a demo token, and where a success navigates to —
  * lives in `auth/` and in the guard tests.
+ *
+ * The form IS the card (no wrapper element), and the submit sits in `ct-app__actionbar` — which
+ * GROUPS it at the end of the form behind a hairline rule and stretches it to the card's full
+ * width. It does **not** anchor it to the bottom of the viewport: that needs `position: fixed` or
+ * a full-height container, and both resolve against kilianmc.com's viewport in the federated
+ * mount. See `styles/_chrome.scss` for the measurement and for why real bottom-anchoring waits
+ * for the session player.
  */
 export interface CredentialsFormProps {
   submitLabel: string;
@@ -46,7 +53,7 @@ export function CredentialsForm({
   }
 
   return (
-    <form className="ct-app__form" onSubmit={submit} noValidate={false}>
+    <form className="ct-app__card ct-app__form" onSubmit={submit} noValidate={false}>
       <label className="ct-app__field" htmlFor="credentials-email">
         Email
         <input
@@ -88,9 +95,11 @@ export function CredentialsForm({
         </p>
       )}
 
-      <button type="submit" className="ct-app__button ct-app__button--primary" disabled={pending}>
-        {pending ? pendingLabel : submitLabel}
-      </button>
+      <div className="ct-app__actionbar">
+        <button type="submit" className="ct-app__button ct-app__button--primary" disabled={pending}>
+          {pending ? pendingLabel : submitLabel}
+        </button>
+      </div>
     </form>
   );
 }
