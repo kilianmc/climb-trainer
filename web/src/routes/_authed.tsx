@@ -22,6 +22,16 @@ export const Route = createFileRoute('/_authed')({
     // The one place `bootstrap()` is called: entering a guarded route is the first moment
     // an existing session is worth a refresh rotation, i.e. a Postgres write. See
     // `auth/AuthProvider.tsx` for why this is not done at mount.
+    //
+    // A rejection is deliberately NOT caught. `bootstrap()` rejects only when the refresh has
+    // not been ANSWERED — it timed out, is still in the air past the 8 s UI deadline, or the API
+    // is down — and letting it out fails the match, so `defaultErrorComponent` says the server
+    // did not respond and offers a retry. Wrapping this in a try/catch and redirecting instead
+    // would restore issue #28's second half: the visitor lands on a login form that cannot help
+    // them, with the real fault invisible. The first half was a refresh that never settled at
+    // all, leaving this `await` — and the pending component — forever; `UI_DEADLINE_MS` in
+    // `refresh.ts` bounds the wait, and `HARD_ABORT_MS` bounds the socket. Note the retry is
+    // cheap on purpose: re-running this re-joins the refresh already in flight.
     if (await context.auth.bootstrap()) return;
     throw redirect({ to: '/login', search: { redirect: location.href } });
   },

@@ -96,6 +96,27 @@ describe('apiFetch', () => {
     expect(init?.body).toBeUndefined();
   });
 
+  /**
+   * Issue #28 read this plumbing as "half-present": it is not, and the two tests below are the
+   * record of which half is which. The signal really does reach the `Request`, so a caller can
+   * cancel — and this function adds **no** deadline of its own, which is the decision, not an
+   * omission. A default here would be inherited by every caller; the auth path sets its own.
+   */
+  it('forwards a caller signal to the request, so a caller can cancel', async () => {
+    mockFetch({ ok: true }, {});
+    const signal = AbortSignal.timeout(1_000);
+    await apiFetch('/api/auth/refresh', { method: 'POST', signal });
+
+    expect(lastInit()?.signal).toBe(signal);
+  });
+
+  it('adds NO signal of its own when the caller gives none', async () => {
+    mockFetch({ ok: true }, {});
+    await apiFetch('/api/health');
+
+    expect(lastInit()?.signal).toBeUndefined();
+  });
+
   it('merges caller headers over the defaults without losing accept', async () => {
     mockFetch({ ok: true }, {});
     await apiFetch('/api/auth/me', { headers: { authorization: 'Bearer live' } });

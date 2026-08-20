@@ -3,6 +3,9 @@
   "framework": null,
   "buildCommand": "npm --prefix web ci && npm --prefix web run build",
   "outputDirectory": "web/dist",
+  "functions": {
+    "api/index.py": { "maxDuration": 20 }
+  },
   "rewrites": [
     { "source": "/api/(.*)", "destination": "/api/index" },
     { "source": "/((?!api/).*)", "destination": "/index.html" }

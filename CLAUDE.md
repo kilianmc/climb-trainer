@@ -46,7 +46,8 @@ before writing a migration, not after.
 
 **Touching auth, tokens or the route guard** — "Security rules" · "Auth implementation —
 where each piece lives" · "Auth UI — the client half of the contract" (the three realms, the
-refresh race, drop the token before every `POST /api/auth/*`) · "Registration is
+refresh race, drop the token before every `POST /api/auth/*`, the TWO auth deadlines — 8 s stops
+awaiting, 30 s aborts — and why an unanswered refresh is not a logout) · "Registration is
 invite-gated" · "⚠️ Minting an invite is a LOCAL command, and must never become a workflow" ·
 "Local accounts, and the two things that are NOT `server/seed.py`" ·
 "🔒 TODO — the end-to-end security verification pass".
@@ -58,7 +59,8 @@ the SHELL's storage" · "Never register a service worker from `remote.tsx`" · "
 resolve from `import.meta.url` + guard the content-type".
 
 **Touching `vercel.json`, rewrites, headers or the API client** — "Deployment traps"
-(all six) · "Security response headers" · "API base: resolve from `import.meta.url` + guard
+(all seven — note that #7, `maxDuration`, is a correctness setting, not a cost one) ·
+"Security response headers" · "API base: resolve from `import.meta.url` + guard
 the content-type" · "`.env` is loaded for you — but only outside Vercel" (the Vite dev proxy
 is not Vercel's rewrite).
 
@@ -78,6 +80,10 @@ reading measure is a GRID COLUMN, not a `max-inline-size` on `.ct-app`" · "Land
 self-hosted, generated out-of-band, and URL-resolved at runtime" · "Container queries, not
 media queries — and tokens on `.ct-app`, not `:root`" · "PWA — only the decisions a reader
 would otherwise reverse".
+
+**Running the app locally, or a blank page that is not your code** — "Local development" ·
+"⚠️ `npm run check` breaks a RUNNING dev server, and every route goes blank" (a blank *landing*
+page is the tell) · "`.env` is loaded for you — but only outside Vercel".
 
 **Writing tests** — "Testing policy". Every guard test
 here carries a positive control; a detector that cannot see its own violation is worse than
@@ -215,6 +221,24 @@ fixed at project creation** — pick the EU region and pin the function region t
 Vercel injects `x-vercel-oidc-token` on **every** request. It is a real, short-lived
 credential. Any diagnostic endpoint must use an **allowlist** of header names. S0 hit
 this while dumping `x-vercel-*` for debugging.
+
+### 7. `functions."api/index.py".maxDuration` is pinned, and it is a CORRECTNESS setting
+
+```jsonc
+"functions": { "api/index.py": { "maxDuration": 20 } }
+```
+
+**Not a cost control — it is what makes the client's 30 s auth abort an *outer* bound.** Left
+unpinned this is Vercel's default, and under **Fluid compute (default for new projects since
+2025) that is 300 s**. The refresh endpoint is a sync `def` that commits its rotation *before*
+it answers, so a client abort landing inside the server's window leaves the successor refresh
+token live on the server and held by nobody — see "⚠️ TWO deadlines on the auth path" under
+"Auth UI — the client half of the contract" for the full mechanism. 20 s is always accepted;
+Hobby's configurable maximum is 60 s even without Fluid.
+
+**Deleting or raising this block re-opens that hole silently** — green gate, no symptom, until a
+cold path runs long. It bounds the `/api/*` function only: migrations and the seed run
+out-of-band in Actions, never in this function, so nothing about them is affected.
 
 ---
 
@@ -1131,7 +1155,8 @@ credential calls), `refresh.ts` (single-flight silent refresh), `AuthProvider.ts
 the pathless layout route `web/src/routes/_authed.tsx`; everything under `routes/_authed/` is
 protected by living there.
 
-**Five rules, each of which is a failure the obvious implementation ships:**
+**The rules below are each a failure the obvious implementation ships** (the list is no longer
+five long; a count in the heading drifted every time one was added):
 
 - **⚠️ Drop the token before EVERY `POST /api/auth/*`, not just login and register.**
   `enforce_auth` applies the demo write-ban **before** its public-route check, so a `demo`
@@ -1246,6 +1271,122 @@ protected by living there.
 - **No pre-emptive refresh timer off `expires_in`.** Lazy, on 401 only. A timer is a periodic
   database write for the length of a whole training session, which is the largest avoidable
   consumer of the compute budget.
+- **⚠️ TWO deadlines on the auth path — one stops AWAITING, one aborts the SOCKET — and merging
+  them re-creates a worse bug than the one they fix.** Issue #28. Read this before touching either
+  number.
+  - **The symptom.** A `fetch` that *hangs* produces no rejection, so everything above it is
+    inert: `bootstrap()` is awaited in `_authed`'s `beforeLoad`, so guarded routes sat on the
+    **pending component** forever, and the Web Lock — deliberately held across the full round
+    trip — kept every other tab on the origin queued behind the stalled holder.
+  - **⚠️ Why the obvious fix (one `AbortSignal.timeout(8_000)` on the POST) is WORSE.**
+    `POST /api/auth/refresh` is a **sync `def`**, so it runs in anyio's threadpool and a client
+    disconnect **cannot cancel it** — and `refresh_tokens` **commits the rotation before the
+    response exists**. Abort at 8 s on a slow cold path and the server still rotates at 9 s. The
+    successor is stored only as a sha256 and its plaintext is never repeated, so **nobody holds
+    the live refresh token**: a retry inside `REPLAY_GRACE` gets a second 409 and gives up, and a
+    retry after it trips reuse detection and `revoke_family()` hard-logs the user out. An 8 s
+    abort *manufactures* that on requests that were about to succeed. For scale: `/api/health`
+    (zero SQL) measured **2.03 s cold vs 0.28 s warm** on the live deploy — that is Python boot
+    before any database work — and 8 s is also below `REPLAY_GRACE` (10 s) and below the pinned
+    function ceiling.
+  - **So: `UI_DEADLINE_MS` = 8 s stops awaiting and aborts nothing** (a `setTimeout` racing the
+    *await*). The route leaves the pending component; the POST runs on, commits, and its
+    `Set-Cookie` reaches the jar, so **no orphan is created**. **`HARD_ABORT_MS` = 30 s is the
+    real abort** — its only job is to stop a wedged socket leaking a request slot and the origin's
+    Web Lock. **The gap between the two numbers IS the fix.**
+  - **⚠️ 30 s is the OUTER bound only because `vercel.json` pins
+    `functions."api/index.py".maxDuration` to 20 s, and that pin is load-bearing.** Unpinned it is
+    Vercel's default, and under **Fluid compute — the default for new projects since 2025 — that
+    is 300 s**, which would put the client abort back *inside* the server's window and leave the
+    orphaned-rotation mechanism fully intact, merely rarer. 20 s is always accepted (Hobby's
+    configurable maximum is 60 s even without Fluid). **Deleting that block silently re-opens the
+    hole**, with a green gate and no symptom until a cold path runs long. It bounds the `/api/*`
+    function only; migrations and the seed run out-of-band in Actions and are unaffected.
+  - **`inFlight` must survive a UI-tier give-up.** That is what makes the design pay: a retry (or
+    a later guarded navigation) **re-joins the same attempt** and succeeds when it lands, instead
+    of presenting the pre-rotation cookie again. The give-up path must never clear `inFlight`.
+    `mint`'s own `session.clear()` runs *before* the POST — the "drop the token before every
+    `POST /api/auth/*`" rule, unavoidable — and its catch-path clear cannot fire on a give-up
+    because `mint` is still in the air, so a give-up clears nothing new.
+  - **The UI tier does NOT release the Web Lock, deliberately.** The holder's rotation may be
+    mid-commit; letting the next tab present the same cookie is the collision the lock exists to
+    prevent. A waiting tab pays latency, and its bound is `HARD_ABORT_MS` **doubled — up to 60 s,
+    not 30 s**: `rotateRefreshCookie` builds a fresh deadline for its 409 retry and both POSTs run
+    inside one `withRefreshLock` callback.
+  - **The visible cost of that, and it is real.** `mint` clears the store *synchronously* before it
+    queues, so a waiting tab flips to the **anonymous nav** the moment it starts waiting and stays
+    there until the holder releases. The mechanism predates the two tiers; what changed is the
+    window, from ≤8 s to up to 60 s. Accepted against the alternative — a second presentation of a
+    cookie that may be mid-rotation — but if it ever needs improving, the fix is a "checking your
+    session" nav state, **not** releasing the lock early.
+  - **General rule, beyond auth: a client deadline on a request with SERVER-SIDE WRITE EFFECTS
+    must be the OUTER bound, never the inner one.** Giving up on an answer is cheap and
+    reversible; cancelling a write you cannot cancel is neither.
+  - **An unanswered refresh is not "signed out".** A 401 (or any 4xx) means the visitor genuinely
+    has no usable cookie — `false`, and `/login` is right. A timeout, a dropped connection or a
+    **5xx** means the question was never answered, so `mint` throws `SessionUnavailableError`,
+    `beforeLoad` lets it out, and the error boundary says the server did not respond. Collapsing
+    the two put an infrastructure fault in front of the visitor as a login form they could not get
+    past.
+  - **⚠️ `unavailable()` tests `status >= 500` BEFORE its `NotJsonError` exclusion, and the order
+    is load-bearing.** Reversed — as it shipped first — every HTML 5xx returned "answered" and
+    redirected to `/login`, and **HTML is exactly what a platform 5xx is**: Vercel serves
+    `FUNCTION_INVOCATION_TIMEOUT` (504) and its mid-deploy 502 as error *pages*. The branch worked
+    for the 5xx we can barely produce and failed for the one the platform actually generates. A
+    `NotJsonError` **below** 500 is still an answer, which is the case the exclusion exists for —
+    a rewrite serving the SPA shell does it with a **200**. `refresh.test.ts` carries the HTML-504
+    fixture whose absence let this through.
+  - **Two attempts per MOUNT on the unanswered path** (`MAX_UNANSWERED_ATTEMPTS`), then the
+    recorded fault is replayed. Two, because the retry above depends on there being one; not
+    more, because an unanswered attempt latches nothing, so without a counter every subsequent
+    guarded navigation starts a fresh POST — one `ratelimit.enforce` upsert and one restarted
+    five-minute Neon window each — turning one write per mount into one per navigation.
+    **Running out of attempts still reports the fault, never `false`.** This is a *counter* and
+    `exhausted` is a *latch*; they are two memos on purpose, because "the API answered no" and
+    "the API did not answer" are not the same fact.
+    - **Per MOUNT, not per page load.** `web/src/remote.tsx` builds `createAuth()` per mount
+      instance by design, so in the federated mount navigating away from the project and back
+      re-arms the budget with no page load. Write "page load" here and the next reader sizes the
+      cap against the wrong lifetime.
+    - **⚠️ It counts only faults that actually REACHED the server** (an `ApiError`, or an abort). A
+      `TypeError: Failed to fetch` never opened a connection, so it cost **zero** writes — the same
+      reasoning `exhausted` already applies — and counting it made the retry button a **permanent
+      no-op**: on a dead radio `fetch` rejects instantly, so two clicks inside a second spend both
+      attempts, and because the counter is only reset when a token arrives, the signal coming back
+      does not re-arm it. Nothing short of a fresh mount recovered. Tested with a run of offline
+      failures followed by a success.
+  - **The existing 5xx residue, still unfixed on purpose:** a 5xx both throws *and* latches
+    `exhausted` (it reached FastAPI, so the rate-limit write may have happened), so a *second*
+    guarded navigation in the same page load reports "no session" and redirects. That is what a
+    5xx already did before any of this, and un-latching it is a change to the write cap rather
+    than to the timeout — Kilian's call, not a drive-by.
+  - **`RouteError` carries a retry, and it is `router.invalidate()`.** Invalidating re-runs
+    `beforeLoad` → `bootstrap()` → `reauthenticate`, which re-joins the in-flight refresh: no
+    extra POST, no extra Postgres write. A "retry" that fired a fresh refresh would present the
+    pre-rotation cookie a second time. It reads the router with `useRouter({ warn: false })`
+    because the same component renders outside any provider (`rootStatusScope.test.tsx`, and the
+    root-level Suspense fallbacks) — and note that hook returns the context **default, `null`**,
+    not `undefined`, so both must be checked or the retry crashes the error boundary from inside.
+  - **`SessionUnavailableError` is the FIRST case in the query retry predicate** (`router.tsx`).
+    It is not an `ApiError`, so it fell through to the generic "retry twice" arm — three refresh
+    POSTs and three writes for one query, on top of the cap above. The auth layer owns the refresh
+    retry policy; Query must not add a second one. **📌 Consequence for the data layer, not
+    reachable yet:** because it is `false`, a query that hits an 8 s give-up stays errored even
+    though the refresh usually lands seconds later. Retrying in Query is the wrong fix; the right
+    one is a refetch driven by the session store's next non-null token.
+  - **Deliberately NOT a default in `apiFetch`.** Weighed and turned down: a deadline there is
+    inherited by every present and future caller off the back of one auth bug, and the right
+    duration is a property of the call. `api/client.test.ts` asserts the client adds **no** signal
+    of its own, so re-adding one is a red test rather than a silent policy change. There is also
+    no `AbortSignal.any` composition any more: all three call sites pass a literal
+    `{ method: 'POST' }`, so an earlier revision advertised a capability it did not have. Add it
+    back with the first real caller signal, and check support (`AbortSignal.any` is Safari 17.4+).
+  - **Accepted residual risk, filed separately:** the orphaned-rotation window still exists for
+    anything that genuinely severs the connection (the 30 s abort, a closed tab, a dead radio).
+    Closing it needs *server-side* work — deliver-or-rollback, or making a re-presentation inside
+    the grace window recoverable — in `server/auth/`, which this fix deliberately does not touch.
+  - **Nothing in `portfolio-shell`.** A hanging remote still blanks kilianmc.com; that is shell
+    issue #48 and a separate decision.
 
 **The route guard must not assume a mount.** It never reads `window.location` (in the
 federated mount that is kilianmc.com's) and never builds a URL: `location.href` in
@@ -1645,6 +1786,30 @@ uv run uvicorn server.app:app --port 8000 --reload
 # terminal 2 — SPA (Vite proxies /api -> 127.0.0.1:8000)
 npm --prefix web run dev
 ```
+
+### ⚠️ `npm run check` breaks a RUNNING dev server, and every route goes blank
+
+`npm run check` → `npm run build` → **`npm --prefix web ci`**, which reinstalls
+`web/node_modules` underneath a dev server that is still holding its pre-baked optimized deps.
+The next page load dies in `node_modules/.vite/deps/…?v=<hash>` with
+`TypeError: Cannot read properties of undefined (reading 'd')` at `createRoot`, and **every**
+route renders blank — including unguarded ones — while the HTML still serves **200** with
+`#root` present.
+
+Fix: **stop the dev server, `rm -rf web/node_modules/.vite`, restart it, hard-reload.**
+
+**The diagnostic is worth more than the fix, because this looks exactly like a bug in whatever
+you just wrote.** Two tells, both cheap:
+
+- **A blank *landing* page.** Feature code almost never blanks an unguarded route; a broken
+  dependency graph blanks all of them at once.
+- **Matching `react` / `react-dom` versions plus a `web/package-lock.json` older than your
+  branch.** Then nothing about your changes can explain it, and the stack frame pointing into
+  `.vite/deps` with a `?v=` hash is the confirmation.
+
+Hit on 2026-08-20. It is a property of running the gate and the dev server at the same time, so
+it will happen again — the gate is deliberately a single command and `npm ci` is deliberately
+clean-install.
 
 ### `.env` is loaded for you — but only outside Vercel
 
