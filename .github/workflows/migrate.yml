@@ -39,6 +39,16 @@ on:
       action:
         # `current` is first AND the default on purpose: clicking straight through the
         # dialog without reading it performs a read-only revision check, not a DDL run.
+        #
+        # THERE IS DELIBERATELY NO `downgrade` OPTION, and adding one would be a mistake.
+        # Production holds real user accounts, and a downgrade is the one action here that
+        # destroys rows irreversibly — it must not be one dropdown click away from the
+        # production database, least of all sitting next to the option people actually
+        # want. Recovery from a bad migration is a **Neon branch restore** (take the branch
+        # BEFORE the upgrade run), not an Alembic downgrade: a downgrade runs more untested
+        # DDL against an already-damaged database, while a restore returns to a known-good
+        # copy. The migrations' own `downgrade()` bodies stay correct and are for local and
+        # CI use. See CLAUDE.md, "Production data durability".
         description: "current = read the applied revision · upgrade = run migrations · history = list revisions"
         type: choice
         required: true

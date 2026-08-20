@@ -37,12 +37,18 @@ read the named section first; every rule there records a failure that already ha
 **Adding or running a migration** — "Migrations run out-of-band" · "How to actually run one:
 `.github/workflows/migrate.yml`" · "⚠️ Three traps, all paid for on the day it first ran"
 (the ref chooses the migrations, the environment chooses the database) · "SQLite is
-disqualified for tests" · "Branch model" (migrate production **before** promoting).
+disqualified for tests" · "Branch model" (migrate production **before** promoting, and
+read the applied revision back afterwards).
+
+**Anything that could destroy production user rows** — "⚠️ Production data durability — real
+accounts, no undo" (additive-only on `app_user`, never downgrade, snapshot first). Read it
+before writing a migration, not after.
 
 **Touching auth, tokens or the route guard** — "Security rules" · "Auth implementation —
 where each piece lives" · "Auth UI — the client half of the contract" (the three realms, the
 refresh race, drop the token before every `POST /api/auth/*`) · "Registration is
-invite-gated" · "Local accounts, and the two things that are NOT `server/seed.py`" ·
+invite-gated" · "⚠️ Minting an invite is a LOCAL command, and must never become a workflow" ·
+"Local accounts, and the two things that are NOT `server/seed.py`" ·
 "🔒 TODO — the end-to-end security verification pass".
 
 **Changing the federated mount, the router or the two entries** — "Routing: one tree, two
@@ -712,6 +718,41 @@ line that appeared in the original plan:
   (monotonic `setval`); without that the first real registration collides on the primary
   key and surfaces as a baffling 409 on someone's first sign-up.
 
+#### ⚠️ Production data durability — real accounts, no undo
+
+Production holds real user rows. A deploy can be rolled back and a bad row can be repaired,
+but a committed `DROP` cannot be undone from anything in this repository. These are hard
+rules, not preferences.
+
+- **A migration touching `app_user` must be ADDITIVE.** `0003` was safe because it only added
+  a **nullable** column and an empty table — every existing row was untouched, and the old
+  code kept working against the new schema. **Forbidden without an explicit, written backfill
+  plan reviewed in the PR:** dropping or recreating `app_user`, dropping any of its columns,
+  and adding a `NOT NULL` column without either a `server_default` or a backfill step (that
+  last one fails outright on a non-empty table, which is the *good* case — the bad case is a
+  default that silently writes the wrong value into every existing account).
+  `tests/test_migrations_additive.py` fails the gate on a `drop_table`/`drop_column` against
+  `app_user` inside any `upgrade()`.
+- **Never run `alembic downgrade` against production.** Note the structural protection and
+  **keep it**: `migrate.yml`'s `action` input offers `current`, `upgrade` and `history` and
+  **deliberately no `downgrade`**, so undoing a migration is not one dropdown click away from
+  a production database. That omission is load-bearing — do not "complete" the set. Recovery
+  is a Neon branch restore, not a downgrade: a downgrade runs *more* untested DDL against the
+  damaged database, while a restore returns to a known-good copy. (Downgrade bodies still
+  exist in the migration files, and are still expected to be correct — they are for local and
+  CI use.)
+- **Snapshot before upgrading: take a Neon branch of production before any production
+  `upgrade` run.** A branch is a cheap copy-on-write copy and is the only restore point that
+  **does not depend on the migration being well written** — it costs almost nothing, takes
+  seconds, and is the difference between a bad migration being an inconvenience and being an
+  incident. Delete it once the deploy is verified. Neon's point-in-time-restore retention
+  depends on the plan and **must be read from the dashboard rather than assumed** — do not
+  rely on a remembered window, and do not treat PITR as a substitute for taking the branch.
+- Two protections that already hold and should stay: `server/seed.py` **upserts and never
+  deletes**, so re-seeding production cannot remove an account; and `app_user.invite_id` is
+  **`ON DELETE RESTRICT`**, so a spent invite cannot be deleted out from under the record of
+  who used it.
+
 #### How to actually run one: `.github/workflows/migrate.yml`
 
 > **Claude cannot dispatch this — hand it to Kilian.** `gh workflow run` against
@@ -1033,6 +1074,28 @@ not that its owner is someone Kilian knows) and is deliberately still deferred.
   after it and before the gated deploy, registration still works as it did and no existing row
   changes. Expand → deploy → contract, as usual.
 
+#### ⚠️ Minting an invite is a LOCAL command, and must never become a workflow
+
+**Production invites are minted from a developer's terminal against the production direct
+URL** — the same flow as dev: mint the code, hand it to the person, they register with it.
+There is no second step and no UI.
+
+**Do NOT add a `create-invite` action to `migrate.yml`, or a workflow of any kind that mints
+one.** This will look like an obvious convenience — it is the one admin task that currently
+needs a laptop — and it is the one place the invite design breaks:
+
+- `create-invite` **prints the plaintext code to stdout**, and only `code_hash` is stored
+  precisely so that a database dump is not a set of working invites. A workflow's stdout is an
+  **Actions log**, which on this public repo is **world-readable**. Uploading it instead makes
+  it a public-repo artifact, downloadable by anyone.
+- **Masking is not the fix**, because it defeats the purpose: a masked code is hidden from
+  Kilian too, and the code has exactly one consumer — the human who has to be told it.
+- The 3/hour `REGISTER` limit and the 128 bits of entropy assume the code is secret in transit.
+  A published code makes the gate decorative while every other control still reports healthy.
+
+If minting from a laptop ever becomes genuinely impractical, the answer is an authenticated
+admin endpoint that returns the code to *one* caller — not a job whose output is a log.
+
 ### Local accounts, and the two things that are NOT `server/seed.py`
 
 `server/seed.py` is called by CI, local development **and production** —
@@ -1287,11 +1350,11 @@ behave differently on purpose.
   12. **Vercel project settings** — `framework` is still `null` (re-check after any
       `vercel link`), and `ssoProtection` is still **ON** for this project's previews.
   13. **Zero open Dependabot alerts**, or each remaining one triaged with a written
-  13. **Zero open Dependabot alerts**, or each remaining one triaged with a written
       reason it does not apply. "Not exploitable" needs re-deciding per alert, not once.
       **Alerts are raised against the default branch, so they clear at a promotion to
       `main`, not on merge to `dev`.** Also confirm the Dependabot config is actually
       opening PRs.
+  14. **2FA still enabled on GitHub, Vercel, Neon and Cloudflare.**
   15. **Neon CU-hours for the month match the model** in the compute-budget section. A
       figure well above it means something is waking the database — that is the signal.
 
@@ -1431,6 +1494,12 @@ Two long-lived branches: **`dev`** (integration) and **`main`** (production,
 > column breaks **every login**, not just its own feature. Order: dispatch `migrate.yml` at
 > the ref that carries the revisions, confirm the applied revision, *then* merge the
 > promotion PR. The gap in between is safe by design (expand → deploy → contract).
+>
+> **A promotion is not complete until the applied revision has been read back** — a separate
+> `action: current` run against `production` — **and matches what the promoted code expects.**
+> The upgrade run's own output is not that check: it reports what it believed it did, before
+> the code shipped. Reading it back afterwards is what catches an upgrade dispatched at the
+> wrong ref, a run that was approved but never finished, and a promotion that raced it.
 
 Conventional Commits (`feat:`, `fix:`, `chore:`, `test:`, `docs:`); branches mirror
 the type (`feat/…`, `chore/…`).

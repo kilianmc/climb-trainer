@@ -24,13 +24,32 @@ that exposes nothing (the codes are hashes). Do not add subcommands for those.
 
 ## What this module must never print
 
-**No connection string, ever** — not masked, not a hostname. The repository is public and
-so is the terminal scrollback that ends up pasted into an issue. `server/db.py` reads the
-URL and nothing here goes near it. The one secret this module *does* print is a fresh
-invite code, once, because that is the only moment it exists.
+**No connection string, ever** — not masked, not a prefix. The repository is public and
+so is the terminal scrollback that ends up pasted into an issue. The one secret this module
+*does* print is a fresh invite code, once, because that is the only moment it exists.
+
+**The one deliberate exception is the confirmation below: the target host and database
+NAME.** That is not a relaxation of the rule — it is the same redaction `server/devseed.py`
+does, through the same helper (`server/db.py::target_host_and_database`), and it exists
+because the operator cannot confirm a target they are not shown. Never widen it to the
+user, the password, the query string or the full URL.
 
 Passwords are read with `getpass` from the terminal, never from `argv`: an argument lands
 in shell history, in `ps` output, and in any script that wrapped the command.
+
+## Which database? — the guard this module used to be missing
+
+Both subcommands are documented as run **against production from a developer's terminal**,
+and `server/settings.py` loads `.env` on import. So the shell that reaches production
+reaches it by default, and a `set-password` meant for a local account silently rewrote a
+real one. `server/devseed.py` had target confirmation for exactly this reason and this
+module did not, which was the asymmetry: devseed protected the throwaway database while
+`admin.py` pointed at the real one unguarded.
+
+So both subcommands print the target and will not act until the operator types the host
+back. `--yes` skips the prompt for scripting, and is the only way to skip it — there is no
+environment variable, because a variable in `.env` becomes standing permission (the same
+reasoning that keeps `CLIMB_DEV_SEED` out of `.env.example`).
 """
 
 import argparse
@@ -43,7 +62,7 @@ from sqlalchemy import select
 from server.auth import invites
 from server.auth.passwords import hash_password
 from server.auth.routes import MAX_PASSWORD_LENGTH, MIN_PASSWORD_LENGTH, normalise_email
-from server.db import session_scope
+from server.db import session_scope, target_host_and_database
 from server.models import AppUser
 
 # A sanity ceiling, not a policy: `max_uses` is a SmallInteger and a per-person invite is
@@ -95,8 +114,33 @@ def _label(value: str) -> str:
     return label
 
 
-def create_invite(label: str, max_uses: int, expires_in_days: int | None) -> None:
+def _confirm_target(what: str, *, assume_yes: bool) -> None:
+    """Show the target database and make the operator name it. Same shape as `devseed`.
+
+    A y/N prompt is muscle memory; typing the host is not. `--yes` is the only bypass, so a
+    scripted run is an explicit decision at the call site rather than an ambient setting.
+    """
+    host, database = target_host_and_database()
+    print(f"About to {what} in the database at: {host} (database {database})")
+    if assume_yes:
+        print("--yes given, proceeding without confirmation.")
+        return
+    try:
+        answer = input(f"Type the host to confirm ({host}): ")
+    except EOFError:
+        raise AdminCommandError(
+            "no terminal to confirm on, so nothing was changed. Pass --yes to run this "
+            "non-interactively."
+        ) from None
+    if answer.strip() != host:
+        raise AdminCommandError(f"that is not {host}; nothing was changed")
+
+
+def create_invite(
+    label: str, max_uses: int, expires_in_days: int | None, *, assume_yes: bool = False
+) -> None:
     """Mint one invite and print its code — the only moment the plaintext exists."""
+    _confirm_target(f"mint an invite for {label!r}", assume_yes=assume_yes)
     expires_in = None if expires_in_days is None else timedelta(days=expires_in_days)
     with session_scope() as session:
         issued = invites.create(session, label=label, max_uses=max_uses, expires_in=expires_in)
@@ -134,14 +178,19 @@ def _prompt_new_password() -> str:
     return password
 
 
-def set_password(email: str) -> None:
+def set_password(email: str, *, assume_yes: bool = False) -> None:
     """Replace one account's `password_hash`.
 
     The prompt and the argon2 run both happen **before** the session is opened, so no
     transaction is held open while a human types and Neon is not kept awake for it. The
     cost is that a mistyped address is only reported afterwards.
+
+    The target confirmation comes **first**, before the password prompt: a wrong database
+    should cost nothing to abandon, and being asked to invent a password before being told
+    where it is going is how the wrong one gets set.
     """
     normalised = normalise_email(email)
+    _confirm_target(f"set the password for {normalised!r}", assume_yes=assume_yes)
     password_hash = hash_password(_prompt_new_password())
 
     with session_scope() as session:
@@ -182,6 +231,14 @@ def _parser() -> argparse.ArgumentParser:
     )
     password.add_argument("--email", required=True)
 
+    # On both subparsers rather than the root, so `--yes` can only follow a chosen command.
+    for subcommand in (invite, password):
+        subcommand.add_argument(
+            "--yes",
+            action="store_true",
+            help="skip the target confirmation (for scripts; you are on your own)",
+        )
+
     return parser
 
 
@@ -189,9 +246,9 @@ def main() -> None:
     args = _parser().parse_args()
     try:
         if args.command == "create-invite":
-            create_invite(args.label, args.max_uses, args.expires_in_days)
+            create_invite(args.label, args.max_uses, args.expires_in_days, assume_yes=args.yes)
         else:
-            set_password(args.email)
+            set_password(args.email, assume_yes=args.yes)
     except AdminCommandError as error:
         raise SystemExit(str(error)) from None
 
