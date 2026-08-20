@@ -6,8 +6,8 @@
 # decided by whichever finishes first — so the API can come up against a schema that is
 # either not there yet or already changed underneath it. Migrations therefore run out of
 # band, on a human's decision, following expand -> deploy -> contract. The FastAPI
-# lifespan only READS `alembic_version` and warns; it never migrates. See CLAUDE.md,
-# "Migrations run out-of-band".
+# lifespan never migrates -- and today does not read `alembic_version` either, so nothing
+# warns you at boot about a schema/code mismatch. See CLAUDE.md, "Migrations run out-of-band".
 #
 # Nothing in this file may print a connection string. The repository is public and so
 # are these logs: no `set -x`, no `echo "$DATABASE_URL"`, not even a masked prefix.
