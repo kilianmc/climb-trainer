@@ -53,15 +53,13 @@ import string
 from collections.abc import Mapping
 from typing import Final
 
-from sqlalchemy import make_url
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
 from server.auth.passwords import hash_password
 from server.auth.routes import MAX_PASSWORD_LENGTH, MIN_PASSWORD_LENGTH
-from server.db import normalise_database_url, session_scope
+from server.db import session_scope, target_host_and_database
 from server.models import AppUser
-from server.settings import pooled_database_url
 
 # Common first names, lowercased: each one is both the local part of the address and the
 # leading part of the password, which is the whole point — they are meant to be typeable
@@ -142,12 +140,9 @@ def target_host() -> str:
     """The **host** of `DATABASE_URL` and nothing else from it.
 
     Never the URL, the user or the password: this repository is public and so is a terminal
-    transcript pasted into an issue. `server/admin.py` carries the same rule.
+    transcript pasted into an issue. `server/admin.py` confirms against the same helper.
     """
-    url = pooled_database_url()
-    if url is None:
-        return "(no DATABASE_URL configured)"
-    return make_url(normalise_database_url(url)).host or "(local socket)"
+    return target_host_and_database()[0]
 
 
 def _confirm_target() -> None:

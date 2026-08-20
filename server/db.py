@@ -73,7 +73,7 @@ from contextlib import contextmanager
 from functools import lru_cache
 from typing import Any
 
-from sqlalchemy import Engine, create_engine
+from sqlalchemy import Engine, create_engine, make_url
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import NullPool
 
@@ -104,6 +104,25 @@ def normalise_database_url(url: str) -> str:
         if url.startswith(prefix):
             return f"{_DRIVER}://{url[len(prefix) :]}"
     return url
+
+
+def target_host_and_database() -> tuple[str, str]:
+    """The **host** and **database name** of `DATABASE_URL` — and nothing else from it.
+
+    The single redaction point for "which database am I about to write to?", used by the
+    interactive confirmations in `server/admin.py` and `server/devseed.py`. Never returns
+    the URL, the driver, the user or the password: this repository is public, and so is a
+    terminal transcript pasted into an issue. Both callers print the result, so this is the
+    one string in the codebase that has to stay clean by construction rather than by the
+    caller remembering to trim it.
+
+    `tests/test_devseed.py::test_target_host_never_returns_a_credential` pins that property.
+    """
+    url = pooled_database_url()
+    if url is None:
+        return ("(no DATABASE_URL configured)", "(none)")
+    parsed = make_url(normalise_database_url(url))
+    return (parsed.host or "(local socket)", parsed.database or "(default)")
 
 
 def require_database_url() -> str:
