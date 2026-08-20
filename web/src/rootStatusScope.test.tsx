@@ -1,5 +1,5 @@
 import { createMemoryHistory } from '@tanstack/react-router';
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 
 import { createAuth } from './auth/AuthProvider';
@@ -41,6 +41,33 @@ describe.each(renders)('%s', (_name, element, text) => {
     expect(container.querySelectorAll('.ct-app')).toHaveLength(1);
     expect(screen.getByText(text).closest('.ct-app')).not.toBeNull();
   });
+});
+
+/**
+ * `RouteError` reads the router so its "Try again" can `invalidate()`, and it is *also* rendered
+ * outside any provider — by the two cases above, and by the root-level Suspense fallbacks. That
+ * is what `useRouter({ warn: false })` is for: it returns `undefined` instead of throwing. Without
+ * the guard the retry button would take the whole error boundary down with it, which is the worst
+ * possible place for a crash.
+ */
+it('renders its retry outside a RouterProvider, and clicking it is a no-op', () => {
+  // Asserted through `window`'s error event, NOT `expect(...).not.toThrow()`: React re-raises a
+  // handler's exception asynchronously via `reportError`, so the throw never reaches the
+  // `fireEvent` call and a `not.toThrow()` version of this test passes while the button is broken.
+  const uncaught: unknown[] = [];
+  const record = (event: ErrorEvent) => {
+    uncaught.push(event.error);
+    event.preventDefault();
+  };
+  window.addEventListener('error', record);
+  try {
+    render(<RouteError error={new Error('boom')} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
+  } finally {
+    window.removeEventListener('error', record);
+  }
+
+  expect(uncaught).toEqual([]);
 });
 
 // #15 was a wiring bug, not a rendering bug: the components were fine and the root route

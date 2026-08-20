@@ -1,6 +1,6 @@
 import { QueryClientProvider } from '@tanstack/react-query';
 import { RouterProvider, createBrowserHistory, createMemoryHistory } from '@tanstack/react-router';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { AuthProvider, createAuth, type Auth } from './auth/AuthProvider';
@@ -51,6 +51,74 @@ function anonymous() {
   return createAuth();
 }
 
+/**
+ * The refresh connects and nothing ever comes back. With no signal on the request this promise
+ * never settles — which is issue #28 exactly: `bootstrap()` is awaited in `_authed`'s
+ * `beforeLoad`, so the guarded route stayed on the pending component with no way out.
+ */
+function hangingRefresh() {
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(
+      (_url: unknown, init?: RequestInit) =>
+        new Promise<Response>((_resolve, reject) => {
+          // `RequestInit.signal` is nullable, and `reason` is `any` in lib.dom — the platform
+          // puts a DOMException there. No signal at all means this promise never settles.
+          const signal = init?.signal ?? null;
+          if (signal === null) return;
+          if (signal.aborted) {
+            reject(signal.reason as Error);
+            return;
+          }
+          signal.addEventListener('abort', () => {
+            reject(signal.reason as Error);
+          });
+        }),
+    ),
+  );
+  return createAuth();
+}
+
+/**
+ * The HARD tier, made instant. `AbortSignal.timeout` runs on a platform timer Vitest's fake timers
+ * cannot reach, and no test should sit out 30 real seconds — so this stands in for it and records
+ * the duration the auth path asked for. What this file proves is **where the failure surfaces**;
+ * `auth/refresh.test.ts` is where the two durations and the clock are asserted.
+ */
+function instantDeadlines(): { readonly requested: number[] } {
+  const requested: number[] = [];
+  vi.spyOn(AbortSignal, 'timeout').mockImplementation((ms: number) => {
+    requested.push(ms);
+    return AbortSignal.abort(new DOMException('The operation timed out.', 'TimeoutError'));
+  });
+  return { requested };
+}
+
+/**
+ * A refresh that answers eventually, on the fake clock. This is the honest model of the live
+ * server — sync `def`, threadpool, commits before it answers — and the reason the 8 s tier stops
+ * awaiting rather than aborting: this request finishes whether or not anyone is still listening.
+ */
+function slowRefresh(afterMs: number) {
+  const calls = vi.fn(
+    (_url: unknown, init?: RequestInit) =>
+      new Promise<Response>((resolve, reject) => {
+        // Honours the request's signal, so an abort really would end this — otherwise the test
+        // below would pass with the two tiers collapsed and prove nothing about them.
+        const signal = init?.signal ?? null;
+        const timer = setTimeout(() => {
+          resolve(tokenResponse('landed-late', 'user'));
+        }, afterMs);
+        signal?.addEventListener('abort', () => {
+          clearTimeout(timer);
+          reject(signal.reason as Error);
+        });
+      }),
+  );
+  vi.stubGlobal('fetch', calls);
+  return { auth: createAuth(), calls };
+}
+
 /** A visitor who already holds a token, i.e. the post-login state. */
 function signedIn(scope: 'user' | 'demo' = 'user') {
   const auth = createAuth();
@@ -71,6 +139,8 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.unstubAllGlobals();
+  vi.restoreAllMocks();
+  vi.useRealTimers();
 });
 
 describe('the _authed guard', () => {
@@ -110,6 +180,60 @@ describe('the _authed guard', () => {
     expect(
       vi.mocked(fetch).mock.calls.filter(([url]) => urlOf(url).includes('/api/auth/refresh')),
     ).toHaveLength(1);
+  });
+
+  /**
+   * Issue #28's visible symptom, and the two wrong endings it could have instead. **Pending** was
+   * the bug: no timeout, so the `await` in `beforeLoad` never returned. **`/login`** is the
+   * tempting fix and is also wrong — a timeout establishes nothing about the visitor's session,
+   * so bouncing them to a form they cannot get past hides the fault and blames them for it.
+   */
+  it('ends a timed-out guarded route in the ERROR state, not on pending and not at /login', async () => {
+    const deadlines = instantDeadlines();
+    const router = mount('/plan', hangingRefresh());
+
+    expect(await screen.findByRole('heading', { name: 'Something broke' })).toBeInTheDocument();
+    expect(screen.getByText(/took too long to answer/)).toBeInTheDocument();
+
+    expect(screen.queryByText('Loading…')).not.toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Log in' })).not.toBeInTheDocument();
+    expect(router.state.location.pathname).toBe('/plan');
+    expect(deadlines.requested).toEqual([30_000]);
+  });
+
+  /**
+   * The 8 s tier, end to end, and the retry it exists to make cheap.
+   *
+   * The route leaves the pending component while the refresh is **still running** — nothing was
+   * aborted, so the rotation the server may already have committed still delivers. Clicking "Try
+   * again" then re-joins that same attempt: one `POST /api/auth/refresh` for the whole episode,
+   * which is the assertion at the end and the reason the button is `router.invalidate()` rather
+   * than a fresh refresh.
+   */
+  it('leaves pending at the UI deadline, then the retry re-joins the SAME refresh', async () => {
+    vi.useFakeTimers();
+    const { auth, calls } = slowRefresh(12_000);
+    mount('/plan', auth);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(8_000);
+    });
+
+    expect(screen.getByRole('heading', { name: 'Something broke' })).toBeInTheDocument();
+    expect(screen.getByText(/still running/)).toBeInTheDocument();
+    expect(screen.queryByText('Loading…')).not.toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Log in' })).not.toBeInTheDocument();
+
+    // Clicked while the original POST is in the air — the case that distinguishes re-joining
+    // from re-sending.
+    fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(4_001);
+    });
+
+    expect(screen.getByRole('heading', { name: 'Plan' })).toBeInTheDocument();
+    expect(auth.session.get().token).toBe('landed-late');
+    expect(calls).toHaveBeenCalledTimes(1);
   });
 
   it('never follows an off-site ?redirect=, and drops it from the validated search', async () => {

@@ -50,6 +50,11 @@ let rotations: number;
 let sends: number;
 /** When set, the API answers with the SPA shell at this status — a bad rewrite, not a race. */
 let htmlShellStatus: number | null;
+/**
+ * How many of the first sends never come back. A hang, not a failure: the socket is open, so the
+ * only thing that can end it is the request's own signal.
+ */
+let hangingSends: number;
 /** Ordered log of sends and receipts, so interleaving is visible rather than inferred. */
 let events: string[];
 
@@ -147,6 +152,7 @@ beforeEach(() => {
   retired = new Set();
   graceRefreshesTheJar = true;
   htmlShellStatus = null;
+  hangingSends = 0;
   rotations = 0;
   sends = 0;
   events = [];
@@ -154,7 +160,7 @@ beforeEach(() => {
 
   vi.stubGlobal(
     'fetch',
-    vi.fn(async (input: unknown) => {
+    vi.fn(async (input: unknown, init?: RequestInit) => {
       const url = typeof input === 'string' ? input : '';
       if (!url.includes(REFRESH_URL)) throw new Error(`unexpected request to ${url}`);
 
@@ -162,6 +168,22 @@ beforeEach(() => {
       sends += 1;
       const id = `#${sends}`;
       events.push(`${id} send(${presented ?? 'no-cookie'})`);
+
+      if (sends <= hangingSends) {
+        // Nothing comes back. With no signal on the request this promise never settles, which is
+        // the whole of issue #28: the holder keeps the lock and every other tab waits behind it.
+        return await new Promise<Response>((_resolve, reject) => {
+          const { signal } = init ?? {};
+          signal?.addEventListener('abort', () => {
+            events.push(`${id} abort`);
+            reject(signal.reason as Error); // `reason` is `any` in lib.dom
+          });
+        });
+      }
+
+      // Signal-blind, and harmless: 0 ms cannot overlap a 30 s abort, so no test's meaning rests
+      // on it. The arm that has to listen is `hangingSends` above. (Swept after the `after:`
+      // stand-in in `refresh.test.ts` was found asserting its own indifference to aborts.)
       await new Promise((resolve) => setTimeout(resolve, 0));
       const response =
         htmlShellStatus === null
@@ -178,6 +200,10 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.unstubAllGlobals();
+  // The hang test stands in for `AbortSignal.timeout` and takes over the clock; restoring here
+  // rather than in its body means a failing assertion cannot leak either into the next test.
+  vi.restoreAllMocks();
+  vi.useRealTimers();
   removeLocks();
 });
 
@@ -303,6 +329,68 @@ describe('two mounts refreshing at once', () => {
 
     // Both got to send. A lock held past a rejection would leave the second pending forever.
     expect(events).toEqual(['#1 send(no-cookie)', '#1 recv', '#2 send(no-cookie)', '#2 recv']);
+  });
+
+  /**
+   * The gap that rule left open, and issue #28's second symptom. "Released on rejection" was true
+   * and insufficient: **a hang is not a rejection**, so a tab holding the lock on a stuck request
+   * held it for as long as the socket stayed open, and every other tab on the origin queued
+   * behind it forever. `HARD_ABORT_MS` bounds that at 30 s.
+   *
+   * **⚠️ Read the two tiers in the timeline below, because the first cut of this fix got them
+   * backwards.** At 8 s both *callers* give up awaiting — but the lock is **still held** and
+   * nothing is aborted. That is deliberate: the holder's rotation may be mid-commit on the
+   * server, and letting the next tab present the same pre-rotation cookie is precisely the
+   * collision the lock exists to prevent. Only the 30 s hard abort releases it.
+   *
+   * ⚠️ **`rotations === 1` below is a property of THIS stand-in, not a general truth about
+   * aborts.** `hangingSends` models a request that never reaches the server at all, which is the
+   * realistic reading at 30 s — past every server ceiling. It must **not** be read as "an abort
+   * undoes a rotation": it cannot. `POST /api/auth/refresh` is a sync `def` in anyio's threadpool
+   * that commits before it answers, so a client abort mid-flight leaves the rotation done and its
+   * successor token held by nobody. `refresh.test.ts` models that server ("lets a slow refresh
+   * LAND after the caller gave up"), and it is the whole reason the 8 s tier aborts nothing.
+   */
+  it('holds the lock past the UI deadline and releases it on the hard abort', async () => {
+    vi.useFakeTimers();
+    vi.spyOn(AbortSignal, 'timeout').mockImplementation((ms: number) => {
+      const controller = new AbortController();
+      setTimeout(() => {
+        controller.abort(new DOMException('The operation timed out.', 'TimeoutError'));
+      }, ms);
+      return controller.signal;
+    });
+    installLocks();
+    hangingSends = 1;
+
+    const a = createSessionStore();
+    const b = createSessionStore();
+    const tabA = createAuthedFetch(a);
+    const tabB = createAuthedFetch(b);
+    const outcomes = Promise.allSettled([tabA.reauthenticate(null), tabB.reauthenticate(null)]);
+
+    await vi.advanceTimersByTimeAsync(8_000);
+    const [first, second] = await outcomes;
+
+    // Both callers stopped awaiting — B without ever having sent, because A still holds the lock.
+    // A lock released at the UI tier would show '#2 send' here, and that is the regression to
+    // catch: B would then be presenting a cookie A's rotation may be in the middle of retiring.
+    expect(first.status).toBe('rejected');
+    expect(second.status).toBe('rejected');
+    expect(events).toEqual(['#1 send(refresh-1)']);
+    expect(sends).toBe(1);
+
+    // 30 s: the hard abort fires, the lock is released, and B's queued refresh proceeds. The
+    // extra tick is B's own latency, which it can only schedule once it has the lock.
+    await vi.advanceTimersByTimeAsync(22_000);
+    await vi.advanceTimersByTimeAsync(1);
+
+    expect(events).toEqual(['#1 send(refresh-1)', '#1 abort', '#2 send(refresh-1)', '#2 recv']);
+    expect(rotations).toBe(1);
+    expect(a.get().token).toBeNull();
+    // B's caller gave up at 8 s, yet B's refresh completed and its store holds a real token —
+    // the cross-tab shape of "the give-up is not a cancellation".
+    expect(b.get().token).toBe('access-1');
   });
 });
 

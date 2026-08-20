@@ -15,6 +15,12 @@
  *    object literal, and spreading a `Headers` yields `{}` — which would silently drop
  *    both `accept` and `authorization`. The narrow type makes that a compile error
  *    instead of a mystery 401.
+ * 4. **A caller's `signal` is forwarded, and there is no default timeout here — on purpose.**
+ *    Issue #28 weighed one and turned it down: a deadline in this function is inherited by
+ *    every caller and every future one, and the right duration is a property of the call, not
+ *    of the client. The auth path sets its own (`AUTH_TIMEOUT_MS` in `auth/refresh.ts`) because
+ *    it gates the route guard and holds an origin-wide lock. Adding one here would silently
+ *    re-scope that decision to the whole app.
  */
 
 /** Origin this bundle was served from, which is the API origin in both mounts. */

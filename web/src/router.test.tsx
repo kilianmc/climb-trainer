@@ -4,6 +4,8 @@ import { render, screen, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { AuthProvider, createAuth, type Auth } from './auth/AuthProvider';
+import { ApiError, NotJsonError } from './api/client';
+import { SessionUnavailableError } from './auth/refresh';
 import { createAppRouter, createQueryClient } from './router';
 
 /**
@@ -104,5 +106,29 @@ describe('createAppRouter', () => {
   it('lands an unmatched path on the catch-all rather than a blank outlet', async () => {
     renderWith(createAuth(), '/no-such-page');
     expect(await screen.findByRole('heading', { name: 'Not found' })).toBeInTheDocument();
+  });
+});
+
+/**
+ * Every retry here is another Neon wake-up, and one error class is far more expensive than the
+ * rest: a `SessionUnavailableError` already represents a refresh attempt, so retrying it multiplies
+ * refresh POSTs and Postgres writes on top of the cap `auth/refresh.ts` keeps. It is not an
+ * `ApiError`, so it fell through to the generic "retry twice" arm until issue #28 named it — the
+ * auth layer owns the refresh retry policy and Query must not add a second one.
+ */
+describe('the query retry predicate', () => {
+  const retry = createQueryClient().getDefaultOptions().queries?.retry;
+
+  function retries(error: Error): boolean {
+    return typeof retry === 'function' ? retry(0, error) === true : true;
+  }
+
+  it.each([
+    ['a session that could not be checked', new SessionUnavailableError('unanswered'), false],
+    ['a rewrite serving the SPA shell', new NotJsonError(200, 'text/html'), false],
+    ['a 4xx', new ApiError('nope', 404), false],
+    ['a 5xx, which a second try can survive', new ApiError('upstream', 503), true],
+  ])('%s -> %s', (_label, error, expected) => {
+    expect(retries(error)).toBe(expected);
   });
 });
