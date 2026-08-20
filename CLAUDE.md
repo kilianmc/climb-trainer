@@ -29,6 +29,70 @@ It ships **two mounts from one route tree**:
 **The repo is PUBLIC on GitHub.** Every secret lives in Vercel env vars or the GitHub
 Actions `production` environment. `gitleaks` runs in CI on full history.
 
+## Index — find the rule before you write the code
+
+Anchored by **heading text**, never line number. If you are about to touch one of these,
+read the named section first; every rule there records a failure that already happened.
+
+**Adding or running a migration** — "Migrations run out-of-band" · "How to actually run one:
+`.github/workflows/migrate.yml`" · "⚠️ Three traps, all paid for on the day it first ran"
+(the ref chooses the migrations, the environment chooses the database) · "SQLite is
+disqualified for tests" · "Branch model" (migrate production **before** promoting).
+
+**Touching auth, tokens or the route guard** — "Security rules" · "Auth implementation —
+where each piece lives" · "Auth UI — the client half of the contract" (the three realms, the
+refresh race, drop the token before every `POST /api/auth/*`) · "Registration is
+invite-gated" · "Local accounts, and the two things that are NOT `server/seed.py`" ·
+"🔒 TODO — the end-to-end security verification pass".
+
+**Changing the federated mount, the router or the two entries** — "Routing: one tree, two
+histories" (lazy-leaf filenames, the committed route tree, absolute hrefs) · "Module
+Federation shared singletons — the silent one" · "In the federated mount, `localStorage` is
+the SHELL's storage" · "Never register a service worker from `remote.tsx`" · "API base:
+resolve from `import.meta.url` + guard the content-type".
+
+**Touching `vercel.json`, rewrites, headers or the API client** — "Deployment traps"
+(all six) · "Security response headers" · "API base: resolve from `import.meta.url` + guard
+the content-type" · "`.env` is loaded for you — but only outside Vercel" (the Vite dev proxy
+is not Vercel's rewrite).
+
+**Writing to the database, or adding an endpoint** — "Neon bills AWAKE TIME, not writes" ·
+"Two write tiers" · "The other compute rules" · "Engine config — the omissions are the point"
+· "Injection defence and input minimisation (OWASP)" (bound parameters, allowlisted
+identifiers, closed inputs, Pydantic at the edge, no echoed request in a 422).
+
+**Dependencies, versions and CI** — "Dependency policy" · "TypeScript stays on 6.x" ·
+"ESLint 10 rests on a forced jsx-a11y peer" · "`.github/dependabot.yml`" · "⚠️ Pinned actions
+Dependabot can never bump" · "Quality gate" (nine checks locally, fourteen in CI; never
+rename a job) · "Versioning".
+
+**Styling, the landing page or anything visual** — "UI design direction" · "Glassmorphism:
+considered and REJECTED" · "Accessibility is part of the design, not a later pass" · "The
+reading measure is a GRID COLUMN, not a `max-inline-size` on `.ct-app`" · "Landing imagery —
+self-hosted, generated out-of-band, and URL-resolved at runtime" · "Container queries, not
+media queries — and tokens on `.ct-app`, not `:root`" · "PWA — only the decisions a reader
+would otherwise reverse".
+
+**Writing tests** — "Testing policy". Every guard test
+here carries a positive control; a detector that cannot see its own violation is worse than
+none.
+
+**Building the session player** — "Session player invariants" · "Screen Wake Lock — a
+user-owned TOGGLE, and a progressive enhancement".
+
+### What lives outside this file
+
+- **`README.md`** — the public-facing description: what the app does, the stack, getting
+  started, and how to run the checks. Setup instructions live there, working rules live here.
+- **`server/db.py`**, **`server/auth/*.py`**, **`server/domain/grades.py`**,
+  **`web/src/styles/_layout.scss`** — each module docstring carries the reasoning for its own
+  decisions in more detail than this file does. This file is the map.
+- **Kilian's private notes** (local only, never in this repo) — the approved delivery plan and
+  the unshipped schema/generator design; a per-project memory covering live infrastructure,
+  deployment history and process lessons; plus two topic notes on the signup-gating decision
+  and the landing redesign. Ask him if you need the plan for an unshipped PR; nothing in them
+  is required to work inside this repo.
+
 ## Stack
 
 - **Frontend** — React 19 · TypeScript 6 (strict) · Vite 8 · SCSS · Vitest + RTL.
@@ -169,7 +233,7 @@ So `apiFetch` does two things and both must stay:
 Never replace this with a bare relative `fetch('/api/…')`, and never "simplify away"
 the content-type check.
 
-### Routing: one tree, two histories (PR #4)
+### Routing: one tree, two histories
 
 `src/router.tsx` builds the router from a passed-in history and is the only place router
 or Query defaults live. `main.tsx` gives it `createBrowserHistory`, `remote.tsx`
@@ -203,32 +267,31 @@ or Query defaults live. `main.tsx` gives it `createBrowserHistory`, `remote.tsx`
   --exit-code` exits **0** on a pathspec matching nothing, so a rename would leave the check
   green forever. It is **CI-only on purpose** — see the Quality gate section.
 - **⚠️ A lazy leaf must be named `<route>.lazy.tsx`.** `createLazyFileRoute` inside a
-  plain `plan.tsx` **still builds, emits no warning, and is bundled EAGERLY** — verified
-  2026-08-14: no separate chunk appears. Only the `.lazy.tsx` filename makes the
-  generator emit `.lazy(() => import(…))`. Renaming one of those files deletes its
-  code-splitting, and `format:check`, `lint`, `typecheck` and `build` all stay green — the
-  build even **rewrites the source**, swapping `createLazyFileRoute` for `createFileRoute`
-  to match the new filename, so afterwards nothing in the file hints it was ever lazy
-  (observed 2026-08-18 while proving issue #26). What catches it is `test`, now that the
-  gate builds first: against a freshly generated tree the assertion below fails with
-  `expected [Function Plan] to be undefined`. Against a *stale* committed tree the same
-  rename fails loudly for a different reason — the tree still holds
+  plain `plan.tsx` **still builds, emits no warning, and is bundled EAGERLY** — no separate
+  chunk appears. Only the `.lazy.tsx` filename makes the generator emit
+  `.lazy(() => import(…))`. Renaming one of those files deletes its code-splitting, and
+  `format:check`, `lint`, `typecheck` and `build` all stay green — the build even **rewrites
+  the source**, swapping `createLazyFileRoute` for `createFileRoute` to match the new
+  filename, so afterwards nothing in the file hints it was ever lazy. What catches it is
+  `test`, now that the gate builds first: against a freshly generated tree the assertion
+  below fails with `expected [Function Plan] to be undefined`. Against a *stale* committed
+  tree the same rename fails loudly for a different reason — the tree still holds
   `import('./routes/_authed/plan.lazy')`, which Vite cannot resolve — 14 transform errors,
   loud but pointing at the wrong thing. (The other valid shape is `autoCodeSplitting: true`
   with plain `createFileRoute`; the two must not be mixed.)
   **`web/src/routeTree.lazy.test.ts` asserts it** via router state — an unloaded
   `options.component` — rather than by reading `dist/`, because `vitest` also runs on its
-  own (`npm --prefix web run test`, a watch run, a clean checkout with no `dist/`) and a
-  `dist`-reading test would skip itself there, i.e. be vacuous in the one situation it is
-  most likely to be run. Since issue #26 the *gate* does build first, so
-  a stale committed tree can no longer hide behind it. Note `routeTree` is a module singleton
-  whose route objects `.lazy()` mutates in place, so that file needs `resetModules` + a dynamic
-  import to stay order-independent.
+  own (a watch run, a clean checkout with no `dist/`) and a `dist`-reading test would skip
+  itself there, i.e. be vacuous in the one situation it is most likely to be run. Note
+  `routeTree` is a module singleton whose route objects `.lazy()` mutates in place, so that
+  file needs `resetModules` + a dynamic import to stay order-independent.
 - **`defaultPreloadStaleTime: 0`** because Query is the single source of staleness truth.
   Raising it gives the router a second cache with its own expiry and the two disagree.
-- **No query-cache `localStorage` persistence** — PR #14, because the demo-scope
-  exclusion needs auth state that does not exist until PR #6. Do not leave a persister
-  half-built.
+- **No query-cache `localStorage` persistence.** In the federated mount that storage is
+  the SHELL's, so persisted server responses outlive both the session and the user — see
+  §"In the federated mount, `localStorage` is the SHELL's storage". Auth landing did not
+  change this. It does **not** constrain the outbox, which holds only the current user's
+  unsent writes and drains on flush. Do not leave a persister half-built.
 - Query retries skip 4xx and `NotJsonError`: both are unwinnable, and every retry is
   another Neon wake-up.
 - **Router-plugin × MF-plugin ordering is not sensitive** — all four orderings of
@@ -256,46 +319,38 @@ A service worker registered from the federated entry would be **scoped to
 kilianmc.com** and start intercepting the production portfolio's requests. Low
 likelihood, severe blast radius. **SW registration lives in `main.tsx` only.**
 
-Since PR #7 that is a live constraint rather than a future one, and it constrains *component
-placement*, not just entry files: `pwa/updatePrompt.ts` calls `registerSW` at module scope, so
-**anything that imports it — `ui/UpdateBar.tsx` included — may be rendered from `main.tsx` and
-from nowhere in the route tree**, which `remote.tsx` shares. Putting the update bar in
-`__root.tsx` is the realistic mistake; it looks like chrome, and chrome lives in the root route.
+It constrains *component placement*, not just entry files: `pwa/updatePrompt.ts` calls
+`registerSW` at module scope, so **anything that imports it — `ui/UpdateBar.tsx` included —
+may be rendered from `main.tsx` and from nowhere in the route tree**, which `remote.tsx`
+shares. Putting the update bar in `__root.tsx` is the realistic mistake; it looks like
+chrome, and chrome lives in the root route.
 
-Two tests hold the line, and they need each other:
+Three tests hold the line, and they need each other:
 
 - `remote.guard.test.tsx` is the negative arm. Its service-worker assertion passes on an empty
   set, so it also carries a positive control that imports **`virtual:pwa-register` itself** and
   proves the spy sees the registration.
 - `virtual:pwa-register` only exists while `vite-plugin-pwa` is running, and `vitest.config.ts`
   **replaces** `vite.config.ts`, so tests resolve it through a `resolve.alias` to
-  `src/test/pwaRegisterStub.ts`. The stub copies upstream's deferral condition **verbatim**
+  `src/test/pwaRegisterStub.ts`. **The stub copies upstream's deferral condition verbatim**
   (`workbox-window/src/Workbox.ts:113`: `if (!immediate && document.readyState !== 'complete')
-  await load`) — see the correction two paragraphs down for why that means it registers
-  *synchronously* under jsdom. Keep it a copy of the condition, not a summary of it.
+  await load`) — keep it a copy of the condition, not a summary. An unconditional stub made two
+  "positive controls" assert a deferral production does not have.
 - `main.pwa.test.tsx` is the positive arm: without it, deleting the PWA wiring entirely leaves
   the negative guard green. It can only assert *that* a registration happened — the URL the stub
   reports is the stub's, so the plugin options and the emitted `sw.js` are asserted by
   `pwaContract.test.ts` and `distContract.test.ts` instead.
 
-`web/src/remote.guard.test.tsx` enforces this plus the `localStorage` rules below. It
-shipped **vacuous** and was hardened on 2026-08-14; three jsdom facts caused that, and all
-three will catch the next person out too:
+`web/src/remote.guard.test.tsx` enforces this plus the `localStorage` rules below. It shipped
+**vacuous** and had to be hardened; four jsdom facts caused that, and all four will catch the
+next person out too:
 
 - **`document.readyState` is already `'complete'` when a test runs**, so a listener added
-  during `render()` never fires. The test dispatches `load` itself.
-
-  ⚠️ **Correction (PR #7).** The claim here — that `vite-plugin-pwa`'s `virtual:pwa-register`
-  registers from a `window` `load` listener — was **wrong when it was written on 2026-08-14**,
-  before any PWA code existed, and it survived into PR #7's first draft. Upstream is
-  `workbox-window/src/Workbox.ts:113`: `if (!immediate && document.readyState !== 'complete')
-  await load`. jsdom is *always* `'complete'`, so under test the real registration is
-  **synchronous** and the `load` listener is never taken. Two consequences: the stub must copy
-  that condition rather than defer unconditionally (an unconditional stub made two "positive
-  controls" assert a deferral production does not have), and the `load` dispatch is justified by a
-  different risk — a **hand-rolled** `window.addEventListener('load', … register …)` in a module
-  both entries import, which is still plausible and still invisible without it. Keep the dispatch;
-  do not keep the reasoning that used to accompany it.
+  during `render()` never fires — and upstream's condition above means the *real* registration
+  is therefore **synchronous** under jsdom and never takes the `load` path at all. The test
+  dispatches `load` itself anyway, for a different risk: a **hand-rolled**
+  `window.addEventListener('load', … register …)` in a module both entries import, which is
+  still plausible and still invisible without the dispatch. Keep the dispatch.
 - **`localStorage.foo = 'x'` writes the value while completely bypassing
   `Storage.prototype.setItem`**, so a `setItem` spy misses it. Assert on
   `Object.keys(localStorage)`, not only on recorded calls.
@@ -310,14 +365,13 @@ three will catch the next person out too:
 Keep it. Every storage assertion there passes on an empty set, so a mis-wired spy or an
 undispatched event is indistinguishable from compliance — the same vacuity that hid the
 FastAPI 0.137 route-walk defect while its test still passed.
-
 ### In the federated mount, `localStorage` is the SHELL's storage
 
 The remote runs on the kilianmc.com origin, so it shares storage with the portfolio.
 
 - **Namespace every key `ct:`.** No exceptions.
 - **Store no tokens** anywhere in `localStorage`, in either mount.
-- **Skip query-cache persistence in demo scope.**
+- **Persist no query cache** — in either scope, and for this same reason.
 
 Also scope the remote's CSS under a single **`.ct-app`** root, with design tokens as
 custom properties **on that element** — not on `:root`/`body`. **A root-level error,
@@ -341,42 +395,40 @@ version mismatch is therefore **only a console warning** — then MF **silently 
 highest React** and hands it to code compiled against the other version. Failures surface
 later and look completely unrelated.
 
-**Track 0 is landed (2026-08-17): React 19 is in production in both
-`portfolio-shell` and `ai-portfolio-project1`,** and the portfolio contract is now
-`^19.0.0` + `strictVersion: true`, which we now match. **Enforcement follows bootstrap
-order, not host vs. remote** (verified by experiment 2026-08-17): the container that boots
-**first, with an empty shared-module cache**, throws on a range it cannot satisfy, and the
-throw rejects the entry wrapper so the app entry never imports — blank page. A container
-initialising **after** the cache is seeded only logs
-`Failed to bridge external shared module`, four lines, one per shared key, and **mounts
-anyway**. Our exposure is therefore **standalone**: served on our own origin we boot first,
-so a range our installed React cannot satisfy blanks our own deployment. Federated into
-the shell, the shell boots first, so the same mistake only logs. Note `strictVersion` is
-**inert without `singleton: true`**.
-Widen the range *before* any React major or canary bump, then re-narrow.
+**Enforcement follows bootstrap order, not host vs. remote** (verified by experiment): the
+container that boots **first, with an empty shared-module cache**, throws on a range it
+cannot satisfy, and the throw rejects the entry wrapper so the app entry never imports —
+blank page. A container initialising **after** the cache is seeded only logs
+`Failed to bridge external shared module`, one line per shared key, and **mounts anyway**.
+Our exposure is therefore **standalone**: served on our own origin we boot first, so a
+range our installed React cannot satisfy blanks our own deployment. Federated into the
+shell, the shell boots first, so the same mistake only logs. Note `strictVersion` is
+**inert without `singleton: true`**. Widen the range *before* any React major or canary
+bump, then re-narrow.
 
-**Therefore: verify the shell console is clean when wiring the `climbTrainer` remote in
-PR #5.** Since a mismatched remote renders correctly and only complains to the console,
-that check is the *only* signal the contract is intact — a working mount proves nothing.
+The portfolio contract is `^19.0.0` + `strictVersion: true`, and `web/vite.config.ts`
+matches it on all four shares.
 
-**Done locally for PR #5 (2026-08-17), cross-origin (real `vite build` on one port, the
-shell on another), in both the shell's dev server and a production build: zero bridge
-failures, no rules outside `.ct-app`.** The detector was proved non-vacuous first: setting
-our `requiredVersion` to `^18.0.0` logged **four** `Failed to bridge external shared module`
-lines against a production build of the shell, **one per shared key** (`react`,
-`react/jsx-runtime`, `react-dom`, `react-dom/client`), all at initial page load — **while
-the remote still mounted and looked correct**. **Grep for the string; do not assert a
-count**: against the shell's *dev server* the same control split into two lines at load
-(wrapped in a `#RUNTIME-015` container-init error) plus four at first card open, because the
-dev server materializes a share on first import rather than at bootstrap. Nothing else
-differs between the arms — that control forces an unsatisfiable *range* while both sides run
-the same React 19.2.8, so the console is the only place it can show. **Verified against the
-real deployment 2026-08-19 — no longer owed.** Since this repo's v2.0.0 promotion
-`climb.kilianmc.com/remoteEntry.js` answers `200 application/javascript` with
-`access-control-allow-origin: *`, and with the shell at v4.0.0 the kilianmc.com console was
-clean **from initial page load** — the arm that matters, because a production build logs
-bridge failures during eager remote init, not on card open — and clean again on opening the
-climb card. Preview URLs stay SSO-gated, so production is the only arm there is.
+**A working mount proves nothing — the console is the only signal that the contract holds.**
+Check it at **initial page LOAD**, not on card open: a production build logs bridge failures
+during eager remote init. Two rules for doing that honestly:
+
+- **Prove the detector non-vacuous first.** Forcing our `requiredVersion` to `^18.0.0`
+  against a production build of the shell logs `Failed to bridge external shared module`
+  **while the remote still mounts and looks correct**. That control forces an unsatisfiable
+  *range* while both sides run the same React, so the console is the only place it can show
+  — which is also why **"React instances: 1" is a vacuous metric**: a failed remote never
+  creates a renderer, so it reads 1 in the broken arm too.
+- **Grep for the string; never assert a count** — the count is arm-dependent, and that
+  caused a three-way disagreement once. Against a **production** build the control is four
+  lines, one per shared key (`react`, `react/jsx-runtime`, `react-dom`,
+  `react-dom/client`), all at initial load. Against the shell's **dev server** the same
+  control splits into two at load (wrapped in a `#RUNTIME-015` container-init error) plus
+  four at first card open, because the dev server materializes a share on first import
+  rather than at bootstrap.
+
+Preview URLs stay SSO-gated, so **production is the only arm** there is for a cross-origin
+console or header check against a real deployment.
 
 Remote contract (mirrors `ai-portfolio-project1/vite.config.js`):
 `filename: 'remoteEntry.js'`, `dts: false`, react/react-dom singletons at `^19.0.0`
@@ -433,7 +485,7 @@ against a known-bad component to confirm the rules still fire — a plugin that 
 register is silent, and an a11y lint that checks nothing looks exactly like one that
 passes.
 
-### PWA (PR #7) — only the decisions a reader would otherwise reverse
+### PWA — only the decisions a reader would otherwise reverse
 
 `vite-plugin-pwa` v1, `generateSW`, configured in `web/vite.config.ts` **after** `federation()`.
 The registration lives in `main.tsx` only — see the service-worker rule above for the two tests
@@ -611,7 +663,7 @@ recorded it as a side effect, batch it.**
   DDL and `CREATE TYPE` need a real session, and a migration through the pooler tends
   to **hang rather than error**.
 
-### Engine config — the omissions are the point (revised 2026-08-12)
+### Engine config — the omissions are the point
 
 `server/db.py` is the authority; its module docstring carries the full reasoning. In
 short, and superseding the earlier `pool_pre_ping` / `pool_recycle=300` / `pool_size=2`
@@ -662,6 +714,15 @@ line that appeared in the original plan:
 
 #### How to actually run one: `.github/workflows/migrate.yml`
 
+> **Claude cannot dispatch this — hand it to Kilian.** `gh workflow run` against
+> `production` is refused by the Bash permission classifier, and correctly so: a production
+> DDL run is Kilian's call. Claude's job is to work out the exact invocation (**ref**,
+> `environment`, `seed`), **give Kilian the command to paste, and ask him to approve the
+> `production` environment gate in GitHub** — then read the before/after revisions out of
+> the job log. Do not go looking for the connection string instead: `vercel env pull`
+> returns `[SENSITIVE]` for both DB URLs, and the secrets live only in the GitHub
+> environments. **Read this section before any PR that adds a migration or promotes.**
+
 Actions → **Migrate** → *Run workflow*. Three inputs:
 
 - **`environment`** — `dev` or `production`. This selects the GitHub **environment**, so
@@ -681,44 +742,45 @@ secrets. Without them the job starts and fails on the first Alembic step.
 The workflow is `workflow_dispatch`-only and never prints a connection string; keep both
 properties if you edit it.
 
-##### ⚠️ Two traps that cost a debugging session on 2026-08-13, the day it first ran
+##### ⚠️ Three traps, all paid for on the day it first ran
 
 **1. A `workflow_dispatch` workflow only registers if the file exists on the DEFAULT
-branch.** `migrate.yml` shipped on `dev` in PR #2 and was therefore *completely inert*:
-`gh workflow run` returned `HTTP 404: workflow migrate.yml not found on the default
-branch`, and it did not appear in the Actions UI at all — so there was nothing to click
-either. The GitHub environments and their secrets were correct the whole time and it made
-no difference. PR #3 fixed it by putting the file on `main` on its own, as a deliberate
-exception to the "`main` receives only promotion PRs" rule.
+branch.** Shipped on `dev` alone, `migrate.yml` was *completely inert*: `gh workflow run`
+returned `HTTP 404: workflow migrate.yml not found on the default branch`, and it did not
+appear in the Actions UI at all — so there was nothing to click either. The GitHub
+environments and their secrets were correct the whole time and it made no difference. The
+fix was a one-file PR putting it on `main` by itself, a deliberate exception to the "`main`
+receives only promotion PRs" rule.
 
-> **Keep `main`'s copy BYTE-IDENTICAL to `dev`'s.** The branches' merge base predates the
-> file, so any difference is an **add/add conflict** at the first promotion. Identical
-> content merges silently. A change to this workflow therefore takes **two** PRs — one to
-> `dev`, one to `main` — and the same rule applies to every future
-> `workflow_dispatch` workflow. Notes about the workflow go in *this* file, on `dev`, not
-> in a comment that would have to be duplicated.
+> **⚠️ Still live: a change to this workflow that lands on `dev` alone is INERT until the
+> next promotion.** GitHub reads `workflow_dispatch` registration only from the default
+> branch. That is now a *latency* problem, not a conflict one — the branches' merge base
+> includes the file, so edits merge cleanly and no same-day `main`-side twin PR is needed.
+> Decide per change whether it can wait. Notes about the workflow go in *this* file, not in
+> a comment that would have to be duplicated. Same rule for every future
+> `workflow_dispatch` workflow, and for `.github/dependabot.yml`.
 
 **2. `environment` chooses the DATABASE; the REF chooses the MIGRATIONS.** Registration
 comes from the default branch, but GitHub takes both the job definition and the checkout
 from the ref you select in the dialog. They are independent inputs and confusing them is
-how production gets a revision nobody reviewed. Until the first `dev`→`main` promotion,
-`main` has no `migrations/` directory and no alembic dependency, so a run must select
-`dev`:
+how production gets a revision nobody reviewed. **Pick the ref that carries the revisions
+you mean to apply** — `main` has carried `migrations/` since the v2.0.0 promotion, so omit
+the ref to apply what production has, and pass `--ref dev` when the revision you want exists
+only on `dev` and is not promoted yet:
 
 ```bash
 gh workflow run migrate.yml --ref dev -f environment=dev -f action=current
 ```
 
-**And a third, smaller one: `alembic current --verbose` prints the connection URL.** It
-emits a `Current revision(s) for <url>:` header. Alembic hides the password and GitHub
-masks the secret, but the **Neon endpoint hostname, region and database name reach the
-public log** — breaking the workflow's own no-connection-string rule via a flag rather
-than an `echo`. The steps use bare `alembic current` for that reason; `alembic history
---verbose` is fine because it never opens a connection. Verified 2026-08-13 that nothing
-else on the path logs a URL: `sqlalchemy.engine` is pinned to `WARNING` in `alembic.ini`
-and `migrations/env.py` never prints one. **The lesson generalises — in a public repo,
-audit what a tool prints at its chosen verbosity, not just what the workflow echoes.**
-
+**3. `alembic current --verbose` prints the connection URL.** It emits a
+`Current revision(s) for <url>:` header. Alembic hides the password and GitHub masks the
+secret, but the **Neon endpoint hostname, region and database name reach the public log** —
+breaking the workflow's own no-connection-string rule via a flag rather than an `echo`. The
+steps use bare `alembic current` for that reason; `alembic history --verbose` is fine because
+it never opens a connection. Nothing else on the path logs a URL: `sqlalchemy.engine` is
+pinned to `WARNING` in `alembic.ini` and `migrations/env.py` never prints one. **The lesson
+generalises — in a public repo, audit what a tool prints at its chosen verbosity, not just
+what the workflow echoes.**
 ### SQLite is disqualified for tests
 
 The schema uses native Postgres enums, `text[]`, `GENERATED … STORED`, GIN indexes and
@@ -733,8 +795,13 @@ showcase, and denormalising to `jsonb` saves nothing that matters — a 24-week 
 ~290 KB against 0.5 GB.
 
 And: **never store a grade as a display string alone.** `grade` is
-`(system_id, label, ordinal)` where `ordinal` is a shared integer ladder, so V5 / 7A /
-6c+ are directly comparable. This is the single most expensive thing to retrofit.
+`(system_id, label, ordinal)` where `ordinal` is a shared integer ladder — but **one ladder
+per DISCIPLINE, in disjoint bands** (boulder 1000+, rope 2000+), so `V5` and Font `7A` are
+the same rung while French `6c+` is deliberately **not** comparable to either: `convert()`
+raises `CrossDisciplineError`. Boulder↔rope conversion has no consensus, and encoding one
+would be inventing data. Labels are matched **exactly** — `7A` is Font, `7a` is French, and
+case is the only thing separating them. `server/domain/grades.py` is the authority. This is
+the single most expensive thing to retrofit.
 
 ---
 
@@ -772,7 +839,7 @@ Non-negotiable. The realistic threat is bulk data extraction, not defacement.
     Public Suffix List, so a preview URL is genuinely **cross-site** and the cookie
     cannot work there. Previews fall back to demo mode.
 
-### Security response headers (v1.3.0)
+### Security response headers
 
 Two delivery points, because their coverage differs: `vercel.json` `headers` for what the
 **CDN** serves (SPA document, JS, CSS), and `server/security_headers.py` for **`/api/*`
@@ -833,9 +900,9 @@ upgrade-insecure-requests
 - **`vite dev` deliberately gets no CSP** — its inline client and HMR websocket would need a
   laxer policy than production, proving less. `vite preview` serves the real build with the
   real headers, read out of `vercel.json` by `web/vite.config.ts` so the two cannot drift.
-- **For PR #5:** the *shell's* CSP governs the federated mount, not ours. `portfolio-shell`
-  has none today; if it gains one it needs `script-src`, `connect-src` **and `style-src`**
-  for `https://climb.kilianmc.com`.
+- **The *shell's* CSP governs the federated mount, not ours.** `portfolio-shell` has none
+  today; if it gains one it needs `script-src`, `connect-src` **and `style-src`** for
+  `https://climb.kilianmc.com`.
 - **⚠️ `Access-Control-Allow-Origin` on `/remoteEntry.js` alone is NOT enough — two
   independent reasons, both proved by deleting the rule (2026-08-14):**
   1. `remoteEntry.js` is a two-line stub that **statically imports**
@@ -852,7 +919,7 @@ upgrade-insecure-requests
   on those two sources and nowhere else — deleting either one otherwise kills the federated
   mount on the live portfolio, from this repo, with a fully green gate.
 
-### Auth implementation (PR #3) — where each piece lives
+### Auth implementation — where each piece lives
 
 `server/auth/` — `passwords.py`, `tokens.py`, `refresh.py`, `cookies.py`,
 `ratelimit.py`, `deps.py`, `routes.py`. Each module's docstring carries its reasoning;
@@ -912,7 +979,7 @@ addresses that do not exist, so it is not an account-existence oracle. It is an 
 control only; see the correction in the compute-budget section for why it does not
 protect awake time.
 
-### Registration is invite-gated (issue #35)
+### Registration is invite-gated
 
 `POST /api/auth/register` requires a valid, unexpired, unrevoked, not-exhausted invite code.
 `EmailStr` validates *syntax*, so before this anyone could create an account on
@@ -991,7 +1058,7 @@ on. So neither of these may ever move into it:
   `create-invite`. It refuses to set a password on the demo account, whose NULL
   `password_hash` is what makes it unloggable.
 
-### Auth UI (PR #6) — the client half of the contract
+### Auth UI — the client half of the contract
 
 `web/src/auth/` — `session.ts` (the in-memory token store), `authClient.ts` (the five
 credential calls), `refresh.ts` (single-flight silent refresh), `AuthProvider.tsx`
@@ -1036,7 +1103,7 @@ protected by living there.
     `kilianmc.com`, they get two different lock managers, and they share one cookie *because*
     they are same-site — which is the entire reason auth works federated at all. **Never describe
     the lock as covering "tabs and mounts".**
-  - **⚠️ Across the two ORIGINS (issue #27, NARROWED — not eliminated — in v1.11.0): a
+  - **⚠️ Across the two ORIGINS — NARROWED, not eliminated: a
     SERVER-side grace window, and nothing the client can do.** A standalone tab plus the
     climb-trainer card open on the portfolio is the arm no lock reaches, so both mounts present
     the same pre-rotation cookie. `rotate()` now answers the loser with **409 and no write at
@@ -1053,10 +1120,9 @@ protected by living there.
       gets a second 409, and that mount stops refreshing until the page reloads. (2) One retry
       converges **exactly two** realms; a third same-site origin (or an unusable lock making
       two tabs behave as separate realms) leaves the second loser with no retry left. Revisit
-      the count if a third origin ever mounts this app. (3) A loser that takes longer than the
-      10-second window to get from reading the cookie to reaching `rotate()` — stalled radio,
-      queued cold start — still trips reuse detection and **still revokes the family**. That is
-      the original issue #27 on a much smaller target, which is why "fixed" is the wrong word.
+      the count if a third origin ever mounts this app. (3) **A loser slower than the grace
+      window — stalled radio, queued cold start — still trips reuse detection and still revokes
+      the family. Do not widen the window to hide that.**
     - **The trade, which is a real loss and must not be written up as a free win:** inside the
       window a replayed token no longer revokes its family, so a genuine theft landing there
       goes **undetected**. The replayer gains no token — the 409 carries none and the successor
@@ -1153,33 +1219,25 @@ silently dropping `accept` and `authorization`); `json` sets the `content-type` 
 stringified, which used to put `[object Object]` in front of the user on every validation
 failure.
 
-**Where PR #6 stops and PR #7 starts.** The landing page and the auth screens are built to
-their **final structure** — hero, positioning line, three value sections, an "explore the
-demo" section, the three calls to action, and placeholder image slots for screenshots that
-need PR #8 and PR #15a to exist. They are styled with the five existing `.ct-app` tokens plus
-exactly four new primitives: **one input, one button (with real `:active` / `:focus-visible`),
-one error, one badge**, plus the block layout the sections and slots need. Deliberately
-absent, and PR #7's to add: cards, grid or bento areas, a shadow scale, container queries, and
-any new design token. Kilian's call — PR #7 then styles a structure that is already correct
-instead of inventing one late.
+**The landing page and the auth screens have a FROZEN structure** — hero, positioning line,
+three value sections, an "explore the demo" section, the three calls to action, and the image
+slots. `router.test.tsx`, `routeGuard.test.tsx`, `publicRoutes.test.ts` and
+`remote.guard.test.tsx` assert the link lists, headings and DOM order, so a restyle can only
+change classes and wrappers. **One landing page serves BOTH mounts, unbranched** — Kilian's
+call.
 
-**PR #7 has since landed all of it** (see "UI design direction" below) as class and wrapper
-changes only: the structure recorded above is still exactly what those screens render, because
-`router.test.tsx`, `routeGuard.test.tsx`, `publicRoutes.test.ts` and `remote.guard.test.tsx`
-assert the link lists, headings and DOM order and would not have allowed otherwise.
+### 🔒 TODO — the end-to-end security verification pass (Kilian's call)
 
-### 🔒 TODO — the end-to-end security verification pass (Kilian's call, 2026-08-13)
+**Do not tick any of it off from memory.** Every rule in this file was written because of a
+real risk, and a rule that was implemented once and never verified against the running system
+is indistinguishable from a rule that quietly stopped working. Two of the controls listed
+below **do not live in this repository at all**, so no test in CI can ever notice their
+absence.
 
-**Not yet done. Do not tick any of it off from memory.** Every rule in this file was
-written because of a real risk, and a rule that was implemented once and never verified
-against the running system is indistinguishable from a rule that quietly stopped working.
-Two of the controls listed below **do not live in this repository at all**, so no test in
-CI can ever notice their absence.
-
-**When:** once the product is feature-complete on `climb.kilianmc.com` — realistically
-after PR #7 — and **before** the project is shown to anyone as a portfolio piece. Run it
-against the **production deploy**, not a preview: previews are cross-site
-(`*.vercel.app` is on the Public Suffix List) and behave differently on purpose.
+**When:** once the product is feature-complete on `climb.kilianmc.com`, and **before** the
+project is shown to anyone as a portfolio piece. Run it against the **production deploy**,
+not a preview: previews are cross-site (`*.vercel.app` is on the Public Suffix List) and
+behave differently on purpose.
 
 **Scope it honestly — three tiers, and only two of them need a human:**
 
@@ -1213,16 +1271,12 @@ against the **production deploy**, not a preview: previews are cross-site
   8. **Login rate limit** — it trips; the 429 is byte-identical for a real and a
      non-existent address; it self-heals within the window and no account is ever
      disabled.
-  9. **Security response headers** — landed in v1.3.0; see the baseline section above. On
-     the real deploy check that the `vercel.json` layer reaches **`/api/*`** and that no
-     header (notably `Strict-Transport-Security`) appears **twice**, and that the document
-     CSP logs no console violations on a real page load.
-     - **CORRECTED 2026-08-14:** the original wording predicted `frame-ancestors` would
-       break the federated mount. It cannot. The shell mounts us as a **script**
-       (`React.lazy(() => import('climbTrainer/App'))`), never in an iframe — verified in
-       `portfolio-shell/src/components/ProjectViewer.tsx`, whose `<iframe>` branch is the
-       *other* pattern (`kind: 'embedded'`). **`Cross-Origin-Resource-Policy` is the header
-       that would break it**; verify it is still set nowhere.
+  9. **Security response headers** — see the baseline section above. On the real deploy check
+     that the `vercel.json` layer reaches **`/api/*`** and that no header (notably
+     `Strict-Transport-Security`) appears **twice**, and that the document CSP logs no
+     console violations on a real page load. Also confirm
+     **`Cross-Origin-Resource-Policy` is still set nowhere** — that, not `frame-ancestors`,
+     is the header that would break the federated mount (see the headers section).
   10. **No secret in the client bundle** — grep the built `web/dist` for any value of a
       non-`VITE_` env var, and for anything resembling `AUTH_SECRET`.
 - **Infra, outside the repo — these are the ones nothing else can catch:**
@@ -1233,15 +1287,11 @@ against the **production deploy**, not a preview: previews are cross-site
   12. **Vercel project settings** — `framework` is still `null` (re-check after any
       `vercel link`), and `ssoProtection` is still **ON** for this project's previews.
   13. **Zero open Dependabot alerts**, or each remaining one triaged with a written
-      reason it does not apply. On 2026-08-13 there were 6 (starlette + pytest) and none
-      were exploitable here, but "not exploitable" needs re-deciding per alert, not once.
-      v1.3.0 raises `starlette` to 1.6.0 and `pytest` to 9.1.1 without changing that
-      reasoning — still no `request.form()`, no `StaticFiles`, no `HTTPEndpoint`, and
-      nothing reading `request.url.path` or the Host header (`server/security_headers.py`
-      matches `scope["path"]`, the ASGI request target, by exact equality). **Alerts are
-      raised against the default branch, so they clear at the first promotion to `main`,
-      not on merge to `dev`.** Also confirm the Dependabot config is actually opening PRs.
-  14. **2FA still enabled on GitHub, Vercel, Neon and Cloudflare.**
+  13. **Zero open Dependabot alerts**, or each remaining one triaged with a written
+      reason it does not apply. "Not exploitable" needs re-deciding per alert, not once.
+      **Alerts are raised against the default branch, so they clear at a promotion to
+      `main`, not on merge to `dev`.** Also confirm the Dependabot config is actually
+      opening PRs.
   15. **Neon CU-hours for the month match the model** in the compute-budget section. A
       figure well above it means something is waking the database — that is the signal.
 
@@ -1375,6 +1425,13 @@ in Python** — that was a fourth version string that would have drifted on the 
 Two long-lived branches: **`dev`** (integration) and **`main`** (production,
 `climb.kilianmc.com`). **All feature PRs target `dev`.** `main` receives only
 `dev`→`main` promotion PRs, merged by Kilian after he has tested the dev deploy.
+
+> **⚠️ Migrate production BEFORE promoting, never after.** A promotion deploys code and runs
+> no migration. Promote first and the new code runs against the old schema — one new mapped
+> column breaks **every login**, not just its own feature. Order: dispatch `migrate.yml` at
+> the ref that carries the revisions, confirm the applied revision, *then* merge the
+> promotion PR. The gap in between is safe by design (expand → deploy → contract).
+
 Conventional Commits (`feat:`, `fix:`, `chore:`, `test:`, `docs:`); branches mirror
 the type (`feat/…`, `chore/…`).
 
@@ -1444,25 +1501,24 @@ The test is whether anything in `build`, `lint`, `typecheck` or `test` imports i
   `tests/test_auth_routes_enumerated.py` vacuous **while it still passed**. A canary test
   now asserts a protected included route is in the walk; if it fails, fix the walk.
 - **`strict_content_type` is on by default since FastAPI 0.132**: a POST without
-  `content-type: application/json` is a 422. **PR #6 must send it** — `apiFetch` sets only
-  `accept`.
+  `content-type: application/json` is a 422. `apiFetch`'s `json` option sets it; a hand-rolled
+  POST that sets only `accept` will 422 for reasons that look nothing like a header problem.
 - **`httpx2` replaces the `httpx` + `starlette.testclient` pairing** before Starlette 2.0,
   where today's deprecation warning becomes an error. A package swap, not a version bump.
 
 ### `.github/dependabot.yml`
 
-**Alerts alone open no pull requests** — which is why 6 stale-dependency alerts sat
+**Alerts alone open no pull requests** — which is why six stale-dependency alerts once sat
 unnoticed with alerting fully enabled.
 
 - **⚠️ The file is read from the DEFAULT branch only**, i.e. `main`: *"The `dependabot.yml`
   file must be present on the **default branch** … regardless of which branch you specify as
-  the target."* **A copy on `dev` alone is inert**, the same failure as `migrate.yml`. So it
-  needs the **byte-identical twin** treatment: two PRs, and **no comments in the YAML** (any
-  byte difference is an add/add conflict at the first promotion), which is why its reasoning
-  lives here.
-- **⚠️ Dependabot ALERTS are also raised against the default branch.** `main` still carries
-  the vulnerable `starlette`, so merging to `dev` does not clear the 6 open alerts — they
-  clear at the first promotion to `main`.
+  the target."* **A copy on `dev` alone is inert**, the same failure as `migrate.yml` — see
+  the default-branch rule under "Branch model". It carries **no comments** so the two copies
+  cannot drift, which is why its reasoning lives here.
+- **⚠️ Dependabot ALERTS are also raised against the default branch**, so a fix merged to
+  `dev` does not clear an alert; it clears at the next promotion to `main`. Do not re-raise a
+  still-open alert as if the fix had failed.
 - **`target-branch` and security updates conflict and cannot both be satisfied.**
   `target-branch: dev` is set, because version-update PRs must not land on `main`. The docs:
   *"Pull requests for security updates still target the default branch"*, and *"you should
@@ -1482,7 +1538,7 @@ so with TS 7 in scope **every** grouped web PR inherits its blocked peer range. 
 carrying nothing but TypeScript and could not be merged; without the ignore, that recurs weekly
 and takes real updates hostage.
 
-### ⚠️ Pinned actions Dependabot can never bump (2026-08-14)
+### ⚠️ Pinned actions Dependabot can never bump
 
 **`astral-sh/setup-uv` stopped publishing major and minor tags at v8.0.0**, deliberately, as a
 supply-chain measure after the tj-actions compromise. There is no `v8`/`v9`/`v10` tag, so a
@@ -1586,15 +1642,12 @@ regenerates `src/routeTree.gen.ts` and several tests assert against that tree, s
 should read a freshly generated one rather than whatever happens to be committed. **In CI
 the route-tree freshness check still runs after the build**; only `test` and `build` swapped.
 
-**What the swap does NOT do is turn a silent green red — measured, 2026-08-18.** Renaming
-`plan.lazy.tsx` to `plan.tsx` gives, in the old order, **14 failures** at
-`vite:import-analysis` (`Failed to resolve import "./routes/_authed/plan.lazy"`), because
-the stale committed tree still holds that dynamic import; in the new order, **2 failures**
-reading `expected [Function Plan] to be undefined`. The gain is diagnostic — a transform
-error that names the wrong thing becomes two assertions that name the lost code-splitting —
-plus the ordering dependency `web/src/publicRoutes.test.ts` had to work around is gone. If
-you are looking for a case that was silently green before and is red now, there isn't one in
-today's suite; do not claim otherwise.
+**What the swap does NOT do is turn a silent green red — measured.** A renamed lazy leaf
+fails under *both* orders; the gain is purely diagnostic (see the lazy-leaf rule under
+"Routing: one tree, two histories" for the two failure shapes), plus the ordering dependency
+`web/src/publicRoutes.test.ts` had to work around is gone. If you are looking for a case
+that was silently green before and is red now, there isn't one in today's suite; do not
+claim otherwise.
 
 Cost: nothing on a green run, since `npm run build` already runs `tsc -b`. On a **red** run
 every test failure now waits out a full build first, locally as well as in CI.
@@ -1711,7 +1764,7 @@ be real — no snapshot-everything, no asserting on mock call counts as a proxy 
 behaviour, and integration over unit where the integration is the risky part (which is
 why the backend tests run against real Postgres, not SQLite).
 
-## UI design direction — IMPLEMENTED by PR #7
+## UI design direction
 
 `web/src/styles/` is the design system. `@use`-based partials, no `@import`:
 
@@ -1810,8 +1863,8 @@ lighting.
 - **`--ct-tap: 44px`, applied on BOTH axes** by `_mixins.scss`'s `tap`. A block-size floor
   alone leaves a tall unhittable target — "Plan" is only ~31px wide on its own.
 - **Primary actions are never in a top corner**, and `ct-app__actionbar` groups them at the end of
-  a form behind a hairline, stretched to full width for the thumb. ⚠️ **It does not yet anchor
-  anything to the bottom of the VIEWPORT, and PR #7 does not deliver that.** It shipped as
+  a form behind a hairline, stretched to full width for the thumb. ⚠️ **It does not anchor
+  anything to the bottom of the VIEWPORT.** It shipped as
   `position: sticky; inset-block-end: 0`, which is inert as the last child of a content-sized form
   — measured, the login submit sat ~300px above the fold with no scroll at all — so the sticky and
   the `env()` floor were removed rather than left looking load-bearing. Real anchoring needs
@@ -1862,10 +1915,12 @@ branching, and unlike the `50% - 50vw` idiom it cannot produce a horizontal scro
   ~32px of viewport earlier (two-column bento at 544px instead of 576px). Left uncompensated
   deliberately — `ct-app` now means "how much room the app got", which is what those queries
   ask — and it changes nothing in the federated mount, where the cap never bound.
-- **`&__prose` is `68ch`, and that is the point of the redesign.** The landing page's problem was
-  diagnosed as *missing content, not missing CSS*: it contained zero images. The fix is full-bleed
-  imagery with a ~65–75 character text column, **not** a wider `max-inline-size`. Only the landing
-  page breaks out; app screens keep the measure.
+- **`&__prose` is `56ch`, and the number is MEASURED — do not "fix" it up to the usual
+  `65ch`.** `ch` is the advance of "0", wider than average prose, so `Nch` always holds more
+  than N characters: `68ch` measured **80–90 actual characters** in Chrome, past the upper
+  bound. The landing page's problem was diagnosed as *missing content, not missing CSS*: it
+  contained zero images. The fix is full-bleed imagery with a ~65–75 character text column,
+  **not** a wider `max-inline-size`. Only the landing page breaks out.
 
 ### Landing imagery — self-hosted, generated out-of-band, and URL-resolved at runtime
 
@@ -1961,10 +2016,11 @@ Recorded here because each is a specific bug that a naive implementation ships:
   `OscillatorNode`s, `AudioContext` created **inside** the Start click and `resume()`d
   on `visibilitychange`. The **iOS hardware silent switch mutes Web Audio with no
   workaround**, hence a "Test sound" button before the session starts.
-- The plan generator (`server/app/domain/planner/`) is a **pure module with no DB
-  access** — no clock, no RNG, no I/O; dates are passed in. Enforced by a ruff
-  banned-import rule. That purity is what makes `POST /api/plans/preview` (blueprint
-  without writing) possible, which is what makes the demo mount interactive.
+- The plan generator (`server/domain/planner/`) is a **pure module with no DB
+  access** — no clock, no RNG, no I/O; dates are passed in. To be enforced by a ruff
+  banned-import rule, which lands with the planner itself. That purity is what makes
+  `POST /api/plans/preview` (blueprint without writing) possible, which is what makes the
+  demo mount interactive.
 
 ### Screen Wake Lock — a user-owned TOGGLE, and a progressive enhancement
 
@@ -1990,8 +2046,7 @@ Requirements for PR #15a:
   with the OS screen timeout. **Verify, don't assume**: check the real behaviour on the
   real browser rather than trusting a support table.
 - **Persist the choice in `localStorage`** under the **`ct:`** namespace (e.g.
-  `ct:keepScreenOn`) — remember that in the federated mount that IS the shell's origin
-  storage.
+  `ct:keepScreenOn`) — see the federated-`localStorage` rule above.
 - **THE TOGGLE MUST REFLECT REAL STATE, NOT INTENT.** The browser/OS **silently releases
   a wake lock when the tab is backgrounded**. So: **re-acquire on `visibilitychange`
   while the switch is on**, and **drive the UI from the sentinel's actual `released`
