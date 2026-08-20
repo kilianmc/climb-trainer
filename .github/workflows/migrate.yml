@@ -19,10 +19,10 @@
 # before it was registered `gh workflow run` answered `HTTP 404: not found on the
 # default branch`. But GitHub takes the job definition AND the checkout from the ref you
 # select, so pick it deliberately: run the ref whose `migrations/` directory you mean to
-# apply. `main` has carried the migrations since the v2.0.0 promotion (both branches are
-# at `0002` today), so the ref is a real choice rather than a workaround: omit it to apply
-# what production has, pass `--ref dev` to apply revisions that are on `dev` but not yet
-# promoted (`gh workflow run migrate.yml --ref dev -f environment=dev -f action=current`).
+# apply. `main` has carried the migrations since the v2.0.0 promotion, so the ref is a real
+# choice rather than a workaround: omit it to apply what production has, and pass
+# `--ref dev` when the revision you want exists only on `dev` and is not promoted yet
+# (`gh workflow run migrate.yml --ref dev -f environment=dev -f action=current`).
 # `environment` chooses the DATABASE; the ref chooses the MIGRATIONS. They are
 # independent, and mixing them up is how production gets a revision that was never
 # reviewed.
@@ -98,7 +98,7 @@ jobs:
       # Alembic obscures the password and GitHub masks the secret, but the Neon endpoint
       # HOSTNAME, region and database name survive into a **public** Actions log — which
       # is precisely what the header comment at the top of this file forbids. It happened
-      # (2026-08-13, first run; the run was deleted). Bare `current` prints `0002 (head)`
+      # (on the very first run; that run was deleted). Bare `current` prints the revision
       # and emits no such header, which is all the audit trail needs. Nothing else on this
       # path logs the URL: `sqlalchemy.engine` is pinned to WARNING in `alembic.ini` and
       # `migrations/env.py` never prints it.
