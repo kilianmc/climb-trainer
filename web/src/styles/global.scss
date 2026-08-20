@@ -1,11 +1,39 @@
-// Standalone document only — imported from `main.tsx`, never from the route tree.
-// The federated mount must not restyle kilianmc.com, so everything else lives in
-// `app.scss` under the `.ct-app` root.
+// Standalone document only — imported from `main.tsx`, never from the route tree. The federated
+// mount must not restyle kilianmc.com, so everything else lives in `app.scss` under `.ct-app`,
+// and this file is the ONLY one allowed `:root`, `html` or `body` selectors.
+@use 'tokens';
+@use 'mixins';
 
 :root {
   color-scheme: light dark;
 }
 
+// `.ct-app` is only as tall as its content, so on a short page (a login form) the document
+// canvas shows below it — white against `--ct-bg`, which reads as a rendering bug. A `body`
+// background propagates to the canvas, which fixes it for the whole viewport.
+//
+// The token mixin is included rather than the hex repeated: `.ct-app` stays the declaration
+// site that matters, and this is the same standalone-only pattern `update-bar.scss` uses. Do
+// NOT read this as licence to declare tokens globally — this file cannot reach the shell.
 body {
+  @include tokens.declare;
+
   margin: 0;
+  background: var(--ct-bg);
+}
+
+// The update bar is `position: fixed`, so it does not push content: measured, it covered 32.5px
+// of the 44px "Open the demo" button at the bottom of the landing page, and `elementFromPoint` at
+// the button's centre returned the bar. This reserves exactly the bar's height while it is
+// showing, from the SAME expression the bar is built from — see `update-bar-metrics`, and note
+// that hand-deriving this is what left it 2px short of the bar's real 74px.
+//
+// `:has()` is inside the project's browser baseline (Chrome 105, Safari 15.4, Firefox 121; Vite
+// 8's `baseline-widely-available` target is above all three), and it keeps this JS-free — no
+// resize observer, no measured height in state. Safe here because `global.scss` is
+// standalone-only, which is also the only place `.ct-update-bar` can exist.
+body:has(.ct-update-bar__panel) {
+  @include mixins.update-bar-metrics;
+
+  padding-block-end: var(--ct-update-bar-total);
 }

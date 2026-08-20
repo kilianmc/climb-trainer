@@ -25,15 +25,22 @@ _EMAIL = "alex@example.com"
 _PASSWORD = "a-long-enough-passphrase"
 
 
-def _register(client: TestClient, email: str = _EMAIL, password: str = _PASSWORD) -> str:
-    response = client.post("/api/auth/register", json={"email": email, "password": password})
+def _register(
+    client: TestClient, invite_code: str, email: str = _EMAIL, password: str = _PASSWORD
+) -> str:
+    response = client.post(
+        "/api/auth/register",
+        json={"email": email, "password": password, "invite_code": invite_code},
+    )
     assert response.status_code == 201, response.text
     token: str = response.json()["access_token"]
     return token
 
 
-def test_register_login_refresh_logout_is_one_working_journey(api_client: TestClient) -> None:
-    access_token = _register(api_client)
+def test_register_login_refresh_logout_is_one_working_journey(
+    api_client: TestClient, invite_code: str
+) -> None:
+    access_token = _register(api_client, invite_code)
     assert REFRESH_COOKIE_NAME in api_client.cookies
 
     # The access token from registration authenticates immediately — no second round
@@ -67,21 +74,25 @@ def test_logout_without_a_cookie_succeeds(api_client: TestClient) -> None:
     assert api_client.post("/api/auth/logout").status_code == 200
 
 
-def test_registering_a_taken_email_is_a_409(api_client: TestClient) -> None:
+def test_registering_a_taken_email_is_a_409(api_client: TestClient, invite_code: str) -> None:
     """A deliberate, documented departure from the generic anti-enumeration answer.
 
     See the reasoning in `register`'s docstring: with no email-verification step, a
     generic success would strand a real user. Rate limiting is the mitigation.
     """
-    _register(api_client)
-    duplicate = api_client.post("/api/auth/register", json={"email": _EMAIL, "password": _PASSWORD})
+    _register(api_client, invite_code)
+    duplicate = api_client.post(
+        "/api/auth/register",
+        json={"email": _EMAIL, "password": _PASSWORD, "invite_code": invite_code},
+    )
     assert duplicate.status_code == 409
 
 
 def test_login_gives_the_same_generic_401_for_unknown_email_and_wrong_password(
     api_client: TestClient,
+    invite_code: str,
 ) -> None:
-    _register(api_client)
+    _register(api_client, invite_code)
 
     wrong_password = api_client.post(
         "/api/auth/login", json={"email": _EMAIL, "password": "not-the-password"}

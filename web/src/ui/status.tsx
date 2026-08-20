@@ -38,12 +38,17 @@ export function RoutePending() {
   );
 }
 
+/**
+ * `ct-app__status` goes on the LINE, not on the section. On the section it beat `ct-app__card` in
+ * the cascade and the heading inherited the muted (or danger) colour with it, which made "Not
+ * found" look disabled and "Something broke" look like part of the error text.
+ */
 export function RouteNotFound() {
   return (
     <Scoped>
-      <section className="ct-app__status">
+      <section className="ct-app__card">
         <h1>Not found</h1>
-        <p>That page does not exist.</p>
+        <p className="ct-app__status">That page does not exist.</p>
       </section>
     </Scoped>
   );
@@ -52,9 +57,9 @@ export function RouteNotFound() {
 export function RouteError({ error }: { error: Error }) {
   return (
     <Scoped>
-      <section className="ct-app__status ct-app__status--error">
+      <section className="ct-app__card ct-app__card--danger">
         <h1>Something broke</h1>
-        <p>{error.message}</p>
+        <p className="ct-app__status ct-app__status--error">{error.message}</p>
       </section>
     </Scoped>
   );

@@ -1,0 +1,136 @@
+// Every design token, and it is a MIXIN rather than a rule on purpose.
+//
+// Two elements need the tokens and only one of them is `.ct-app`: the update prompt is
+// rendered from `main.tsx`, as a SIBLING of the router (it has to be — the module that
+// registers the service worker may never be reachable from the route tree, see
+// `pwa/updatePrompt.ts`), so it sits OUTSIDE `.ct-app` and inherits nothing. The two
+// alternatives are both wrong: a second `.ct-app` element would apply that element's
+// padding, max-width and background, and `:root` would land in kilianmc.com's document
+// in the federated mount.
+//
+// Light and dark are separate mixins so `contrast.test.ts` can parse each scheme's hex
+// with one flat regex and assert WCAG AA 4.5:1 on every documented text-on-surface pair.
+// Keep the two lists key-for-key identical, and keep every colour a bare hex literal.
+
+// Surfaces are OPAQUE, in elevation order, and elevation is expressed as a distinct
+// surface colour + a hairline + a shadow step. Glassmorphism was evaluated and rejected
+// (CLAUDE.md, 2026-08-12): `backdrop-filter` costs a compositing layer and a blur pass
+// every frame on a phone that is awake mid-session, and translucency is worse at the one
+// thing that matters here — being readable at arm's length in bad gym light.
+//
+// `--ct-bg` doubles as the SUNKEN tone (inputs, image wells): it is the furthest surface
+// from the card in both schemes, so one token reads as "inset" in light and in dark.
+@mixin light-values {
+  --ct-bg: #eef0ed;
+  --ct-surface-1: #f6f7f5;
+  --ct-surface-2: #fbfbfa;
+  --ct-surface-3: #ffffff;
+  --ct-hover: #e4e7e2;
+  --ct-pressed: #d9ddd7;
+
+  --ct-fg: #14171c;
+  --ct-fg-muted: #565c68;
+
+  --ct-accent: #1b6b47;
+  --ct-accent-pressed: #145036;
+  --ct-accent-fg: #ffffff;
+  --ct-danger: #a3241d;
+  --ct-danger-fg: #ffffff;
+
+  // A hairline per surface: one border tone reads as a smudge against white and as
+  // nothing at all against the page background.
+  --ct-border-bg: #d3d7d0;
+  --ct-border-1: #d9ddd6;
+  --ct-border-2: #dfe2dc;
+  --ct-border-3: #e3e6e0;
+  // Control outlines — inputs and resting buttons — carry real 3:1 non-text contrast
+  // (WCAG 1.4.11) rather than the decorative hairlines above.
+  --ct-border-strong: #6f7570;
+}
+
+@mixin dark-values {
+  --ct-bg: #0d0f12;
+  --ct-surface-1: #161a1f;
+  --ct-surface-2: #1e232a;
+  --ct-surface-3: #272d35;
+  --ct-hover: #232830;
+  --ct-pressed: #2c323a;
+
+  --ct-fg: #eaedf1;
+  --ct-fg-muted: #a2abb8;
+
+  --ct-accent: #5fbf91;
+  --ct-accent-pressed: #86d3ac;
+  --ct-accent-fg: #0d0f12;
+  --ct-danger: #f3b3af;
+  --ct-danger-fg: #14171c;
+
+  --ct-border-bg: #22262c;
+  --ct-border-1: #2a2f37;
+  --ct-border-2: #333944;
+  --ct-border-3: #3d444f;
+  --ct-border-strong: #858e9c;
+}
+
+@mixin declare {
+  @include light-values;
+
+  @media (prefers-color-scheme: dark) {
+    @include dark-values;
+  }
+
+  // Honest depth: three steps, each saying which surface is above which. No fourth "hero" step
+  // and nothing decorative — a shadow here means real elevation. Step 1 is the card, step 2 the
+  // persistent nav above it, step 3 the floating update bar.
+  //
+  // The alphas are MEASURED, not guessed: composited over `--ct-bg`, step 1 is 1.22:1 against
+  // the bare page, so the edge of a card is actually visible. At the 0.06 it started with it was
+  // 1.13:1 — paint work nobody could see.
+  --ct-shadow-1: 0 1px 2px rgb(20 23 28 / 0.1);
+  --ct-shadow-2: 0 1px 2px rgb(20 23 28 / 0.1), 0 6px 14px rgb(20 23 28 / 0.12);
+  --ct-shadow-3: 0 2px 4px rgb(20 23 28 / 0.12), 0 16px 32px rgb(20 23 28 / 0.16);
+
+  @media (prefers-color-scheme: dark) {
+    // `none`, on purpose, and not as an omission. `--ct-bg` is #0d0f12, whose relative luminance
+    // is 0.0056: the BEST contrast any shadow can reach over it is **1.09:1**, with fully opaque
+    // pure black — arithmetic, not tuning ((0.0056 + 0.05) / 0.05). A blurred shadow at a
+    // realistic peak alpha lands at 1.04–1.06:1, i.e. invisible, so the earlier dark scale was
+    // three GPU-costing steps that rendered as nothing.
+    //
+    // Dark elevation therefore rests entirely on the surface scale and the hairlines, which is
+    // decidable and measurable: surface-1 over bg is a real step, and the floating bar carries
+    // `--ct-border-strong` (4.2:1 non-text) instead of a shadow nobody can see.
+    --ct-shadow-1: none;
+    --ct-shadow-2: none;
+    --ct-shadow-3: none;
+  }
+
+  --ct-radius-1: 0.375rem;
+  --ct-radius-2: 0.625rem;
+  --ct-radius-3: 1rem;
+  --ct-radius-pill: 999px;
+
+  --ct-space-1: 0.25rem;
+  --ct-space-2: 0.5rem;
+  --ct-space-3: 0.75rem;
+  --ct-space-4: 1rem;
+  --ct-space-5: 1.5rem;
+  --ct-space-6: 2.5rem;
+
+  // The one line-height. A token because `_card.scss` reserves caption boxes in whole lines and
+  // has to derive them from the same number `.ct-app` sets.
+  --ct-leading: 1.55;
+
+  --ct-text-xs: 0.8rem;
+  --ct-text-sm: 0.9rem;
+  --ct-text-base: 1rem;
+  --ct-text-lg: 1.15rem;
+  --ct-text-xl: 1.4rem;
+  --ct-text-2xl: 1.75rem;
+
+  // The floor from CLAUDE.md's accessibility rules, as a token so no consumer can round
+  // it down. One-handed, mid-workout, possibly-chalky fingers.
+  --ct-tap: 44px;
+
+  --ct-fast: 100ms;
+}

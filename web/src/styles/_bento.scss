@@ -1,0 +1,38 @@
+// The bento arrangement: CSS grid with NAMED AREAS, not `auto-fit`/`minmax`. The named
+// grid puts the whole arrangement in one reviewable place per breakpoint, and it lets the
+// layout change without touching DOM order — which matters here because reading order and
+// visual order are separate decisions.
+//
+// The breakpoint is a `@container` query on `.ct-app`, not a media query: in the federated
+// mount the viewport belongs to kilianmc.com, so a media query would reflow the bento
+// against the shell's window rather than against the room the app actually got.
+@mixin styles {
+  &__bento {
+    display: grid;
+    gap: var(--ct-space-4);
+    margin-block-end: var(--ct-space-6);
+    grid-template-areas:
+      'plan'
+      'session'
+      'diary';
+
+    @container ct-app (min-inline-size: 34rem) {
+      grid-template-columns: 1fr 1fr;
+      grid-template-areas:
+        'plan plan'
+        'session diary';
+    }
+  }
+
+  &__bento--plan {
+    grid-area: plan;
+  }
+
+  &__bento--session {
+    grid-area: session;
+  }
+
+  &__bento--diary {
+    grid-area: diary;
+  }
+}

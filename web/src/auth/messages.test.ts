@@ -19,7 +19,7 @@ describe('authMessage', () => {
     [401, 'Incorrect email or password.'],
     [403, 'That did not go through. Please reload the page and try again.'],
     [409, 'That email is already registered — try logging in instead.'],
-    [422, 'Check the email address, and make sure the password is at least 12 characters.'],
+    [422, 'Check the details you entered and try again.'],
     [429, 'Too many attempts from this network. Please wait a little and try again.'],
   ])('gives %i its own copy rather than the raw API detail', (status, expected) => {
     expect(authMessage(new ApiError('raw server detail', status))).toBe(expected);
@@ -27,6 +27,21 @@ describe('authMessage', () => {
 
   it('passes an unmapped status through, so a 500 is not silently mislabelled', () => {
     expect(authMessage(new ApiError('Internal Server Error', 500))).toBe('Internal Server Error');
+  });
+
+  /**
+   * The invite gate answers **400**, and it must NOT get a branch here. The server's message is
+   * already correct copy — it carries the "log in instead" half that a returning invitee needs —
+   * and this function is shared with `/login`, where a hardcoded "That invite code is not valid"
+   * would render on a form that has no invite field. A branch is the plausible tidy-up, so this
+   * is the test that catches it.
+   */
+  it('surfaces the server detail for a 400, rather than owning invite-gate copy', () => {
+    const detail =
+      'That invite code is not valid or has already been used. If you already have an ' +
+      'account, log in instead.';
+
+    expect(authMessage(new ApiError(detail, 400))).toBe(detail);
   });
 
   it('reports a rewrite misconfiguration as itself even though its status is 401', () => {

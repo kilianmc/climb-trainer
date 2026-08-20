@@ -35,10 +35,15 @@ function foreignKeys(): string[] {
 }
 
 /**
- * jsdom is already `readyState: 'complete'` when a test runs, so a listener registered
- * during render never fires on its own. `vite-plugin-pwa`'s `virtual:pwa-register`
- * registers its service worker from exactly such a `load` listener, which makes it the
- * most likely PR #7 regression — and without this dispatch the guard cannot see it.
+ * jsdom is already `readyState: 'complete'` when a test runs, so a listener registered during
+ * render never fires on its own — hence the dispatch.
+ *
+ * ⚠️ It is NOT `virtual:pwa-register` that needs it, contrary to what this comment said before
+ * (and what CLAUDE.md said before PR #7): `workbox-window`'s `Workbox.register` is
+ * `if (!immediate && document.readyState !== 'complete') await load`, and under jsdom that
+ * condition is always false, so the real registration happens SYNCHRONOUSLY. The dispatch stays
+ * because a hand-rolled `window.addEventListener('load', … register …)` in a shared module is
+ * still a plausible regression, and it costs nothing.
  */
 async function settle() {
   window.dispatchEvent(new Event('DOMContentLoaded'));
@@ -105,12 +110,10 @@ describe('the federated entry', () => {
 
     // A real navigation is the case that would reach history.pushState if this entry
     // were ever handed a browser history by mistake. An anonymous destination, because the
-    // mount starts signed out and the in-app leaves are behind the route guard.
-    fireEvent.click(
-      within(screen.getByRole('navigation', { name: 'Main' })).getByRole('link', {
-        name: 'Create account',
-      }),
-    );
+    // mount starts signed out and the in-app leaves are behind the route guard. Clicked in
+    // `main` because the landing page renders no nav — and the hero's call to action is the
+    // link a visitor in the shell actually clicks, so it is the better subject anyway.
+    fireEvent.click(within(screen.getByRole('main')).getByRole('link', { name: 'Create account' }));
     await screen.findByRole('heading', { name: 'Create account' });
     unmount();
 
@@ -129,9 +132,21 @@ describe('the federated entry', () => {
   it('renders absolute standalone hrefs, so a cmd-click leaves for the real app', async () => {
     await mount();
 
-    const nav = screen.getByRole('navigation', { name: 'Main' });
+    // The landing page's calls to action are the links a visitor in the shell is most likely
+    // to cmd-click. They are asserted first because `/` renders no nav.
     expect(
-      within(nav)
+      within(screen.getByRole('main'))
+        .getAllByRole('link')
+        .map((link) => link.getAttribute('href')),
+    ).toEqual(['https://climb.kilianmc.com/login', 'https://climb.kilianmc.com/register']);
+
+    // …and then the nav, on the first route that has one. Both halves of the rewrite still get
+    // asserted; only the route hosting the nav half moved.
+    fireEvent.click(within(screen.getByRole('main')).getByRole('link', { name: 'Log in' }));
+    await screen.findByRole('heading', { name: 'Log in' });
+
+    expect(
+      within(screen.getByRole('navigation', { name: 'Main' }))
         .getAllByRole('link')
         .map((link) => link.getAttribute('href')),
     ).toEqual([
@@ -139,14 +154,6 @@ describe('the federated entry', () => {
       'https://climb.kilianmc.com/login',
       'https://climb.kilianmc.com/register',
     ]);
-
-    // The landing page's calls to action are the links a visitor in the shell is most likely
-    // to cmd-click, so they get the same guarantee as the nav.
-    expect(
-      within(screen.getByRole('main'))
-        .getAllByRole('link')
-        .map((link) => link.getAttribute('href')),
-    ).toEqual(['https://climb.kilianmc.com/login', 'https://climb.kilianmc.com/register']);
   });
 
   it('holds the access token in a closure, never in the host origin storage', async () => {
@@ -198,14 +205,33 @@ describe('the federated entry', () => {
     // spy were mis-wired or an event never dispatched. Same class of defect as the
     // vacuous route-enumeration walk recorded in CLAUDE.md, so it gets the same
     // treatment: prove the detector fires before trusting that it stayed silent.
-    let registeredOnLoad = false;
-    window.addEventListener('load', () => {
-      registeredOnLoad = true;
-      void navigator.serviceWorker.register('/sw.js');
+    //
+    // The service-worker arm imports the same specifier `pwa/updatePrompt.ts` does, so it
+    // exercises the module graph a stray import from the route tree would create. It is a STAND-IN
+    // for the real registration, not the real thing: `vitest.config.ts` aliases the specifier to
+    // `test/pwaRegisterStub.ts` (nothing resolves the virtual module without the plugin). The
+    // emitted URL and the plugin options are asserted from the config and the build instead — see
+    // `pwaContract.test.ts` and `distContract.test.ts` — because the arguments below are the
+    // stub's own literals.
+    //
+    // Registration is synchronous: jsdom is `readyState: 'complete'`, so upstream's
+    // `!immediate && readyState !== 'complete'` deferral never applies. See the stub.
+    const { registerSW } = await import('virtual:pwa-register');
+    registerSW();
+    expect(register).toHaveBeenCalled();
+
+    // The `load` dispatch must also not be what makes it fire, or the negative assertions above
+    // would only be true until something registered from a listener.
+    const callsBeforeLoad = register.mock.calls.length;
+    await settle();
+    expect(register.mock.calls.length).toBe(callsBeforeLoad);
+
+    // …and a listener-based registration IS still caught, which is why `settle()` dispatches.
+    window.addEventListener('load', () => void navigator.serviceWorker.register('/late-sw.js'), {
+      once: true,
     });
     await settle();
-    expect(registeredOnLoad).toBe(true);
-    expect(register).toHaveBeenCalled();
+    expect(register).toHaveBeenCalledWith('/late-sw.js');
 
     (localStorage as unknown as Record<string, string>)['injected'] = 'x';
     expect(foreignKeys()).toEqual(['injected']);

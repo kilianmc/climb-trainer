@@ -1,4 +1,10 @@
-import { Link, Outlet, createRootRouteWithContext, useRouter } from '@tanstack/react-router';
+import {
+  Link,
+  Outlet,
+  createRootRouteWithContext,
+  useRouter,
+  useRouterState,
+} from '@tanstack/react-router';
 import type { QueryClient } from '@tanstack/react-query';
 
 import { useAuth, type Auth } from '../auth/AuthProvider';
@@ -30,6 +36,7 @@ export interface AppContext {
 function AppNav() {
   const router = useRouter();
   const { isAuthenticated, scope, client } = useAuth();
+  const pathname = useRouterState({ select: (state) => state.location.pathname });
 
   /**
    * Clearing the session does NOT re-run `beforeLoad`, so without the navigation the visitor
@@ -41,6 +48,13 @@ function AppNav() {
     void client.logout();
     void router.navigate({ to: '/' });
   }
+
+  // The landing page renders NO nav, and it is the only route that does not. Its three anonymous
+  // destinations are Home (itself), Log in and Create account, and the hero already carries the
+  // last two as primary actions — so the nav there was a second copy of the same page. This is
+  // shared chrome, not landing chrome: every other route, signed in or out, still gets it, which
+  // is why this is a route check and not a deletion.
+  if (pathname === '/') return null;
 
   // Anonymous and authenticated navs are disjoint on purpose: linking a signed-out visitor
   // to /plan would only bounce them off the guard and back to /login.

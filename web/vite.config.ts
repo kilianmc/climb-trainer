@@ -5,6 +5,10 @@ import { federation } from '@module-federation/vite';
 import { tanstackRouter } from '@tanstack/router-plugin/vite';
 import react from '@vitejs/plugin-react';
 import { defineConfig } from 'vite';
+import { VitePWA } from 'vite-plugin-pwa';
+
+/** The light `--ct-bg` from `src/styles/_tokens.scss`; `index.html` carries the dark twin. */
+const LIGHT_BG = '#eef0ed';
 
 /**
  * The production document headers, read out of `vercel.json` rather than copied, so
@@ -34,6 +38,9 @@ function productionHeaders(): Record<string, string> {
   return headers;
 }
 
+/** Shared by `server` and `preview`: both need /api on this origin, for different reasons. */
+const API_PROXY = { '/api': { target: 'http://127.0.0.1:8000', changeOrigin: false } };
+
 export default defineConfig({
   // Note this file is NOT merged into vitest.config.ts — that one replaces it — so
   // neither plugin below is active in tests. Hence `src/routeTree.gen.ts` is committed.
@@ -59,6 +66,69 @@ export default defineConfig({
         'react-dom/': { singleton: true, requiredVersion: '^19.0.0', strictVersion: true },
       },
     }),
+    // AFTER federation(): the service worker precaches the built app shell, so it has to
+    // see the final asset graph, remoteEntry stub included.
+    VitePWA({
+      // 'prompt', deliberately, not 'autoUpdate'. A silent `skipWaiting` deletes the old
+      // precache the moment a new worker activates, so a page left open across a deploy
+      // 404s on the next lazily-loaded route chunk — and it could swap code under a session
+      // player mid-set. The visitor decides when to take the new build.
+      registerType: 'prompt',
+      // We register from `main.tsx`, and only from there (its scope in the federated mount
+      // would be kilianmc.com). `null` rather than 'inline' is also forced by the production
+      // CSP: `script-src 'self'` blocks an inline registration script with no nonce.
+      injectRegister: null,
+      // Not in the manifest's `icons`, so the plugin does not precache them on its own.
+      includeAssets: ['favicon.ico', 'mark.svg', 'apple-touch-icon-180x180.png'],
+      workbox: {
+        // One `sw.js` instead of sw.js + an unhashed workbox-*.js — one fewer file at the root
+        // that the SPA rewrite could mis-serve as index.html. It is a workbox-build option, not
+        // a plugin-level one, despite reading like plugin plumbing.
+        inlineWorkboxRuntime: true,
+        // Explicit, and narrower than the default `**/*.{js,css,html,ico,png,svg}`: the
+        // manifest icons and `includeAssets` above are added by the plugin with their own
+        // revisions, so globbing them too would offer workbox two entries for one URL.
+        // `build.sourcemap` is on and `.map` is deliberately absent — no reason to ship
+        // sourcemaps into a phone's Cache Storage.
+        globPatterns: ['**/*.{js,css,html}'],
+        navigateFallback: '/index.html',
+        // `/api/*` must ALWAYS be FastAPI JSON, never the SPA shell (CLAUDE.md deployment
+        // trap 2). Without this the worker answers an offline API call with index.html and
+        // `apiFetch` throws NotJsonError far from the cause.
+        navigateFallbackDenylist: [/^\/api\//],
+        cleanupOutdatedCaches: true,
+        // NO `runtimeCaching` for /api, ever: authenticated JSON in Cache Storage is written
+        // to disk and survives logout, and nothing in the app clears it.
+      },
+      manifest: {
+        name: 'climb-trainer',
+        short_name: 'Climb',
+        description:
+          'Pick the grade you are training for, get a plan that covers every aspect of climbing, and follow it set by set in the gym.',
+        start_url: '/',
+        scope: '/',
+        id: '/',
+        display: 'standalone',
+        background_color: LIGHT_BG,
+        theme_color: LIGHT_BG,
+        categories: ['fitness', 'health', 'sports'],
+        // Hand-written against the files `npm run generate:icons` actually emitted; the
+        // generator is not wired into the build, so these names are checked, not assumed.
+        icons: [
+          { src: 'pwa-64x64.png', sizes: '64x64', type: 'image/png' },
+          { src: 'pwa-192x192.png', sizes: '192x192', type: 'image/png' },
+          { src: 'pwa-512x512.png', sizes: '512x512', type: 'image/png' },
+          {
+            src: 'maskable-icon-512x512.png',
+            sizes: '512x512',
+            type: 'image/png',
+            purpose: 'maskable',
+          },
+        ],
+        // No `orientation`: the app is used in landscape on a bouldering mat as often as in
+        // portrait, and locking it would fight the phone the moment it is put down.
+      },
+    }),
   ],
   // No explicit `build.target`: Vite 8's default (`baseline-widely-available`, chrome111+)
   // already supports the top-level await MF emits. ai-portfolio-project1 pins `chrome89`
@@ -68,7 +138,7 @@ export default defineConfig({
     port: 5173,
     // Local stand-in for Vercel's /api/* rewrite, so the SPA and API share an
     // origin in dev exactly as they do in production.
-    proxy: { '/api': { target: 'http://127.0.0.1:8000', changeOrigin: false } },
+    proxy: API_PROXY,
     // The production CSP is deliberately NOT applied here: the dev server's inline
     // client and HMR websocket would need a laxer policy than production's, which would
     // prove less while looking like coverage. Use `preview` below instead.
@@ -78,5 +148,10 @@ export default defineConfig({
     // The real build with the real production headers — run this before pushing anything
     // that adds a script, font, image host or stylesheet.
     headers: productionHeaders(),
+    // The same /api proxy as dev. Production serves /api from this origin, so without it
+    // preview 404s every auth call and cannot exercise a signed-in path at all — and
+    // preview is the ONLY place the real build meets the real production headers, which is
+    // exactly where a CSP or service-worker mistake shows up.
+    proxy: API_PROXY,
   },
 });

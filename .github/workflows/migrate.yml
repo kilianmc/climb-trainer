@@ -19,11 +19,13 @@
 # before it was registered `gh workflow run` answered `HTTP 404: not found on the
 # default branch`. But GitHub takes the job definition AND the checkout from the ref you
 # select, so pick it deliberately: run the ref whose `migrations/` directory you mean to
-# apply. Until the first `dev`->`main` promotion, `main` has no migrations and no alembic
-# dependency at all, so a run must select `dev` (`gh workflow run migrate.yml --ref dev
-# -f environment=dev -f action=current`). `environment` chooses the DATABASE; the ref
-# chooses the MIGRATIONS. They are independent, and mixing them up is how production
-# gets a revision that was never reviewed.
+# apply. `main` has carried the migrations since the v2.0.0 promotion, so the ref is a real
+# choice rather than a workaround: omit it to apply what production has, and pass
+# `--ref dev` when the revision you want exists only on `dev` and is not promoted yet
+# (`gh workflow run migrate.yml --ref dev -f environment=dev -f action=current`).
+# `environment` chooses the DATABASE; the ref chooses the MIGRATIONS. They are
+# independent, and mixing them up is how production gets a revision that was never
+# reviewed.
 name: Migrate
 
 on:
@@ -37,6 +39,16 @@ on:
       action:
         # `current` is first AND the default on purpose: clicking straight through the
         # dialog without reading it performs a read-only revision check, not a DDL run.
+        #
+        # THERE IS DELIBERATELY NO `downgrade` OPTION, and adding one would be a mistake.
+        # Production holds real user accounts, and a downgrade is the one action here that
+        # destroys rows irreversibly — it must not be one dropdown click away from the
+        # production database, least of all sitting next to the option people actually
+        # want. Recovery from a bad migration is a **Neon branch restore** (take the branch
+        # BEFORE the upgrade run), not an Alembic downgrade: a downgrade runs more untested
+        # DDL against an already-damaged database, while a restore returns to a known-good
+        # copy. The migrations' own `downgrade()` bodies stay correct and are for local and
+        # CI use. See CLAUDE.md, "Production data durability".
         description: "current = read the applied revision · upgrade = run migrations · history = list revisions"
         type: choice
         required: true
@@ -96,7 +108,7 @@ jobs:
       # Alembic obscures the password and GitHub masks the secret, but the Neon endpoint
       # HOSTNAME, region and database name survive into a **public** Actions log — which
       # is precisely what the header comment at the top of this file forbids. It happened
-      # (2026-08-13, first run; the run was deleted). Bare `current` prints `0002 (head)`
+      # (on the very first run; that run was deleted). Bare `current` prints the revision
       # and emits no such header, which is all the audit trail needs. Nothing else on this
       # path logs the URL: `sqlalchemy.engine` is pinned to WARNING in `alembic.ini` and
       # `migrations/env.py` never prints it.

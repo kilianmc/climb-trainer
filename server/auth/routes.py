@@ -25,12 +25,12 @@ email, which `login`'s account-keyed bucket needs as its subject.
 from typing import Annotated, Final, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
-from pydantic import BaseModel, ConfigDict, EmailStr, Field
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, StringConstraints
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from server.auth import ratelimit, refresh
+from server.auth import invites, ratelimit, refresh
 from server.auth.cookies import (
     clear_refresh_cookie,
     clear_refresh_cookie_header,
@@ -65,11 +65,32 @@ _MAX_EMAIL_LENGTH: Final = 254
 # mixed case) years ago: they push users towards `Password1!`, which is both weaker and
 # more annoying than a long passphrase. 128 is an upper bound because argon2 hashes the
 # whole input and an unbounded field is a cheap way to burn CPU.
-_MIN_PASSWORD_LENGTH: Final = 12
-_MAX_PASSWORD_LENGTH: Final = 128
+#
+# PUBLIC, and imported by `server/devseed.py` and `server/admin.py`: both write a
+# `password_hash` directly, and a password outside this range would create an account the
+# app's own policy could never recreate or reset. One definition, not three.
+MIN_PASSWORD_LENGTH: Final = 12
+MAX_PASSWORD_LENGTH: Final = 128
+
+# The whole of what a caller learns about a rejected invite. Unknown, expired, revoked and
+# exhausted all land here — see `server/auth/invites.py` for why telling them apart is an
+# oracle. **400, not 403**: 403 already means "demo mode is read-only" on every auth route
+# (`enforce_auth`), so reusing it would leave the client unable to write correct copy for
+# either. 422 is Pydantic's and means "the shape is wrong", which this is not.
+#
+# The second sentence is load-bearing, not padding. The commonest way to see this message is
+# not an attack: it is somebody re-entering the single-use code they already registered with,
+# or retrying after a lost response. "Not valid" alone sends that person off to ask for a new
+# code they do not need, and the invite check runs BEFORE the email lookup precisely so a
+# stranger cannot be told the account exists — so the copy has to carry the way out instead.
+# It must stay ONE message: nothing here may hint at which of the four causes applied.
+_INVITE_REJECTED: Final = (
+    "That invite code is not valid or has already been used. If you already have an "
+    "account, log in instead."
+)
 
 
-def _normalise_email(value: str) -> str:
+def normalise_email(value: str) -> str:
     """Lowercase and strip. `app_user.email` has no `citext`, so this is the invariant.
 
     Every write and every lookup goes through here. If one path skips it, two accounts
@@ -83,8 +104,14 @@ class RegisterRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     email: Annotated[EmailStr, Field(max_length=_MAX_EMAIL_LENGTH)]
-    password: Annotated[
-        str, Field(min_length=_MIN_PASSWORD_LENGTH, max_length=_MAX_PASSWORD_LENGTH)
+    password: Annotated[str, Field(min_length=MIN_PASSWORD_LENGTH, max_length=MAX_PASSWORD_LENGTH)]
+    # Bounded, stripped, and with NO minimum beyond non-empty: a too-short code must get
+    # the same answer as a wrong one, so nothing about a code's shape is decided here.
+    # Stripping is for the person pasting a code out of a message with a trailing space;
+    # the value is case-sensitive base64url and is never lowercased.
+    invite_code: Annotated[
+        str,
+        StringConstraints(strip_whitespace=True, min_length=1, max_length=invites.MAX_CODE_LENGTH),
     ]
 
 
@@ -95,7 +122,7 @@ class LoginRequest(BaseModel):
     # attacker the password policy from a 422, and would reject legitimate users whose
     # password predates a future policy change.
     email: Annotated[EmailStr, Field(max_length=_MAX_EMAIL_LENGTH)]
-    password: Annotated[str, Field(min_length=1, max_length=_MAX_PASSWORD_LENGTH)]
+    password: Annotated[str, Field(min_length=1, max_length=MAX_PASSWORD_LENGTH)]
 
 
 class TokenResponse(BaseModel):
@@ -148,24 +175,58 @@ def register(
     a password-reset flow would eventually expose anyway. **Rate limiting is the
     mitigation**: `REGISTER` is 3 per hour per client, which makes enumerating a list of
     addresses impractical.
+
+    **Invite-gated since issue #35.** A valid, unexpired, unrevoked, not-exhausted code is
+    required, and spending it happens in this handler's transaction so that a registration
+    which fails afterwards does not burn a use. The invite's id is recorded on the account,
+    so a use is attributable to a person and not merely to a counter.
     """
     ratelimit.enforce(session, request, ratelimit.REGISTER)
 
-    email = _normalise_email(payload.email)
+    # Checked BEFORE the email lookup, deliberately. The 409 below is an account-existence
+    # oracle that this route accepts for the reason in the docstring — but there is no
+    # reason to hand it to a caller who has not shown they were invited at all.
+    #
+    # It stays in the SAME transaction as the insert below: `consume` flushes and does not
+    # commit, so every failure path from here on rolls the increment back with everything
+    # else and a failed registration cannot burn a use. See `server/auth/invites.py`.
+    try:
+        invite = invites.consume(session, payload.invite_code)
+    except invites.InviteRejectedError:
+        # ONE status and ONE message for unknown / expired / revoked / exhausted. Nothing
+        # was written on any of those paths, so there is nothing to roll back here.
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=_INVITE_REJECTED
+        ) from None
+
+    email = normalise_email(payload.email)
     if session.scalar(select(AppUser.id).where(AppUser.email == email)) is not None:
+        # ⚠️ ROLLBACK, then raise — the invite was consumed a few lines up and this path must
+        # not leave that increment behind. `get_session` closing the session would roll it
+        # back anyway, but relying on teardown for a security property is not something a
+        # reader can see, a test can observe, or a future refactor will preserve. The
+        # `IntegrityError` path below does the same thing, for the same reason.
+        session.rollback()
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT, detail="That email is already registered."
         )
 
     # Explicit assignment, never `AppUser(**payload.model_dump())` — `is_demo` is set
     # here and must not be settable by the request.
-    user = AppUser(email=email, password_hash=hash_password(payload.password), is_demo=False)
+    user = AppUser(
+        email=email,
+        password_hash=hash_password(payload.password),
+        is_demo=False,
+        # Attribution. Taken from the row `consume` locked, never from the request.
+        invite_id=invite.id,
+    )
     session.add(user)
     try:
         session.flush()
     except IntegrityError:
         # Lost the race against a concurrent registration of the same address. The
-        # SELECT above is the friendly path; the unique constraint is the correct one.
+        # SELECT above is the friendly path; the unique constraint is the correct one. The
+        # rollback also returns the invite use this request had already spent.
         session.rollback()
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT, detail="That email is already registered."
@@ -188,7 +249,7 @@ def login(
     """Exchange credentials for an access token and a fresh refresh family."""
     # Normalised first because the account-keyed bucket below keys on the normalised
     # form — `Kilian@x.com` and `kilian@x.com` must share one budget.
-    email = _normalise_email(payload.email)
+    email = normalise_email(payload.email)
 
     # TWO buckets, ONE statement: by client IP (stops one machine hammering) and by the
     # ATTEMPTED EMAIL (stops the same attack spread across many machines, which the

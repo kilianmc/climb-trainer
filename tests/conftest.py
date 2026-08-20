@@ -28,6 +28,7 @@ from sqlalchemy import Engine, inspect
 from sqlalchemy.orm import Session
 
 from server.app import app
+from server.auth import invites
 from server.db import get_engine, get_session, session_scope
 from server.seed import seed_reference_data
 from server.settings import AUTH_SECRET_ENV, POOLED_URL_ENV, pooled_database_url
@@ -41,6 +42,9 @@ _SKIP_REASON = (
 # almost no entropy — gitleaks scans this repo's full history and a random-looking
 # string next to the word "secret" is exactly what its generic rule looks for.
 _FAKE_AUTH_SECRET = "not-a-real-secret-" * 3
+
+# Enough uses that no test has to think about the invite it borrowed from `invite_code`.
+_FIXTURE_INVITE_USES = 50
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -74,6 +78,7 @@ def engine() -> Engine:
         "grade",
         "app_user",
         "auth_session",
+        "invite",
         "rate_limit",
     } - tables
     if missing:
@@ -103,6 +108,17 @@ def db_session(seeded: Engine) -> Iterator[Session]:
         session.close()
         transaction.rollback()
         connection.close()
+
+
+@pytest.fixture
+def invite_code(db_session: Session) -> str:
+    """A usable invite code, because `POST /api/auth/register` is invite-gated.
+
+    Generous `max_uses` so one fixture covers a test that registers several accounts. The
+    invite table's own behaviour — expiry, revocation, exhaustion, the concurrent spend —
+    belongs to `tests/test_auth_invites.py`; everywhere else this is just a door key.
+    """
+    return invites.create(db_session, label="test fixture", max_uses=_FIXTURE_INVITE_USES).code
 
 
 @pytest.fixture

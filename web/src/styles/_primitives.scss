@@ -1,0 +1,150 @@
+@use 'mixins';
+
+// Controls and text primitives, re-expressed on tokens. Included INTO `.ct-app`, so `&`
+// here is that root and every selector below stays scoped to it.
+@mixin styles {
+  &__lede {
+    margin: 0 0 var(--ct-space-5);
+    color: var(--ct-fg-muted);
+    font-size: var(--ct-text-lg);
+  }
+
+  &__muted {
+    margin: 0 0 var(--ct-space-4);
+    color: var(--ct-fg-muted);
+  }
+
+  &__caption {
+    margin: 0;
+    color: var(--ct-fg-muted);
+    font-size: var(--ct-text-xs);
+  }
+
+  &__hero {
+    margin-block-end: var(--ct-space-6);
+  }
+
+  &__actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--ct-space-3);
+  }
+
+  &__button {
+    @include mixins.tap;
+    @include mixins.press;
+    @include mixins.focus-ring;
+
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--ct-space-2);
+    padding-inline: var(--ct-space-4);
+    border: 1px solid var(--ct-border-strong);
+    border-radius: var(--ct-radius-2);
+    background: var(--ct-surface-3);
+    color: var(--ct-fg);
+    font: inherit;
+    font-weight: 500;
+    text-decoration: none;
+    cursor: pointer;
+
+    &:disabled {
+      border-color: var(--ct-border-1);
+      background: var(--ct-surface-1);
+      color: var(--ct-fg-muted);
+      cursor: default;
+    }
+
+    &--primary {
+      @include mixins.press(var(--ct-accent-pressed));
+
+      border-color: var(--ct-accent);
+      background: var(--ct-accent);
+      color: var(--ct-accent-fg);
+
+      &:disabled {
+        border-color: var(--ct-border-1);
+        background: var(--ct-surface-1);
+        color: var(--ct-fg-muted);
+      }
+    }
+
+    // Sits in the nav beside links, so it must not read as a call to action. Still a full
+    // tap target, and still visibly pressable — quiet is about weight, not about feedback.
+    &--quiet {
+      @include mixins.press(var(--ct-hover));
+
+      border-color: transparent;
+      background: transparent;
+      color: var(--ct-fg-muted);
+      font-weight: 400;
+    }
+  }
+
+  // No `gap` here: the auth form carries `ct-app__card` too, and `card.styles` is `@include`d
+  // after this one at equal specificity, so a gap declared here would be silently overridden.
+  // Spacing between fields is the card's, deliberately, so it widens with the card.
+  &__form {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    max-inline-size: 26rem;
+  }
+
+  // The smaller label IS deliberate: it sits directly above its own control, so it is secondary
+  // to the value being typed, and it is not a control itself so it carries no zoom risk. It does
+  // NOT get to set the control's size — see `&__input`.
+  &__field {
+    display: flex;
+    flex-direction: column;
+    gap: var(--ct-space-1);
+    color: var(--ct-fg-muted);
+    font-size: var(--ct-text-sm);
+  }
+
+  &__input {
+    @include mixins.tap;
+    @include mixins.focus-ring(1px);
+
+    // `--ct-bg` is the sunken tone: the field reads as cut INTO the card in both schemes.
+    padding-inline: var(--ct-space-3);
+    border: 1px solid var(--ct-border-strong);
+    border-radius: var(--ct-radius-2);
+    background: var(--ct-bg);
+    color: var(--ct-fg);
+    font: inherit;
+    // ⚠️ EXPLICIT, and it must stay explicit. `font: inherit` alone inherits from `&__field`,
+    // the label wrapping the control, which is `--ct-text-sm` — so the field computed to 14.4px
+    // at every width. **iOS Safari zooms the page whenever a focused control is under 16px**, and
+    // the fix is never to disable pinch-zoom in the viewport meta: that suppresses the symptom by
+    // removing an accessibility affordance. Measured: the 324px-wide field pushed its own right
+    // edge off-screen on focus, so the user had to pinch back out between email and password.
+    font-size: var(--ct-text-base);
+
+    &:focus-visible {
+      border-color: var(--ct-accent);
+    }
+  }
+
+  // Full size, not `--ct-text-sm`. This is the line a stuck user has to read — "Incorrect email
+  // or password." — and it was the smallest text on the screen at 14.4px. `--ct-text-xs` stays
+  // for `&__caption` and `&__badge`, which are genuinely secondary.
+  &__error {
+    margin: 0;
+    color: var(--ct-danger);
+    font-size: var(--ct-text-base);
+  }
+
+  &__badge {
+    display: inline-flex;
+    align-items: center;
+    padding: var(--ct-space-1) var(--ct-space-3);
+    border: 1px solid var(--ct-border-2);
+    border-radius: var(--ct-radius-pill);
+    background: var(--ct-surface-2);
+    color: var(--ct-accent);
+    font-size: var(--ct-text-xs);
+    white-space: nowrap;
+  }
+}
