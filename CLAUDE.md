@@ -703,8 +703,10 @@ line that appeared in the original plan:
   migration must never race a deploy, and deploys here are automatic while migrations
   are not.
 - **Expand → deploy → contract**, always, for the same reason.
-- In FastAPI's `lifespan`, only **READ** `alembic_version` and **warn** on mismatch.
-  Never migrate at startup.
+- **Never migrate at startup.** Note that there is **no startup revision check today** —
+  nothing in `server/` reads `alembic_version`, so a schema/code mismatch is not detected
+  or warned about at boot. If one is ever added it must only **READ** and **warn**, never
+  migrate; weigh it against the Neon wake it would cost on every cold start.
 - Seeding reference data is `uv run python -m server.seed`, run **after** a migration.
   `server/seed.py` is the **single** seed module — CI, local work and production all
   call it, because a test fixture with hand-written rows tests a table production never
