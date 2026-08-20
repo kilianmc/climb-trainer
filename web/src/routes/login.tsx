@@ -2,10 +2,9 @@ import { createFileRoute, redirect, useRouter } from '@tanstack/react-router';
 import { useState } from 'react';
 
 import { useAuth } from '../auth/AuthProvider';
-import type { Credentials } from '../auth/authClient';
 import { authMessage } from '../auth/messages';
 import { internalPath } from '../auth/redirectTarget';
-import { CredentialsForm } from '../ui/CredentialsForm';
+import { CredentialsForm, type CredentialsFormValues } from '../ui/CredentialsForm';
 
 /**
  * `?redirect=` carries the path the guard bounced the visitor off, and it is validated
@@ -29,11 +28,18 @@ function Login() {
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  function submit(credentials: Credentials) {
+  // Destructured, NOT forwarded whole. `CredentialsForm` always emits `inviteCode` (empty
+  // here, since this form does not render the field), and `LoginRequest` is
+  // `extra="forbid"` — so passing the form's object through sends a third key and the
+  // server 422s before it even reaches the rate limiter. TypeScript cannot catch this:
+  // excess-property checking only applies to object *literals*, and a variable carrying
+  // extra properties still satisfies `Credentials` structurally. `loginSubmit.test.tsx`
+  // asserts the serialised body's exact key set, which is the only level at which it shows.
+  function submit({ email, password }: CredentialsFormValues) {
     setPending(true);
     setError(null);
     void client
-      .login(credentials)
+      .login({ email, password })
       .then(() => {
         router.history.push(target ?? '/dashboard');
       })
