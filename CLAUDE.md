@@ -789,14 +789,21 @@ rules, not preferences.
 
 #### How to actually run one: `.github/workflows/migrate.yml`
 
-> **Claude cannot dispatch this — hand it to Kilian.** `gh workflow run` against
-> `production` is refused by the Bash permission classifier, and correctly so: a production
-> DDL run is Kilian's call. Claude's job is to work out the exact invocation (**ref**,
-> `environment`, `seed`), **give Kilian the command to paste, and ask him to approve the
-> `production` environment gate in GitHub** — then read the before/after revisions out of
-> the job log. Do not go looking for the connection string instead: `vercel env pull`
-> returns `[SENSITIVE]` for both DB URLs, and the secrets live only in the GitHub
-> environments. **Read this section before any PR that adds a migration or promotes.**
+> **Claude dispatches this, for BOTH environments** (Kilian's call, 2026-08-21 —
+> `Bash(gh workflow run *)` is allowlisted). Work out the invocation (**ref**,
+> `environment`, `seed`), dispatch it, and **read the revision back out of the job log** —
+> the run's own "after" step for a `dev` upgrade, and a separate `action: current` run for
+> production. **The checkpoint that remains is the `Production` GitHub Environment's
+> `required_reviewers: kilianmc`**, which pauses a production run until Kilian approves it
+> in the GitHub UI. `dev` and `Preview` have no reviewers, so a `dev` run starts
+> immediately and nothing appears for anyone to accept — do not tell Kilian to go and
+> approve a `dev` migration, because there is nothing there.
+>
+> Since that single approval click is now the only human gate on a production DDL run,
+> **say what you are about to apply before you dispatch it, not after.** And do not go
+> looking for the connection string instead: `vercel env pull` returns `[SENSITIVE]` for
+> both DB URLs, and the secrets live only in the GitHub environments. **Read this section
+> before any PR that adds a migration or promotes.**
 
 Actions → **Migrate** → *Run workflow*. Three inputs:
 
