@@ -68,6 +68,7 @@ scoped `SET LOCAL` does — which is what the demo path's `SET LOCAL
 transaction_read_only` relies on (PR #3). Keep it `SET LOCAL`, never a bare `SET`.
 """
 
+import os
 from collections.abc import Iterator
 from contextlib import contextmanager
 from functools import lru_cache
@@ -90,8 +91,111 @@ _REWRITABLE_PREFIXES = ("postgresql://", "postgres://")
 _CONNECT_ARGS: dict[str, object] = {"connect_timeout": 10}
 
 
+# ---------------------------------------------------------------------------------
+# Which database am I about to touch? — the two guards, and the credential rule
+# ---------------------------------------------------------------------------------
+#
+# Hosts that are safe to run a test suite or an ad-hoc migration against. Loopback covers
+# a developer's own Postgres; `postgres` and `db` cover a service container or a compose
+# service addressed by name.
+#
+# `host=None` — a unix-socket URL, or a URL with no host at all — is **not** in here, so
+# it fails CLOSED. That is deliberate: an unresolvable host is not evidence of locality.
+LOCAL_DB_HOSTS = frozenset({"localhost", "127.0.0.1", "::1", "postgres", "db"})
+
+# The opt-in that lets a migration run against a remote database. Set by
+# `.github/workflows/migrate.yml`, which exists precisely to do that behind an approval
+# gate. **Deliberately NOT keyed off `CI` or `GITHUB_ACTIONS`** (Kilian, 2026-08-21):
+# trusting an ambient CI variable means any workflow, in any repo, that happens to set it
+# inherits permission to migrate production.
+REMOTE_MIGRATION_ENV = "CT_ALLOW_REMOTE_MIGRATION"
+
+
 class DatabaseNotConfiguredError(RuntimeError):
     """Raised when a database is needed but no connection string is set."""
+
+
+class RemoteDatabaseRefused(RuntimeError):
+    """Refused: this operation would have touched a non-local database."""
+
+
+def host_of(url: str) -> str | None:
+    """The host of a connection string, or `None` when it has none (unix socket).
+
+    ⚠️ **Call this at the boundary and pass the HOST onward — never the URL.** The two
+    `require_*` functions below take a host for exactly one reason: a URL bound to a
+    parameter or a local of a function that raises is rendered by pytest and by most
+    tracebacks, password included. `require_local_host("ep-x.neon.tech")` can only ever
+    print a hostname; `require_local_host(url)` prints the credential once per dependent
+    test. That happened, in this repo, to the first version of the test-suite guard —
+    51 occurrences in one run. Same lesson as `target_host_and_database` above, and the
+    same lesson CLAUDE.md draws from `alembic current --verbose`: audit what a tool prints
+    at its chosen verbosity, not just what you meant to print.
+    """
+    return make_url(normalise_database_url(url)).host
+
+
+def is_local_host(host: str | None) -> bool:
+    """Exact membership, never a suffix or substring test.
+
+    A substring or `endswith` check is the classic hole here: `localhost.evil.com`,
+    `notlocalhost` and `127.0.0.1.nip.io` all pass one. `2130706433` (loopback as a
+    decimal integer) and `::ffff:127.0.0.1` are also correctly refused — they resolve to
+    loopback, but they are not spellings anything in this project produces, so refusing
+    them costs nothing and keeps the rule a lookup rather than a parser.
+    """
+    return host in LOCAL_DB_HOSTS
+
+
+def require_local_host(host: str | None, *, operation: str, remedy: str) -> None:
+    """Refuse a non-local host outright. No override, by design.
+
+    Used by `tests/conftest.py`. An environment-variable escape hatch is exactly what gets
+    set once in a `.env` and then forgotten, which is the failure this guard exists for —
+    so pointing the suite at a remote database is a code change, not a variable.
+    """
+    if is_local_host(host):
+        return
+    raise RemoteDatabaseRefused(
+        f"refusing to {operation} against database host {host!r}. Allowed hosts: "
+        f"{sorted(LOCAL_DB_HOSTS)}. {remedy}"
+    )
+
+
+def require_migration_host(host: str | None) -> None:
+    """Refuse a non-local host for Alembic **unless** `CT_ALLOW_REMOTE_MIGRATION=1`.
+
+    ## Why this one has an opt-in and the test guard does not
+
+    `.github/workflows/migrate.yml` exists to run migrations against production — that is
+    its entire purpose — so a flat allowlist would break the sanctioned path and leave the
+    unsanctioned one working. The opt-in inverts that: the workflow declares its intent,
+    and a developer typing `uv run alembic upgrade head` with a production URL in `.env`
+    gets stopped.
+
+    ⚠️ **That developer path was live until 2026-08-21.** `.env` on the development machine
+    holds the production URL in both variables, `migrations/env.py` had no guard at all, and
+    its own docstring recommended the bare command. Migrations here are supposed to run
+    out-of-band behind a `workflow_dispatch` approval gate; without this, the approval gate
+    was one keystroke away from being optional.
+
+    Read-only Alembic actions are refused too. That is intentional: `alembic current`
+    against production is harmless, but allowing it means the guard has to decide which
+    subcommand is running, and getting that wrong fails open on the one that writes DDL.
+    """
+    if is_local_host(host):
+        return
+    if os.environ.get(REMOTE_MIGRATION_ENV) == "1":
+        return
+    raise RemoteDatabaseRefused(
+        f"refusing to run Alembic against database host {host!r}: migrations run "
+        f"OUT-OF-BAND in this project, never from a developer's terminal. Use the "
+        f"Migrate workflow — Actions -> Migrate -> Run workflow, or "
+        f"`gh workflow run migrate.yml --ref dev -f environment=dev -f action=upgrade` — "
+        f"which runs with `environment: production`'s approval gate and sets "
+        f"{REMOTE_MIGRATION_ENV}=1 itself. Allowed hosts without that variable: "
+        f"{sorted(LOCAL_DB_HOSTS)}. See CLAUDE.md, 'Migrations run out-of-band'."
+    )
 
 
 def normalise_database_url(url: str) -> str:

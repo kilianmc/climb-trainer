@@ -46,7 +46,8 @@ before writing a migration, not after.
 
 **Touching auth, tokens or the route guard** — "Security rules" · "Auth implementation —
 where each piece lives" · "Auth UI — the client half of the contract" (the three realms, the
-refresh race, drop the token before every `POST /api/auth/*`) · "Registration is
+refresh race, drop the token before every `POST /api/auth/*`, the TWO auth deadlines — 8 s stops
+awaiting, 30 s aborts — and why an unanswered refresh is not a logout) · "Registration is
 invite-gated" · "⚠️ Minting an invite is a LOCAL command, and must never become a workflow" ·
 "Local accounts, and the two things that are NOT `server/seed.py`" ·
 "🔒 TODO — the end-to-end security verification pass".
@@ -58,7 +59,8 @@ the SHELL's storage" · "Never register a service worker from `remote.tsx`" · "
 resolve from `import.meta.url` + guard the content-type".
 
 **Touching `vercel.json`, rewrites, headers or the API client** — "Deployment traps"
-(all six) · "Security response headers" · "API base: resolve from `import.meta.url` + guard
+(all seven — note that #7, `maxDuration`, is a correctness setting, not a cost one) ·
+"Security response headers" · "API base: resolve from `import.meta.url` + guard
 the content-type" · "`.env` is loaded for you — but only outside Vercel" (the Vite dev proxy
 is not Vercel's rewrite).
 
@@ -66,6 +68,14 @@ is not Vercel's rewrite).
 "Two write tiers" · "The other compute rules" · "Engine config — the omissions are the point"
 · "Injection defence and input minimisation (OWASP)" (bound parameters, allowlisted
 identifiers, closed inputs, Pydantic at the edge, no echoed request in a 422).
+
+**Touching the domain schema, body metrics, or anything the plan generator says to the
+user** — "⚠️ The app never recommends losing weight" (a hard rule with a schema-level guard:
+low strength-to-weight means *get stronger*) · "The domain schema — the shapes worth knowing
+before you query it" (the `activity`/`logged_session` supertype, the three composite foreign
+keys, the index every `SET NULL` needs, why the plan tree is relational) · "⚠️ The free-text
+inventory — NINE fields, and two of them get forgotten" · "SQLite is disqualified for tests"
+(the grade ladder).
 
 **Dependencies, versions and CI** — "Dependency policy" · "TypeScript stays on 6.x" ·
 "ESLint 10 rests on a forced jsx-a11y peer" · "`.github/dependabot.yml`" · "⚠️ Pinned actions
@@ -78,6 +88,10 @@ reading measure is a GRID COLUMN, not a `max-inline-size` on `.ct-app`" · "Land
 self-hosted, generated out-of-band, and URL-resolved at runtime" · "Container queries, not
 media queries — and tokens on `.ct-app`, not `:root`" · "PWA — only the decisions a reader
 would otherwise reverse".
+
+**Running the app locally, or a blank page that is not your code** — "Local development" ·
+"⚠️ `npm run check` breaks a RUNNING dev server, and every route goes blank" (a blank *landing*
+page is the tell) · "`.env` is loaded for you — but only outside Vercel".
 
 **Writing tests** — "Testing policy". Every guard test
 here carries a positive control; a detector that cannot see its own violation is worse than
@@ -215,6 +229,24 @@ fixed at project creation** — pick the EU region and pin the function region t
 Vercel injects `x-vercel-oidc-token` on **every** request. It is a real, short-lived
 credential. Any diagnostic endpoint must use an **allowlist** of header names. S0 hit
 this while dumping `x-vercel-*` for debugging.
+
+### 7. `functions."api/index.py".maxDuration` is pinned, and it is a CORRECTNESS setting
+
+```jsonc
+"functions": { "api/index.py": { "maxDuration": 20 } }
+```
+
+**Not a cost control — it is what makes the client's 30 s auth abort an *outer* bound.** Left
+unpinned this is Vercel's default, and under **Fluid compute (default for new projects since
+2025) that is 300 s**. The refresh endpoint is a sync `def` that commits its rotation *before*
+it answers, so a client abort landing inside the server's window leaves the successor refresh
+token live on the server and held by nobody — see "⚠️ TWO deadlines on the auth path" under
+"Auth UI — the client half of the contract" for the full mechanism. 20 s is always accepted;
+Hobby's configurable maximum is 60 s even without Fluid.
+
+**Deleting or raising this block re-opens that hole silently** — green gate, no symptom, until a
+cold path runs long. It bounds the `/api/*` function only: migrations and the seed run
+out-of-band in Actions, never in this function, so nothing about them is affected.
 
 ---
 
@@ -757,14 +789,21 @@ rules, not preferences.
 
 #### How to actually run one: `.github/workflows/migrate.yml`
 
-> **Claude cannot dispatch this — hand it to Kilian.** `gh workflow run` against
-> `production` is refused by the Bash permission classifier, and correctly so: a production
-> DDL run is Kilian's call. Claude's job is to work out the exact invocation (**ref**,
-> `environment`, `seed`), **give Kilian the command to paste, and ask him to approve the
-> `production` environment gate in GitHub** — then read the before/after revisions out of
-> the job log. Do not go looking for the connection string instead: `vercel env pull`
-> returns `[SENSITIVE]` for both DB URLs, and the secrets live only in the GitHub
-> environments. **Read this section before any PR that adds a migration or promotes.**
+> **Claude dispatches this, for BOTH environments** (Kilian's call, 2026-08-21 —
+> `Bash(gh workflow run *)` is allowlisted). Work out the invocation (**ref**,
+> `environment`, `seed`), dispatch it, and **read the revision back out of the job log** —
+> the run's own "after" step for a `dev` upgrade, and a separate `action: current` run for
+> production. **The checkpoint that remains is the `Production` GitHub Environment's
+> `required_reviewers: kilianmc`**, which pauses a production run until Kilian approves it
+> in the GitHub UI. `dev` and `Preview` have no reviewers, so a `dev` run starts
+> immediately and nothing appears for anyone to accept — do not tell Kilian to go and
+> approve a `dev` migration, because there is nothing there.
+>
+> Since that single approval click is now the only human gate on a production DDL run,
+> **say what you are about to apply before you dispatch it, not after.** And do not go
+> looking for the connection string instead: `vercel env pull` returns `[SENSITIVE]` for
+> both DB URLs, and the secrets live only in the GitHub environments. **Read this section
+> before any PR that adds a migration or promotes.**
 
 Actions → **Migrate** → *Run workflow*. Three inputs:
 
@@ -826,8 +865,9 @@ generalises — in a public repo, audit what a tool prints at its chosen verbosi
 what the workflow echoes.**
 ### SQLite is disqualified for tests
 
-The schema uses native Postgres enums, `text[]`, `GENERATED … STORED`, GIN indexes and
-window functions. Tests run against **real Postgres** (GitHub Actions `services:`
+The schema uses native Postgres enums, composite foreign keys, `GENERATED … STORED`, GIN
+expression indexes and window functions. (It used `text[]` too, until the ascent-tags
+reversal on 2026-08-21 — the rest of the list is more than enough on its own.) Tests run against **real Postgres** (GitHub Actions `services:`
 container, pinned to Neon's major): once per session `alembic upgrade head` — so **CI
 tests the migrations** — plus seeding from the same module production uses; per test
 `begin_nested()` + rollback. `alembic check` catches model drift. Do not "simplify" any
@@ -845,6 +885,121 @@ raises `CrossDisciplineError`. Boulder↔rope conversion has no consensus, and e
 would be inventing data. Labels are matched **exactly** — `7A` is Font, `7a` is French, and
 case is the only thing separating them. `server/domain/grades.py` is the authority. This is
 the single most expensive thing to retrofit.
+
+### The domain schema — the shapes worth knowing before you query it
+
+`server/models.py` carries the full reasoning per table; migration `0004` is the DDL. Four
+decisions are the ones a reader would otherwise try to undo:
+
+- **`activity` is a SUPERTYPE, and `logged_session` is a 1:1 subtype of it.** One row per
+  activity of *any* kind (`activity_kind`: `climbing` · `cardio` · `strength` · `mobility` ·
+  `other`), carrying user, date, duration, RPE and the idempotency key; `logged_session` adds
+  only the climbing-only columns. The alternative — a `logged_session` table and, when
+  cardio arrives (issue #38), a second table beside it — means every readiness, rest-day and
+  diary query gets written twice and one copy rots. **`other` is the escape hatch** so an
+  unanticipated kind is loggable without an `ALTER TYPE` migration.
+- **`srpe_load` (`GENERATED ... STORED`, RPE × minutes) lives on `activity`, not on
+  `logged_session`.** A generated column can only reference its own table's columns, and
+  duration and RPE are supertype columns — and it is the right home anyway, because an easy
+  run is real load. NULL RPE gives NULL load, deliberately: no score, not a score of zero.
+- **Adherence and load are two queries over one nullable column.** `activity.planned_session_id`
+  is the only link to the plan. Adherence = activities that point at a planned slot (a
+  non-climbing activity can satisfy one); load and rest-day logic = *all* activities. Neither
+  rule is baked into a constraint, because both will be tuned.
+- **Three composite foreign keys do real work, and all three look redundant if you skim
+  them.** `microcycle (mesocycle_id, plan_id) → mesocycle (id, plan_id)` is what makes
+  carrying `plan_id` down the tree safe rather than merely intended (the `(plan_id, week_no)`
+  index is the hottest read in the app). `logged_session (activity_id, activity_kind) →
+  activity (id, activity_kind)`, plus `CHECK (activity_kind = 'climbing')`, is what stops a
+  logged session attaching to a bike ride. `ascent (grade_id, grade_ordinal) → grade (id,
+  ordinal)` is what makes the denormalised ordinal safe: the band **is** the discipline, so a
+  transposed ordinal files a French 7a rope send in the boulder pyramid with nothing left to
+  recover the truth from. Each needs a `UNIQUE (id, …)` on its parent — those are not
+  hygiene, they are FK targets. **The technique is the house pattern for a denormalisation:
+  if you copy a column down, tie it back.** One place deliberately does not
+  (`logged_set.exercise_id` vs its prescription's) — see that model's docstring for the cost
+  argument and the PR #10 write-path obligation it creates instead.
+
+- **`ascent.tags` is gone.** Tags were `text[]` + a GIN index; they are now the seeded
+  `ascent_tag` lookup plus the `ascent_tag_link` join (Kilian, 2026-08-21 — reasoning in
+  "Prefer CLOSED inputs over free text" above and in
+  `server/domain/vocabulary.py::ASCENT_TAGS`). This is recorded in three places on purpose,
+  because the array version reads as the more flexible design and will otherwise be
+  "restored" by the next agent who sees a join table where an array would do.
+- **Every `ON DELETE SET NULL` or `CASCADE` foreign key has an index whose LEADING column
+  is the first FK column.** Postgres does not create these for you and it has to find those
+  rows to null or delete them, so without one, abandoning a 24-week plan cascades to ~1000
+  `prescribed_set` rows and each one sequentially scans `logged_set`, the largest table in
+  the app. **No test and no CI run would ever show this**; it appears only as Neon awake
+  time, which is the resource this project is actually short of.
+  - Most get it free from a composite primary key or a unique constraint that happens to
+    lead with the right column. **Six do not, and are declared explicitly:**
+    `activity.planned_session_id`, `logged_set.prescribed_set_id`,
+    `ascent.logged_session_id`, `journal_entry.logged_session_id`,
+    `microcycle (mesocycle_id, plan_id)` — whose unique constraints lead with `plan_id` and
+    `id`, so the FK's own leading column has nothing — plus
+    `exercise_equipment (equipment_id)` and `exercise_contraindication (injury_area_id)`,
+    where the composite PK covers the other side only. The last three were missed by the
+    PR that wrote this rule, which is the ordinary way to get this wrong: a composite
+    constraint *looks* like coverage.
+  - ⚠️ **Every remaining foreign key is `NO ACTION`/`RESTRICT` and is deliberately
+    unindexed** — a different argument, not an oversight. Those parents are reference rows
+    the seed never deletes (`grade`, `exercise`, `equipment`, `climbing_aspect`,
+    `injury_area`, `ascent_tag`) or, for `app_user.invite_id`, a row RESTRICT exists to make
+    undeletable. No delete means no referencing-side scan and nothing for an index to save.
+    **Do not "complete the set"** — that is a dozen indexes bought with write cost and
+    storage against a 0.5 GB budget, for a lookup nothing performs.
+- **`activity.srpe_load` casts: `rpe::integer * duration_minutes`.** Both operands are
+  `SMALLINT`, so the uncast product resolves as `int2 * int2` and raises `smallint out of
+  range` *before* widening into the `INTEGER` column — and on the outbox path a payload that
+  raises retries forever and can never succeed. `duration_minutes` is `CHECK (BETWEEN 1 AND
+  1440)` for the same reason, and PR #9 owes it the matching Pydantic bound so that a unit
+  error is a 422 rather than a retry loop.
+
+Also: the tsvector search indexes are **expression** indexes (`to_tsvector('simple', …)`),
+which Alembic skips on both sides of an autogenerate comparison — so they cost nothing in
+`alembic check` and nothing is excluded by hand. `simple`, not `english`: no stemming and no
+stopword list is right for short notes full of proper nouns. And the `(user_id, date)`
+indexes are plain ascending btrees, **not** `DESC` — Postgres scans them backwards at the
+same cost, and a `DESC` element would make them expression indexes for no gain.
+
+### ⚠️ The app never recommends losing weight (Kilian's rule, 2026-08-21)
+
+**Hard rule. It binds the plan generator (planned PR #11), every coaching string, and the
+schema itself.** Strength-to-weight is the most useful number in climbing and the app shows
+it — but the *advice* attached to it only ever runs in one direction:
+
+> **Low strength-to-weight means "get stronger". It never means "get lighter".**
+
+No copy, tip, insight, badge, chart annotation or generated recommendation may suggest
+losing weight, a weight range, a "climbing weight", or that a body-composition change would
+improve performance. Not as a nudge, not as a neutral-sounding observation, not behind a
+setting.
+
+**Why, so nobody re-derives it as a feature request.** Climbing has a documented
+disordered-eating problem — it is the sport's best-known health failure, not a hypothetical
+— and this project's governing principle is **user health first**, ahead of completeness and
+ahead of what a fitness app is "expected" to do. A training app that tells a climber to lose
+weight is not a neutral tool; for some fraction of its users it is actively harmful, and
+there is no version of that advice that is safe to ship to a stranger. Getting stronger is
+the same ratio arithmetic with none of the risk.
+
+The schema is built so the feature cannot arrive by accident:
+
+- **No goal-weight, target-weight or BMI column exists anywhere**, and
+  `tests/test_schema_no_weight_targets.py` fails the gate if one appears — with a positive
+  control, so the detector is known to work. A schema with nowhere to put a goal weight is
+  a schema where this cannot be built without a visible fight.
+- **`journal_entry.body_weight_kg` stays**, because a weigh-in is legitimate data. The
+  **trend is smoothed / rolling only** — a raw day-to-day line is hydration noise rendered
+  as progress or failure.
+- **%BW is snapshotted onto the performance** (`logged_set.body_weight_kg`, nullable,
+  copied from the most recent weigh-in within ~7 days) rather than joined live, so
+  historical figures never silently shift when somebody steps on a scale again.
+- **`user_profile.show_body_metrics` (default TRUE) turns the whole thing off** — no weight
+  trend, no %BW anywhere, and nothing prompts for a weigh-in.
+- **Diet, if it ever ships, is habits-only.** No calorie logging, no food diary, no nutrient
+  columns. See issue #38.
 
 ---
 
@@ -1131,7 +1286,8 @@ credential calls), `refresh.ts` (single-flight silent refresh), `AuthProvider.ts
 the pathless layout route `web/src/routes/_authed.tsx`; everything under `routes/_authed/` is
 protected by living there.
 
-**Five rules, each of which is a failure the obvious implementation ships:**
+**The rules below are each a failure the obvious implementation ships** (the list is no longer
+five long; a count in the heading drifted every time one was added):
 
 - **⚠️ Drop the token before EVERY `POST /api/auth/*`, not just login and register.**
   `enforce_auth` applies the demo write-ban **before** its public-route check, so a `demo`
@@ -1246,6 +1402,122 @@ protected by living there.
 - **No pre-emptive refresh timer off `expires_in`.** Lazy, on 401 only. A timer is a periodic
   database write for the length of a whole training session, which is the largest avoidable
   consumer of the compute budget.
+- **⚠️ TWO deadlines on the auth path — one stops AWAITING, one aborts the SOCKET — and merging
+  them re-creates a worse bug than the one they fix.** Issue #28. Read this before touching either
+  number.
+  - **The symptom.** A `fetch` that *hangs* produces no rejection, so everything above it is
+    inert: `bootstrap()` is awaited in `_authed`'s `beforeLoad`, so guarded routes sat on the
+    **pending component** forever, and the Web Lock — deliberately held across the full round
+    trip — kept every other tab on the origin queued behind the stalled holder.
+  - **⚠️ Why the obvious fix (one `AbortSignal.timeout(8_000)` on the POST) is WORSE.**
+    `POST /api/auth/refresh` is a **sync `def`**, so it runs in anyio's threadpool and a client
+    disconnect **cannot cancel it** — and `refresh_tokens` **commits the rotation before the
+    response exists**. Abort at 8 s on a slow cold path and the server still rotates at 9 s. The
+    successor is stored only as a sha256 and its plaintext is never repeated, so **nobody holds
+    the live refresh token**: a retry inside `REPLAY_GRACE` gets a second 409 and gives up, and a
+    retry after it trips reuse detection and `revoke_family()` hard-logs the user out. An 8 s
+    abort *manufactures* that on requests that were about to succeed. For scale: `/api/health`
+    (zero SQL) measured **2.03 s cold vs 0.28 s warm** on the live deploy — that is Python boot
+    before any database work — and 8 s is also below `REPLAY_GRACE` (10 s) and below the pinned
+    function ceiling.
+  - **So: `UI_DEADLINE_MS` = 8 s stops awaiting and aborts nothing** (a `setTimeout` racing the
+    *await*). The route leaves the pending component; the POST runs on, commits, and its
+    `Set-Cookie` reaches the jar, so **no orphan is created**. **`HARD_ABORT_MS` = 30 s is the
+    real abort** — its only job is to stop a wedged socket leaking a request slot and the origin's
+    Web Lock. **The gap between the two numbers IS the fix.**
+  - **⚠️ 30 s is the OUTER bound only because `vercel.json` pins
+    `functions."api/index.py".maxDuration` to 20 s, and that pin is load-bearing.** Unpinned it is
+    Vercel's default, and under **Fluid compute — the default for new projects since 2025 — that
+    is 300 s**, which would put the client abort back *inside* the server's window and leave the
+    orphaned-rotation mechanism fully intact, merely rarer. 20 s is always accepted (Hobby's
+    configurable maximum is 60 s even without Fluid). **Deleting that block silently re-opens the
+    hole**, with a green gate and no symptom until a cold path runs long. It bounds the `/api/*`
+    function only; migrations and the seed run out-of-band in Actions and are unaffected.
+  - **`inFlight` must survive a UI-tier give-up.** That is what makes the design pay: a retry (or
+    a later guarded navigation) **re-joins the same attempt** and succeeds when it lands, instead
+    of presenting the pre-rotation cookie again. The give-up path must never clear `inFlight`.
+    `mint`'s own `session.clear()` runs *before* the POST — the "drop the token before every
+    `POST /api/auth/*`" rule, unavoidable — and its catch-path clear cannot fire on a give-up
+    because `mint` is still in the air, so a give-up clears nothing new.
+  - **The UI tier does NOT release the Web Lock, deliberately.** The holder's rotation may be
+    mid-commit; letting the next tab present the same cookie is the collision the lock exists to
+    prevent. A waiting tab pays latency, and its bound is `HARD_ABORT_MS` **doubled — up to 60 s,
+    not 30 s**: `rotateRefreshCookie` builds a fresh deadline for its 409 retry and both POSTs run
+    inside one `withRefreshLock` callback.
+  - **The visible cost of that, and it is real.** `mint` clears the store *synchronously* before it
+    queues, so a waiting tab flips to the **anonymous nav** the moment it starts waiting and stays
+    there until the holder releases. The mechanism predates the two tiers; what changed is the
+    window, from ≤8 s to up to 60 s. Accepted against the alternative — a second presentation of a
+    cookie that may be mid-rotation — but if it ever needs improving, the fix is a "checking your
+    session" nav state, **not** releasing the lock early.
+  - **General rule, beyond auth: a client deadline on a request with SERVER-SIDE WRITE EFFECTS
+    must be the OUTER bound, never the inner one.** Giving up on an answer is cheap and
+    reversible; cancelling a write you cannot cancel is neither.
+  - **An unanswered refresh is not "signed out".** A 401 (or any 4xx) means the visitor genuinely
+    has no usable cookie — `false`, and `/login` is right. A timeout, a dropped connection or a
+    **5xx** means the question was never answered, so `mint` throws `SessionUnavailableError`,
+    `beforeLoad` lets it out, and the error boundary says the server did not respond. Collapsing
+    the two put an infrastructure fault in front of the visitor as a login form they could not get
+    past.
+  - **⚠️ `unavailable()` tests `status >= 500` BEFORE its `NotJsonError` exclusion, and the order
+    is load-bearing.** Reversed — as it shipped first — every HTML 5xx returned "answered" and
+    redirected to `/login`, and **HTML is exactly what a platform 5xx is**: Vercel serves
+    `FUNCTION_INVOCATION_TIMEOUT` (504) and its mid-deploy 502 as error *pages*. The branch worked
+    for the 5xx we can barely produce and failed for the one the platform actually generates. A
+    `NotJsonError` **below** 500 is still an answer, which is the case the exclusion exists for —
+    a rewrite serving the SPA shell does it with a **200**. `refresh.test.ts` carries the HTML-504
+    fixture whose absence let this through.
+  - **Two attempts per MOUNT on the unanswered path** (`MAX_UNANSWERED_ATTEMPTS`), then the
+    recorded fault is replayed. Two, because the retry above depends on there being one; not
+    more, because an unanswered attempt latches nothing, so without a counter every subsequent
+    guarded navigation starts a fresh POST — one `ratelimit.enforce` upsert and one restarted
+    five-minute Neon window each — turning one write per mount into one per navigation.
+    **Running out of attempts still reports the fault, never `false`.** This is a *counter* and
+    `exhausted` is a *latch*; they are two memos on purpose, because "the API answered no" and
+    "the API did not answer" are not the same fact.
+    - **Per MOUNT, not per page load.** `web/src/remote.tsx` builds `createAuth()` per mount
+      instance by design, so in the federated mount navigating away from the project and back
+      re-arms the budget with no page load. Write "page load" here and the next reader sizes the
+      cap against the wrong lifetime.
+    - **⚠️ It counts only faults that actually REACHED the server** (an `ApiError`, or an abort). A
+      `TypeError: Failed to fetch` never opened a connection, so it cost **zero** writes — the same
+      reasoning `exhausted` already applies — and counting it made the retry button a **permanent
+      no-op**: on a dead radio `fetch` rejects instantly, so two clicks inside a second spend both
+      attempts, and because the counter is only reset when a token arrives, the signal coming back
+      does not re-arm it. Nothing short of a fresh mount recovered. Tested with a run of offline
+      failures followed by a success.
+  - **The existing 5xx residue, still unfixed on purpose:** a 5xx both throws *and* latches
+    `exhausted` (it reached FastAPI, so the rate-limit write may have happened), so a *second*
+    guarded navigation in the same page load reports "no session" and redirects. That is what a
+    5xx already did before any of this, and un-latching it is a change to the write cap rather
+    than to the timeout — Kilian's call, not a drive-by.
+  - **`RouteError` carries a retry, and it is `router.invalidate()`.** Invalidating re-runs
+    `beforeLoad` → `bootstrap()` → `reauthenticate`, which re-joins the in-flight refresh: no
+    extra POST, no extra Postgres write. A "retry" that fired a fresh refresh would present the
+    pre-rotation cookie a second time. It reads the router with `useRouter({ warn: false })`
+    because the same component renders outside any provider (`rootStatusScope.test.tsx`, and the
+    root-level Suspense fallbacks) — and note that hook returns the context **default, `null`**,
+    not `undefined`, so both must be checked or the retry crashes the error boundary from inside.
+  - **`SessionUnavailableError` is the FIRST case in the query retry predicate** (`router.tsx`).
+    It is not an `ApiError`, so it fell through to the generic "retry twice" arm — three refresh
+    POSTs and three writes for one query, on top of the cap above. The auth layer owns the refresh
+    retry policy; Query must not add a second one. **📌 Consequence for the data layer, not
+    reachable yet:** because it is `false`, a query that hits an 8 s give-up stays errored even
+    though the refresh usually lands seconds later. Retrying in Query is the wrong fix; the right
+    one is a refetch driven by the session store's next non-null token.
+  - **Deliberately NOT a default in `apiFetch`.** Weighed and turned down: a deadline there is
+    inherited by every present and future caller off the back of one auth bug, and the right
+    duration is a property of the call. `api/client.test.ts` asserts the client adds **no** signal
+    of its own, so re-adding one is a red test rather than a silent policy change. There is also
+    no `AbortSignal.any` composition any more: all three call sites pass a literal
+    `{ method: 'POST' }`, so an earlier revision advertised a capability it did not have. Add it
+    back with the first real caller signal, and check support (`AbortSignal.any` is Safari 17.4+).
+  - **Accepted residual risk, filed separately:** the orphaned-rotation window still exists for
+    anything that genuinely severs the connection (the 30 s abort, a closed tab, a dead radio).
+    Closing it needs *server-side* work — deliver-or-rollback, or making a re-presentation inside
+    the grace window recoverable — in `server/auth/`, which this fix deliberately does not touch.
+  - **Nothing in `portfolio-shell`.** A hanging remote still blanks kilianmc.com; that is shell
+    issue #48 and a separate decision.
 
 **The route guard must not assume a mount.** It never reads `window.location` (in the
 federated mount that is kilianmc.com's) and never builds a URL: `location.href` in
@@ -1417,12 +1689,55 @@ well suited to it — almost everything the user tells us is a choice from a kno
   that must resolve against the reference table. Never accept a free-typed grade
   string, and never accept a client-supplied `ordinal`.
 - **Equipment and injury flags** as ids from the seeded lookup tables.
+- **Ascent tags** as ids from the seeded `ascent_tag` table — **changed 2026-08-21, Kilian's
+  call.** They were `ascent.tags text[]` with a GIN index, i.e. free text. A free-typed tag
+  list is the one input in this product that grows without limit, and it fragments the
+  moment it ships ('crimp' / 'crimps' / 'crimpy' / 'Crimpy'), so the aggregate it exists to
+  serve — "what do I actually send on?" — returns four rows for one fact. It is a **lookup
+  table plus a join** (`ascent_tag` + `ascent_tag_link`), not a native enum, because a tag
+  carries a label and a picker grouping: that is CLAUDE.md's own "attributes or user-facing
+  content" test, and it means adding a tag is a seed insert rather than an `ALTER TYPE`
+  migration. Do not restore the array as "simpler"; see
+  `server/domain/vocabulary.py::ASCENT_TAGS`.
 
-**The only genuinely free-text fields in the whole product are the diary notes** —
-`logged_session.notes`, `logged_set.note`, `ascent.notes`, `journal_entry.body` — plus
-email and password at registration. That is a very small, very well-known surface.
-Keep it that way: if a new feature seems to want a free-text field, check first whether
-it is really a closed set.
+#### ⚠️ The free-text inventory — NINE fields, and two of them get forgotten
+
+An earlier version of this section said "the only genuinely free-text fields are the diary
+notes" and listed four. **That was wrong, and it was not a harmless undercount**: this list
+is what binds "Notes are untrusted on OUTPUT too" below, and the PR #9/#10 request models
+that need a `max_length` on every one of them. The two that were missing —
+`logged_session.location` and `user_injury.note` — are exactly the two a reader would not
+think of as "notes", and therefore the two most likely to reach a template unescaped or a
+column unbounded.
+
+| Field | What it is |
+| --- | --- |
+| `logged_session.notes` | how the session felt |
+| `logged_session.location` | gym or crag name |
+| `logged_set.note` | per-set ("felt easy, add 2 kg") |
+| `ascent.name` | route or problem name |
+| `ascent.notes` | beta, conditions |
+| `journal_entry.body` | the free-standing diary entry |
+| `user_injury.note` | what the injury is |
+| `plan.name` | user-editable plan title |
+| `planned_session.title` | user-editable session title |
+| `invite.label` | who the invite is for ("Bob, from the gym") |
+
+Plus **email and password** at registration. `invite.label` is the tenth and was missed by
+the rewrite that fixed the count from four to nine — which is worth recording, because it
+is the same undercount twice: it is written by an *operator* rather than by the account
+holder, through `python -m server.admin create-invite`, so it does not feel like user input.
+It is 64 characters of free text that reaches an API response and a rendered list, and both
+halves of the rule bind it. **When you add a free-text column, add the row here in the same
+PR** — this table has now been wrong twice, and each time the reason was that the new field
+did not look like "a note".
+
+That is the whole surface, and it is still small and well-known — keep it that way: if a new feature seems to want a free-text field,
+check first whether it is really a closed set. Note that `exercise.name`,
+`exercise.instructions` and `exercise.media_url` are **not** on this list: they are authored
+reference content, written by the seed and never by a user. `ascent.name` deliberately
+**stays** free text (Kilian, 2026-08-21) — a climb log without route names is not a climb
+log — bounded at 120 characters and escaped on output like the rest.
 
 ### Validate at the edge with Pydantic
 
@@ -1645,6 +1960,30 @@ uv run uvicorn server.app:app --port 8000 --reload
 # terminal 2 — SPA (Vite proxies /api -> 127.0.0.1:8000)
 npm --prefix web run dev
 ```
+
+### ⚠️ `npm run check` breaks a RUNNING dev server, and every route goes blank
+
+`npm run check` → `npm run build` → **`npm --prefix web ci`**, which reinstalls
+`web/node_modules` underneath a dev server that is still holding its pre-baked optimized deps.
+The next page load dies in `node_modules/.vite/deps/…?v=<hash>` with
+`TypeError: Cannot read properties of undefined (reading 'd')` at `createRoot`, and **every**
+route renders blank — including unguarded ones — while the HTML still serves **200** with
+`#root` present.
+
+Fix: **stop the dev server, `rm -rf web/node_modules/.vite`, restart it, hard-reload.**
+
+**The diagnostic is worth more than the fix, because this looks exactly like a bug in whatever
+you just wrote.** Two tells, both cheap:
+
+- **A blank *landing* page.** Feature code almost never blanks an unguarded route; a broken
+  dependency graph blanks all of them at once.
+- **Matching `react` / `react-dom` versions plus a `web/package-lock.json` older than your
+  branch.** Then nothing about your changes can explain it, and the stack frame pointing into
+  `.vite/deps` with a `?v=` hash is the confirmation.
+
+Hit on 2026-08-20. It is a property of running the gate and the dev server at the same time, so
+it will happen again — the gate is deliberately a single command and `npm ci` is deliberately
+clean-install.
 
 ### `.env` is loaded for you — but only outside Vercel
 
