@@ -1,6 +1,7 @@
 import { QueryClient } from '@tanstack/react-query';
 import { createRouter, type RouterHistory } from '@tanstack/react-router';
 
+import { createAuth } from './auth/AuthProvider';
 import { routeTree } from './routeTree.gen';
 import { ApiError, NotJsonError } from './api/client';
 import { SessionUnavailableError } from './auth/refresh';
@@ -33,6 +34,22 @@ export function createAppRouter(history: RouterHistory, context: AppContext) {
     defaultErrorComponent: RouteError,
     defaultNotFoundComponent: RouteNotFound,
   });
+}
+
+/**
+ * The `Auth` and the `QueryClient` for one mount, **linked**.
+ *
+ * ⚠️ Use this rather than calling `createAuth()` and `createQueryClient()` separately. The
+ * link is the credential-transition cache reset (`auth/authClient.ts`): both session
+ * transitions in this app are client-side, so without it one account's cached profile is
+ * still there — and still writable — when the next account signs in. Wiring that per entry
+ * fails open, which is the same argument CLAUDE.md makes for registering the auth dependency
+ * on the application rather than per router: the failure mode of forgetting it is a leak that
+ * behaves perfectly in every test anyone thought to write.
+ */
+export function createAppContext(): AppContext {
+  const queryClient = createQueryClient();
+  return { queryClient, auth: createAuth({ onSessionReplaced: () => queryClient.clear() }) };
 }
 
 export function createQueryClient() {

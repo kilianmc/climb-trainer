@@ -19,8 +19,10 @@ from fastapi.responses import JSONResponse
 
 from server.auth.deps import enforce_auth
 from server.auth.routes import router as auth_router
+from server.profile.routes import router as profile_router
 from server.security_headers import SecurityHeadersMiddleware
 from server.settings import app_version, get_settings
+from server.vocabulary.routes import router as vocabulary_router
 
 settings = get_settings()
 
@@ -103,6 +105,8 @@ def validation_error_handler(request: Request, exc: RequestValidationError) -> J
 
 
 app.include_router(auth_router)
+app.include_router(profile_router)
+app.include_router(vocabulary_router)
 
 
 @app.get("/api/health")

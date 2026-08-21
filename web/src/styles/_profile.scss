@@ -1,0 +1,236 @@
+@use 'mixins';
+
+// The onboarding wizard and the profile editor: the completion bar, the stepper, and the
+// closed-input controls (checkbox grids and 1-5 scales) that both screens are built from.
+//
+// Included INTO `.ct-app`, so `&` is that root and every selector here stays scoped to it —
+// this stylesheet is injected into kilianmc.com's document in the federated mount.
+//
+// ⚠️ No `position: fixed` and no viewport units anywhere below, and that is not incidental:
+// both mounts share this route tree, so either one would resolve against the portfolio's
+// viewport. The bar's fill is sized as a PERCENTAGE of its own track, which is a percentage
+// of a content-sized box and therefore correct in both mounts with no branching.
+@mixin styles {
+  // ---------------------------------------------------------------------------------
+  // The completion bar
+  // ---------------------------------------------------------------------------------
+  &__progress {
+    display: flex;
+    flex-direction: column;
+    gap: var(--ct-space-2);
+    margin-block-end: var(--ct-space-4);
+  }
+
+  &__progress-head {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    gap: var(--ct-space-2);
+    margin: 0;
+    color: var(--ct-fg-muted);
+    font-size: var(--ct-text-sm);
+  }
+
+  // The percentage is the information — the fill is decoration, and colour is never the
+  // only channel. `--ct-fg` on `--ct-surface-1`/`--ct-bg` is proven at 4.5:1 in both
+  // schemes by `contrast.test.ts`, which is why this is full-size body text and not a
+  // muted caption.
+  &__progress-value {
+    color: var(--ct-fg);
+    font-size: var(--ct-text-base);
+    font-weight: 500;
+    font-variant-numeric: tabular-nums;
+  }
+
+  &__progress-track {
+    // `--ct-bg` is the sunken tone, so the track reads as cut into the page in both
+    // schemes; the hairline is what keeps it visible where the two are close.
+    block-size: 0.75rem;
+    overflow: hidden;
+    border: 1px solid var(--ct-border-strong);
+    border-radius: var(--ct-radius-pill);
+    background: var(--ct-bg);
+  }
+
+  &__progress-fill {
+    display: block;
+    block-size: 100%;
+    border-radius: var(--ct-radius-pill);
+    background: var(--ct-accent);
+    // The number updates instantly in either case — it is text. Only the fill animates,
+    // so only the fill is under the guard: reduced motion is not reduced information.
+    transition: inline-size var(--ct-fast) ease-out;
+
+    @media (prefers-reduced-motion: reduce) {
+      transition: none;
+    }
+  }
+
+  // ---------------------------------------------------------------------------------
+  // The stepper — position, not percentage
+  // ---------------------------------------------------------------------------------
+  &__stepper {
+    margin-block-end: var(--ct-space-5);
+
+    ol {
+      display: flex;
+      flex-wrap: wrap;
+      gap: var(--ct-space-2);
+      margin: 0;
+      padding: 0;
+      list-style: none;
+    }
+
+    li {
+      display: flex;
+      align-items: center;
+      gap: var(--ct-space-2);
+      padding: var(--ct-space-1) var(--ct-space-3);
+      border: 1px solid var(--ct-border-1);
+      border-radius: var(--ct-radius-pill);
+      background: var(--ct-surface-1);
+      color: var(--ct-fg-muted);
+      font-size: var(--ct-text-sm);
+    }
+  }
+
+  // The active step: weight, a real outline and `aria-current="step"`. Deliberately not a
+  // hue swap — the same information has to survive a monochrome render.
+  &__stepper-step--current {
+    border-color: var(--ct-border-strong);
+    background: var(--ct-surface-3);
+    color: var(--ct-fg);
+    font-weight: 600;
+  }
+
+  &__stepper-index {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-inline-size: 1.5rem;
+    padding-inline: var(--ct-space-1);
+    border-radius: var(--ct-radius-pill);
+    background: var(--ct-bg);
+    font-variant-numeric: tabular-nums;
+  }
+
+  // "Done", in words. A green tick alone is colour-only information.
+  &__stepper-state {
+    color: var(--ct-accent);
+    font-size: var(--ct-text-xs);
+    font-weight: 500;
+    text-transform: uppercase;
+  }
+
+  // ---------------------------------------------------------------------------------
+  // Closed inputs: checkbox grids and the 1-5 scales
+  // ---------------------------------------------------------------------------------
+  &__fieldset {
+    margin: 0;
+    padding: 0;
+    border: 0;
+
+    legend {
+      padding: 0;
+      color: var(--ct-fg-muted);
+      font-size: var(--ct-text-sm);
+    }
+  }
+
+  // ONE column by default and two only when the app has real room, per the house rule:
+  // a card that matches no query must get the safe outcome, and the safe outcome on a
+  // phone is a single column of full-width targets.
+  &__choices {
+    display: grid;
+    gap: var(--ct-space-2);
+    margin-block-start: var(--ct-space-2);
+    grid-template-columns: 1fr;
+
+    @container ct-app (min-inline-size: 34rem) {
+      grid-template-columns: 1fr 1fr;
+    }
+  }
+
+  &__choice {
+    @include mixins.tap;
+    @include mixins.press(var(--ct-hover));
+
+    display: flex;
+    align-items: center;
+    gap: var(--ct-space-3);
+    padding-inline: var(--ct-space-3);
+    border: 1px solid var(--ct-border-strong);
+    border-radius: var(--ct-radius-2);
+    background: var(--ct-surface-2);
+    cursor: pointer;
+
+    // The ring goes on the label, driven by the real checkbox inside it: the input is the
+    // focusable element, and a ring drawn only around a 20px box is easy to miss.
+    &:has(input:focus-visible) {
+      outline: 2px solid var(--ct-accent);
+      outline-offset: 2px;
+    }
+
+    input {
+      // Bigger than the browser default, which is ~13px and unhittable with chalky
+      // fingers. The 44px target is the whole label; this is just the glyph.
+      flex: none;
+      inline-size: 1.25rem;
+      block-size: 1.25rem;
+      accent-color: var(--ct-accent);
+      cursor: pointer;
+    }
+  }
+
+  // A choice that carries a description under its label. Block padding rather than the
+  // centred single line, because the row is now two lines and `--ct-tap` is a floor, not a
+  // height — a 17-row list of these has to breathe or it reads as a wall of text.
+  &__choice--described {
+    align-items: start;
+    padding-block: var(--ct-space-2);
+  }
+
+  &__choice-text {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  // Secondary to the name it sits under, and never the only place a distinction lives: the
+  // KEY is the data contract and the name still says "Outdoor boulders". This is the sentence
+  // that tells a rock climber the wall options are not theirs.
+  &__choice-hint {
+    color: var(--ct-fg-muted);
+    font-size: var(--ct-text-xs);
+    font-weight: 400;
+    line-height: 1.4;
+  }
+
+  &__scale {
+    display: flex;
+    flex-direction: column;
+    gap: var(--ct-space-1);
+    padding-block-end: var(--ct-space-3);
+    border-block-end: 1px solid var(--ct-border-1);
+
+    &:last-of-type {
+      border-block-end: 0;
+    }
+
+    input[type='range'] {
+      @include mixins.tap;
+      @include mixins.focus-ring;
+
+      inline-size: 100%;
+      accent-color: var(--ct-accent);
+      cursor: pointer;
+    }
+  }
+
+  &__scale-value {
+    margin: 0;
+    color: var(--ct-fg);
+    font-weight: 500;
+    font-variant-numeric: tabular-nums;
+  }
+}

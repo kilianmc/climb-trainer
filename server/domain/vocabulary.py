@@ -192,13 +192,42 @@ CLIMBING_ASPECTS: Final[tuple[ReferenceSpec, ...]] = (
     ),
 )
 
-# What the user has access to. The plan generator filters the exercise library by this,
-# so a missing row means a prescribed exercise nobody can perform.
+# ⚠️ **What the user can TRAIN ON — facilities, gear and rock. Not a gear inventory.**
+# Kilian's correction, 2026-08-21, after the equipment step turned out to be a dead end for
+# an outdoor-only climber: every one of the original fifteen rows was indoor kit or an indoor
+# facility, so somebody whose whole practice is real rock had nothing they could honestly
+# tick. **A climber without gear is not a climber who cannot train** — they train by
+# climbing, and with their own body.
+#
+# So two things, and the second is the one a reader would otherwise undo:
+#
+# 1. **Outdoor boulders and outdoor routes are separate rows**, for the same reason
+#    `server/domain/grades.py` keeps boulder and rope on disjoint ordinal bands and refuses
+#    to convert between them: they are different training stimuli, and the plan generator has
+#    to be able to prescribe outdoor route volume without prescribing outdoor bouldering.
+# 2. **There is deliberately NO `bodyweight` row.** Everyone has their own body, so a
+#    checkbox for it is noise — and a user who forgot to tick it would be back in the "empty
+#    set means nothing" hole this change exists to fill. The invariant instead:
+#    **an exercise with no `exercise_equipment` rows requires nothing and is always
+#    prescribable**, and the library (PR #10) owes enough of them — bodyweight strength,
+#    core, mobility, prehab — that a profile with zero equipment still gets a real plan.
+#    `tests/test_equipment_vocabulary.py` guards both halves.
+#
+# The plan generator filters the exercise library by this, so a missing row means a
+# prescribed exercise nobody can perform. Order IS display order, and adding a row is a seed
+# insert (`_upsert_reference_rows` upserts on `key` and rewrites `sort_order` from the tuple
+# position) — never a migration.
 EQUIPMENT: Final[tuple[ReferenceSpec, ...]] = (
-    ReferenceSpec("bouldering_wall", "Bouldering wall", "Any wall climbed without a rope."),
-    ReferenceSpec("lead_wall", "Lead wall", "Rope climbing with a belayer."),
-    ReferenceSpec("top_rope_wall", "Top rope wall", "Rope climbing on a pre-hung rope."),
-    ReferenceSpec("auto_belay", "Auto belay", "Rope climbing without a partner."),
+    ReferenceSpec("bouldering_wall", "Bouldering wall", "An indoor wall climbed without a rope."),
+    ReferenceSpec("lead_wall", "Lead wall", "Indoor rope climbing with a belayer."),
+    ReferenceSpec("top_rope_wall", "Top rope wall", "Indoor rope climbing on a pre-hung rope."),
+    ReferenceSpec("auto_belay", "Auto belay", "Indoor rope climbing without a partner."),
+    # Grouped with the places you climb rather than with the hardware, and split by
+    # discipline. See the note above.
+    ReferenceSpec("outdoor_boulders", "Outdoor boulders", "Bouldering on real rock."),
+    ReferenceSpec(
+        "outdoor_routes", "Outdoor routes", "Sport or trad routes on real rock, with a rope."
+    ),
     ReferenceSpec("system_board", "System board", "Kilter, Tension, Moon or similar."),
     ReferenceSpec("campus_board", "Campus board", "Rungs for contact-strength work."),
     ReferenceSpec("hangboard", "Hangboard", "Fixed edges for hanging protocols."),

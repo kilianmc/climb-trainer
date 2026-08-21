@@ -45,7 +45,17 @@ export interface Auth {
   readonly bootstrap: () => Promise<boolean>;
 }
 
-export function createAuth(): Auth {
+export interface AuthOptions {
+  /**
+   * Run on every credential transition — register, login, demo and logout — right after the
+   * token is dropped. The entries pass `() => queryClient.clear()`: nothing else throws away
+   * one account's cached answers before the next account reads them, because neither
+   * transition reloads the page. See `authClient.ts`.
+   */
+  onSessionReplaced?: () => void;
+}
+
+export function createAuth(options: AuthOptions = {}): Auth {
   const session = createSessionStore();
   const { request, reauthenticate } = createAuthedFetch(session);
 
@@ -61,7 +71,12 @@ export function createAuth(): Auth {
     return reauthenticate(null);
   }
 
-  return { session, client: createAuthClient(session), request, bootstrap };
+  return {
+    session,
+    client: createAuthClient(session, options.onSessionReplaced),
+    request,
+    bootstrap,
+  };
 }
 
 const AuthContext = createContext<Auth | null>(null);

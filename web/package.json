@@ -41,6 +41,7 @@
     "eslint-plugin-react-hooks": "^7.1.1",
     "globals": "^17.11.0",
     "jsdom": "^30.0.1",
+    "openapi-typescript": "^7.13.0",
     "prettier": "^3.9.6",
     "sass": "^1.102.0",
     "sharp": "^0.35.3",
@@ -55,6 +56,9 @@
   "overrides": {
     "eslint-plugin-jsx-a11y": {
       "eslint": "$eslint"
+    },
+    "openapi-typescript": {
+      "typescript": "$typescript"
     }
   }
 }

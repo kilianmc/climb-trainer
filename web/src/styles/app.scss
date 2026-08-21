@@ -22,6 +22,7 @@
 @use 'card';
 @use 'bento';
 @use 'chrome';
+@use 'profile';
 @use 'landing';
 
 .ct-app {
@@ -79,5 +80,6 @@
   @include card.styles;
   @include bento.styles;
   @include chrome.styles;
+  @include profile.styles;
   @include landing.styles;
 }
