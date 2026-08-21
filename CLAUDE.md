@@ -2172,6 +2172,18 @@ skip. CI is where the migrations and the seed are actually executed.
 
 **Batch your edits and run `npm run check` once at the end**, not once per file.
 
+**⚠️ `.gitleaks.toml` exists, and `useDefault = true` is the only line in it that matters.**
+The generated `web/src/api/schema.ts` header carries two SHA-256 digests, and gitleaks'
+`generic-api-key` rule reads `openapi-sha256: <64 hex>` as a credential ("openapi" contains
+its `api` keyword; measured entropy 3.675) — a false positive that failed the `secrets` job on
+PR #53. The config allowlists **that line shape**, by content: a `paths` entry would allowlist
+the whole generated file, because `gitleaks-action@v3` runs **8.24.3**, whose allowlist struct
+has no condition field and therefore ORs its criteria. **A config without `[extend] useDefault
+= true` REPLACES the default ruleset** — every rule gone, scanner green on everything, which
+is why `tests/test_gitleaks_config.py` asserts both properties and why the config was verified
+by planting an `AKIA…` key inside `schema.ts` and confirming it was still reported. Never
+weaken the digest header to satisfy a scanner; it is the codegen freshness guard.
+
 **CI has three required jobs: `web`, `server`, and `secrets`** (gitleaks over full
 history). Kilian's call: **require all three** rather than collapsing them into a single
 `lint-build` gate as the other repos do — three named checks say *what* broke on the PR
