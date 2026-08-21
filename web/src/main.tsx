@@ -3,8 +3,8 @@ import { RouterProvider, createBrowserHistory } from '@tanstack/react-router';
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 
-import { AuthProvider, createAuth } from './auth/AuthProvider';
-import { createAppRouter, createQueryClient } from './router';
+import { AuthProvider } from './auth/AuthProvider';
+import { createAppContext, createAppRouter } from './router';
 import { UpdateBar } from './ui/UpdateBar';
 import './styles/global.scss';
 
@@ -26,8 +26,9 @@ if (!container) throw new Error('#root is missing from index.html');
 
 // One `Auth` for the router context and for React, so the guard and the nav can never
 // disagree about who is signed in. No token ever leaves this closure.
-const auth = createAuth();
-const queryClient = createQueryClient();
+// ONE call, because the two are linked: a credential change has to reset the query cache,
+// and nothing else discards one account's cached profile before the next one reads it.
+const { auth, queryClient } = createAppContext();
 const router = createAppRouter(createBrowserHistory(), { auth, queryClient });
 
 createRoot(container, {

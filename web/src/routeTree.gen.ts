@@ -19,6 +19,7 @@ import { Route as RegisterRouteImport } from './routes/register'
 import { Route as AuthedDashboardRouteImport } from './routes/_authed/dashboard'
 
 const AuthedDiaryLazyRouteImport = createFileRoute('/_authed/diary')()
+const AuthedOnboardingLazyRouteImport = createFileRoute('/_authed/onboarding')()
 const AuthedPlanLazyRouteImport = createFileRoute('/_authed/plan')()
 const AuthedProfileLazyRouteImport = createFileRoute('/_authed/profile')()
 const AuthedSessionLazyRouteImport = createFileRoute('/_authed/session')()
@@ -57,6 +58,13 @@ const AuthedDiaryLazyRoute = AuthedDiaryLazyRouteImport.update({
   path: '/diary',
   getParentRoute: () => AuthedRoute,
 } as any).lazy(() => import('./routes/_authed/diary.lazy').then((d) => d.Route))
+const AuthedOnboardingLazyRoute = AuthedOnboardingLazyRouteImport.update({
+  id: '/onboarding',
+  path: '/onboarding',
+  getParentRoute: () => AuthedRoute,
+} as any).lazy(() =>
+  import('./routes/_authed/onboarding.lazy').then((d) => d.Route),
+)
 const AuthedPlanLazyRoute = AuthedPlanLazyRouteImport.update({
   id: '/plan',
   path: '/plan',
@@ -84,6 +92,7 @@ export interface FileRoutesByFullPath {
   '/register': typeof RegisterRoute
   '/dashboard': typeof AuthedDashboardRoute
   '/diary': typeof AuthedDiaryLazyRoute
+  '/onboarding': typeof AuthedOnboardingLazyRoute
   '/plan': typeof AuthedPlanLazyRoute
   '/profile': typeof AuthedProfileLazyRoute
   '/session': typeof AuthedSessionLazyRoute
@@ -95,6 +104,7 @@ export interface FileRoutesByTo {
   '/register': typeof RegisterRoute
   '/dashboard': typeof AuthedDashboardRoute
   '/diary': typeof AuthedDiaryLazyRoute
+  '/onboarding': typeof AuthedOnboardingLazyRoute
   '/plan': typeof AuthedPlanLazyRoute
   '/profile': typeof AuthedProfileLazyRoute
   '/session': typeof AuthedSessionLazyRoute
@@ -108,6 +118,7 @@ export interface FileRoutesById {
   '/register': typeof RegisterRoute
   '/_authed/dashboard': typeof AuthedDashboardRoute
   '/_authed/diary': typeof AuthedDiaryLazyRoute
+  '/_authed/onboarding': typeof AuthedOnboardingLazyRoute
   '/_authed/plan': typeof AuthedPlanLazyRoute
   '/_authed/profile': typeof AuthedProfileLazyRoute
   '/_authed/session': typeof AuthedSessionLazyRoute
@@ -121,6 +132,7 @@ export interface FileRouteTypes {
     | '/register'
     | '/dashboard'
     | '/diary'
+    | '/onboarding'
     | '/plan'
     | '/profile'
     | '/session'
@@ -132,6 +144,7 @@ export interface FileRouteTypes {
     | '/register'
     | '/dashboard'
     | '/diary'
+    | '/onboarding'
     | '/plan'
     | '/profile'
     | '/session'
@@ -144,6 +157,7 @@ export interface FileRouteTypes {
     | '/register'
     | '/_authed/dashboard'
     | '/_authed/diary'
+    | '/_authed/onboarding'
     | '/_authed/plan'
     | '/_authed/profile'
     | '/_authed/session'
@@ -208,6 +222,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthedDiaryLazyRouteImport
       parentRoute: typeof AuthedRoute
     }
+    '/_authed/onboarding': {
+      id: '/_authed/onboarding'
+      path: '/onboarding'
+      fullPath: '/onboarding'
+      preLoaderRoute: typeof AuthedOnboardingLazyRouteImport
+      parentRoute: typeof AuthedRoute
+    }
     '/_authed/plan': {
       id: '/_authed/plan'
       path: '/plan'
@@ -235,6 +256,7 @@ declare module '@tanstack/react-router' {
 interface AuthedRouteChildren {
   AuthedDashboardRoute: typeof AuthedDashboardRoute
   AuthedDiaryLazyRoute: typeof AuthedDiaryLazyRoute
+  AuthedOnboardingLazyRoute: typeof AuthedOnboardingLazyRoute
   AuthedPlanLazyRoute: typeof AuthedPlanLazyRoute
   AuthedProfileLazyRoute: typeof AuthedProfileLazyRoute
   AuthedSessionLazyRoute: typeof AuthedSessionLazyRoute
@@ -243,6 +265,7 @@ interface AuthedRouteChildren {
 const AuthedRouteChildren: AuthedRouteChildren = {
   AuthedDashboardRoute: AuthedDashboardRoute,
   AuthedDiaryLazyRoute: AuthedDiaryLazyRoute,
+  AuthedOnboardingLazyRoute: AuthedOnboardingLazyRoute,
   AuthedPlanLazyRoute: AuthedPlanLazyRoute,
   AuthedProfileLazyRoute: AuthedProfileLazyRoute,
   AuthedSessionLazyRoute: AuthedSessionLazyRoute,

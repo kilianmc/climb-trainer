@@ -94,6 +94,10 @@ server/
   seed.py           reference-data seed
   devseed.py        ten local test accounts — DEV ONLY
   admin.py          operator CLI: create-invite, set-password
+  fields.py         bounded Pydantic field types, one per persisted CHECK
+  openapi_schema.py the OpenAPI document, for the TypeScript codegen
+  profile/          GET/PATCH /api/profile
+  vocabulary/       GET /api/vocabulary — grades, lookup tables, closed enums
   domain/
     grades.py       the grade ordinal ladder — pure Python, no DB
 tests/              backend tests (pytest; DB tests skip without DATABASE_URL)
@@ -105,6 +109,8 @@ web/
     main.tsx        standalone entry (browser history)
     remote.tsx      federated entry (memory history)
     api/client.ts   API client: base from import.meta.url + content-type guard
+    api/schema.ts   GENERATED from the OpenAPI schema — never edit; see below
+    profile/        onboarding + profile editor: one set of fields, two entry points
     publicUrl.ts    public/ asset URLs, resolved from import.meta.url (same trap)
     ui/             components; landingImages.ts is the image ladder, icons.tsx the SVGs
     styles/         SCSS
@@ -185,6 +191,19 @@ npm run check          # web: format:check, lint, typecheck, build, test
 npm run check:web      # just the frontend half
 npm run check:server   # just the backend half
 ```
+
+`web/src/api/schema.ts` is **generated and committed**. Regenerate it whenever an endpoint
+or a request/response model changes:
+
+```bash
+npm run codegen:api    # server/openapi_schema.py -> openapi-typescript -> src/api/schema.ts
+```
+
+Forgetting to is caught by `pytest`, not by a build step. The generated header carries two
+digests — one of the OpenAPI document it was built from, one of the generated types
+themselves — and `tests/test_vocabulary_contract.py` checks both, so the file can neither
+fall behind the server nor be edited by hand. A FastAPI or Pydantic upgrade also lands
+there, and only a regeneration fixes it.
 
 The local gate needs **no database** — the Postgres-backed tests skip cleanly. CI runs
 them for real against a pinned `postgres:17-alpine` service container after
