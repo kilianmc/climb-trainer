@@ -1,4 +1,4 @@
-"""Reference-data seed — the grade ladder, and the demo account.
+"""Reference-data seed — the grade ladder, the small vocabularies, and the demo account.
 
 **This is the single seed module: CI, local development and production all call it.**
 That is deliberate. A test fixture that seeds its own hand-written rows tests a table
@@ -31,7 +31,24 @@ from sqlalchemy.orm import Session
 
 from server.db import session_scope
 from server.domain import grades
-from server.models import AppUser, Grade, GradeSystem
+from server.domain.vocabulary import (
+    ASCENT_TAGS,
+    CLIMBING_ASPECTS,
+    EQUIPMENT,
+    INJURY_AREAS,
+    AscentTagSpec,
+    ReferenceSpec,
+)
+from server.models import (
+    AppUser,
+    AscentTag,
+    Base,
+    ClimbingAspect,
+    Equipment,
+    Grade,
+    GradeSystem,
+    InjuryArea,
+)
 
 # The `.example` TLD is reserved by RFC 2606 and can never be registered, so this
 # address is unmistakably not a person's. (`.invalid` would be equally fake but
@@ -58,10 +75,34 @@ class DemoUserSeedError(RuntimeError):
     """
 
 
+# The three key/name/description/sort_order lookup tables, paired with the domain tuples
+# that define them. One list rather than three call sites, because the upsert is
+# identical and a fourth table should be one line, not one more copy of the block.
+#
+# **Not the exercise library.** `exercise` and `prescription_template` are *content* —
+# names, instructions, media, per-phase prescriptions — authored deliberately rather than
+# derived from a tuple, so seeding them belongs with the authoring task, not here. This
+# module stays limited to vocabularies small enough to read in one screen.
+_REFERENCE_TABLES: tuple[tuple[type[Base], tuple[ReferenceSpec, ...]], ...] = (
+    (ClimbingAspect, CLIMBING_ASPECTS),
+    (Equipment, EQUIPMENT),
+    (InjuryArea, INJURY_AREAS),
+    # `ascent_tag` rides the same upsert because `AscentTagSpec` IS a `ReferenceSpec` —
+    # the extra `category` column is picked up by `_reference_row` below rather than by a
+    # second copy of the block.
+    (AscentTag, ASCENT_TAGS),
+)
+
+
 @dataclass(frozen=True, slots=True)
 class SeedResult:
     grade_systems: int
     grades: int
+    # `(table name, row count)` per lookup table, so `main()` can report what it did
+    # without this dataclass growing a field per table. A tuple rather than a dict
+    # because the dataclass is frozen, and a frozen dataclass carrying a dict is a
+    # dataclass that raises the first time anything tries to hash it.
+    reference_rows: tuple[tuple[str, int], ...]
 
 
 def seed_reference_data(session: Session) -> SeedResult:
@@ -118,9 +159,60 @@ def seed_reference_data(session: Session) -> SeedResult:
     )
     session.flush()
 
+    reference_rows = tuple(
+        (model.__tablename__, _upsert_reference_rows(session, model, specs))
+        for model, specs in _REFERENCE_TABLES
+    )
+
     _seed_demo_user(session)
 
-    return SeedResult(grade_systems=len(grades.GRADE_SYSTEMS), grades=len(grades.GRADES))
+    return SeedResult(
+        grade_systems=len(grades.GRADE_SYSTEMS),
+        grades=len(grades.GRADES),
+        reference_rows=reference_rows,
+    )
+
+
+def _upsert_reference_rows(
+    session: Session, model: type[Base], specs: tuple[ReferenceSpec, ...]
+) -> int:
+    """Upsert one key/name/description/sort_order lookup table. Returns the row count.
+
+    Conflict target is `key`, the natural key — so rewording a name or reordering the
+    list propagates, while the surrogate `id` that `user_equipment`, `user_injury`,
+    `exercise` and `user_aspect_rating` all point at stays put. **Never deletes**, for
+    the same reason the grade ladder never does: a removed row would either violate a
+    foreign key or cascade into somebody's profile.
+
+    `sort_order` comes from the tuple's position, so display order is edited by moving a
+    line in `server/domain/vocabulary.py` rather than by renumbering a column.
+    """
+    rows = [_reference_row(spec, position) for position, spec in enumerate(specs)]
+    statement = insert(model).values(rows)
+    session.execute(
+        statement.on_conflict_do_update(
+            index_elements=["key"],
+            # Every column except the conflict target, derived from the row rather than
+            # listed — so `ascent_tag.category` is kept up to date without this function
+            # knowing that some tables have one.
+            set_={column: statement.excluded[column] for column in rows[0] if column != "key"},
+        )
+    )
+    session.flush()
+    return len(specs)
+
+
+def _reference_row(spec: ReferenceSpec, position: int) -> dict[str, object]:
+    """One lookup row. `sort_order` is the tuple position; `category` only if present."""
+    row: dict[str, object] = {
+        "key": spec.key,
+        "name": spec.name,
+        "description": spec.description,
+        "sort_order": position,
+    }
+    if isinstance(spec, AscentTagSpec):
+        row["category"] = spec.category
+    return row
 
 
 def _seed_demo_user(session: Session) -> None:
@@ -219,8 +311,10 @@ def main() -> None:
     """
     with session_scope() as session:
         result = seed_reference_data(session)
+    counts = ", ".join(f"{count} {name}" for name, count in result.reference_rows)
     print(
-        f"seeded {result.grade_systems} grade systems, {result.grades} grades, and the demo account"
+        f"seeded {result.grade_systems} grade systems, {result.grades} grades, "
+        f"{counts}, and the demo account"
     )
 
 
