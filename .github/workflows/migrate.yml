@@ -90,6 +90,15 @@ jobs:
       # Choice inputs are constrained, but they are still interpolated into a shell, so
       # they are passed as environment variables and quoted rather than expanded inline.
       ACTION: ${{ inputs.action }}
+      # ⚠️ THE OPT-IN. `migrations/env.py` refuses a non-local database host without this
+      # (see `server/db.py::require_migration_host`), because a developer with the
+      # production URL in `.env` could otherwise apply DDL by typing
+      # `uv run alembic upgrade head` and skip this workflow's approval gate entirely.
+      # This workflow is the sanctioned remote path, so it is the one place that declares
+      # the intent. **Nothing else may set this**, and the guard is deliberately not keyed
+      # off `CI`/`GITHUB_ACTIONS` — an ambient CI variable would hand the same permission
+      # to every other workflow.
+      CT_ALLOW_REMOTE_MIGRATION: "1"
 
     steps:
       - uses: actions/checkout@v7

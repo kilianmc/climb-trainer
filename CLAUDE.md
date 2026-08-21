@@ -69,6 +69,14 @@ is not Vercel's rewrite).
 · "Injection defence and input minimisation (OWASP)" (bound parameters, allowlisted
 identifiers, closed inputs, Pydantic at the edge, no echoed request in a 422).
 
+**Touching the domain schema, body metrics, or anything the plan generator says to the
+user** — "⚠️ The app never recommends losing weight" (a hard rule with a schema-level guard:
+low strength-to-weight means *get stronger*) · "The domain schema — the shapes worth knowing
+before you query it" (the `activity`/`logged_session` supertype, the three composite foreign
+keys, the index every `SET NULL` needs, why the plan tree is relational) · "⚠️ The free-text
+inventory — NINE fields, and two of them get forgotten" · "SQLite is disqualified for tests"
+(the grade ladder).
+
 **Dependencies, versions and CI** — "Dependency policy" · "TypeScript stays on 6.x" ·
 "ESLint 10 rests on a forced jsx-a11y peer" · "`.github/dependabot.yml`" · "⚠️ Pinned actions
 Dependabot can never bump" · "Quality gate" (nine checks locally, fourteen in CI; never
@@ -850,8 +858,9 @@ generalises — in a public repo, audit what a tool prints at its chosen verbosi
 what the workflow echoes.**
 ### SQLite is disqualified for tests
 
-The schema uses native Postgres enums, `text[]`, `GENERATED … STORED`, GIN indexes and
-window functions. Tests run against **real Postgres** (GitHub Actions `services:`
+The schema uses native Postgres enums, composite foreign keys, `GENERATED … STORED`, GIN
+expression indexes and window functions. (It used `text[]` too, until the ascent-tags
+reversal on 2026-08-21 — the rest of the list is more than enough on its own.) Tests run against **real Postgres** (GitHub Actions `services:`
 container, pinned to Neon's major): once per session `alembic upgrade head` — so **CI
 tests the migrations** — plus seeding from the same module production uses; per test
 `begin_nested()` + rollback. `alembic check` catches model drift. Do not "simplify" any
@@ -869,6 +878,121 @@ raises `CrossDisciplineError`. Boulder↔rope conversion has no consensus, and e
 would be inventing data. Labels are matched **exactly** — `7A` is Font, `7a` is French, and
 case is the only thing separating them. `server/domain/grades.py` is the authority. This is
 the single most expensive thing to retrofit.
+
+### The domain schema — the shapes worth knowing before you query it
+
+`server/models.py` carries the full reasoning per table; migration `0004` is the DDL. Four
+decisions are the ones a reader would otherwise try to undo:
+
+- **`activity` is a SUPERTYPE, and `logged_session` is a 1:1 subtype of it.** One row per
+  activity of *any* kind (`activity_kind`: `climbing` · `cardio` · `strength` · `mobility` ·
+  `other`), carrying user, date, duration, RPE and the idempotency key; `logged_session` adds
+  only the climbing-only columns. The alternative — a `logged_session` table and, when
+  cardio arrives (issue #38), a second table beside it — means every readiness, rest-day and
+  diary query gets written twice and one copy rots. **`other` is the escape hatch** so an
+  unanticipated kind is loggable without an `ALTER TYPE` migration.
+- **`srpe_load` (`GENERATED ... STORED`, RPE × minutes) lives on `activity`, not on
+  `logged_session`.** A generated column can only reference its own table's columns, and
+  duration and RPE are supertype columns — and it is the right home anyway, because an easy
+  run is real load. NULL RPE gives NULL load, deliberately: no score, not a score of zero.
+- **Adherence and load are two queries over one nullable column.** `activity.planned_session_id`
+  is the only link to the plan. Adherence = activities that point at a planned slot (a
+  non-climbing activity can satisfy one); load and rest-day logic = *all* activities. Neither
+  rule is baked into a constraint, because both will be tuned.
+- **Three composite foreign keys do real work, and all three look redundant if you skim
+  them.** `microcycle (mesocycle_id, plan_id) → mesocycle (id, plan_id)` is what makes
+  carrying `plan_id` down the tree safe rather than merely intended (the `(plan_id, week_no)`
+  index is the hottest read in the app). `logged_session (activity_id, activity_kind) →
+  activity (id, activity_kind)`, plus `CHECK (activity_kind = 'climbing')`, is what stops a
+  logged session attaching to a bike ride. `ascent (grade_id, grade_ordinal) → grade (id,
+  ordinal)` is what makes the denormalised ordinal safe: the band **is** the discipline, so a
+  transposed ordinal files a French 7a rope send in the boulder pyramid with nothing left to
+  recover the truth from. Each needs a `UNIQUE (id, …)` on its parent — those are not
+  hygiene, they are FK targets. **The technique is the house pattern for a denormalisation:
+  if you copy a column down, tie it back.** One place deliberately does not
+  (`logged_set.exercise_id` vs its prescription's) — see that model's docstring for the cost
+  argument and the PR #10 write-path obligation it creates instead.
+
+- **`ascent.tags` is gone.** Tags were `text[]` + a GIN index; they are now the seeded
+  `ascent_tag` lookup plus the `ascent_tag_link` join (Kilian, 2026-08-21 — reasoning in
+  "Prefer CLOSED inputs over free text" above and in
+  `server/domain/vocabulary.py::ASCENT_TAGS`). This is recorded in three places on purpose,
+  because the array version reads as the more flexible design and will otherwise be
+  "restored" by the next agent who sees a join table where an array would do.
+- **Every `ON DELETE SET NULL` or `CASCADE` foreign key has an index whose LEADING column
+  is the first FK column.** Postgres does not create these for you and it has to find those
+  rows to null or delete them, so without one, abandoning a 24-week plan cascades to ~1000
+  `prescribed_set` rows and each one sequentially scans `logged_set`, the largest table in
+  the app. **No test and no CI run would ever show this**; it appears only as Neon awake
+  time, which is the resource this project is actually short of.
+  - Most get it free from a composite primary key or a unique constraint that happens to
+    lead with the right column. **Six do not, and are declared explicitly:**
+    `activity.planned_session_id`, `logged_set.prescribed_set_id`,
+    `ascent.logged_session_id`, `journal_entry.logged_session_id`,
+    `microcycle (mesocycle_id, plan_id)` — whose unique constraints lead with `plan_id` and
+    `id`, so the FK's own leading column has nothing — plus
+    `exercise_equipment (equipment_id)` and `exercise_contraindication (injury_area_id)`,
+    where the composite PK covers the other side only. The last three were missed by the
+    PR that wrote this rule, which is the ordinary way to get this wrong: a composite
+    constraint *looks* like coverage.
+  - ⚠️ **Every remaining foreign key is `NO ACTION`/`RESTRICT` and is deliberately
+    unindexed** — a different argument, not an oversight. Those parents are reference rows
+    the seed never deletes (`grade`, `exercise`, `equipment`, `climbing_aspect`,
+    `injury_area`, `ascent_tag`) or, for `app_user.invite_id`, a row RESTRICT exists to make
+    undeletable. No delete means no referencing-side scan and nothing for an index to save.
+    **Do not "complete the set"** — that is a dozen indexes bought with write cost and
+    storage against a 0.5 GB budget, for a lookup nothing performs.
+- **`activity.srpe_load` casts: `rpe::integer * duration_minutes`.** Both operands are
+  `SMALLINT`, so the uncast product resolves as `int2 * int2` and raises `smallint out of
+  range` *before* widening into the `INTEGER` column — and on the outbox path a payload that
+  raises retries forever and can never succeed. `duration_minutes` is `CHECK (BETWEEN 1 AND
+  1440)` for the same reason, and PR #9 owes it the matching Pydantic bound so that a unit
+  error is a 422 rather than a retry loop.
+
+Also: the tsvector search indexes are **expression** indexes (`to_tsvector('simple', …)`),
+which Alembic skips on both sides of an autogenerate comparison — so they cost nothing in
+`alembic check` and nothing is excluded by hand. `simple`, not `english`: no stemming and no
+stopword list is right for short notes full of proper nouns. And the `(user_id, date)`
+indexes are plain ascending btrees, **not** `DESC` — Postgres scans them backwards at the
+same cost, and a `DESC` element would make them expression indexes for no gain.
+
+### ⚠️ The app never recommends losing weight (Kilian's rule, 2026-08-21)
+
+**Hard rule. It binds the plan generator (planned PR #11), every coaching string, and the
+schema itself.** Strength-to-weight is the most useful number in climbing and the app shows
+it — but the *advice* attached to it only ever runs in one direction:
+
+> **Low strength-to-weight means "get stronger". It never means "get lighter".**
+
+No copy, tip, insight, badge, chart annotation or generated recommendation may suggest
+losing weight, a weight range, a "climbing weight", or that a body-composition change would
+improve performance. Not as a nudge, not as a neutral-sounding observation, not behind a
+setting.
+
+**Why, so nobody re-derives it as a feature request.** Climbing has a documented
+disordered-eating problem — it is the sport's best-known health failure, not a hypothetical
+— and this project's governing principle is **user health first**, ahead of completeness and
+ahead of what a fitness app is "expected" to do. A training app that tells a climber to lose
+weight is not a neutral tool; for some fraction of its users it is actively harmful, and
+there is no version of that advice that is safe to ship to a stranger. Getting stronger is
+the same ratio arithmetic with none of the risk.
+
+The schema is built so the feature cannot arrive by accident:
+
+- **No goal-weight, target-weight or BMI column exists anywhere**, and
+  `tests/test_schema_no_weight_targets.py` fails the gate if one appears — with a positive
+  control, so the detector is known to work. A schema with nowhere to put a goal weight is
+  a schema where this cannot be built without a visible fight.
+- **`journal_entry.body_weight_kg` stays**, because a weigh-in is legitimate data. The
+  **trend is smoothed / rolling only** — a raw day-to-day line is hydration noise rendered
+  as progress or failure.
+- **%BW is snapshotted onto the performance** (`logged_set.body_weight_kg`, nullable,
+  copied from the most recent weigh-in within ~7 days) rather than joined live, so
+  historical figures never silently shift when somebody steps on a scale again.
+- **`user_profile.show_body_metrics` (default TRUE) turns the whole thing off** — no weight
+  trend, no %BW anywhere, and nothing prompts for a weigh-in.
+- **Diet, if it ever ships, is habits-only.** No calorie logging, no food diary, no nutrient
+  columns. See issue #38.
 
 ---
 
@@ -1558,12 +1682,55 @@ well suited to it — almost everything the user tells us is a choice from a kno
   that must resolve against the reference table. Never accept a free-typed grade
   string, and never accept a client-supplied `ordinal`.
 - **Equipment and injury flags** as ids from the seeded lookup tables.
+- **Ascent tags** as ids from the seeded `ascent_tag` table — **changed 2026-08-21, Kilian's
+  call.** They were `ascent.tags text[]` with a GIN index, i.e. free text. A free-typed tag
+  list is the one input in this product that grows without limit, and it fragments the
+  moment it ships ('crimp' / 'crimps' / 'crimpy' / 'Crimpy'), so the aggregate it exists to
+  serve — "what do I actually send on?" — returns four rows for one fact. It is a **lookup
+  table plus a join** (`ascent_tag` + `ascent_tag_link`), not a native enum, because a tag
+  carries a label and a picker grouping: that is CLAUDE.md's own "attributes or user-facing
+  content" test, and it means adding a tag is a seed insert rather than an `ALTER TYPE`
+  migration. Do not restore the array as "simpler"; see
+  `server/domain/vocabulary.py::ASCENT_TAGS`.
 
-**The only genuinely free-text fields in the whole product are the diary notes** —
-`logged_session.notes`, `logged_set.note`, `ascent.notes`, `journal_entry.body` — plus
-email and password at registration. That is a very small, very well-known surface.
-Keep it that way: if a new feature seems to want a free-text field, check first whether
-it is really a closed set.
+#### ⚠️ The free-text inventory — NINE fields, and two of them get forgotten
+
+An earlier version of this section said "the only genuinely free-text fields are the diary
+notes" and listed four. **That was wrong, and it was not a harmless undercount**: this list
+is what binds "Notes are untrusted on OUTPUT too" below, and the PR #9/#10 request models
+that need a `max_length` on every one of them. The two that were missing —
+`logged_session.location` and `user_injury.note` — are exactly the two a reader would not
+think of as "notes", and therefore the two most likely to reach a template unescaped or a
+column unbounded.
+
+| Field | What it is |
+| --- | --- |
+| `logged_session.notes` | how the session felt |
+| `logged_session.location` | gym or crag name |
+| `logged_set.note` | per-set ("felt easy, add 2 kg") |
+| `ascent.name` | route or problem name |
+| `ascent.notes` | beta, conditions |
+| `journal_entry.body` | the free-standing diary entry |
+| `user_injury.note` | what the injury is |
+| `plan.name` | user-editable plan title |
+| `planned_session.title` | user-editable session title |
+| `invite.label` | who the invite is for ("Bob, from the gym") |
+
+Plus **email and password** at registration. `invite.label` is the tenth and was missed by
+the rewrite that fixed the count from four to nine — which is worth recording, because it
+is the same undercount twice: it is written by an *operator* rather than by the account
+holder, through `python -m server.admin create-invite`, so it does not feel like user input.
+It is 64 characters of free text that reaches an API response and a rendered list, and both
+halves of the rule bind it. **When you add a free-text column, add the row here in the same
+PR** — this table has now been wrong twice, and each time the reason was that the new field
+did not look like "a note".
+
+That is the whole surface, and it is still small and well-known — keep it that way: if a new feature seems to want a free-text field,
+check first whether it is really a closed set. Note that `exercise.name`,
+`exercise.instructions` and `exercise.media_url` are **not** on this list: they are authored
+reference content, written by the seed and never by a user. `ascent.name` deliberately
+**stays** free text (Kilian, 2026-08-21) — a climb log without route names is not a climb
+log — bounded at 120 characters and escaped on output like the rest.
 
 ### Validate at the edge with Pydantic
 

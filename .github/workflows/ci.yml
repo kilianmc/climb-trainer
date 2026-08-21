@@ -61,10 +61,10 @@ jobs:
   server:
     runs-on: ubuntu-latest
 
-    # Real Postgres, not SQLite. The schema depends on native enums, text[],
-    # GENERATED ... STORED, GIN and window functions, so a SQLite run would pass while
-    # proving nothing. This is also the ONLY place the migrations get executed, since
-    # the dev machine has no Postgres and no Docker.
+    # Real Postgres, not SQLite. The schema depends on native enums, composite foreign
+    # keys, GENERATED ... STORED, GIN expression indexes and window functions, so a SQLite
+    # run would pass while proving nothing. This is also the ONLY place the migrations get
+    # executed, since the dev machine has no Postgres and no Docker.
     services:
       postgres:
         # Pinned to Neon's major version, so CI tests the server the app actually runs
@@ -106,7 +106,26 @@ jobs:
       - run: uv run alembic upgrade head
       # Catches model drift: a change to server/models.py with no matching revision.
       - run: uv run alembic check
-      - run: uv run pytest -q
+      # ⚠️ **The skip count is asserted, and that assertion is the point of this step.**
+      # Every DB-backed test SKIPS when DATABASE_URL is unset or the schema is behind
+      # (tests/conftest.py), and a skip is GREEN. `conftest` was changed on 2026-08-21 to
+      # skip rather than error on an un-migrated database — correct, because migrations run
+      # out-of-band behind an approval gate and there is a legitimate window — but that
+      # removed the only signal telling CI the tests actually ran. Delete the
+      # `alembic upgrade head` step above and, without this, 60+ tests turn into skips and
+      # the build stays green.
+      #
+      # `-rs` prints every skip reason, so a failure here names exactly what did not run.
+      # `pipefail` so a genuine test failure is not swallowed by `tee`.
+      - name: pytest — and assert nothing was skipped
+        run: |
+          set -o pipefail
+          uv run pytest -q -rs | tee /tmp/pytest.log
+          if grep -qE '[0-9]+ skipped' /tmp/pytest.log; then
+            echo "::error::Tests were SKIPPED with DATABASE_URL set. The DB-backed suite is"\
+                 "not running — check the alembic upgrade step and the postgres service."
+            exit 1
+          fi
 
   secrets:
     runs-on: ubuntu-latest

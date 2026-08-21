@@ -10,6 +10,14 @@ Two rules this file enforces, both of which have bitten real projects:
    session; running them through Neon's PgBouncer transaction-mode pooler is the
    migration failure that presents as an intermittent hang rather than an error.
 
+3. **A non-local host is REFUSED unless `CT_ALLOW_REMOTE_MIGRATION=1`.** See
+   `server/db.py::require_migration_host`. Until 2026-08-21 this file had no guard at all
+   and its own docstring recommended the bare command — so with the production URL in
+   `.env` (which is how this machine is configured), `uv run alembic upgrade head` typed
+   locally applied DDL to production and skipped the approval gate entirely. The
+   sanctioned path, `.github/workflows/migrate.yml`, sets the variable itself; nothing
+   else should. It is deliberately **not** keyed off `CI`/`GITHUB_ACTIONS`.
+
 Migrations are run **out of band** — a manual `workflow_dispatch` job with
 `environment: production` and an approval gate — never automatically on push, because
 a migration must never race a deploy. Expand -> deploy -> contract, always. CI proves
@@ -23,7 +31,7 @@ from alembic import context
 from sqlalchemy import create_engine
 from sqlalchemy.pool import NullPool
 
-from server.db import normalise_database_url
+from server.db import host_of, normalise_database_url, require_migration_host
 from server.models import Base
 
 # Importing server.settings is also what loads the local `.env` (once, on import), so
@@ -43,15 +51,27 @@ _MISSING_URL = (
     f"string — DDL must not go through the transaction-mode pooler), or {POOLED_URL_ENV} "
     f"when there is only one endpoint, as in CI and local Postgres. Locally: "
     f"`cp .env.example .env` and fill it in — {DOTENV_PATH} is loaded automatically via "
-    f"server.settings, so plain `uv run alembic ...` is enough, with no `--env-file` "
+    f"server.settings, so `uv run alembic ...` needs no `--env-file` flag — though note "
+    f"it will REFUSE a non-local host without CT_ALLOW_REMOTE_MIGRATION=1; use the "
+    f"Migrate workflow for that. "
     f"flag. Never commit a real value: .env is gitignored and this repo is public."
 )
 
 
 def _require_url() -> str:
+    """The URL to migrate, after the host has been vetted.
+
+    ⚠️ **The host is extracted and passed on alone — never the URL.** A URL bound to the
+    argument of a function that raises is rendered in the traceback, password included;
+    that is a real regression this project has already had once (see `host_of`). Note that
+    `url` *is* a local of this frame, which a `--showlocals`-style renderer could print, so
+    the refusal is raised from `require_migration_host`'s frame rather than from here, and
+    nothing on that side ever sees the string.
+    """
     url = direct_database_url()
     if url is None:
         raise RuntimeError(_MISSING_URL)
+    require_migration_host(host_of(url))
     return normalise_database_url(url)
 
 
