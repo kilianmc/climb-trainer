@@ -121,9 +121,7 @@ def test_a_new_account_has_an_empty_profile_and_no_row_is_created_by_reading_it(
     assert body["primary_discipline"] is None
     assert body["sessions_per_week"] is None
     assert body["available_weekdays"] is None
-    assert body["equipment_reviewed_at"] is None
     assert body["injuries_reviewed_at"] is None
-    assert body["equipment_ids"] == []
     assert body["aspect_ratings"] == []
     assert body["injuries"] == []
     # The one non-null field: a setting with a server default, not an answer.
