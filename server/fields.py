@@ -34,7 +34,7 @@ from typing import Annotated, Final
 
 from pydantic import Field, StringConstraints
 
-from server.models import SET_NOTE_MAX
+from server.models import DISPLAY_NAME_MAX, SET_NOTE_MAX
 
 # `activity.duration_minutes`: 24 hours. A payload in seconds is the unit error this
 # catches — 3600 for a one-hour session is a 422 here rather than a retry loop.
@@ -78,4 +78,19 @@ InjuryNote = Annotated[
 Bounded because an unbounded text column is a storage-exhaustion vector against a 0.5 GB
 database. `min_length=1` after stripping, so an empty box is `null` rather than `''`:
 two representations of "nothing said" is a distinction no query wants to remember.
+"""
+
+DisplayName = Annotated[
+    str, StringConstraints(strip_whitespace=True, min_length=1, max_length=DISPLAY_NAME_MAX)
+]
+"""`user_profile.display_name` — free text, and the eleventh field on CLAUDE.md's inventory.
+
+Bounded because an unbounded text column is a storage-exhaustion vector against a 0.5 GB
+database, and mirrored by the column's own `String(DISPLAY_NAME_MAX)`.
+
+`min_length=1` after stripping, so `""` and `"   "` are a 422 rather than a stored empty
+string: two representations of "no name" is a distinction no query wants to remember.
+⚠️ That also means **PATCH cannot clear a display name** — `null` means "no change" on this
+endpoint, and an empty string is refused. Clearing one needs `POST /api/profile/reset` or a
+future explicit affordance; it is not reachable by accident, which is the intended trade.
 """

@@ -165,9 +165,13 @@ def read_vocabulary(response: Response, session: RequestSession) -> VocabularyRe
     """
     response.headers["cache-control"] = _CACHE_CONTROL
 
+    # ⚠️ `sort_order`, not `id` (issue #55, revision `0006`). A serial follows INSERT order,
+    # so ordering by it is only declaration order on a FRESH database: add a system mid-tuple
+    # and CI keeps passing while dev and production render the new one last. Every sibling
+    # lookup table below already orders this way.
     grade_systems = session.execute(
         select(GradeSystem.id, GradeSystem.key, GradeSystem.name, GradeSystem.discipline).order_by(
-            GradeSystem.id
+            GradeSystem.sort_order
         )
     ).all()
     grades = session.execute(

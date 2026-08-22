@@ -122,18 +122,25 @@ function useProfileQuery() {
  * The optimistic overlay: what one pending patch would make of a profile.
  *
  * Applied at render time and never written anywhere, so it cannot outlive the request it
- * describes. The two `*_reviewed_at` guesses are what make the bar move for the equipment
- * and injury steps, whose honest answer can be an empty list — a merge that only copied the
- * rows would leave those two looking unanswered until the response landed.
+ * describes. The `injuries_reviewed_at` guess is what makes the bar move for the injury step,
+ * whose honest answer can be an empty list — a merge that only copied the rows would leave it
+ * looking unanswered until the response landed.
+ *
+ * ⚠️ **It does NOT guess `_decide_grades`'s clearing rule.** The server nulls
+ * `current_grade_id` when a new target moves to the other ladder, and this overlay cannot see
+ * that: it would need the vocabulary to know both grades' disciplines. The consequence is
+ * bounded and acceptable — for the few hundred milliseconds a target-grade PATCH is in
+ * flight, a bar that had credited the aspect step keeps crediting it, and `onSuccess` then
+ * installs the server's own answer. It cannot go the other way (credit something unanswered),
+ * because clearing only ever removes an answer.
  * `primary_discipline` is deliberately NOT guessed: the server derives it from the chosen
  * grade, and inventing it here would put a value on screen that the response then silently
  * changes. `null` in a patch means "not in this request", which is the server's rule too,
  * so `??` is the right operator throughout.
  */
 function withPatch(profile: Profile, patch: ProfilePatch): Profile {
-  // All three hoisted to `?? null` for one reason and one idiom: "was this field in the
-  // request?" is asked twice for each of them below.
-  const equipment = patch.equipment_ids ?? null;
+  // Both hoisted to `?? null` for one reason and one idiom: "was this field in the request?"
+  // is asked twice for each of them below.
   const ratings = patch.aspect_ratings ?? null;
   const injuries = patch.injuries ?? null;
   const now = new Date().toISOString();
@@ -141,11 +148,13 @@ function withPatch(profile: Profile, patch: ProfilePatch): Profile {
   return {
     ...profile,
     target_grade_id: patch.target_grade_id ?? profile.target_grade_id,
+    current_grade_id: patch.current_grade_id ?? profile.current_grade_id,
     sessions_per_week: patch.sessions_per_week ?? profile.sessions_per_week,
     available_weekdays: patch.available_weekdays ?? profile.available_weekdays,
+    strength_aspect_id: patch.strength_aspect_id ?? profile.strength_aspect_id,
+    weakness_aspect_id: patch.weakness_aspect_id ?? profile.weakness_aspect_id,
+    display_name: patch.display_name ?? profile.display_name,
     show_body_metrics: patch.show_body_metrics ?? profile.show_body_metrics,
-    equipment_ids: equipment ?? profile.equipment_ids,
-    equipment_reviewed_at: equipment === null ? profile.equipment_reviewed_at : now,
     injuries_reviewed_at: injuries === null ? profile.injuries_reviewed_at : now,
     aspect_ratings:
       ratings === null
@@ -275,6 +284,40 @@ export function useProfilePatch(handlers: ProfilePatchHandlers = {}) {
     },
     onError: (error, patch) => {
       handlers.onError?.(error, patch);
+    },
+  });
+}
+
+/**
+ * `POST /api/profile/reset` — un-answer the four onboarding steps.
+ *
+ * ⚠️ **Same cache rule as `useProfilePatch`, and the same scope.** `onSuccess` writing the
+ * server's own answer is the only cache write; nothing happens on the error path. The shared
+ * `scope: { id: 'profile' }` is what stops a reset and an in-flight step PATCH from landing
+ * out of order — Query serialises same-scope mutations, so the reset cannot be overtaken by a
+ * write that was already on the wire.
+ *
+ * It is deliberately NOT part of `useProfilePatch`: the two send different methods to
+ * different paths, and a mutation whose variables mean "a patch, or nothing at all" is the
+ * kind of union that grows a bug. The `PROFILE_PATCH_KEY` is shared, though, so the
+ * optimistic overlay in `useProfileView` sees a pending reset the same way it sees a pending
+ * patch — it applies `{}`, which changes nothing, so the bar simply waits for the response
+ * rather than guessing an emptier profile than the server may end up with.
+ */
+export function useProfileReset(handlers: ProfilePatchHandlers = {}) {
+  const { request } = useAuth();
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationKey: PROFILE_PATCH_KEY,
+    scope: { id: 'profile' },
+    mutationFn: () => request<Profile>('/api/profile/reset', { method: 'POST' }),
+    onSuccess: (profile) => {
+      queryClient.setQueryData(PROFILE_KEY, profile);
+      handlers.onSuccess?.(profile, {});
+    },
+    onError: (error) => {
+      handlers.onError?.(error, {});
     },
   });
 }

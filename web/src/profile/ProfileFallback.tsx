@@ -33,7 +33,7 @@ export function ProfileFallback({
                 grade ladder that failed sends the reader looking in the wrong place. */}
             {profileFailed
               ? 'Your profile could not be loaded.'
-              : 'The grade and equipment lists could not be loaded.'}
+              : 'The grade and aspect lists could not be loaded.'}
           </p>
           <div className="ct-app__actions">
             <button

@@ -42,7 +42,10 @@ read the applied revision back afterwards).
 
 **Anything that could destroy production user rows** — "⚠️ Production data durability — real
 accounts, no undo" (additive-only on `app_user`, never downgrade, snapshot first). Read it
-before writing a migration, not after.
+before writing a migration, not after. ⚠️ It is also why a column is **retired logically
+before it is dropped**: `user_profile.equipment_reviewed_at` is dead as of `0006` and the
+column still exists, because expand -> deploy -> contract and because
+`tests/test_migrations_additive.py` refuses a `DROP COLUMN` on a table holding user rows.
 
 **Touching auth, tokens or the route guard** — "Security rules" · "Auth implementation —
 where each piece lives" · "Auth UI — the client half of the contract" (the three realms, the
@@ -81,9 +84,12 @@ inventory — NINE fields, and two of them get forgotten" · "SQLite is disquali
 generated types are COMMITTED" (regenerate, and how staleness is caught) · "Validate at the
 edge with Pydantic" · `server/fields.py`.
 
-**Onboarding, the profile, or the completion bar** — "Onboarding and the profile (PR #9)"
-(the partial upsert, the nullable columns, where the ~29% floor comes from, the two steps
-whose honest answer writes no rows, and why gating a step on that was a hard dead-end).
+**Onboarding, the profile, or the completion bar** — "Onboarding and the profile (PR #9,
+redesigned by #54)" (the partial upsert, the nullable columns, where the 20% floor comes from
+and why it is step 0, the step whose honest answer writes no rows, why gating a step on that
+was a hard dead-end, **`POST /api/profile/reset` and why `PATCH` was deliberately left
+alone**, the two grade columns that must share a discipline, and the grade floor that lives
+in the client on purpose).
 
 **⚠️ Touching a MUTATION, the query cache, or a route-level query guard** — the three bullets
 in "Onboarding and the profile (PR #9)" beginning "THE QUERY CACHE HOLDS SERVER RESPONSES
@@ -102,8 +108,10 @@ rename a job) · "Versioning".
 considered and REJECTED" · "Accessibility is part of the design, not a later pass" · "The
 reading measure is a GRID COLUMN, not a `max-inline-size` on `.ct-app`" · "Landing imagery —
 self-hosted, generated out-of-band, and URL-resolved at runtime" · "Container queries, not
-media queries — and tokens on `.ct-app`, not `:root`" · "PWA — only the decisions a reader
-would otherwise reverse".
+media queries — and tokens on `.ct-app`, not `:root`" · "⚠️ The nav's thresholds are
+MEASUREMENTS, not breakpoints" · "Light and dark: the `data-theme` override, and two gaps that
+are documented rather than fixed" · "PWA — only the decisions a reader would otherwise
+reverse".
 
 **Running the app locally, or a blank page that is not your code** — "Local development" ·
 "⚠️ `npm run check` breaks a RUNNING dev server, and every route goes blank" (a blank *landing*
@@ -111,7 +119,9 @@ page is the tell) · "`.env` is loaded for you — but only outside Vercel".
 
 **Writing tests** — "Testing policy". Every guard test
 here carries a positive control; a detector that cannot see its own violation is worse than
-none.
+none. ⚠️ Note the newest one: **a class name in markup with no matching CSS fails silently**,
+and `styles/markupCss.test.ts` is the only thing in the gate that can see it — `tsc`, ESLint,
+`designGuard` and `contrast` were all green while twelve classes lost their styling twice.
 
 **Building the session player** — "Session player invariants" · "Screen Wake Lock — a
 user-owned TOGGLE, and a progressive enhancement".
@@ -1776,7 +1786,7 @@ well suited to it — almost everything the user tells us is a choice from a kno
   migration. Do not restore the array as "simpler"; see
   `server/domain/vocabulary.py::ASCENT_TAGS`.
 
-#### ⚠️ The free-text inventory — NINE fields, and two of them get forgotten
+#### ⚠️ The free-text inventory — ELEVEN fields, and three of them get forgotten
 
 An earlier version of this section said "the only genuinely free-text fields are the diary
 notes" and listed four. **That was wrong, and it was not a harmless undercount**: this list
@@ -1798,6 +1808,7 @@ column unbounded.
 | `plan.name` | user-editable plan title |
 | `planned_session.title` | user-editable session title |
 | `invite.label` | who the invite is for ("Bob, from the gym") |
+| `user_profile.display_name` | what to call the account holder on screen |
 
 Plus **email and password** at registration. `invite.label` is the tenth and was missed by
 the rewrite that fixed the count from four to nine — which is worth recording, because it
@@ -1805,8 +1816,17 @@ is the same undercount twice: it is written by an *operator* rather than by the 
 holder, through `python -m server.admin create-invite`, so it does not feel like user input.
 It is 64 characters of free text that reaches an API response and a rendered list, and both
 halves of the rule bind it. **When you add a free-text column, add the row here in the same
-PR** — this table has now been wrong twice, and each time the reason was that the new field
-did not look like "a note".
+PR** — this table has now been wrong three times, and each time the reason was that the new
+field did not look like "a note".
+
+`user_profile.display_name` is the eleventh, added by `0006` (issue #54), and it is the
+counter-example that proves the rule is worth following: it is 64 characters
+(`DISPLAY_NAME_MAX`, mirrored by `server/fields.py::DisplayName`), it is chosen by the
+account holder, and it will end up rendered beside their training data on every screen that
+greets them. Its bound strips whitespace and refuses an empty string, so "no name" has one
+representation (NULL) rather than two — which also means **`PATCH` cannot clear it**: `null`
+is "no change" on that endpoint, and `POST /api/profile/reset` deliberately does not touch it
+either, because a display name is not one of the four onboarding steps.
 
 That is the whole surface, and it is still small and well-known — keep it that way: if a new feature seems to want a free-text field,
 check first whether it is really a closed set. Note that `exercise.name`,
@@ -2262,6 +2282,37 @@ be real — no snapshot-everything, no asserting on mock call counts as a proxy 
 behaviour, and integration over unit where the integration is the risky part (which is
 why the backend tests run against real Postgres, not SQLite).
 
+### ⚠️ A guard test must be SHOWN to fail before it is trusted
+
+Not a style note — a requirement, and the reason every guard in this repo carries a positive
+control. Break the thing it guards, watch the test go red, restore, watch it go green, and put
+the captured failure in the PR. `test_migrations_additive.py`'s own docstring says it plainly: a
+detector nobody has seen fail is a detector nobody should trust, and a control assembled from the
+constant it tests would cheerfully confirm a typo to itself.
+
+### ⚠️ A class name in markup with no CSS fails SILENTLY — `styles/markupCss.test.ts`
+
+The newest guard, and it earned its place the hard way: **twice** during #54's prototype a
+scripted rewrite of `_profile.scss` replaced the span between two comment markers and swallowed
+unrelated rules with it. Twelve `ct-app__*` classes were left in the markup with nothing behind
+them — the select chevron vanished, the checkboxes rendered as bare native controls, the sliders
+lost their row layout, the disclosures lost their panel styling, the grade warning lost its
+colour — and **`tsc`, ESLint, `designGuard` and `contrast` were all green the whole time.**
+Nothing in the gate could see it, because a missing rule is not a type error, a lint error or an
+unscoped selector.
+
+So it asserts both directions: no class used in `web/src/**/*.tsx` is missing from the compiled
+stylesheet, and no `ct-app__*` selector in the stylesheet is unused by any markup (dead CSS).
+Two notes for whoever touches it:
+
+- **It compiles the Sass in-process** rather than scanning the partials. Source `.scss` uses
+  `&__suffix` nesting, so the literal `ct-app__choice` appears nowhere in it; and reading `dist/`
+  would need a production build, which the local gate must not require.
+- **Interpolated class names are its one blind spot.** `` `ct-app__bento--${area}` `` trips both
+  directions at once, so it carries the narrowest possible allowlist with a comment saying why —
+  the same discipline as `test_migrations_additive.py`'s arm 6, where a false positive costs a
+  developer a minute and a false negative costs production.
+
 ## UI design direction
 
 `web/src/styles/` is the design system. `@use`-based partials, no `@import`:
@@ -2274,7 +2325,7 @@ why the backend tests run against real Postgres, not SQLite).
 | `_primitives.scss` | button (3 variants), input, field, error, badge, text primitives |
 | `_card.scss` | the card surface and its `@container` rules |
 | `_bento.scss` | the bento grid's named areas |
-| `_chrome.scss` | nav, status renders, bottom-anchored action bar |
+| `_chrome.scss` | nav (the brand, the three regimes and their measured thresholds), status renders, bottom-anchored action bar |
 | `_landing.scss` | the landing page's photographic bands, detail split and icon rules |
 | `app.scss` | the `@use` entry and the `.ct-app` root; imported from `routes/__root.tsx` |
 | `global.scss` | the document reset. `main.tsx` only, and the ONLY file allowed `:root` |
@@ -2513,18 +2564,125 @@ Both of these are structural, not stylistic. Do not "simplify" either.
     `@mixin declare`, included by both `.ct-app` and `.ct-update-bar`. A second `.ct-app`
     element is **not** the fix: that element's padding, max-width and background would apply.
 
-## Onboarding and the profile (PR #9)
+### ⚠️ The nav's thresholds are MEASUREMENTS, not breakpoints
 
-Five steps, one decision each, in a fixed order; the same field groups serve the wizard
+`web/src/styles/_chrome.scss` carries **the table** — five numbers with the content-width
+arithmetic behind each — directly above `&__nav`. **Read it there rather than duplicating it
+here**; a table in two places is a table that disagrees with itself. What belongs in this file
+is why it is shaped that way at all:
+
+- **Every threshold is derived from what the row actually needs**, in px of nav content, and
+  then rounded up to the next `rem` **plus slack for the estimate error** (glyph advances here
+  are ±5%, which is ±8px on the wordmark and ±25px across five labels). Kilian's rule, in his
+  words: "make the buttons appear as soon as they fit, so no 765, if they fit at 600 do it
+  there." A conventional 768/1024 pair was explicitly rejected.
+- **They are CONTAINER widths, not viewport widths.** `container: ct-app` measures the app, and
+  in the federated mount the app is a panel inside kilianmc.com's `ProjectViewer` — so the px in
+  brackets is the standalone reading and is approximate by design. That is the whole reason
+  these are container queries.
+- **The two variants have their own pairs.** The anonymous nav has three destinations and no
+  Log out; sharing the authenticated numbers made it wait for ~130px it does not need and show
+  its icons ~9rem late. One Sass mixin, two includes — the numbers differ per variant and the
+  rules must not.
+  ⚠️ Per-variant *thresholds* are not the same thing as the per-variant *centring* that was
+  reverted: Kilian did not want the group centred, and both variants stay right-aligned.
+- **The tooltip band is derived from the icon threshold**, as `[$icons, $labels − 0.001rem]`.
+  Container ranges are INCLUSIVE, so the upper bound has to exclude the label threshold, and
+  `and not (…)` is not valid syntax in a container condition (`not` may only lead the whole
+  condition). If you move a threshold, the band moves with it — that is why it is computed
+  rather than written twice.
+- **One query is deliberately INVERTED.** The label is inline by default and becomes a
+  hover/focus bubble inside the band, because `_card.scss`'s rule is that a box matching no
+  query must get the *safe* outcome — a cramped but labelled nav is fine, six unnamed glyphs are
+  not.
+- ⚠️ **An icon-only control owes two things** (`ui/icons.tsx` sets them): its own `aria-label`,
+  and the 44px `--ct-tap` floor on both axes. `&__button--icon` trims the inline padding for all
+  three of them in one declaration — `&__button`'s padding is sized for a word, and on a 24px
+  glyph it makes a button visibly wider than it is tall.
+- **Touch gets neither hover nor focus**, so on a phone the glyph is the only carrier of meaning
+  and the `aria-label` is the only channel for anyone who cannot see it. That is what makes the
+  glyph choice load-bearing rather than decorative, and why two of them were redrawn for
+  silhouette rather than concept (a landscape week-strip so Plan stops looking like Diary's
+  upright rules; a wider gap on the power ring so Log out stops looking like Session's clock).
+
+**`--ct-nav-compress` is a RATIO, and it is local on purpose.** Below the tightest threshold
+every reduced value is `calc(<the token it replaces> * var(--ct-nav-compress))`, so the narrow
+bar moves as one and nothing drifts off the space scale when that scale is retuned. It lives on
+`.ct-app__nav` in `_chrome.scss`, **not** in `_tokens.scss`: that file is the design system's
+vocabulary, every entry in it is consumed by many components and `contrast.test.ts` parses its
+two scheme mixins key-for-key, whereas this is one component's parameter. It is on `.ct-app__nav`
+— inside `.ct-app`, never `:root` — so the brand inherits it as a child. Note the consequence
+of "a fraction of the token it replaces": the values it produces are **not all equal** (a
+`--ct-space-4` inset becomes 0.4rem, a `--ct-space-3` gap becomes 0.3rem), and that is the
+intended reading. Gaps that go to *zero* are written as `0`, not as a ratio — a fraction of
+something that becomes nothing is not a fraction.
+
+### Light and dark: the `data-theme` override, and two gaps that are documented rather than fixed
+
+`web/src/theme.ts` is the store; `_tokens.scss` has the mechanism. Two states, sun and moon, no
+"System" position — the first visit seeds from `prefers-color-scheme` through `matchMedia`, and
+after that it is a plain toggle. The cost is accepted and stated: once a choice is stored,
+changing the OS scheme no longer moves the app.
+
+**How the override wins, and why it needs no `!important`:** `_tokens.scss::declare` emits the
+light values plus a `@media (prefers-color-scheme: dark)` block. **A media query carries no
+specificity**, so an attribute selector on the same element beats both blocks whatever the source
+order — which is the entire mechanism. `overrides` is therefore a *separate* mixin from `declare`
+and is included by `.ct-app` only, never by `.ct-update-bar`: nothing sets the attribute on the
+update bar, which is rendered from `main.tsx` outside the router. The attribute goes on `.ct-app`
+and nowhere else — not `<html>`, not `<body>`, which belong to kilianmc.com in the federated
+mount. `global.scss` bridges the standalone document canvas with `body:has(.ct-app[data-theme…])`,
+which is legal *there* because that file never ships to the shell.
+
+⚠️ **Two known gaps. Kilian's call: documented, not fixed.** Neither is a correctness bug, and
+both are recorded in `theme.ts` for the next person:
+
+1. **`index.html`'s two `theme-color` metas follow the OS, not the override**, because they select
+   with `media="(prefers-color-scheme: …)"`. Closing it needs JS (a meta tag cannot read a
+   `data-` attribute) and that JS must be standalone-only, since in the federated mount the
+   document head belongs to the portfolio. Not worth that machinery for a strip of browser UI.
+2. **The choice cannot be applied before first paint.** The usual fix is a blocking inline
+   `<script>`, and CSP here is `script-src 'self'` with no `unsafe-inline` — the right response to
+   which is not to weaken the policy for a flash. One light frame before React mounts, and what
+   flashes is the document canvas rather than any app surface.
+
+Also worth knowing: **`.ct-app` carries `isolation: isolate`**. The nav needs a `z-index` for its
+sticky bar, its burger panel and its label bubbles; that one declaration means no index inside the
+app can ever escape into the shell's stacking context.
+
+⚠️ **`position: sticky` is not forbidden the way `fixed` is, but it resolves against the nearest
+SCROLLING ANCESTOR** — and this stylesheet ships to two of them. Verified in the shell's own
+source rather than assumed: `portfolio-shell/src/components/ProjectViewer.scss` sets
+`.viewer__frame { flex: 1; overflow: auto; }`, so in the federated mount the nav sticks to the top
+of that panel, which is where it should stick; standalone, nothing scrolls above it, so it is the
+document. Both are right. Note the difference from the inert `sticky` that was removed from
+`&__actionbar`: **a sticky element's range is its containing block**, which for the nav is the
+whole page and for that action bar was a content-sized form (range ≈ 0).
+
+## Onboarding and the profile (PR #9, redesigned by #54)
+
+Four steps, one decision each, in a fixed order; the same field groups serve the wizard
 (`/onboarding`) and the editor (`/profile`). `web/src/profile/` is the client half and
 `server/profile/routes.py` the server half, and both carry their reasoning. What follows is
 what a reader would otherwise undo.
 
+⚠️ **Issue #54 rebuilt this after Kilian walked PR #53.** It was five steps; what changed, and
+why, is recorded in the bullets below rather than in a changelog — but the headlines are: the
+endowed floor is **20%** and is now explicitly step 0 (the account), the **equipment step is
+gone entirely**, eight self-rating sliders became **one current grade plus one strength and one
+weakness**, the editor became sections rather than a second wizard, and there is a real
+**`POST /api/profile/reset`**. Revision `0006` carries the four new columns.
+
 - **`PATCH /api/profile` takes a PARTIAL profile and upserts, and that is load-bearing.**
   Each step persists as it completes, so an abandoned onboarding **resumes** rather than
-  restarting — which means the row is created on step 1, not step 5. `None` means "not in
-  this request" for every field; the three collection fields (`equipment_ids`,
-  `aspect_ratings`, `injuries`) **replace** the set they name, so `[]` is a real answer.
+  restarting — which means the row is created on step 1, not step 4. `None` means "not in
+  this request" for every field; the two collection fields (`aspect_ratings`, `injuries`)
+  **replace** the set they name, so `[]` is a real answer.
+  ⚠️ **That `null` contract is load-bearing in a second way now.** #54 needed a way to
+  un-answer the steps, and teaching `null` to mean "clear" here was **considered and rejected**
+  (Kilian's call): it would give every omission a destructive second meaning, one typo from a
+  wiped answer, in the one flow whose whole premise is not losing people mid-way. The named
+  endpoint does that job instead — see the reset bullet below.
 - **`primary_discipline` is DERIVED from the target grade and is not accepted from a
   client.** The ladder is banded per discipline, so a French 7a target *is* a rope goal;
   accepting both would let them contradict each other, and the contradiction would only
@@ -2544,14 +2702,19 @@ what a reader would otherwise undo.
 - **`PATCH {}` writes nothing at all**, not even a row. It used to create one, with those
   placeholders, purely because the handler always ran its upsert.
 - **⚠️ A step needs a `*_reviewed_at` column exactly when ZERO ROWS is a legitimate
-  answer.** Two of the five do: `injuries_reviewed_at` ("nothing is hurting" writes no
-  `user_injury` rows) and `equipment_reviewed_at` ("I own none of this" writes no
-  `user_equipment` rows). The server stamps them whenever their step is submitted, with or
+  answer.** Exactly one step qualifies now: `injuries_reviewed_at` ("nothing is hurting"
+  writes no `user_injury` rows). The server stamps it whenever that step is submitted, with or
   without rows; an empty child table otherwise means "asked, nothing" or "never asked" and
-  nothing can tell them apart. **The other three must not get one** — the aspect step always
-  writes eight rows, so one rating proves it was taken, and the target grade and availability
-  are scalars whose NULL carries it. `injuries_reviewed_at` also replaced a device-local
-  `localStorage` flag that could only ever understate (PR #9's first draft, deleted with it).
+  nothing can tell them apart. **No other step gets one** — the aspect step's answer is three
+  scalar columns, and the grades and availability are scalars whose NULL carries it.
+  `injuries_reviewed_at` also replaced a device-local `localStorage` flag that could only ever
+  understate (PR #9's first draft, deleted with it).
+  ⚠️ **`equipment_reviewed_at` was the second one and is RETIRED (`0006`).** Nothing reads or
+  writes it; it is absent from `ProfileResponse` and from the completion maths. **The column
+  still exists on purpose** — expand -> deploy -> contract, and
+  `tests/test_migrations_additive.py` correctly refuses a `DROP COLUMN` on a table holding user
+  rows. Dropping it is a later revision, once a deployed-and-verified `0006` has proved nothing
+  reads it. Do not "tidy" it away in the same PR that stops using it.
 - **⚠️ Gating a step because its empty answer is unrecordable was a HARD DEAD-END, and this
   is the lesson worth keeping.** The equipment step required at least one tick. Every one of
   the fifteen seeded rows was indoor gear or an indoor facility, so an outdoor-only climber
@@ -2561,6 +2724,20 @@ what a reader would otherwise undo.
   indistinguishable from no answer" — and then resolved it by disabling a button. **"The
   answer cannot be stored" is a schema problem and gets a schema fix; it is never a reason to
   disable a control.**
+- **⚠️ THE EQUIPMENT STEP IS GONE, AND THE SEMANTICS ARE DELIBERATELY DEFERRED (#54).** The
+  step asked users to tick what they *have* out of seventeen rows, and Kilian's verdict was
+  that this is backwards: someone with gym access has most of it, and enumerating gear is the
+  wrong question. The new model is **assume access to everything**, and let a user flag "I do
+  not have this" on the exercise that needs it, where the app can offer an alternative.
+  **What this PR did and did not do:** the step is out of onboarding, `equipment_ids` is out of
+  both request and response models, and `equipment_reviewed_at` is retired. **`user_equipment`,
+  every `exercise_equipment` requirement and the whole vocabulary are untouched.** Whether
+  `user_equipment` becomes a record of what is LACKED, or a second concept beside it, is
+  **PR #10's decision** — the issue says so explicitly, because the alternatives lookup is what
+  gives the flag its meaning, and choosing now would be choosing without the thing that
+  decides it. Re-adding a write path is that PR's job, with the decision attached.
+  The three bullets that follow are the history of the step that was, and every one of them is
+  still worth reading before designing its replacement.
 - **The equipment vocabulary covers FACILITIES, GEAR AND ROCK — it is not a gear inventory**
   (Kilian, 2026-08-21). It carries `outdoor_boulders` and `outdoor_routes`, split by
   discipline for the same reason `server/domain/grades.py` keeps boulder and rope on disjoint
@@ -2606,25 +2783,73 @@ what a reader would otherwise undo.
   column whose docstring tells PR #11 it may trust the value. Both halves are now required
   before the step can be submitted, exactly as the grade picker requires a grade. **When a
   column is nullable because "unanswered" is real, the control has to be able to say so too.**
-- **The eight self-rating sliders start mid-scale and an accepted default IS a recorded
-  answer** — that is the intended behaviour, not a gap. Eight visible controls plus a
-  deliberate Continue click is a real answer, and requiring interaction would be a strange
-  gate for a genuinely middling climber; `user_aspect_rating.rated_at` timestamps it either
-  way. What that costs is a disclosure, and the step carries one ("all eight start in the
-  middle and are saved exactly as you leave them") — the same honesty-by-disclosure route
-  taken with the 29% floor, rather than pretending the number is not there.
+- **⚠️ EIGHT SLIDERS WERE REPLACED BY THREE ANSWERS (#54), and the reasoning is the useful
+  part.** The aspect step was eight 1-5 self-ratings, and Kilian's verdict was that it was the
+  step most likely to hand the generator garbage: eight middling guesses are indistinguishable
+  from eight real answers, and self-rating is hard to do honestly. It now asks three things
+  anybody can answer, each with its own `0006` column:
+  - **`current_grade_id`** — "I climb 6c" plus a 7a target tells the generator far more than any
+    self-rating, because a 6c climber is *measurably* closer to 7a than a 6a climber is;
+  - **`strength_aspect_id` and `weakness_aspect_id`** — one of each, from the eight aspects.
+  The eight sliders survive **behind a disclosure** for anyone who wants to be specific, and
+  picking a strength or weakness also writes that aspect's score, so the two can never
+  disagree. `ck_user_profile_strength_and_weakness_differ` refuses the same aspect for both, at
+  the edge (`ProfilePatchRequest`), against the stored row (`_require_aspects_differ`) and in
+  the schema.
+  ⚠️ **`UserAspectRating`'s docstring used to call itself "the generator's only picture of a
+  weakness". #54 made that false and the docstring is rewritten** — the profile's
+  `weakness_aspect_id` is the deliberate answer to a direct question and is the one to trust;
+  a rating row may be nothing more than an untouched default. The old bullet's argument (that
+  an accepted default IS a recorded answer) was right for a step whose eight controls were all
+  visible, and is wrong now that they are behind a disclosure — which is why `canSubmit`
+  requires the two picks rather than accepting eight 3s.
+- **⚠️ The two grade columns must share a DISCIPLINE, and one of them can be cleared for you.**
+  The ordinal ladders are banded per discipline and `domain.grades.convert` raises
+  `CrossDisciplineError` rather than compare across them, so "French 7a goal, Font 7A now" is a
+  row the plan generator can do nothing with. A CHECK cannot express it (it would have to follow
+  two foreign keys into `grade`), so `server/profile/routes.py::_decide_grades` does, and the
+  asymmetry is deliberate: an incoming **current** grade that disagrees is a **422** (the client
+  locks both pickers to one scale, so it is a malformed request), while an incoming **target**
+  that disagrees with the stored current grade **clears it**. A 422 there would be a dead end —
+  a climber moving from sport to bouldering could never change their goal — and clearing is
+  exactly what the client does to its own pickers. It is the one NULL that endpoint writes
+  without being asked, and it is marked as such in the code.
+- **⚠️ The grade FLOOR lives in the client, and that was re-decided when the schema opened.**
+  Nobody sets a training goal of Font 4, so the pickers start at the rung whose label is `5` in
+  each ladder's reference system — Font 5 / V2 for boulder, French 5 / 5.8 for sport — derived
+  from one anchor label and applied by ordinal (`web/src/profile/grades.ts`). It **fails open**:
+  a discipline with no `5` keeps every grade, because an empty picker is a dead end and a long
+  one is not. It stays client-side for three reasons, all recorded in that file: the ladder is
+  domain truth that `convert()` needs whole; `GET /api/vocabulary` is shared reference data
+  behind a one-hour cache and the next consumer is an ascent log, where **Font 4 is a real thing
+  to have climbed**; and a stored below-floor grade must still RENDER, which a filtered
+  vocabulary would break. "We do not offer that as a goal" is not the claim "that grade does not
+  exist".
 - **The completion percentage is computed on the CLIENT** (`web/src/profile/completion.ts`),
   from raw state the endpoint returns. The server deliberately does not compute it: the
-  definition of "a step" would then exist on both sides of the wire. Since `0005` every one
-  of the five tests reads a nullable column or a row count — **it is server truth, with no
-  local component**.
-- **The bar opens at 29% — endowed progress, and the arithmetic is 2 of 7.** Kilian's call:
-  ~25-30%, never 0%, 100% when the five steps are done. The two pre-credited units are two
-  facts that are genuinely true by the time the screen renders — the account exists, and the
-  email that identifies it is on file. (The plan words the second as "the display name is
-  known"; there is no `display_name` column and PR #9 did not add one.) **A mechanic is
-  allowed only if the progress it signals is TRUE** — that rule governs the whole feature,
-  and it is why there is no labour-illusion spinner anywhere in the flow.
+  definition of "a step" would then exist on both sides of the wire. Every one of the four
+  tests reads a nullable column or a timestamp — **it is server truth, with no local
+  component**, and `0006` is what finally made that true of the aspect step too (the three
+  answers had no columns during the prototype and were held on the device; that scaffolding and
+  its `ct:` storage key are deleted).
+  The aspect step is complete when **all three** of `current_grade_id`, `strength_aspect_id`
+  and `weakness_aspect_id` are set — deliberately *not* "at least one rating", because since
+  #54 a rating row can be an untouched default and would credit a step nobody answered.
+- **The bar opens at 20%, and the floor IS step 0.** It was 29% (2 of 7 units); #54 dropped it
+  to 20% because that reads less manipulative, and the formula is
+  `20 + 80 × steps_done / total_steps`. With four steps that is 20/40/60/80/100 — no rounding,
+  every step worth the same.
+  ⚠️ **The identity is what makes the framing honest, and it is worth checking before touching
+  the arithmetic:** `20 + 80 × done/4` is identically `100 × (1 + done) / 5`. So the floor is
+  not a gift — it is **one of five units already done**, and the unit is the account that
+  exists. That is why the rail draws a node `0` labelled Account, ticked from the start, with
+  the 0->1 connector filled: the tick and the 20% are one fact stated twice.
+  `profile/completion.test.ts` asserts that equivalence directly.
+  **A mechanic is allowed only if the progress it signals is TRUE** — that rule governs the
+  whole feature, and it is why there is no labour-illusion spinner anywhere in the flow.
+  (An earlier version of this bullet noted that "the display name is known" was aspirational
+  because no such column existed. `0006` adds one, and it is deliberately **not** credited: it
+  is not one of the four steps, and the floor stands for the account, not for a name.)
 - **⚠️ Steps 1-4 are OPTIMISTIC and never wait; the FINAL step is awaited, and only it.**
   The round-1 bug was not the optimism — it was navigating in the same handler as the write.
   On the last step that unmounted the component before the mutation settled, so a failed
@@ -2732,9 +2957,47 @@ what a reader would otherwise undo.
   globally, because a gym phone flaps between focused and blurred constantly. Benign (the tab
   that did the writing is correct, and the number is a progress bar), but it is not "only
   another device can make this stale".
-- **The accessibility contract is fixed** (`ProfileProgress.tsx`, `OnboardingStepper.tsx`):
-  stepper as `<nav aria-label>` → `<ol>` → `<li>` with `aria-current="step"`; the bar as
-  `role="progressbar"` with an accessible **name** plus `aria-valuenow/min/max`;
+- **⚠️ `POST /api/profile/reset` exists so that `PATCH` did not have to change.** #54 needs a
+  way back to a from-scratch wizard. Making `null` mean "clear" in `ProfilePatchRequest` was
+  considered and **rejected** — that is the whole reason this endpoint exists, so do not
+  "simplify" it away later. It clears, in ONE transaction: every column the four steps own
+  (including `primary_discipline`, which is derived from the target grade and has to go with
+  it), every `user_aspect_rating` row, and **only the OPEN `user_injury` rows**.
+  ⚠️ **Resolved injuries are history and are not touched.** `flag -> resolve -> re-flag` is what
+  that table exists for — it is why `0005` added a *partial* unique index — and a reset is not a
+  claim about a past injury. It also does **not** clear `display_name` or `show_body_metrics`:
+  neither is one of the four steps, and a reset walks the setup flow again rather than wiping an
+  account. It is idempotent, it creates no row (same touch-on-read rule as `GET` and `PATCH {}`),
+  and it returns the whole profile so the caller redraws the bar from the response.
+- **The editor is SECTIONS; the wizard is the linear one-card flow.** They shared a stepper for
+  one round and it was wrong: changing a target grade meant walking past three answered
+  questions. So `/profile` renders every section at once with one Save at the end, and the rail
+  doubles as an index into it. ⚠️ **Save sends only the steps that were TOUCHED** — a step joins
+  the set when one of its own fields reports a change. It used to be "shown", which was the same
+  thing while one card was visible and is not now: with every section on the page, "shown" means
+  "all of them", and pressing Save after editing a grade would stamp `injuries_reviewed_at` and
+  write eight default ratings for questions nobody looked at. `patchForAll(draft, [])` is `{}`,
+  and `profile/draft.test.ts` pins it.
+- **⚠️ The rail is BOTH the progress bar and the canonical stepper, and the nodes are SIBLINGS of
+  the progressbar element.** There used to be two components — a percentage bar and a separate
+  step list — and #54 collapsed them, because a filled track beside a node rail is the same
+  thing said twice in two units, which is how a stepper starts disagreeing with a bar. So
+  `ProfileProgress` renders one object: the `role="progressbar"` element is the spine and carries
+  the name plus `aria-valuenow`, and the numbered nodes sit **outside** it in a
+  `<nav aria-label>` -> `<ol>` -> `<li>` with `aria-current="step"`.
+  ⚠️ **Not inside it: a `progressbar`'s contents are presentational, so focusable children there
+  are invalid ARIA** — and these are real buttons that navigate. The connectors carry the fill
+  instead of a percentage-width bar, which is also what makes the fill terminate at a node's edge
+  rather than painting through it: each connector is a flex child of the gap it occupies, so its
+  ends ARE the two nodes' edges and there is no length to compute. **Where the fill ends is
+  presentation; what the bar reports is `completionPercent`.** Do not recompute one from the
+  other. The last node is drawn "Finish" because it IS the last step (Injuries), not a terminal
+  node after it, and its accessible name leads with that word because WCAG 2.5.3 requires the
+  visible text to be contained in the name.
+- **The accessibility contract is fixed** (`ProfileProgress.tsx`):
+  stepper as `<nav aria-label>` → `<ol>` → `<li>` with `aria-current="step"` (it moved into
+  `ProfileProgress` when the separate list was deleted, and `OnboardingStepper.tsx` is gone);
+  the bar as `role="progressbar"` with an accessible **name** plus `aria-valuenow/min/max`;
   **announcements at step boundaries only**, through one polite live region that is always
   in the DOM (a region added at the same moment as its text is frequently not announced);
   the fill transition under `prefers-reduced-motion` while the **number updates instantly**;
@@ -2762,7 +3025,9 @@ what a reader would otherwise undo.
   so** rather than producing a 403 the user cannot act on. The dashboard's "finish your
   profile" card is hidden in demo mode for the same reason.
 - `show_body_metrics` is a real setting and is deliberately **not** on either screen — it is
-  not one of the five steps, and it belongs with the settings work.
+  not one of the four steps, and it belongs with the settings work. (`display_name` IS on that
+  screen, in its own Account section, because #54 asked for it — but it belongs to no step
+  either, so the editor composes it separately and it can never move the completion bar.)
 
 ## Session player invariants (PR #15a onward)
 

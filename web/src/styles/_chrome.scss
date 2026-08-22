@@ -1,19 +1,253 @@
 @use 'mixins';
 
 // Nav, the status renders, and the bottom-anchored action bar.
+
+// The label-on-hover bubble. A mixin because two classes need exactly this and at different
+// times: `&__nav-tip` is a tooltip at every width (the theme switch is icon-only always), while
+// `&__nav-label` is an inline label that only becomes one inside the icon-only band.
+@mixin nav-tooltip {
+  position: absolute;
+  inset-block-start: calc(100% + var(--ct-space-1));
+  inset-inline-start: 50%;
+  z-index: 2;
+  padding: var(--ct-space-1) var(--ct-space-2);
+  border: 1px solid var(--ct-border-2);
+  border-radius: var(--ct-radius-1);
+  background: var(--ct-surface-3);
+  box-shadow: var(--ct-shadow-2);
+  color: var(--ct-fg);
+  font-size: var(--ct-text-xs);
+  font-weight: 400;
+  white-space: nowrap;
+  // Static, not a hover animation: it centres the bubble under its glyph and never changes.
+  translate: -50% 0;
+  opacity: 0;
+  visibility: hidden;
+  // It must never eat the tap that was aimed at the control under it.
+  pointer-events: none;
+  transition:
+    opacity var(--ct-fast) ease,
+    visibility var(--ct-fast);
+
+  @media (prefers-reduced-motion: reduce) {
+    transition: none;
+  }
+}
+// The two threshold regimes, per nav variant.
+//
+// ⚠️ **A mixin because the NUMBERS differ per variant and the RULES must not.** The authenticated
+// nav waits for five glyphs plus Log out; the anonymous one has three and no Log out, so it was
+// sitting on ~130px it does not need and only showed its icons at ~645px (Kilian, round 12). Two
+// includes, two pairs of measured widths, one set of rules — the alternative was two near-identical
+// 40-line blocks that would drift.
+//
+// ⚠️ This is per-variant THRESHOLDS only. It deliberately does not centre anything: round 10
+// reverted the anonymous group's centring because Kilian did not want it, and it stays
+// right-aligned via the shared `&__nav-end` auto margin.
+//
+// `&` resolves at the include site, which is `.ct-app`, so `&__nav#{$variant} &__nav-items`
+// compiles to `.ct-app__nav--anon .ct-app__nav-items` — scoped, and one level more specific than
+// the shared base rules it overrides.
+@mixin nav-regimes($variant, $icons, $labels) {
+  @container ct-app (min-inline-size: #{$icons}) {
+    // Above the icon threshold the items are ordinary inline chrome, so the trigger has nothing
+    // to disclose. `display: none` also takes it out of the tab order, which is the point: a
+    // control whose panel is permanently open is a control with no purpose.
+    &__nav#{$variant} &__nav-burger {
+      display: none;
+    }
+
+    // The wordmark steps up with them: the base size exists to fit the narrow bar, and past this
+    // width there is room for the full one.
+    &__nav#{$variant} &__brand {
+      font-size: var(--ct-text-lg);
+    }
+  }
+
+  // ⚠️ **The panel, and it is `position: absolute` inside the nav — never `fixed`.** Both mounts
+  // share this route tree, and `fixed` would resolve against kilianmc.com's viewport. The nav
+  // carries the stacking context it needs; `.ct-app`'s `isolation: isolate` stops that index
+  // escaping into the shell.
+  //
+  // `visibility` rather than `display` for two reasons: the transition needs something to run on,
+  // and a `visibility: hidden` subtree is removed from the tab order — so focus cannot land on an
+  // item inside a closed panel.
+  @container ct-app not (min-inline-size: #{$icons}) {
+    &__nav#{$variant} &__nav-items {
+      position: absolute;
+      inset-block-start: calc(100% + var(--ct-space-2));
+      inset-inline-end: 0;
+      z-index: 3;
+      flex-direction: column;
+      flex-wrap: nowrap;
+      align-items: stretch;
+      // ⚠️ Stated here rather than inherited, because the tightest regime sets the BAR's gaps to
+      // zero and this rule is inside that width. The panel is a stacked list, not a row of
+      // controls — rows that touch read as one block.
+      gap: var(--ct-space-1);
+      min-inline-size: 12rem;
+      padding: var(--ct-space-2);
+      border: 1px solid var(--ct-border-2);
+      border-radius: var(--ct-radius-2);
+      background: var(--ct-surface-3);
+      box-shadow: var(--ct-shadow-3);
+      opacity: 0;
+      visibility: hidden;
+      transition:
+        opacity var(--ct-fast) ease,
+        visibility var(--ct-fast);
+
+      &[data-open='true'] {
+        opacity: 1;
+        visibility: visible;
+      }
+    }
+
+    // Full-width rows with their labels visible: inside the panel there is room for words, so the
+    // tooltip would be a second copy of what is already on screen.
+    &__nav#{$variant} &__nav-items a,
+    &__nav#{$variant} &__nav-items button {
+      justify-content: flex-start;
+      inline-size: 100%;
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      &__nav#{$variant} &__nav-items {
+        transition: none;
+      }
+    }
+  }
+
+  // ⚠️ **A BAND, not a threshold, and the base case is labels visible.**
+  //
+  // The bubble belongs to exactly one regime: icons inline, from this variant's icon fit point up
+  // to its label fit point. Below it the destinations live in the burger panel where their labels
+  // are on screen already, and above it the labels are inline. So the base is the plain inline
+  // label — which is also the safe outcome `_card.scss` demands of a default, since a browser that
+  // matches no query shows a cramped but fully labelled nav rather than a row of mute glyphs.
+  //
+  // ⚠️ The upper bound is the label threshold MINUS `0.001rem`, because container ranges are
+  // INCLUSIVE: `max-inline-size: $labels` would leave that exact width matching both this band and
+  // the labelled regime. CSS has no half-open range, and `and not (…)` is not valid in a container
+  // condition — `not` may only lead the whole condition.
+  @container ct-app (min-inline-size: #{$icons}) and (max-inline-size: #{$labels - 0.001rem}) {
+    &__nav#{$variant} &__nav-label {
+      @include nav-tooltip;
+    }
+
+    // ⚠️ **Tighter item spacing, in this band ONLY.** A `--ct-space-2` gap is sized for items with
+    // words in them; between bare 44px glyphs it reads as a row of strangers. Past the label
+    // threshold the words are back and the spacing is right as it is, and below the icon
+    // threshold the destinations are stacked rows in the panel, so neither regime wants this.
+    &__nav#{$variant} &__nav-items,
+    &__nav#{$variant} &__nav-end {
+      gap: var(--ct-space-1);
+    }
+  }
+}
+
 @mixin styles {
+  // ⚠️ **Capped, centred, and STICKY — and the sticky is verified in both mounts, not assumed.**
+  //
+  // `position: sticky` resolves against the nearest SCROLLING ANCESTOR, and this stylesheet ships
+  // to two of them. Checked in the shell's own source rather than reasoned about:
+  // `portfolio-shell/src/components/ProjectViewer.scss` sets `.viewer__frame { flex: 1;
+  // overflow: auto; position: relative; }`, so in the federated mount the nearest scrollport is
+  // that panel and the nav sticks to the top of it — which is where it should stick. Standalone,
+  // no ancestor scrolls, so it is the document and the nav sticks to the window. Both are right,
+  // and neither can escape: `.ct-app` carries `isolation: isolate`, so the stuck nav paints over
+  // this app's cards and nothing of the portfolio's.
+  //
+  // Its sticky RANGE is real, unlike `&__actionbar`'s was: the containing block is the nav's grid
+  // area in `.ct-app`, which is as tall as the whole page rather than as tall as one form.
+  //
+  // The cap is 64rem with `margin-inline: auto`, and the inline size subtracts the GUTTER
+  // properties rather than a fresh number — so it is inset like the measure on a phone, centred
+  // and capped at 1024px on a desktop, and `100%` here is the grid column, never the viewport.
+  //
+  // `flex-wrap` because three always-visible 44px controls plus the wordmark need ~428px of app
+  // width: below that the end group drops to a second line instead of overflowing. `nav-end` uses
+  // an auto inline-start margin rather than `space-between`, so it hugs the end on either line.
+  //
+  // ---------------------------------------------------------------------------------
+  // EVERY nav threshold, in one place. All measured; none conventional.
+  // ---------------------------------------------------------------------------------
+  // Widths are `container: ct-app` widths, **not viewport widths** — in the federated mount the
+  // app is a panel inside kilianmc.com's `ProjectViewer`, so the px in brackets is the standalone
+  // reading. "Content" is the nav's inner width: `app − 32` (gutters) `− 16` (its own padding).
+  //
+  // | regime                        | content needed | derived  | chosen        |
+  // | ----------------------------- | -------------- | -------- | ------------- |
+  // | tightest → normal handover    | ~377px         | ~425px   | **28rem**/448 |
+  // | authenticated icons           | ~564px         | ~612px   | **40rem**/640 |
+  // | authenticated labels          | ~863px         | ~911px   | **59rem**/944 |
+  // | anonymous icons               | ~420px         | ~468px   | **31rem**/496 |
+  // | anonymous labels              | ~660px         | ~708px   | **46rem**/736 |
+  //
+  // The chosen figure is always the next rem up **plus slack for the estimate error** — glyph
+  // advances here are ±5%, which is ±8px on the wordmark and ±25px across five labels. Every
+  // "derived" number below is content + 48.
+  //
+  //  - **tightest (below 28rem).** Brand + burger + theme + Log out, five destinations in the
+  //    panel. At the normal values: `205` (brand: 16 inset + 22 tile + 12 gap + 155 wordmark)
+  //    `+ 8` (brand-to-group gap) `+ 164` (three 44px controls + two 8px gaps + 16 end inset)
+  //    = **377px**, so it fits from ~425px. The four reductions Kilian asked for — no item gap, no
+  //    end padding, and the two brand values at `× --ct-nav-compress` — take it to `193 + 8 + 132`
+  //    = **333px**, fitting from ~381px. **365px was still ~16px short**, and every remaining term
+  //    is a 44px floor, so the wordmark takes one size step down as well: `171 + 8 + 132`
+  //    = **311px**, fitting from **~359px** — 365px clears it by ~6px.
+  //  - **authenticated icons (40rem).** `208` (brand) `+ 5 × 44 + 4 × 4` (gaps, tightened in the
+  //    band) `+ 44 + 44` (theme, Log out) `+ 4 + 4 + 8 + 16` = **564px**. Unchanged since round 11.
+  //  - **authenticated labels (59rem).** `236` (brand at the larger wordmark) `+ 499` (five
+  //    labelled links) `+ 44 + 44` (theme, Log out icon-only) `+ 40` (gaps and insets) = **863px**.
+  //    Unchanged since round 10, when Log out dropped its ~97px label and this came in from 62rem.
+  //  - **anonymous icons (31rem).** Three destinations and no Log out: `208` (brand) `+ 3 × 44 +
+  //    2 × 4` `+ 44` (theme) `+ 4 + 8 + 16` = **420px**. It was waiting on the authenticated
+  //    40rem and showing its glyphs at ~645px — ~130px of room it never needed.
+  //  - **anonymous labels (46rem).** `236 + 348` (Home 87, Log in 91, Create account 154, two 8px
+  //    gaps) `+ 44` (theme) `+ 32` (gaps and insets) = **660px**.
   &__nav {
+    /* ⚠️ **The narrow nav's compression factor, and it is a RATIO rather than a length.** Every
+     * reduced value in the tightest regime is `calc(<the token it replaces> * this)`, so the
+     * narrow bar moves as one when this changes and none of it can drift off the space scale when
+     * that scale is retuned. `--ct-space-0-4` would have been the same magic number with extra
+     * steps.
+     *
+     * Local to the nav, not a token in `_tokens.scss`: nothing outside this file compresses, and
+     * `_tokens.scss` is the design system's vocabulary rather than one component's parameter. It
+     * sits on `.ct-app__nav` — inside `.ct-app`, never `:root` — and the brand inherits it as a
+     * child.
+     *
+     * 0.4 is Kilian's starting number. It is the parameter; the relationship is the rule.
+     */
+    --ct-nav-compress: 0.4;
+
     display: flex;
     flex-wrap: wrap;
     align-items: center;
     gap: var(--ct-space-2);
+    inline-size: min(64rem, calc(100% - var(--ct-gutter-start) - var(--ct-gutter-end)));
     margin-block-end: var(--ct-space-5);
+    margin-inline: auto;
     padding: var(--ct-space-2);
     border: 1px solid var(--ct-border-1);
     border-radius: var(--ct-radius-3);
     background: var(--ct-surface-1);
     // Step 2, not 1: the nav is persistent chrome and sits above the cards, which are step 1.
     box-shadow: var(--ct-shadow-2);
+    position: sticky;
+    inset-block-start: 0;
+    // The burger panel and the label bubbles hang BELOW the nav, and while stuck the whole bar
+    // sits over the cards. Contained by `.ct-app`'s `isolation: isolate`.
+    z-index: 1;
+  }
+
+  // The interactive items, links and buttons alike.
+  &__nav {
+    button {
+      // The tooltip's containing block, for every icon-only control.
+      position: relative;
+    }
 
     a {
       @include mixins.tap;
@@ -21,13 +255,43 @@
       @include mixins.focus-ring;
 
       display: inline-flex;
+      // `center`, not `baseline`: on a one-line label a 1.15em glyph sitting on the text
+      // baseline hangs visibly low, because the glyph's box is the full em square and the
+      // baseline is ~20% up from its bottom. Optical centring is what "shares a baseline" means
+      // for an icon beside a single line.
       align-items: center;
       justify-content: center;
+      gap: var(--ct-space-2);
       padding-inline: var(--ct-space-3);
       border-radius: var(--ct-radius-2);
       color: var(--ct-fg-muted);
       font-size: var(--ct-text-sm);
       text-decoration: none;
+      // The tooltip's containing block.
+      position: relative;
+      // `press` already transitions background and border; box-shadow is the glow's channel and
+      // has to be named here or it would snap on.
+      transition:
+        box-shadow var(--ct-fast) ease,
+        color var(--ct-fast) ease;
+
+      // ⚠️ **Nothing moves, and the glow is deliberately NOT ring-shaped.** A crisp accent ring on
+      // hover is indistinguishable at a glance from `focus-ring`'s 2px offset outline, and a
+      // keyboard user has to be able to tell where focus is. Hover gets a soft blurred glow plus
+      // the hover surface; the hard outline stays focus's alone.
+      &:hover {
+        background: var(--ct-hover);
+        color: var(--ct-fg);
+        box-shadow: 0 0 12px 2px color-mix(in srgb, var(--ct-accent) 55%, transparent);
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        // Decoration off. The colour and surface change stay: they are the acknowledgement, not
+        // the ornament.
+        &:hover {
+          box-shadow: none;
+        }
+      }
 
       &[aria-current='page'] {
         background: var(--ct-surface-3);
@@ -36,6 +300,158 @@
         font-weight: 500;
       }
     }
+  }
+
+  // ⚠️ `& > &__nav`, so this compiles to `.ct-app > .ct-app__nav` and beats `_layout.scss`'s
+  // `.ct-app > *` placement on specificity rather than on include order. Do NOT nest a `&__x`
+  // inside this block: Sass appends the suffix to the parent's LAST compound, so it would become
+  // `.ct-app__nav__x` and match nothing — the same trap `_layout.scss` records for `&__main`.
+  // ⚠️ `& > &__nav`, so this is `.ct-app > .ct-app__nav` and beats `_layout.scss`'s `.ct-app > *`
+  // placement on specificity rather than on include order. Do NOT nest a `&__x` inside this
+  // block: Sass appends the suffix to the parent's LAST compound, so it would compile to
+  // `.ct-app__nav__x` and match nothing. The bleed span is what lets the nav be wider than the
+  // 46rem measure; its own `inline-size` is what stops it reaching the screen edges.
+  & > &__nav {
+    grid-column: ct-bleed;
+  }
+
+  // The brand: a title, not a link, and not a heading element either — every page already has an
+  // `h1`, and a second one in persistent chrome would land in the outline of every route.
+  //
+  // The leading inset is `--ct-space-4`, which is the value the layout's own gutters are built
+  // from (`--ct-gutter-start: max(var(--ct-space-4), env(safe-area-inset-left))`), so the wordmark
+  // sits on the same rhythm as every other left edge in the app rather than on a number invented
+  // here. `&__nav-end` takes the same inset on its trailing side, or the row would read lopsided.
+  &__brand {
+    display: flex;
+    align-items: center;
+    gap: var(--ct-space-3);
+    margin: 0;
+    padding-inline-start: var(--ct-space-4);
+    // On `&__brand` rather than on the title, so the tile's `em` sizing scales with it.
+    // ⚠️ The base size is the SMALL one: below the tablet threshold the wordmark shares a ~342px
+    // nav with a 44px trigger, and `--ct-text-lg` there leaves nothing between them. It is always
+    // visible (Kilian, round 7) — it just stops being the biggest thing on a phone.
+    font-size: var(--ct-text-base);
+    white-space: nowrap;
+  }
+
+  // A wordmark: accent, uppercase, tracked out. The DOM text stays "Climb Trainer" and CSS does
+  // the casing, so a screen reader says the name instead of spelling two initialisms.
+  // `--ct-accent` on `--ct-surface-1` is already asserted by `contrast.test.ts` in both schemes.
+  &__brand-title {
+    color: var(--ct-accent);
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+  }
+
+  // The themed tile. `--ct-accent` on the mark, `--ct-accent-fg` knocked out of it — the app's
+  // existing BUTTON pairing, already asserted by `contrast.test.ts` in both schemes, so no new
+  // colour pair enters the system.
+  //
+  // The radius is the token, applied in CSS rather than as an SVG `rx`, with `overflow: hidden`
+  // doing the clipping: `--ct-radius-1` (0.375rem) is ~6px on a ~22px tile, which is the app-icon
+  // corner. The next step up (`--ct-radius-2`, 0.625rem) reads as a pill at this size.
+  &__brand-mark {
+    flex: none;
+    inline-size: 1.4em;
+    block-size: 1.4em;
+    overflow: hidden;
+    border-radius: var(--ct-radius-1);
+    // `currentColor` is the tile, so one declaration themes it — it just no longer themes.
+    color: var(--ct-brand-tile);
+  }
+
+  // ⚠️ **Three fixed brand tones, and the tile does NOT follow the accent.** Round 6 mixed the
+  // route out of `--ct-accent-fg`, which was right about the relationship and wrong about the
+  // direction: in dark that token is near-black, so the holds came out dark on a pale mint tile
+  // when the identity is light marks on a green one. `_tokens.scss` carries the measurements and
+  // what the fixed green costs.
+  //
+  // The relationship is `mark.svg`'s own: holds 5.91:1 against the tile, route 1.57:1 — a groove
+  // you read as texture rather than as a second bright element.
+  &__brand-route {
+    fill: none;
+    stroke: var(--ct-brand-route);
+  }
+
+  &__brand-hold {
+    fill: var(--ct-brand-mark);
+    stroke: none;
+  }
+
+  // Both groups wrap rather than overflow: five links plus a log-out button is more than a
+  // narrow column can hold in one line, and a nav that scrolls sideways is a nav nobody finds
+  // the end of.
+  // The right-hand section: the burger (below the tablet threshold) and the items themselves.
+  &__nav-end {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--ct-space-2);
+    // Hugs the end of whichever line it lands on, wrapped or not.
+    margin-inline-start: auto;
+    padding-inline-end: var(--ct-space-4);
+  }
+
+  &__nav-items {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: flex-end;
+    gap: var(--ct-space-2);
+  }
+
+  // ⚠️ **The tightest regime, and it is measured to a real device rather than to a round number.**
+  // Kilian: "from 365px, or when the older values can fit use them." Both halves are arithmetic —
+  // see the table on `&__nav` for the four reductions, the fifth one they forced, and the handover.
+  //
+  // The gap and the end padding go to **zero**, not to a ratio: a fraction of a value that becomes
+  // nothing is not a fraction, and dressing it as one would misdescribe what the rule does.
+  @container ct-app not (min-inline-size: 28rem) {
+    &__brand {
+      padding-inline-start: calc(var(--ct-space-4) * var(--ct-nav-compress));
+      gap: calc(var(--ct-space-3) * var(--ct-nav-compress));
+      // ⚠️ The fifth reduction, and the four above forced it: with them alone the bar still needed
+      // ~381px and 365px was ~16px short. This is the only lever left that is not a 44px floor,
+      // and it is the same size STEP the wordmark already had — one rung further down.
+      font-size: var(--ct-text-sm);
+    }
+
+    &__nav-items,
+    &__nav-end {
+      gap: 0;
+    }
+
+    &__nav-end {
+      padding-inline-end: 0;
+    }
+  }
+
+  // ⚠️ **The two measured pairs.** See the table on `&__nav` for the arithmetic behind each.
+  @include nav-regimes('--app', 40rem, 59rem);
+  @include nav-regimes('--anon', 31rem, 46rem);
+
+  // The theme switch is icon-only at EVERY width (round 5), so its label is a bubble always —
+  // never an inline word. Same treatment, no regime.
+  &__nav-tip {
+    @include nav-tooltip;
+  }
+
+  // Revealed by either channel, on links and on the buttons in the end group alike — one rule for
+  // all six items, with no per-item exceptions to keep in step.
+  //
+  // Revealed on `:hover` AND `:focus-visible`: hover alone leaves a keyboard user with no way to
+  // read it, and touch gets neither — which is why every item also carries an `aria-label`.
+  &__nav a:hover &__nav-label,
+  &__nav a:focus-visible &__nav-label,
+  &__nav button:hover &__nav-label,
+  &__nav button:focus-visible &__nav-label,
+  &__nav button:hover &__nav-tip,
+  &__nav button:focus-visible &__nav-tip {
+    opacity: 1;
+    visibility: visible;
   }
 
   // Applied to the status LINE, never to the wrapping element. On `<section class="ct-app__card

@@ -36,6 +36,14 @@
   --ct-accent-fg: #ffffff;
   --ct-danger: #a3241d;
   --ct-danger-fg: #ffffff;
+  // A WARNING, which is not a danger: "your current grade is at or above your goal" is odd,
+  // not wrong, and nothing is blocked by it. Amber rather than red so it cannot be read as a
+  // validation failure, and dark enough to clear 4.5:1 as TEXT on every surface it can land on
+  // — measured against this scheme's four: bg 5.53:1, surface-1 5.89:1, surface-2 6.12:1,
+  // surface-3 6.33:1.
+  // `contrast.test.ts` asserts it against all four card surfaces, in both schemes, like
+  // `accent` and `danger` — text only, so there is no `--ct-warning-fg` and no reverse pair.
+  --ct-warning: #8f5000;
 
   // A hairline per surface: one border tone reads as a smudge against white and as
   // nothing at all against the page background.
@@ -64,12 +72,47 @@
   --ct-accent-fg: #0d0f12;
   --ct-danger: #f3b3af;
   --ct-danger-fg: #14171c;
+  // The same token, inverted for dark: bg 10.02:1, surface-1 9.12:1, surface-2 8.25:1,
+  // surface-3 7.24:1. Both schemes declare it, which is what keeps `contrast.test.ts`'s
+  // "same keys in both schemes" assertion true.
+  --ct-warning: #e8b25e;
 
   --ct-border-bg: #22262c;
   --ct-border-1: #2a2f37;
   --ct-border-2: #333944;
   --ct-border-3: #3d444f;
   --ct-border-strong: #858e9c;
+}
+
+/**
+ * The MANUAL override, and it is a separate mixin from `declare` on purpose.
+ *
+ * `declare` emits the light values, then re-emits the dark ones inside
+ * `@media (prefers-color-scheme: dark)`. A media query carries **no specificity**, so an
+ * attribute selector on the same element beats both blocks whatever the source order — which
+ * is the whole mechanism here. `[data-theme]` absent means "follow the OS", i.e. exactly what
+ * `declare` already does, so System needs no rule and no third copy of anything.
+ *
+ * The values are the same two mixins, so nothing is duplicated in SOURCE; the cost is two more
+ * emitted blocks, which is unavoidable for any override that has to win against a media query.
+ * (`light-dark()` and a bare `color-scheme` would avoid it and are outside this project's
+ * `baseline-widely-available` target — Chrome 123 against a Chrome 111 floor.)
+ *
+ * ⚠️ **Included by `.ct-app` ONLY, never by `.ct-update-bar`.** `declare` is shared with the
+ * update bar because that element sits outside `.ct-app` and inherits nothing; this is not,
+ * because nothing sets `data-theme` on it — it is rendered from `main.tsx`, outside the router.
+ * So the update prompt keeps following the OS, and a user on a manual override would see it in
+ * the other scheme. Deliberate: the alternative is threading app state into the one subtree
+ * that must not depend on the route tree (see `pwa/updatePrompt.ts`).
+ */
+@mixin overrides {
+  &[data-theme='light'] {
+    @include light-values;
+  }
+
+  &[data-theme='dark'] {
+    @include dark-values;
+  }
 }
 
 @mixin declare {
@@ -104,6 +147,33 @@
     --ct-shadow-2: none;
     --ct-shadow-3: none;
   }
+
+  // ---------------------------------------------------------------------------------
+  // The brand mark — the ONLY colours here that do not follow the theme
+  // ---------------------------------------------------------------------------------
+  // ⚠️ **Scheme-independent on purpose, and these are `public/mark.svg`'s own three values.**
+  // The mark was drawn on `--ct-accent`, which inverts: in dark that token is a light mint, so
+  // the bright knockout (`--ct-accent-fg`, near-black there) rendered the four holds nearly
+  // black on a pale tile — the opposite of the identity, which is LIGHT MARKS ON A GREEN TILE.
+  //
+  // Measured, that is not fixable while the tile follows the accent: white holds on the dark
+  // scheme's mint accent are **2.17:1**, unusable. A logo that does not recolour is the normal
+  // answer, and it also makes the inline `BrandMark` and the generated PWA icons literally the
+  // same three colours. Holds 5.91:1 and route 1.57:1 against the tile — identical to the
+  // original artwork, in both schemes.
+  //
+  // What it costs: the tile no longer tints with the theme, and against the dark scheme's
+  // `--ct-surface-1` its own edge is **2.86:1**. That is fine for a logotype (WCAG 1.4.11
+  // exempts them) and it is the one figure to revisit if the tile ever reads as muddy — a
+  // slightly lighter dark-mode green (`#2a7a55`) measures 3.34:1 against that surface with the
+  // holds still at 5.05:1, at the cost of the tile being two greens instead of one.
+  //
+  // They live in `declare` rather than in the two scheme mixins because they are the same value
+  // in both, which is also what keeps `contrast.test.ts`'s "the schemes declare the same keys"
+  // assertion looking at exactly the keys it is meant to.
+  --ct-brand-tile: #1f6f4a;
+  --ct-brand-route: #0f4f33;
+  --ct-brand-mark: #fbfbfa;
 
   --ct-radius-1: 0.375rem;
   --ct-radius-2: 0.625rem;

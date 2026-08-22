@@ -50,7 +50,7 @@ function Login() {
   }
 
   return (
-    <>
+    <div className="ct-app__narrow">
       <h1>Log in</h1>
       <CredentialsForm
         submitLabel="Log in"
@@ -60,7 +60,7 @@ function Login() {
         error={error}
         onSubmit={submit}
       />
-    </>
+    </div>
   );
 }
 

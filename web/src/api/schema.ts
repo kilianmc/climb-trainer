@@ -11,8 +11,8 @@
  *   openapi-sha256  the OpenAPI document it was generated from
  *   types-sha256    everything below this comment block
  *
- * openapi-sha256: e58a5e17eee54e12fb58cf2ce94a99bd8c5249ff29b045ce0c800e5edbd0380e
- * types-sha256: 2b903d5a68379c5e373c2c33cceb4436e3add67b9f3bb59547a6836b2ac95e56
+ * openapi-sha256: 54db6adb61c74fd35c7f1561c12bc8965d1323634ff4919145e026053cc98035
+ * types-sha256: 9cb08830b8efd7f70dd814103c6dc622139ba40bc0a90677885033d9161cd63c
  */
 
 export interface paths {
@@ -260,6 +260,59 @@ export interface paths {
     patch: operations['patch_profile_api_profile_patch'];
     trace?: never;
   };
+  '/api/profile/reset': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Reset Profile
+     * @description Un-answer the four onboarding steps, in one transaction, and return the profile.
+     *
+     *     ## Why this exists instead of teaching `PATCH` to clear
+     *
+     *     Issue #54 needs a way back to a from-scratch wizard. The obvious alternative was to make
+     *     `null` mean "clear" in `ProfilePatchRequest` — and that was **considered and rejected**
+     *     (Kilian's call): `null` there means "not in this request" for every field, which is what
+     *     lets onboarding send one step at a time, and flipping it would turn every omission into a
+     *     destructive spelling one typo away. A named endpoint says what it does.
+     *
+     *     ## What it clears, and what it deliberately does not
+     *
+     *     - **Every column the four steps own** (`_RESET_COLUMNS`), back to NULL — including
+     *       `primary_discipline`, which is derived from the target grade and has to go with it.
+     *     - **Every `user_aspect_rating` row**, because the aspect step's answer *is* those rows.
+     *     - **Open `user_injury` rows only.** ⚠️ Resolved rows are HISTORY and are not touched:
+     *       flag -> resolve -> re-flag is what that table exists for (`0005`'s partial unique
+     *       index), and a reset is not a claim about a past injury. An open flag, by contrast, is
+     *       the step's current answer and has to go or the step would not read as unanswered.
+     *     - **Not** `display_name`, `show_body_metrics`, or anything in `user_equipment` — see
+     *       `_RESET_COLUMNS`.
+     *
+     *     ## Shape
+     *
+     *     A **Tier-1 write**, like `PATCH`: deliberate, low-frequency, and the user is waiting for
+     *     it. It returns the whole profile for the same reason `PATCH` does — the caller redraws
+     *     the completion bar from the response rather than from a follow-up GET, so the bar can
+     *     never disagree with the database about what is set.
+     *
+     *     **Idempotent**, and it does not create a row: `UPDATE` touches nothing when no profile
+     *     exists, and a profile that has answered nothing is what a reset is trying to produce
+     *     anyway. A demo token never reaches here — `POST` is a mutating method, so
+     *     `server/auth/deps.py` refuses it twice over (403 at the edge, read-only transaction
+     *     underneath).
+     */
+    post: operations['reset_profile_api_profile_reset_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/vocabulary': {
     parameters: {
       query?: never;
@@ -486,22 +539,41 @@ export interface components {
      *     `extra="forbid"`, so a camelCase key or a typo is a 422 rather than a silently
      *     ignored field — and `primary_discipline` is **not** accepted at all: it is derived
      *     from `target_grade_id`.
+     *
+     *     ⚠️ **`null` means "no change", for every field, and that contract is deliberate.**
+     *     Issue #54 wanted a way to un-answer the four steps; making `null` mean "clear" here was
+     *     considered and rejected, because it would turn every "I am not touching this" into a
+     *     destructive spelling one typo away. `POST /api/profile/reset` does that job instead,
+     *     explicitly and in one transaction.
+     *
+     *     ⚠️ **`equipment_ids` is gone from this model** (issue #54). The equipment step is no
+     *     longer part of onboarding, and the owned-vs-lacked question the issue raises is
+     *     deliberately deferred to PR #10, where the exercise library's alternatives lookup is what
+     *     gives a "I do not have this" flag its meaning. `user_equipment` and every
+     *     `exercise_equipment` row are untouched; what is gone is a write path whose semantics are
+     *     undecided. Re-adding it is PR #10's job, with the decision attached.
      */
     ProfilePatchRequest: {
       /** Aspect Ratings */
       aspect_ratings?: components['schemas']['AspectRatingIn'][] | null;
       /** Available Weekdays */
       available_weekdays?: number | null;
-      /** Equipment Ids */
-      equipment_ids?: number[] | null;
+      /** Current Grade Id */
+      current_grade_id?: number | null;
+      /** Display Name */
+      display_name?: string | null;
       /** Injuries */
       injuries?: components['schemas']['InjuryIn'][] | null;
       /** Sessions Per Week */
       sessions_per_week?: number | null;
       /** Show Body Metrics */
       show_body_metrics?: boolean | null;
+      /** Strength Aspect Id */
+      strength_aspect_id?: number | null;
       /** Target Grade Id */
       target_grade_id?: number | null;
+      /** Weakness Aspect Id */
+      weakness_aspect_id?: number | null;
     };
     /**
      * ProfileResponse
@@ -512,20 +584,35 @@ export interface components {
      *     bar, and the plan generator in PR #11, which must refuse to generate rather than
      *     substitute a default for a question the user has not been asked.
      *
-     *     The two `*_reviewed_at` fields are how their steps report themselves finished: an empty
-     *     `equipment_ids` or `injuries` list means "nothing to record" or "never asked" depending
-     *     only on them. Every completion test the client makes reads one of these or a scalar,
-     *     which is what keeps the progress bar server truth.
+     *     `injuries_reviewed_at` is how its step reports itself finished: an empty `injuries` list
+     *     means "nothing to record" or "never asked" depending only on it. Every completion test
+     *     the client makes reads that column or a scalar, which is what keeps the progress bar
+     *     server truth.
+     *
+     *     ⚠️ **`equipment_ids` and `equipment_reviewed_at` are gone** (issue #54). The step is not
+     *     part of onboarding any more, nothing in the client read either field, and dropping them
+     *     from the response also drops a `SELECT` from every profile read — Neon bills awake time.
+     *     The table and its rows are untouched, waiting for PR #10.
+     *
+     *     ⚠️ **`email` is the ONE null here that does not mean "not answered yet".** It is read
+     *     from `app_user`, not from the profile, and it is `NOT NULL` there — so it can only be
+     *     null if the row behind an authenticated principal has gone, which is not a state this
+     *     endpoint invents a 404 for. It is read-only: the client displays it and has no way to
+     *     change it, which is why it is not in `ProfilePatchRequest`. Added because the client had
+     *     no way to learn its own account's address at all — `GET /api/auth/me` returns
+     *     `{user_id, scope}` and its docstring defers exactly this to the profile endpoint.
      */
     ProfileResponse: {
       /** Aspect Ratings */
       aspect_ratings: components['schemas']['AspectRatingOut'][];
       /** Available Weekdays */
       available_weekdays: number | null;
-      /** Equipment Ids */
-      equipment_ids: number[];
-      /** Equipment Reviewed At */
-      equipment_reviewed_at: string | null;
+      /** Current Grade Id */
+      current_grade_id: number | null;
+      /** Display Name */
+      display_name: string | null;
+      /** Email */
+      email: string | null;
       /** Injuries */
       injuries: components['schemas']['InjuryOut'][];
       /** Injuries Reviewed At */
@@ -535,8 +622,12 @@ export interface components {
       sessions_per_week: number | null;
       /** Show Body Metrics */
       show_body_metrics: boolean;
+      /** Strength Aspect Id */
+      strength_aspect_id: number | null;
       /** Target Grade Id */
       target_grade_id: number | null;
+      /** Weakness Aspect Id */
+      weakness_aspect_id: number | null;
     };
     /**
      * ProtocolKind
@@ -877,6 +968,26 @@ export interface operations {
         };
         content: {
           'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  reset_profile_api_profile_reset_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ProfileResponse'];
         };
       };
     };
