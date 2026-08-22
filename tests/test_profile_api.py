@@ -223,7 +223,7 @@ def test_a_list_field_REPLACES_the_set_and_an_empty_list_clears_it(
     delete-then-insert path, and the empty list is the interesting case: it is a real answer
     ("nothing is hurting"), not an absence.
     """
-    elbow, shoulder, finger = _lookup_ids(db_session, InjuryArea, "elbow", "shoulder", "finger")
+    elbow, shoulder, fingers = _lookup_ids(db_session, InjuryArea, "elbow", "shoulder", "fingers")
 
     first = _patch(
         api_client,
@@ -237,10 +237,10 @@ def test_a_list_field_REPLACES_the_set_and_an_empty_list_clears_it(
     second = _patch(
         api_client,
         auth,
-        {"injuries": [{"injury_area_id": elbow}, {"injury_area_id": finger}]},
+        {"injuries": [{"injury_area_id": elbow}, {"injury_area_id": fingers}]},
     )
     assert sorted(entry["injury_area_id"] for entry in second["injuries"]) == sorted(
-        [elbow, finger]
+        [elbow, fingers]
     )
     assert _patch(api_client, auth, {"injuries": []})["injuries"] == []
 
