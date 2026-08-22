@@ -22,6 +22,34 @@ body {
   background: var(--ct-bg);
 }
 
+// The manual theme override, for the CANVAS — and this is the one place it can be done.
+//
+// `.ct-app[data-theme]` re-declares the tokens on the app element, but this `body` has its own
+// copy (see above) and would keep following the OS: a user on a light OS who picks Dark would
+// get a dark app sitting on a light canvas wherever the page is shorter than the viewport,
+// which is precisely the rendering bug the `body` background exists to prevent.
+//
+// ⚠️ It is expressed as `body:has(…)` rather than by putting the attribute on `<html>`, and the
+// difference is the federated mount: an `html[data-theme]` selector is unscoped CSS the remote
+// may not ship, and setting that attribute from the app would be writing into kilianmc.com's
+// own document element. `.ct-app` stays the only element the app touches; this file is
+// standalone-only (`main.tsx` imports it, nothing in the route tree does), so the bridge is
+// legal exactly here.
+//
+// `color-scheme` comes with it, so the UA-painted parts — scrollbars, form control internals —
+// follow the choice too rather than the OS.
+body:has(.ct-app[data-theme='light']) {
+  @include tokens.light-values;
+
+  color-scheme: light;
+}
+
+body:has(.ct-app[data-theme='dark']) {
+  @include tokens.dark-values;
+
+  color-scheme: dark;
+}
+
 // The update bar is `position: fixed`, so it does not push content: measured, it covered 32.5px
 // of the 44px "Open the demo" button at the bottom of the landing page, and `elementFromPoint` at
 // the button's centre returned the bar. This reserves exactly the bar's height while it is

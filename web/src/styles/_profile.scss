@@ -1,6 +1,16 @@
+@use 'sass:list';
 @use 'mixins';
 
-// The onboarding wizard and the profile editor: the completion bar, the stepper, and the
+// The confetti tints, from the token set — no new colour enters the system for a celebration
+// that lasts two seconds. Four, because the loop below indexes them modulo four.
+$confetti-tints: (
+  var(--ct-accent),
+  var(--ct-accent-pressed),
+  var(--ct-danger),
+  var(--ct-border-strong)
+);
+
+// The onboarding wizard and the profile editor: the completion bar and its numbered rail, and the
 // closed-input controls (checkbox grids and 1-5 scales) that both screens are built from.
 //
 // Included INTO `.ct-app`, so `&` is that root and every selector here stays scoped to it —
@@ -67,64 +77,230 @@
   }
 
   // ---------------------------------------------------------------------------------
-  // The stepper — position, not percentage
+  // The rail: the bar's spine, with numbered nodes standing on it
   // ---------------------------------------------------------------------------------
-  &__stepper {
-    margin-block-end: var(--ct-space-5);
+  // The spine is `&__progress-track` (the `role="progressbar"` element itself), pulled out of
+  // flow to the vertical centre so the nodes sit ON it rather than under it. One progress
+  // reading, not two — see `ProfileProgress.tsx`.
+  &__rail {
+    position: relative;
+    display: flex;
+    align-items: center;
+    padding-block: var(--ct-space-1);
 
-    ol {
-      display: flex;
-      flex-wrap: wrap;
-      gap: var(--ct-space-2);
-      margin: 0;
-      padding: 0;
-      list-style: none;
-    }
-
-    li {
-      display: flex;
-      align-items: center;
-      gap: var(--ct-space-2);
-      padding: var(--ct-space-1) var(--ct-space-3);
-      border: 1px solid var(--ct-border-1);
-      border-radius: var(--ct-radius-pill);
-      background: var(--ct-surface-1);
-      color: var(--ct-fg-muted);
-      font-size: var(--ct-text-sm);
+    // The unfilled groove, behind everything. It carries `role="progressbar"`, so it may not
+    // contain the nodes — they are its SIBLINGS (a progressbar's contents are presentational and
+    // these are real buttons).
+    > .ct-app__progress-track {
+      position: absolute;
+      inset-inline: var(--ct-space-5);
+      // Centred on the nodes' own line, whatever height they are.
+      inset-block-start: 50%;
+      translate: 0 -50%;
     }
   }
 
-  // The active step: weight, a real outline and `aria-current="step"`. Deliberately not a
-  // hue swap — the same information has to survive a monochrome render.
-  &__stepper-step--current {
-    border-color: var(--ct-border-strong);
-    background: var(--ct-surface-3);
-    color: var(--ct-fg);
-    font-weight: 600;
+  // The `<nav>` that carries the stepper landmark. It has to span the rail, or the list inside it
+  // shrinks to its content and the nodes stop spreading across the line.
+  &__rail-nav {
+    flex: 1;
+    min-inline-size: 0;
   }
 
-  &__stepper-index {
+  // ⚠️ **`position: relative` is the whole fix for "the nodes were painted under the line".** The
+  // groove is absolutely positioned, and a positioned element paints above non-positioned
+  // in-flow content whatever the DOM order. Making this list positioned too puts both in the same
+  // layer, where DOM order decides — and the list comes after the groove. No `z-index` at all,
+  // which matters inside `.ct-app`'s `isolation: isolate` and the nav's own stacking context:
+  // nothing new to reason about, and nothing that can escape.
+  &__rail-nodes {
+    position: relative;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0;
+    inline-size: 100%;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  // Every item after the first OWNS the gap before it, as a flex child. That is what makes the
+  // filled line terminate exactly at a node's edge: the connector's ends ARE the two nodes'
+  // edges, so there is no length to compute and nothing that could drift from the reported value.
+  &__rail-item {
+    display: flex;
+    flex: none;
+    align-items: center;
+
+    &:not(:first-child) {
+      flex: 1;
+    }
+  }
+
+  &__rail-link {
+    flex: 1;
+    // The same weight as the groove it sits over, so the two read as one line.
+    block-size: 0.75rem;
+    border-block: 1px solid var(--ct-border-strong);
+    background: var(--ct-bg);
+    transition: background-color var(--ct-fast) ease;
+
+    &[data-filled='true'] {
+      background: var(--ct-accent);
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      transition: none;
+    }
+  }
+
+  &__rail-node {
+    @include mixins.tap;
+    @include mixins.press(var(--ct-hover));
+    @include mixins.focus-ring;
+
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    min-inline-size: 1.5rem;
-    padding-inline: var(--ct-space-1);
+    // A circle at the 44px floor, so the node is its own tap target.
+    padding-inline: var(--ct-space-2);
+    border: 1px solid var(--ct-border-strong);
     border-radius: var(--ct-radius-pill);
-    background: var(--ct-bg);
+    // Opaque, because the spine runs behind it and must not show through the glyph.
+    background: var(--ct-surface-3);
+    color: var(--ct-fg-muted);
+    font: inherit;
+    font-weight: 600;
     font-variant-numeric: tabular-nums;
+    cursor: pointer;
+    transition:
+      background-color var(--ct-fast) ease,
+      border-color var(--ct-fast) ease,
+      box-shadow var(--ct-fast) ease;
+
+    &:hover {
+      border-color: var(--ct-accent);
+      box-shadow: 0 0 12px 2px color-mix(in srgb, var(--ct-accent) 55%, transparent);
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      transition: none;
+
+      &:hover {
+        box-shadow: none;
+      }
+    }
   }
 
-  // "Done", in words. A green tick alone is colour-only information.
-  &__stepper-state {
-    color: var(--ct-accent);
-    font-size: var(--ct-text-xs);
+  // Done: filled, and never by hue alone — the weight and the border change with it, and the
+  // node's accessible name says "done" in words.
+  &__rail-node--done {
+    border-color: var(--ct-accent);
+    background: var(--ct-accent);
+    color: var(--ct-accent-fg);
+  }
+
+  // "Finish" is a word, not a digit, so it is a pill rather than a circle.
+  &__rail-node--finish {
+    padding-inline: var(--ct-space-3);
+    font-size: var(--ct-text-sm);
     font-weight: 500;
-    text-transform: uppercase;
   }
 
   // ---------------------------------------------------------------------------------
-  // Closed inputs: checkbox grids and the 1-5 scales
+  // The one card being edited
   // ---------------------------------------------------------------------------------
+  // It FILLS the column it sits in rather than the 26rem measure `&__form` sets for the
+  // auth forms, and its contents keep a readable width and are centred inside it — a
+  // 700px-wide "sessions per week" select is filled space, not usable space.
+  //
+  // ⚠️ **ONE grid track is what aligns the card's contents, and a per-child
+  // `margin-inline: auto` is what it replaced.** That was the round-1 bug Kilian saw on
+  // every step: `_card.scss` sets `> h2, > h3, > p { margin: 0 }` at HIGHER specificity
+  // (`.ct-app__card > h2` beats `.ct-app__stepcard > *`), so the auto margins were dropped
+  // from exactly the heading and the description and kept everywhere else — the two of them
+  // sat flush to the card's padding while the fields below were centred. A single grid
+  // column cannot be overridden a child at a time: every child is placed in the same track,
+  // so all of them share one left edge and one right edge, and `justify-content` insets that
+  // track evenly on both sides.
+  //
+  // Padding and gap are left to `_card.scss`, which already widens both when the app has
+  // real room; restating them here would freeze the card at one size. `gap` is the same
+  // property in grid as in flex, so the card's own spacing survives the display change.
+  &__stepcard {
+    display: grid;
+    // `minmax(0, …)` so the track can shrink below its content on a narrow screen, which is
+    // what a bare `32rem` would refuse to do.
+    grid-template-columns: minmax(0, 32rem);
+    justify-content: center;
+    inline-size: 100%;
+    max-inline-size: none;
+  }
+
+  // ⚠️ **`scroll-margin` is what makes a section link land on its own HEADING.** Clicking a rail
+  // node scrolled the section's top edge to the top of the scrollport — and since round 8 the nav
+  // is `position: sticky` there, so the first ~62px of the card sat behind it and the `<h2>` was
+  // the part that disappeared. The anchor was always the section element; the nav was covering it.
+  //
+  // The value is the nav's own height from the same tokens it is built from — one `--ct-tap`
+  // control, its padding on both sides, its hairlines — plus a line of air, so it cannot drift
+  // from the thing it is compensating for.
+  &__stepcard {
+    scroll-margin-block-start: calc(
+      var(--ct-tap) + 2 * var(--ct-space-2) + 2px + var(--ct-space-3)
+    );
+  }
+
+  // ⚠️ A standalone REVEAL, not a `&__stepcard` modifier, because it has two callers with
+  // different layouts: the wizard's step card and the completion card. It is opt-in for a reason —
+  // the profile editor reuses the stepcard layout for sections that are all mounted at once, and a
+  // resting `opacity: 0` there would leave every section invisible.
+  //
+  // A transition and not a `@keyframes`: `distContract.test.ts` asserts every selector list in the
+  // built stylesheet starts with `.ct-app`, and a keyframe block's `from`/`to` are selector lists
+  // that never can. `ui/reveal.ts` flips `--in` after mount, so the hidden state is what paints
+  // first.
+  &__reveal {
+    opacity: 0;
+    transform: translateY(6px);
+    transition:
+      opacity 220ms ease-out,
+      transform 220ms ease-out;
+
+    // Reduced motion is not reduced information: the class still flips, it just arrives.
+    @media (prefers-reduced-motion: reduce) {
+      transition: none;
+    }
+  }
+
+  &__reveal--in {
+    opacity: 1;
+    transform: none;
+  }
+
+  // A read-only value beside its label — the account email, which nothing can edit here. Sunken
+  // like an input so it reads as a field, without being a control that invites a click.
+  &__readout {
+    padding: var(--ct-space-2) var(--ct-space-3);
+    border: 1px dashed var(--ct-border-strong);
+    border-radius: var(--ct-radius-2);
+    background: var(--ct-bg);
+    color: var(--ct-fg);
+    font-size: var(--ct-text-base);
+    overflow-wrap: anywhere;
+  }
+
+  // ---------------------------------------------------------------------------------
+  // Closed inputs: checkbox grids, the select chevron, the disclosure, the 1-5 scales
+  // ---------------------------------------------------------------------------------
+  // ⚠️ **This whole block was deleted by accident in round 7 and restored in round 8.** A python
+  // rewrite replaced the span between two comment markers and swallowed everything between them;
+  // `steps.tsx` went on emitting `ct-app__choice`, `ct-app__choices`, `ct-app__select`,
+  // `ct-app__fieldset`, `ct-app__scale` and `ct-app__scale-value` with no rules behind any of
+  // them. **A class name in markup with no matching CSS fails silently** — `tsc`, eslint,
+  // `designGuard` and `contrast` were all green throughout. The committed rules here are HEAD's,
+  // verbatim; the state layers are added on top of them rather than in place of them.
   &__fieldset {
     margin: 0;
     padding: 0;
@@ -151,6 +327,13 @@
     }
   }
 
+  // A choice that answers the whole question rather than being one item in it — "nothing is
+  // hurting", "any day". Full width even in the two-column grid, so it does not read as the first
+  // of seven.
+  &__choice--span {
+    grid-column: 1 / -1;
+  }
+
   &__choice {
     @include mixins.tap;
     @include mixins.press(var(--ct-hover));
@@ -163,6 +346,34 @@
     border-radius: var(--ct-radius-2);
     background: var(--ct-surface-2);
     cursor: pointer;
+    // Two independent shadow SLOTS: a checked row can also be hovered, and one `box-shadow`
+    // declaration per state meant whichever rule came last erased the other.
+    --ct-state-ring: 0 0 #0000;
+    --ct-state-glow: 0 0 #0000;
+
+    box-shadow: var(--ct-state-ring), var(--ct-state-glow);
+    // `press` transitions background and border; the shadow needs its own channel named or it
+    // would snap. No transform, no size change: nothing here moves on hover or focus.
+    transition:
+      background-color var(--ct-fast) ease,
+      border-color var(--ct-fast) ease,
+      box-shadow var(--ct-fast) ease;
+
+    // Zero offset, positive spread. A negative spread on a control this size hides the shadow
+    // behind the element that casts it, which is how round 5's version came out invisible.
+    &:hover {
+      border-color: var(--ct-accent);
+      --ct-state-glow: 0 0 12px 2px color-mix(in srgb, var(--ct-accent) 55%, transparent);
+    }
+
+    // ⚠️ **SELECTED is a third state and gets a third shape.** An `inset` ring, so it is a
+    // property of the row rather than a halo: hover is a soft glow OUTSIDE the box, focus is a
+    // hard outline OFFSET from it, and checked is a hard line ON it. A 20px glyph is not enough
+    // on its own at arm's length with chalky hands.
+    &:has(input:checked) {
+      border-color: var(--ct-accent);
+      --ct-state-ring: inset 0 0 0 1px var(--ct-accent);
+    }
 
     // The ring goes on the label, driven by the real checkbox inside it: the input is the
     // focusable element, and a ring drawn only around a 20px box is easy to miss.
@@ -180,30 +391,100 @@
       accent-color: var(--ct-accent);
       cursor: pointer;
     }
+
+    @media (prefers-reduced-motion: reduce) {
+      transition: none;
+
+      // Decoration off; the checked ring is state and stays.
+      &:hover {
+        --ct-state-glow: 0 0 #0000;
+      }
+    }
   }
 
-  // A choice that carries a description under its label. Block padding rather than the
-  // centred single line, because the row is now two lines and `--ct-tap` is a floor, not a
-  // height — a 17-row list of these has to breathe or it reads as a wall of text.
-  &__choice--described {
-    align-items: start;
-    padding-block: var(--ct-space-2);
+  // The select arrow. The native one is the platform's, at the platform's size and colour, and
+  // beside controls built on these tokens it read as borrowed. Two borders on a rotated square,
+  // so it inherits a token colour and needs no image at all — `img-src 'self' data:` has nothing
+  // to allow, and there is no second asset to keep in step with the two schemes.
+  &__select {
+    position: relative;
+    display: block;
+
+    select {
+      appearance: none;
+      inline-size: 100%;
+      // Room for the chevron, so a long grade label cannot run under it.
+      padding-inline-end: var(--ct-space-6);
+    }
+
+    &::after {
+      content: '';
+      position: absolute;
+      inset-block-start: 50%;
+      inset-inline-end: var(--ct-space-4);
+      inline-size: 0.45rem;
+      block-size: 0.45rem;
+      border-inline-end: 2px solid var(--ct-fg-muted);
+      border-block-end: 2px solid var(--ct-fg-muted);
+      transform: translateY(-70%) rotate(45deg);
+      pointer-events: none;
+    }
+
+    &:hover::after {
+      border-color: var(--ct-accent);
+    }
   }
 
-  &__choice-text {
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-  }
+  // The eight sliders, kept out of the way. They are no longer the step's question — one
+  // strength and one weakness are — so they open only for someone who wants to be specific.
+  &__disclosure {
+    padding: var(--ct-space-3);
+    border: 1px solid var(--ct-border-2);
+    border-radius: var(--ct-radius-2);
+    background: var(--ct-surface-2);
 
-  // Secondary to the name it sits under, and never the only place a distinction lives: the
-  // KEY is the data contract and the name still says "Outdoor boulders". This is the sentence
-  // that tells a rock climber the wall options are not theirs.
-  &__choice-hint {
-    color: var(--ct-fg-muted);
-    font-size: var(--ct-text-xs);
-    font-weight: 400;
-    line-height: 1.4;
+    > summary {
+      @include mixins.tap;
+      @include mixins.focus-ring;
+
+      display: flex;
+      align-items: center;
+      gap: var(--ct-space-3);
+      color: var(--ct-fg);
+      font-weight: 500;
+      cursor: pointer;
+      // `display: flex` plus this removes the default marker in every engine we target.
+      list-style: none;
+
+      &::-webkit-details-marker {
+        display: none;
+      }
+
+      // The same CSS chevron as the select, pointing right until the panel is open.
+      &::before {
+        content: '';
+        flex: none;
+        inline-size: 0.45rem;
+        block-size: 0.45rem;
+        border-inline-end: 2px solid var(--ct-fg-muted);
+        border-block-end: 2px solid var(--ct-fg-muted);
+        transform: rotate(-45deg);
+        transition: transform var(--ct-fast) ease;
+
+        @media (prefers-reduced-motion: reduce) {
+          transition: none;
+        }
+      }
+    }
+
+    &[open] > summary::before {
+      transform: rotate(45deg);
+    }
+
+    // The sliders sit below the summary, not beside it.
+    > * + * {
+      margin-block-start: var(--ct-space-3);
+    }
   }
 
   &__scale {
@@ -222,8 +503,22 @@
       @include mixins.focus-ring;
 
       inline-size: 100%;
+      border-radius: var(--ct-radius-pill);
       accent-color: var(--ct-accent);
       cursor: pointer;
+      transition: box-shadow var(--ct-fast) ease;
+
+      &:hover {
+        box-shadow: 0 0 12px 2px color-mix(in srgb, var(--ct-accent) 55%, transparent);
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        transition: none;
+
+        &:hover {
+          box-shadow: none;
+        }
+      }
     }
   }
 
@@ -232,5 +527,112 @@
     color: var(--ct-fg);
     font-weight: 500;
     font-variant-numeric: tabular-nums;
+  }
+
+  // ⚠️ **The slider's committed state is the ROW, not a ring on the control**, and that is a
+  // deliberate deviation from the other three. `tap` gives the input a 44px-tall box around a
+  // ~4px track, so an inset ring there frames mostly empty space — eight stacked in the
+  // disclosure would read as eight empty boxes. The row's existing hairline and its value text
+  // carry it instead: same accent, same meaning, no invented geometry.
+  //
+  // "Committed" means "not on the default", which is the only thing available — CSS cannot ask
+  // whether a range has been dragged, and neither can React without tracking it.
+  &__scale--set {
+    border-block-end-color: var(--ct-accent);
+  }
+
+  // ⚠️ A separate rule, not nested: inside `&__scale--set` the parent is `.ct-app__scale--set`,
+  // so `#{&}-value` compiles to `.ct-app__scale--set-value`, which matches nothing. Verified in
+  // the compiled stylesheet, where it did exactly that.
+  &__scale--set &__scale-value {
+    color: var(--ct-accent);
+    font-weight: 600;
+  }
+
+  // The helper line under the current-grade picker, turned WARNING. ⚠️ It is the SAME line in the
+  // same slot, not a second message underneath: two messages arguing about the same two fields is
+  // how a form contradicts itself. Amber rather than `--ct-danger`, `role="status"` rather than
+  // `alert`, nothing disabled and nothing corrected.
+  &__caption--warning {
+    color: var(--ct-warning);
+    font-size: var(--ct-text-base);
+  }
+
+  // ---------------------------------------------------------------------------------
+  // The completion screen
+  // ---------------------------------------------------------------------------------
+  // The same centred single track as `&__stepcard`, for the same reason: one column means the
+  // photograph, the heading, the copy and the button cannot drift apart. `relative` +
+  // `overflow: hidden` is what CLIPS the confetti, and it is why no piece needs to know how
+  // tall the card is.
+  &__done {
+    position: relative;
+    display: grid;
+    grid-template-columns: minmax(0, 28rem);
+    justify-content: center;
+    justify-items: center;
+    overflow: hidden;
+    padding-block: var(--ct-space-6);
+    text-align: center;
+  }
+
+  &__done-shot {
+    inline-size: 100%;
+    block-size: auto;
+    border-radius: var(--ct-radius-3);
+    box-shadow: var(--ct-shadow-1);
+  }
+
+  // ⚠️ Absolutely positioned INSIDE the card — never `fixed`, and no viewport units: both
+  // mounts share this route tree, and in the federated mount either would resolve against
+  // kilianmc.com's viewport and rain confetti over the portfolio.
+  &__confetti {
+    position: absolute;
+    inset: 0;
+    overflow: hidden;
+    // Decoration must never eat the click on the button underneath it.
+    pointer-events: none;
+  }
+
+  &__confetti-piece {
+    position: absolute;
+    // Above the card's top edge, so the first frame is already clipped and nothing "appears".
+    inset-block-start: -2rem;
+    inline-size: 0.45rem;
+    block-size: 0.8rem;
+    border-radius: 1px;
+    opacity: 0;
+    transition:
+      transform 2.4s cubic-bezier(0.3, 0.5, 0.5, 1),
+      opacity 2.4s ease-in;
+  }
+
+  // ⚠️ **A transition per piece, not a `@keyframes`** — `distContract.test.ts` requires every
+  // selector list in the shipped stylesheet to begin with `.ct-app`, and `from`/`to` are
+  // selector lists that never can. `OnboardingComplete.tsx` adds `--in` after mount, which is
+  // what gives the transition something to run from.
+  //
+  // Deterministic arithmetic rather than `math.random()`: a stylesheet that differs from build
+  // to build is a diff nobody can review. The modulos are what stop eighteen pieces falling in
+  // one straight line at one speed.
+  @for $i from 1 through 18 {
+    &__confetti-piece:nth-child(#{$i}) {
+      inset-inline-start: 2% + ($i - 1) * 5.4%;
+      background: list.nth($confetti-tints, ($i % 4) + 1);
+      transition-delay: ($i % 6) * 70ms;
+    }
+
+    &__confetti--in &__confetti-piece:nth-child(#{$i}) {
+      opacity: 1;
+      transform: translateY(#{34 + ($i % 5)}rem) rotate(#{180 + ($i % 4) * 200}deg);
+    }
+  }
+
+  // Fully off, not merely still: eighteen static squares scattered down a card is a rendering
+  // bug, not a calmer celebration. Everything that carries information stays.
+  @media (prefers-reduced-motion: reduce) {
+    &__confetti {
+      display: none;
+    }
   }
 }

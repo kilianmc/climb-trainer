@@ -37,7 +37,7 @@ function Register() {
   }
 
   return (
-    <>
+    <div className="ct-app__narrow">
       <h1>Create account</h1>
       <p className="ct-app__lede">
         Registration is invite-only. With a code, an email and a password you are signed in straight
@@ -53,7 +53,7 @@ function Register() {
         error={error}
         onSubmit={submit}
       />
-    </>
+    </div>
   );
 }
 

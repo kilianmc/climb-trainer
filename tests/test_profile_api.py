@@ -1,4 +1,4 @@
-"""`GET`/`PATCH /api/profile` against real Postgres.
+"""`GET`/`PATCH`/`POST reset` on `/api/profile`, against real Postgres.
 
 Two of CLAUDE.md's "write tests for" bullets, and the first one is the reason this file
 exists at all:
@@ -7,13 +7,20 @@ exists at all:
   consequence of the plan's Zeigarnik point: an abandoned onboarding must resume, so
   step 1 has to create the row and step 4 must not wipe what steps 1-3 wrote. A
   handler that dropped the earlier answers would pass every unit test of its own step.
+- **anything that can lose user data.** `POST /api/profile/reset` deletes rows on purpose,
+  so what it must NOT reach is as much of its contract as what it clears.
 - **core user paths** — onboarding is the first thing a new account does.
 
 Integration tests on purpose. The risky parts are the `ON CONFLICT` clauses (including the
 one that infers the partial unique index from `0005`), the delete-then-insert set
-replacement, and the omitted-vs-null note rule — none of which a unit test of the handler
-would exercise, because all three are SQL. **Skips without `DATABASE_URL`**
-(`conftest.py`); CI runs them for real.
+replacement, the omitted-vs-null note rule, and the cross-discipline grade rules — none of
+which a unit test of the handler would exercise, because they are all SQL.
+
+⚠️ **The tests touching `0006`'s four columns cannot pass until that revision is applied.**
+They are written against the models, and CI applies `alembic upgrade head` before running
+them; a local run without a migrated database skips this whole file anyway.
+
+**Skips without `DATABASE_URL`** (`conftest.py`); CI runs them for real.
 """
 
 from typing import Any
@@ -26,10 +33,10 @@ from sqlalchemy.orm import Session
 from server.domain.vocabulary import CLIMBING_ASPECTS
 from server.models import (
     ClimbingAspect,
-    Equipment,
     Grade,
     GradeSystem,
     InjuryArea,
+    UserAspectRating,
     UserInjury,
     UserProfile,
 )
@@ -73,9 +80,21 @@ def _first_grade_id(session: Session, discipline: str) -> int:
     return grade_id
 
 
-def _lookup_ids(
-    session: Session, table: type[Equipment] | type[InjuryArea], *keys: str
-) -> list[int]:
+def _second_grade_id(session: Session, discipline: str) -> int:
+    """A different rung of the same ladder, for the target/current pair."""
+    grade_id = session.scalar(
+        select(Grade.id)
+        .join(GradeSystem, Grade.grade_system_id == GradeSystem.id)
+        .where(GradeSystem.discipline == discipline)
+        .order_by(Grade.ordinal)
+        .offset(1)
+        .limit(1)
+    )
+    assert grade_id is not None, f"no second seeded {discipline} grade"
+    return grade_id
+
+
+def _lookup_ids(session: Session, table: type[InjuryArea], *keys: str) -> list[int]:
     """Ids for seeded keys, **in the order the keys were asked for**.
 
     Not in id order: these are unpacked positionally below, and a caller silently getting
@@ -102,9 +121,7 @@ def test_a_new_account_has_an_empty_profile_and_no_row_is_created_by_reading_it(
     assert body["primary_discipline"] is None
     assert body["sessions_per_week"] is None
     assert body["available_weekdays"] is None
-    assert body["equipment_reviewed_at"] is None
     assert body["injuries_reviewed_at"] is None
-    assert body["equipment_ids"] == []
     assert body["aspect_ratings"] == []
     assert body["injuries"] == []
     # The one non-null field: a setting with a server default, not an answer.
@@ -138,13 +155,16 @@ def test_an_abandoned_onboarding_resumes_rather_than_restarting(
 ) -> None:
     """The load-bearing test of this PR.
 
-    Four steps, four requests, each carrying ONLY its own field — as onboarding sends
+    Four steps, four requests, each carrying ONLY its own fields — as onboarding sends
     them. Every earlier answer has to survive every later request; a handler that
     replaced the row instead of patching it would leave the last step's answer alone in
     a profile that reads as 20% complete.
+
+    ⚠️ Step 3 is the one issue #54 rebuilt: a current grade, a strength and a weakness, plus
+    the eight ratings that ride along with them. All three are `0006` columns.
     """
     grade_id = _first_grade_id(db_session, "boulder")
-    equipment_ids = _lookup_ids(db_session, Equipment, "bouldering_wall", "hangboard")
+    current_id = _second_grade_id(db_session, "boulder")
     aspect_ids = list(
         db_session.scalars(select(ClimbingAspect.id).order_by(ClimbingAspect.sort_order))
     )
@@ -152,14 +172,16 @@ def test_an_abandoned_onboarding_resumes_rather_than_restarting(
 
     _patch(api_client, auth, {"target_grade_id": grade_id})
     _patch(api_client, auth, {"sessions_per_week": 3, "available_weekdays": _MON_WED_FRI})
-    _patch(api_client, auth, {"equipment_ids": equipment_ids})
     _patch(
         api_client,
         auth,
         {
+            "current_grade_id": current_id,
+            "strength_aspect_id": aspect_ids[0],
+            "weakness_aspect_id": aspect_ids[1],
             "aspect_ratings": [
                 {"climbing_aspect_id": aspect_id, "score": 3} for aspect_id in aspect_ids
-            ]
+            ],
         },
     )
     final = _patch(
@@ -167,9 +189,11 @@ def test_an_abandoned_onboarding_resumes_rather_than_restarting(
     )
 
     assert final["target_grade_id"] == grade_id
+    assert final["current_grade_id"] == current_id
     assert final["sessions_per_week"] == 3
     assert final["available_weekdays"] == _MON_WED_FRI
-    assert final["equipment_ids"] == sorted(equipment_ids)
+    assert final["strength_aspect_id"] == aspect_ids[0]
+    assert final["weakness_aspect_id"] == aspect_ids[1]
     assert [entry["score"] for entry in final["aspect_ratings"]] == [3] * len(CLIMBING_ASPECTS)
     assert final["injuries"] == [
         {
@@ -192,17 +216,31 @@ def test_a_list_field_REPLACES_the_set_and_an_empty_list_clears_it(
     A scalar left out is untouched; a list that IS sent is the whole answer. Both
     directions matter — an additive-only implementation makes a deselected checkbox
     impossible to express.
-    """
-    wall, hangboard, rings = _lookup_ids(
-        db_session, Equipment, "bouldering_wall", "hangboard", "gymnastic_rings"
-    )
 
-    first = _patch(api_client, auth, {"equipment_ids": [wall, hangboard]})
-    assert first["equipment_ids"] == sorted([wall, hangboard])
-    # Deselect one, select another.
-    second = _patch(api_client, auth, {"equipment_ids": [wall, rings]})
-    assert second["equipment_ids"] == sorted([wall, rings])
-    assert _patch(api_client, auth, {"equipment_ids": []})["equipment_ids"] == []
+    ⚠️ Demonstrated on `injuries` since issue #54 retired the equipment step. It is the same
+    delete-then-insert path, and the empty list is the interesting case: it is a real answer
+    ("nothing is hurting"), not an absence.
+    """
+    elbow, shoulder, fingers = _lookup_ids(db_session, InjuryArea, "elbow", "shoulder", "fingers")
+
+    first = _patch(
+        api_client,
+        auth,
+        {"injuries": [{"injury_area_id": elbow}, {"injury_area_id": shoulder}]},
+    )
+    assert sorted(entry["injury_area_id"] for entry in first["injuries"]) == sorted(
+        [elbow, shoulder]
+    )
+    # Unflag one, flag another.
+    second = _patch(
+        api_client,
+        auth,
+        {"injuries": [{"injury_area_id": elbow}, {"injury_area_id": fingers}]},
+    )
+    assert sorted(entry["injury_area_id"] for entry in second["injuries"]) == sorted(
+        [elbow, fingers]
+    )
+    assert _patch(api_client, auth, {"injuries": []})["injuries"] == []
 
 
 def test_dropping_an_injury_flag_RESOLVES_it_and_keeps_the_history(
@@ -253,7 +291,9 @@ def test_re_rating_an_aspect_updates_the_score_rather_than_duplicating_the_row(
     "body",
     [
         pytest.param({"target_grade_id": 10_000_000}, id="grade"),
-        pytest.param({"equipment_ids": [10_000_000]}, id="equipment"),
+        pytest.param({"current_grade_id": 10_000_000}, id="current-grade"),
+        pytest.param({"strength_aspect_id": 10_000_000}, id="strength-aspect"),
+        pytest.param({"weakness_aspect_id": 10_000_000}, id="weakness-aspect"),
         pytest.param(
             {"aspect_ratings": [{"climbing_aspect_id": 10_000_000, "score": 3}]}, id="aspect"
         ),
@@ -341,41 +381,6 @@ def test_submitting_the_injuries_step_with_NO_injuries_still_records_the_answer(
     assert api_client.get("/api/profile", headers=auth).json()["injuries_reviewed_at"] == stamped
 
 
-def test_submitting_the_equipment_step_with_NOTHING_selected_records_the_answer(
-    api_client: TestClient, auth: dict[str, str]
-) -> None:
-    """The twin of the injuries test, and the reason the equipment step is not a dead end.
-
-    "I own none of this" writes zero `user_equipment` rows, so without this column an empty
-    selection is indistinguishable from never having been asked — which is what made the
-    step unanswerable for an outdoor-only climber. A regression that never stamps the column
-    (or stamps it on GET) would otherwise pass the entire suite: this file had no assertion
-    on it at all.
-    """
-    body = _patch(api_client, auth, {"equipment_ids": []})
-
-    assert body["equipment_ids"] == []
-    assert body["equipment_reviewed_at"] is not None
-
-    # And it is not touched by a read, nor by a patch that says nothing about equipment.
-    stamped = body["equipment_reviewed_at"]
-    assert api_client.get("/api/profile", headers=auth).json()["equipment_reviewed_at"] == stamped
-    assert (
-        _patch(api_client, auth, {"show_body_metrics": False})["equipment_reviewed_at"] == stamped
-    )
-
-
-def test_selecting_equipment_stamps_the_column_too(
-    api_client: TestClient, auth: dict[str, str], db_session: Session
-) -> None:
-    """The other half: rows AND the timestamp, so completion never has to count rows."""
-    wall = _lookup_ids(db_session, Equipment, "bouldering_wall")[0]
-    body = _patch(api_client, auth, {"equipment_ids": [wall]})
-
-    assert body["equipment_ids"] == [wall]
-    assert body["equipment_reviewed_at"] is not None
-
-
 def test_re_submitting_a_flag_keeps_ONE_open_row_and_its_original_start_date(
     api_client: TestClient, auth: dict[str, str], db_session: Session
 ) -> None:
@@ -423,3 +428,240 @@ def test_an_omitted_note_PRESERVES_and_an_explicit_null_CLEARS(
 
     cleared = _patch(api_client, auth, {"injuries": [{"injury_area_id": elbow, "note": None}]})
     assert cleared["injuries"][0]["note"] is None
+
+
+# ---------------------------------------------------------------------------------------
+# Issue #54: the grade pair, the aspect pair, and the reset endpoint
+# ---------------------------------------------------------------------------------------
+
+
+def test_a_current_grade_on_the_OTHER_ladder_is_a_422(
+    api_client: TestClient, auth: dict[str, str], db_session: Session
+) -> None:
+    """The ordinal ladders are disjoint per discipline, so this pairing is meaningless.
+
+    `server/domain/grades.py` bands the ordinals 1000 apart and `convert` raises
+    `CrossDisciplineError` rather than compare across them — so "French 7a goal, Font 7A
+    now" is a row the plan generator can do nothing with. The client locks both pickers to
+    one scale, which is why this is a 422 (a malformed request) rather than a repair.
+    """
+    sport_goal = _first_grade_id(db_session, "sport")
+    boulder_now = _first_grade_id(db_session, "boulder")
+
+    _patch(api_client, auth, {"target_grade_id": sport_goal})
+    response = api_client.patch(
+        "/api/profile", json={"current_grade_id": boulder_now}, headers=auth
+    )
+
+    assert response.status_code == 422, response.text
+    # And nothing was written: the 422 comes before the first write, so the profile is
+    # exactly as step 1 left it.
+    assert api_client.get("/api/profile", headers=auth).json()["current_grade_id"] is None
+
+
+def test_changing_the_target_to_the_other_discipline_CLEARS_the_current_grade(
+    api_client: TestClient, auth: dict[str, str], db_session: Session
+) -> None:
+    """The asymmetry, and it is the alternative to a dead end.
+
+    ⚠️ A 422 here would mean a climber who switches from sport to bouldering could never
+    change their goal: the stored current grade would refuse every new target. Clearing is
+    also exactly what the client does to its own pickers when the scale changes, so the two
+    halves agree. This is the ONE null this endpoint writes that the body did not ask for.
+    """
+    sport_goal = _first_grade_id(db_session, "sport")
+    sport_now = _second_grade_id(db_session, "sport")
+    boulder_goal = _first_grade_id(db_session, "boulder")
+
+    _patch(api_client, auth, {"target_grade_id": sport_goal})
+    both = _patch(api_client, auth, {"current_grade_id": sport_now})
+    assert both["current_grade_id"] == sport_now
+
+    switched = _patch(api_client, auth, {"target_grade_id": boulder_goal})
+    assert switched["target_grade_id"] == boulder_goal
+    assert switched["primary_discipline"] == "boulder"
+    assert switched["current_grade_id"] is None
+
+    # The positive control, in the other direction: a new target on the SAME ladder leaves
+    # the current grade alone. Without this, "clear it always" would pass the assertions
+    # above and quietly discard an answer on every goal change.
+    _patch(api_client, auth, {"current_grade_id": _second_grade_id(db_session, "boulder")})
+    same_ladder = _patch(api_client, auth, {"target_grade_id": boulder_goal})
+    assert same_ladder["current_grade_id"] == _second_grade_id(db_session, "boulder")
+
+
+def test_a_strength_that_matches_the_STORED_weakness_is_a_422(
+    api_client: TestClient, auth: dict[str, str], db_session: Session
+) -> None:
+    """The half of the rule that the request body alone cannot see.
+
+    `ProfilePatchRequest` catches a body carrying both. One arriving alone has to be checked
+    against the row, or a two-step client lands an `IntegrityError` on
+    `ck_user_profile_strength_and_weakness_differ` — a 500 for what is a client mistake.
+    """
+    aspects = list(
+        db_session.scalars(select(ClimbingAspect.id).order_by(ClimbingAspect.sort_order))
+    )
+
+    _patch(api_client, auth, {"weakness_aspect_id": aspects[0]})
+    response = api_client.patch(
+        "/api/profile", json={"strength_aspect_id": aspects[0]}, headers=auth
+    )
+    assert response.status_code == 422, response.text
+
+    # The positive control: a different aspect is accepted, so the check is not simply
+    # refusing every second write.
+    assert (
+        _patch(api_client, auth, {"strength_aspect_id": aspects[1]})["strength_aspect_id"]
+        == (aspects[1])
+    )
+
+
+def test_a_display_name_is_stored_and_survives_later_steps(
+    api_client: TestClient, auth: dict[str, str], db_session: Session
+) -> None:
+    """It belongs to no step, so nothing that writes a step may disturb it."""
+    assert api_client.get("/api/profile", headers=auth).json()["display_name"] is None
+
+    named = _patch(api_client, auth, {"display_name": "  Kilian  "})
+    assert named["display_name"] == "Kilian"
+
+    later = _patch(api_client, auth, {"target_grade_id": _first_grade_id(db_session, "sport")})
+    assert later["display_name"] == "Kilian"
+
+
+def test_the_retired_equipment_fields_are_gone_from_the_response(
+    api_client: TestClient, auth: dict[str, str]
+) -> None:
+    """Issue #54 took the step out; these two keys went with it.
+
+    Pinned because the client's completion maths reads this body key by key: a field that
+    came back would be a field somebody could start depending on again, and the
+    owned-vs-lacked question is deliberately deferred to PR #10. `user_equipment` and every
+    `exercise_equipment` row are untouched — what is gone is this endpoint's surface.
+    """
+    body = api_client.get("/api/profile", headers=auth).json()
+
+    assert "equipment_ids" not in body
+    assert "equipment_reviewed_at" not in body
+
+
+def test_reset_clears_the_four_steps_and_nothing_else(
+    api_client: TestClient, auth: dict[str, str], db_session: Session
+) -> None:
+    """The whole contract of `POST /api/profile/reset`, in one walk.
+
+    It exists because issue #54 needs a way back to a from-scratch wizard, and because
+    teaching `null` to mean "clear" in `PATCH` was rejected: `null` there means "not in this
+    request", which is what lets onboarding send one step at a time.
+
+    ⚠️ The assertions about what SURVIVES are as much of the contract as the ones about what
+    is cleared. A reset walks the setup flow again; it is not an account wipe.
+    """
+    aspects = list(
+        db_session.scalars(select(ClimbingAspect.id).order_by(ClimbingAspect.sort_order))
+    )
+    elbow = _lookup_ids(db_session, InjuryArea, "elbow")[0]
+    goal = _first_grade_id(db_session, "boulder")
+
+    _patch(api_client, auth, {"target_grade_id": goal, "display_name": "Kilian"})
+    _patch(api_client, auth, {"sessions_per_week": 4, "available_weekdays": _MON_WED_FRI})
+    _patch(
+        api_client,
+        auth,
+        {
+            "current_grade_id": _second_grade_id(db_session, "boulder"),
+            "strength_aspect_id": aspects[0],
+            "weakness_aspect_id": aspects[1],
+            "aspect_ratings": [{"climbing_aspect_id": aspects[0], "score": 5}],
+        },
+    )
+    _patch(api_client, auth, {"injuries": [{"injury_area_id": elbow, "note": "sore"}]})
+    _patch(api_client, auth, {"show_body_metrics": False})
+
+    response = api_client.post("/api/profile/reset", headers=auth)
+    assert response.status_code == 200, response.text
+    body = response.json()
+
+    # Cleared: every column the four steps own, plus the rows the aspect step wrote.
+    assert body["target_grade_id"] is None
+    assert body["current_grade_id"] is None
+    assert body["primary_discipline"] is None
+    assert body["sessions_per_week"] is None
+    assert body["available_weekdays"] is None
+    assert body["strength_aspect_id"] is None
+    assert body["weakness_aspect_id"] is None
+    assert body["injuries_reviewed_at"] is None
+    assert body["aspect_ratings"] == []
+    assert body["injuries"] == []
+
+    # NOT cleared: neither of these is one of the four steps.
+    assert body["display_name"] == "Kilian"
+    assert body["show_body_metrics"] is False
+
+    # The response is the database, not a hopeful echo.
+    assert api_client.get("/api/profile", headers=auth).json() == body
+    assert db_session.scalar(select(func.count()).select_from(UserAspectRating)) == 0
+
+
+def test_reset_keeps_RESOLVED_injuries_and_only_clears_the_open_ones(
+    api_client: TestClient, auth: dict[str, str], db_session: Session
+) -> None:
+    """⚠️ The one place this endpoint could destroy history, and must not.
+
+    `flag -> resolve -> re-flag` is what `user_injury` exists for — it is why `0005` added a
+    PARTIAL unique index rather than a plain one. A resolved row is a past injury, and a
+    reset is not a claim about the past. An open flag is the step's current answer and has to
+    go, or the step would not read as unanswered.
+    """
+    elbow, shoulder = _lookup_ids(db_session, InjuryArea, "elbow", "shoulder")
+
+    _patch(api_client, auth, {"injuries": [{"injury_area_id": elbow}]})
+    # Unflagging resolves the elbow and opens the shoulder.
+    _patch(api_client, auth, {"injuries": [{"injury_area_id": shoulder}]})
+
+    api_client.post("/api/profile/reset", headers=auth)
+
+    rows = db_session.execute(
+        select(UserInjury.injury_area_id, UserInjury.resolved_on).order_by(UserInjury.id)
+    ).all()
+    assert [(row.injury_area_id, row.resolved_on is not None) for row in rows] == [(elbow, True)]
+
+
+def test_reset_is_idempotent_and_creates_no_row(
+    api_client: TestClient, auth: dict[str, str], db_session: Session
+) -> None:
+    """A reset of nothing is nothing — and must not be the thing that materialises a profile.
+
+    Same rule as `PATCH {}` and `GET`: a touch-on-read (or touch-on-reset) write is the
+    classic accident that defeats every other compute rule in CLAUDE.md.
+    """
+    first = api_client.post("/api/profile/reset", headers=auth)
+    second = api_client.post("/api/profile/reset", headers=auth)
+
+    assert first.status_code == 200, first.text
+    assert first.json() == second.json()
+    assert db_session.scalar(select(func.count()).select_from(UserProfile)) == 0
+
+
+def test_one_users_reset_never_reaches_another(
+    api_client: TestClient, auth: dict[str, str], invite_code: str, db_session: Session
+) -> None:
+    """IDOR is the realistic extraction risk here, and a reset is the destructive shape of it.
+
+    Every statement in the handler is scoped by the token's `user_id` — never a path
+    parameter, never a body field. This is the test that would fail if one of them lost its
+    `WHERE`.
+    """
+    goal = _first_grade_id(db_session, "sport")
+    _patch(api_client, auth, {"target_grade_id": goal})
+
+    other = api_client.post(
+        "/api/auth/register",
+        json={"email": "other@example.com", "password": _PASSWORD, "invite_code": invite_code},
+    )
+    assert other.status_code == 201, other.text
+    other_auth = {"Authorization": f"Bearer {other.json()['access_token']}"}
+
+    assert api_client.post("/api/profile/reset", headers=other_auth).status_code == 200
+    assert api_client.get("/api/profile", headers=auth).json()["target_grade_id"] == goal

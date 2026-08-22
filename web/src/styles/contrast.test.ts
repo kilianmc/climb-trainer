@@ -80,9 +80,14 @@ const CARD_SURFACES = ['bg', 'surface-1', 'surface-2', 'surface-3'] as const;
 /** Every pair the design system actually renders, foreground first. */
 const TEXT_PAIRS: [string, string][] = [
   ...['fg', 'fg-muted'].flatMap((fg): [string, string][] => SURFACES.map((s) => [fg, s])),
-  // Accent and danger are text tones (links, badges, field errors), never used on `hover`
-  // or `pressed`, which are neutral-button states.
-  ...['accent', 'danger'].flatMap((fg): [string, string][] => CARD_SURFACES.map((s) => [fg, s])),
+  // Accent, danger and warning are text tones (links, badges, field errors, the grade-clash
+  // helper line), never used on `hover` or `pressed`, which are neutral-button states.
+  // `warning` is `.ct-app__caption--warning`, which renders inside a card — so `surface-1`,
+  // and the other card surfaces too, because a card's own surface steps with its nesting.
+  // It is text ONLY and never a fill, so unlike the two above it has no `--fg` partner below.
+  ...['accent', 'danger', 'warning'].flatMap((fg): [string, string][] =>
+    CARD_SURFACES.map((s) => [fg, s]),
+  ),
   // …and the reverse: the tone as a FILL, with its paired foreground on top.
   ['accent-fg', 'accent'],
   ['accent-fg', 'accent-pressed'],

@@ -98,6 +98,12 @@ def test_the_grade_ladder_arrives_grouped_by_system_and_ascending(
     assert [row["id"] for row in vocabulary["grades"]] == [row.id for row in expected]
 
     systems = vocabulary["grade_systems"]
+    # ⚠️ **This assertion was latently wrong until `0006` (issue #55).** The endpoint used to
+    # order by the SERIAL `id`, so declaration order and insert order were the same thing only
+    # on a fresh database — which CI always is. Add a system mid-tuple and this test kept
+    # passing while dev and production rendered the new one last. It now goes through
+    # `grade_system.sort_order`, like every sibling lookup table, so it is insulated the same
+    # way `test_a_lookup_table_arrives_whole_and_in_SEED_ORDER` always was.
     assert [entry["key"] for entry in systems] == [spec.key.value for spec in GRADE_SYSTEMS]
     # The discipline is what makes the boulder/rope split selectable in the UI.
     assert {entry["discipline"] for entry in systems} == {member.value for member in Discipline}

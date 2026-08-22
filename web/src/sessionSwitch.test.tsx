@@ -5,6 +5,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 
 import type { Profile } from './api/types';
 import { AuthProvider } from './auth/AuthProvider';
+import { completionPercent, stepCompletion } from './profile/completion';
 import { createAppContext, createAppRouter } from './router';
 
 /**
@@ -17,8 +18,8 @@ import { createAppContext, createAppRouter } from './router';
  * dashboard rendered **86%** with `GET /api/profile` having been called exactly **once,
  * ever** — `staleTime` is ten minutes, so nothing refetched. The same cache entry feeds
  * `draftFrom()` in the wizard and the editor, so B's form came prefilled with A's target
- * grade, availability, equipment and self-ratings, and one Continue would have written A's
- * answers into B's row.
+ * grade, availability and self-ratings, and one Continue would have written A's answers into
+ * B's row.
  *
  * Two accounts in one tab is the dev and demo path, not a contrived setup.
  *
@@ -27,33 +28,55 @@ import { createAppContext, createAppRouter } from './router';
  * the session store's token going null: `auth/refresh.ts:533` clears the token before EVERY
  * refresh POST (the documented "drop the token before every `POST /api/auth/*`" rule), so a
  * store-level hook would wipe the cache on every silent token rotation.
+ *
+ * ⚠️ The measured numbers above are the five-step flow's. Issue #54 left four steps and a 20%
+ * floor, so the percentages these fixtures produce are different — and they are **derived
+ * from the fixtures below** rather than written in, because a hand-computed constant that
+ * happens to agree with a broken `completionPercent` is not an assertion.
  */
-const A_HAS_FOUR_STEPS: Profile = {
+const A_HAS_TWO_STEPS: Profile = {
+  email: 'a@example.com',
+  display_name: null,
   target_grade_id: 11,
+  current_grade_id: null,
   primary_discipline: 'boulder',
   sessions_per_week: 3,
   available_weekdays: 0b0010101,
+  strength_aspect_id: null,
+  weakness_aspect_id: null,
   show_body_metrics: true,
-  equipment_reviewed_at: '2026-08-21T09:00:00Z',
   injuries_reviewed_at: null,
-  equipment_ids: [5],
-  aspect_ratings: [{ climbing_aspect_id: 1, score: 3, rated_at: '2026-08-21T09:00:00Z' }],
+  aspect_ratings: [],
   injuries: [],
 };
 
 /** Nothing answered: the endowed floor. */
 const B_IS_NEW: Profile = {
+  email: 'b@example.com',
+  display_name: null,
   target_grade_id: null,
+  current_grade_id: null,
   primary_discipline: null,
   sessions_per_week: null,
   available_weekdays: null,
+  strength_aspect_id: null,
+  weakness_aspect_id: null,
   show_body_metrics: true,
-  equipment_reviewed_at: null,
   injuries_reviewed_at: null,
-  equipment_ids: [],
   aspect_ratings: [],
   injuries: [],
 };
+
+/**
+ * What the bar must read for a given profile, from the same function the screen uses.
+ *
+ * ⚠️ **Not a literal, and that is the point of the helper.** The two numbers this test cares
+ * about are "A's" and "B's", not "60" and "20" — pinning the digits would make the test fail
+ * on a deliberate change to the floor while still passing if the cache leaked one account's
+ * profile into the other and both numbers moved together. `completion.test.ts` is what pins
+ * the arithmetic itself.
+ */
+const percentFor = (profile: Profile) => String(completionPercent(stepCompletion(profile)));
 
 function urlOf(input: unknown): string {
   if (typeof input === 'string') return input;
@@ -109,7 +132,7 @@ beforeEach(() => {
       }
       if (url.endsWith('/api/profile') && (init?.method ?? 'GET') === 'GET') {
         profileReads += 1;
-        return Promise.resolve(json(profileReads === 1 ? A_HAS_FOUR_STEPS : B_IS_NEW));
+        return Promise.resolve(json(profileReads === 1 ? A_HAS_TWO_STEPS : B_IS_NEW));
       }
       return Promise.reject(new Error(`unexpected request: ${url}`));
     }),
@@ -121,6 +144,10 @@ afterEach(() => {
 });
 
 it('does not show one account the previous account cached profile', async () => {
+  // The two fixtures have to DISAGREE or the test cannot see a leak at all — the round-1
+  // version of this file could have been written with two identical profiles and passed.
+  expect(percentFor(A_HAS_TWO_STEPS)).not.toBe(percentFor(B_IS_NEW));
+
   // `createAppContext`, not a hand-built pair: the link between the two IS what is under
   // test, and a harness that wired it itself would prove nothing about the real entries.
   const { auth, queryClient } = createAppContext();
@@ -137,8 +164,11 @@ it('does not show one account the previous account cached profile', async () => 
     </AuthProvider>,
   );
 
-  // A: four of five steps answered.
-  expect(await screen.findByRole('progressbar')).toHaveAttribute('aria-valuenow', '86');
+  // A: the target grade and availability answered, the other two steps not.
+  expect(await screen.findByRole('progressbar')).toHaveAttribute(
+    'aria-valuenow',
+    percentFor(A_HAS_TWO_STEPS),
+  );
   expect(profileGets()).toBe(1);
 
   // The real credential calls, which is where the cache reset has to live.
@@ -152,6 +182,9 @@ it('does not show one account the previous account cached profile', async () => 
   // asserted as "more than before" rather than pinned: how many times a cleared cache is
   // re-read depends on how many render cycles a mounted observer gets, and the invariant is
   // that B's screen came from B's own fetch.
-  expect(await screen.findByRole('progressbar')).toHaveAttribute('aria-valuenow', '29');
+  expect(await screen.findByRole('progressbar')).toHaveAttribute(
+    'aria-valuenow',
+    percentFor(B_IS_NEW),
+  );
   expect(profileGets()).toBeGreaterThan(1);
 });
