@@ -27,6 +27,16 @@
 
 .ct-app {
   @include tokens.declare;
+  // The System/Light/Dark override. `[data-theme]` absent = follow the OS, which is what
+  // `declare` alone already does — see `_tokens.scss` for why this beats the media query.
+  @include tokens.overrides;
+
+  // ⚠️ **A stacking context of its own, so no `z-index` inside the app can escape it.** The nav's
+  // label tooltips need to paint over the first card, which comes later in the DOM, and in the
+  // federated mount this stylesheet is injected into kilianmc.com's document — an index that
+  // escaped `.ct-app` could paint over the portfolio's own chrome. One declaration closes that
+  // for every z-index the app will ever have, present and future.
+  isolation: isolate;
 
   // The query container everything mount-sensitive asks. Named, so a card's own `ct-card`
   // container can never accidentally answer a question about the app's width.

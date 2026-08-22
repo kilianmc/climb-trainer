@@ -42,6 +42,13 @@ def test_seed_is_idempotent(db_session: Session) -> None:
     assert db_session.scalar(select(func.count()).select_from(Grade)) == before
     assert before == len(GRADES)
     assert db_session.scalar(select(func.count()).select_from(GradeSystem)) == len(GRADE_SYSTEMS)
+    # `sort_order` is the tuple position (issue #55, `0006`), so display order is edited by
+    # moving a line in `server/domain/grades.py`. Pinned here because the seed is the only
+    # writer: a system inserted without it would be a NOT NULL violation, and one inserted
+    # with the wrong value would sort silently wrong in every picker.
+    assert list(
+        db_session.scalars(select(GradeSystem.sort_order).order_by(GradeSystem.sort_order))
+    ) == list(range(len(GRADE_SYSTEMS)))
 
 
 def test_discipline_enum_stores_lowercase_values_not_python_member_names(

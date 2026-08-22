@@ -56,18 +56,81 @@
       cursor: default;
     }
 
+    // The ghost hover from kilianmc.com: the accent arrives on the edge and in the label,
+    // and nothing moves. Not under the reduced-motion guard — a colour change is not motion.
+    &:hover:not(:disabled) {
+      border-color: var(--ct-accent);
+      color: var(--ct-accent);
+    }
+
     &--primary {
       @include mixins.press(var(--ct-accent-pressed));
 
+      // `relative` + `overflow: hidden` are what the sheen below needs; the outline of
+      // `focus-ring` is drawn outside the box and is not clipped by either.
+      position: relative;
+      overflow: hidden;
       border-color: var(--ct-accent);
       background: var(--ct-accent);
       color: var(--ct-accent-fg);
+
+      // Ported from `portfolio-shell/src/index.scss` (the `.btn--primary` rules): a sheen
+      // that SWEEPS across on a `::before` `translateX` while the button itself never
+      // moves, plus an accent glow and a 1px accent ring on hover.
+      //
+      // The split matters: the sweep is decoration and is dropped under reduced motion, but
+      // the ring and the glow are the hover's information and stay — reduced motion is not
+      // reduced feedback.
+      &::before {
+        content: '';
+        position: absolute;
+        inset: 0;
+        background: linear-gradient(
+          120deg,
+          transparent 20%,
+          rgb(255 255 255 / 0.35) 50%,
+          transparent 80%
+        );
+        transform: translateX(-120%);
+        transition: transform 550ms ease;
+        pointer-events: none;
+      }
+
+      &:hover:not(:disabled) {
+        color: var(--ct-accent-fg);
+        box-shadow:
+          0 0 0 1px var(--ct-accent),
+          0 8px 24px -6px color-mix(in srgb, var(--ct-accent) 55%, transparent);
+      }
+
+      &:hover:not(:disabled)::before {
+        transform: translateX(120%);
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        &::before {
+          display: none;
+        }
+      }
 
       &:disabled {
         border-color: var(--ct-border-1);
         background: var(--ct-surface-1);
         color: var(--ct-fg-muted);
       }
+    }
+
+    // ⚠️ **Icon-only, and it is one declaration for all three of them** — the burger, the theme
+    // switch and Log out. `&__button`'s `padding-inline: var(--ct-space-4)` is sized for a word;
+    // on a 24px glyph it makes a button visibly wider than it is tall, which is exactly why Log
+    // out looked oversized next to the theme switch (round 11). The switch had a private override
+    // and Log out had none.
+    //
+    // The 44px floor on BOTH axes survives untouched: it comes from `tap` on `&__button` above,
+    // and it is one of the two conditions `ui/icons.tsx` sets before an icon-only control may
+    // ship — the other, its own `aria-label`, is the caller's.
+    &--icon {
+      padding-inline: var(--ct-space-2);
     }
 
     // Sits in the nav beside links, so it must not read as a call to action. Still a full
@@ -79,6 +142,14 @@
       background: transparent;
       color: var(--ct-fg-muted);
       font-weight: 400;
+
+      // Keeps the ghost hover off the nav: an accent hairline appearing beside the links
+      // would give this the resting weight of a call to action, which is the one thing it
+      // must not have.
+      &:hover:not(:disabled) {
+        border-color: transparent;
+        color: var(--ct-fg);
+      }
     }
   }
 
@@ -122,8 +193,71 @@
     // edge off-screen on focus, so the user had to pinch back out between email and password.
     font-size: var(--ct-text-base);
 
+    // ⚠️ **Two independent shadow SLOTS, composed once.** Hover wants a glow and a committed value
+    // wants a ring, and a control can be both at the same moment — with one `box-shadow`
+    // declaration per state the later rule simply erased the other, so hovering a filled field
+    // lost its ring. Custom properties give each state its own slot and let them add up. They are
+    // local to this element, not tokens.
+    --ct-state-ring: 0 0 #0000;
+    --ct-state-glow: 0 0 #0000;
+
+    box-shadow: var(--ct-state-ring), var(--ct-state-glow);
+    // Named explicitly, because the glow and the border are the only two channels here and
+    // neither may snap. NOTHING is transitioned that could move the box — the primary button's
+    // rule ("the button itself never moves") applies to every control, not just buttons.
+    transition:
+      border-color var(--ct-fast) ease,
+      box-shadow var(--ct-fast) ease;
+
+    // HOVER — the transferable half of the button's treatment: the accent on the edge and a soft
+    // glow around it. The sheen is deliberately NOT carried over; a gradient sweeping a text field
+    // reads as a rendering artefact.
+    //
+    // ⚠️ Round 5 shipped `0 4px 14px -8px`, and that was invisible: a −8px spread on a ~32px
+    // control shrinks the shadow to ~16px, the 4px offset pushes it down, and the element covers
+    // what is left. Zero offset with a POSITIVE spread puts the haze outside the box on all four
+    // sides, which is what a glow means — measured against the primary button's own
+    // `0 8px 24px -6px`, whose visible spill is ~10px and which Kilian can see.
+    &:hover:not(:disabled) {
+      border-color: var(--ct-accent);
+      --ct-state-glow: 0 0 12px 2px color-mix(in srgb, var(--ct-accent) 55%, transparent);
+    }
+
+    // ⚠️ **Focus keeps the HARD outline to itself and takes no glow.** `focus-ring` draws a 2px
+    // solid outline at a 1px offset; a blurred accent shadow behind it would blend into it at a
+    // glance, and a keyboard user has to be able to tell focus from a mouse hovering. Three
+    // shapes, three meanings: soft haze outside = hover, crisp offset outline = focus, hard line
+    // on the box = a value is committed.
     &:focus-visible {
       border-color: var(--ct-accent);
+      --ct-state-glow: 0 0 #0000;
+    }
+
+    // COMMITTED — a value is in there, and until round 6 nothing said so for either of these.
+    //
+    // `:where()` so neither adds specificity. The two tests are the only ones CSS can actually
+    // make, and both are exact rather than approximate:
+    //  - a `<select>` whose selected option is NOT the empty placeholder. Every placeholder in
+    //    this app is `<option value="">`, and a select with no placeholder at all (the grade-scale
+    //    picker) always has a real value, which is the right answer for it.
+    //  - an `<input>` that HAS a placeholder and is not showing it. The `[placeholder]` half is
+    //    load-bearing: `:placeholder-shown` never matches an input without one, so
+    //    `:not(:placeholder-shown)` alone would mark every such field committed for ever — the
+    //    login form included.
+    &:where(select):not(:has(option[value='']:checked)),
+    &:where(input[placeholder]):not(:placeholder-shown) {
+      border-color: var(--ct-accent);
+      --ct-state-ring: inset 0 0 0 1px var(--ct-accent);
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      transition: none;
+
+      // Decoration off. The border colour and the committed ring stay: they are state, not
+      // ornament.
+      &:hover:not(:disabled) {
+        --ct-state-glow: 0 0 #0000;
+      }
     }
   }
 
@@ -134,6 +268,38 @@
     margin: 0;
     color: var(--ct-danger);
     font-size: var(--ct-text-base);
+  }
+
+  // A NOTICE, not an error, and the distinction is deliberate: this is used where the app has
+  // spotted something odd but nothing is wrong and nothing is blocked (a current grade at or
+  // above the goal). So it takes neither `--ct-danger` nor an alert role — a red panel reads as
+  // "you must fix this", and there is nothing to fix. It reads as a remark: the app's own
+  // surface, a real hairline so it is findable, full-size text because it is a sentence
+  // somebody has to actually read, and the accent only on the glyph.
+  //
+  // ⚠️ There is no amber/warning token in `_tokens.scss` and one was NOT invented here. A third
+  // semantic colour needs a contrast pair per scheme in `contrast.test.ts`; weight and an icon
+  // carry this perfectly well without one.
+  &__notice {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--ct-space-3);
+    margin: 0;
+    padding: var(--ct-space-3);
+    border: 1px solid var(--ct-border-strong);
+    border-radius: var(--ct-radius-2);
+    background: var(--ct-surface-2);
+    color: var(--ct-fg);
+    font-size: var(--ct-text-base);
+    text-align: start;
+
+    > svg {
+      flex: none;
+      color: var(--ct-accent);
+      // Centred on the first line of the sentence beside it, not on the block: a notice that
+      // wraps to three lines would otherwise put the glyph in the middle of the paragraph.
+      margin-block-start: calc((var(--ct-leading) * 1em - 1.15em) / 2);
+    }
   }
 
   // Visually hidden, still announced. The polite live region on the completion bar is the

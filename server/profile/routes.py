@@ -1,18 +1,24 @@
-"""The `/api/profile` endpoints: read the whole profile, patch any part of it.
+"""The `/api/profile` endpoints: read the whole profile, patch any part of it, reset it.
 
 ## The write endpoint takes a PARTIAL profile, and that is load-bearing
 
-Onboarding is five steps and **each one persists as it completes**, so an abandoned
+Onboarding is four steps and **each one persists as it completes**, so an abandoned
 onboarding resumes rather than restarting (the plan's Zeigarnik point). The row is
-therefore created on step 1, not step 5, and every later step is an update to a row that
+therefore created on step 1, not step 4, and every later step is an update to a row that
 already exists. One endpoint does both: `PATCH` upserts, and any field left out of the
 body is left alone.
 
-**`None` means "not in this request" for every scalar field**, and there is deliberately
-no way to clear one back to nothing: no screen offers it, and a second meaning for `null`
-would be a second code path nothing exercises. The three collection fields
-(`equipment_ids`, `aspect_ratings`, `injuries`) are different — a list **replaces** the
+**`None` means "not in this request" for every scalar field**, and **that contract is now
+load-bearing in a second way**: issue #54 needed a way to un-answer the steps, and teaching
+`null` to mean "clear" was considered and rejected precisely because it would give every
+omission a destructive second meaning. `POST /api/profile/reset` does that job instead. The
+two collection fields (`aspect_ratings`, `injuries`) are different — a list **replaces** the
 set it names, and `[]` is a real answer.
+
+⚠️ **There were five steps and an `equipment_ids` field until issue #54.** The equipment step
+is gone from onboarding and `equipment_ids` is gone from both models here; `user_equipment`
+and every `exercise_equipment` requirement are untouched, because the owned-vs-lacked
+question the issue raises is deliberately deferred to PR #10 (see `ProfilePatchRequest`).
 
 ⚠️ **`InjuryIn.note` is the one exception, and it is deliberate.** Omitting it *preserves*
 the existing note; sending an explicit `null` *clears* it. `{"injuries": [{"injury_area_id":
@@ -30,8 +36,8 @@ sends the shorter body; `tests/test_profile_api.py` covers all three cases.
 ## Unanswered is NULL — revision 0005, and it replaced placeholders
 
 `primary_discipline`, `sessions_per_week` and `available_weekdays` were `NOT NULL` until
-`0005`, so a row created on step 1 had to carry invented values for questions steps 2 and 4
-had not asked yet. `sessions_per_week = 3` is a perfectly plausible answer, so the
+`0005`, so a row created on step 1 had to carry invented values for questions the later
+steps had not asked yet. `sessions_per_week = 3` is a perfectly plausible answer, so the
 completion bar credited work nobody had done and the plan generator would have read a
 number the user never chose. Now:
 
@@ -41,16 +47,25 @@ number the user never chose. Now:
   grade ladder is banded per discipline (`server/domain/grades.py`), so a French 7a target
   *is* a rope goal; accepting a separate field would let the two disagree, and the
   disagreement would only surface in the plan generator.
-- **`equipment_reviewed_at` and `injuries_reviewed_at` are stamped whenever their step is
-  submitted**, with or without rows. **A step needs a `*_reviewed_at` column exactly when
-  zero rows is a legitimate answer** — "I own none of this" and "nothing is hurting" both
-  write no child rows, so an empty table cannot distinguish "asked, nothing" from "never
-  asked". The other three steps must not get one: the aspect step always writes eight rows,
-  and the target grade and availability are scalar columns whose NULL carries it.
+- **`injuries_reviewed_at` is stamped whenever its step is submitted**, with or without
+  rows. **A step needs a `*_reviewed_at` column exactly when zero rows is a legitimate
+  answer** — "nothing is hurting" writes no child rows, so an empty table cannot distinguish
+  "asked, nothing" from "never asked". No other step needs one: the aspect step always
+  writes eight rows, and the grades and availability are scalar columns whose NULL carries
+  it. `equipment_reviewed_at` was the second one and is **retired** with its step (`0006`);
+  the column stays until a later contract revision, and nothing reads it.
+
+## The two grade columns must agree, and one of them can be cleared for you
+
+`target_grade_id` and `current_grade_id` have to sit on the same **discipline**: the ordinal
+ladders are disjoint and `domain.grades.convert` raises rather than compare across them. An
+incoming current grade that disagrees is a 422; an incoming TARGET that disagrees with the
+STORED current grade **clears it**, because refusing would make changing your goal
+impossible. `_decide_grades` carries the full reasoning.
 
 ## Every id is resolved BEFORE anything is written
 
-Not for tidiness: `_upsert_profile` runs first, so a bad equipment id rejected later would
+Not for tidiness: `_upsert_profile` runs first, so a bad aspect id rejected later would
 leave a row behind in any transaction that is not rolled back. Validation of every
 reference in the body happens up front, so a 422 means nothing was written.
 
@@ -62,32 +77,32 @@ would want to substitute.
 """
 
 from datetime import date, datetime
-from typing import Annotated, Final
+from typing import Annotated, Final, NamedTuple
 
 from fastapi import APIRouter, HTTPException, status
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from sqlalchemy import delete, func, select, text, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
 from server.auth.deps import CurrentUser, RequestSession
 from server.domain.grades import Discipline
-from server.domain.vocabulary import CLIMBING_ASPECTS, EQUIPMENT, INJURY_AREAS
+from server.domain.vocabulary import CLIMBING_ASPECTS, INJURY_AREAS
 from server.fields import (
     AspectScore,
     AvailableWeekdays,
+    DisplayName,
     InjuryNote,
     LookupId,
     SessionsPerWeek,
 )
 from server.models import (
+    AppUser,
     ClimbingAspect,
-    Equipment,
     Grade,
     GradeSystem,
     InjuryArea,
     UserAspectRating,
-    UserEquipment,
     UserInjury,
     UserProfile,
 )
@@ -107,9 +122,15 @@ _OPEN_INJURY = text("resolved_on IS NULL")
 # Fixed strings, on purpose: a 422 must never echo the request back, and that includes
 # naming which id the caller sent (CLAUDE.md, "Validate at the edge with Pydantic").
 _UNKNOWN_GRADE: Final = "That grade is not on the ladder."
-_UNKNOWN_EQUIPMENT: Final = "That equipment is not in the catalogue."
 _UNKNOWN_ASPECT: Final = "That climbing aspect does not exist."
 _UNKNOWN_INJURY_AREA: Final = "That injury area does not exist."
+# ⚠️ The ordinal ladders are disjoint per discipline and `domain.grades.convert` raises
+# rather than compare across them, so a current grade on the other ladder is not a value the
+# generator can do anything with. See `_decide_grades`.
+_CROSS_DISCIPLINE_GRADES: Final = (
+    "Your current grade and your goal must be on the same kind of climbing."
+)
+_SAME_ASPECT_TWICE: Final = "One aspect cannot be both your strength and your weakness."
 
 
 class AspectRatingOut(BaseModel):
@@ -140,20 +161,36 @@ class ProfileResponse(BaseModel):
     bar, and the plan generator in PR #11, which must refuse to generate rather than
     substitute a default for a question the user has not been asked.
 
-    The two `*_reviewed_at` fields are how their steps report themselves finished: an empty
-    `equipment_ids` or `injuries` list means "nothing to record" or "never asked" depending
-    only on them. Every completion test the client makes reads one of these or a scalar,
-    which is what keeps the progress bar server truth.
+    `injuries_reviewed_at` is how its step reports itself finished: an empty `injuries` list
+    means "nothing to record" or "never asked" depending only on it. Every completion test
+    the client makes reads that column or a scalar, which is what keeps the progress bar
+    server truth.
+
+    ⚠️ **`equipment_ids` and `equipment_reviewed_at` are gone** (issue #54). The step is not
+    part of onboarding any more, nothing in the client read either field, and dropping them
+    from the response also drops a `SELECT` from every profile read — Neon bills awake time.
+    The table and its rows are untouched, waiting for PR #10.
+
+    ⚠️ **`email` is the ONE null here that does not mean "not answered yet".** It is read
+    from `app_user`, not from the profile, and it is `NOT NULL` there — so it can only be
+    null if the row behind an authenticated principal has gone, which is not a state this
+    endpoint invents a 404 for. It is read-only: the client displays it and has no way to
+    change it, which is why it is not in `ProfilePatchRequest`. Added because the client had
+    no way to learn its own account's address at all — `GET /api/auth/me` returns
+    `{user_id, scope}` and its docstring defers exactly this to the profile endpoint.
     """
 
+    email: str | None
+    display_name: str | None
     target_grade_id: int | None
+    current_grade_id: int | None
     primary_discipline: Discipline | None
     sessions_per_week: int | None
     available_weekdays: int | None
+    strength_aspect_id: int | None
+    weakness_aspect_id: int | None
     show_body_metrics: bool
-    equipment_reviewed_at: datetime | None
     injuries_reviewed_at: datetime | None
-    equipment_ids: list[int]
     aspect_ratings: list[AspectRatingOut]
     injuries: list[InjuryOut]
 
@@ -189,30 +226,39 @@ class ProfilePatchRequest(BaseModel):
     `extra="forbid"`, so a camelCase key or a typo is a 422 rather than a silently
     ignored field — and `primary_discipline` is **not** accepted at all: it is derived
     from `target_grade_id`.
+
+    ⚠️ **`null` means "no change", for every field, and that contract is deliberate.**
+    Issue #54 wanted a way to un-answer the four steps; making `null` mean "clear" here was
+    considered and rejected, because it would turn every "I am not touching this" into a
+    destructive spelling one typo away. `POST /api/profile/reset` does that job instead,
+    explicitly and in one transaction.
+
+    ⚠️ **`equipment_ids` is gone from this model** (issue #54). The equipment step is no
+    longer part of onboarding, and the owned-vs-lacked question the issue raises is
+    deliberately deferred to PR #10, where the exercise library's alternatives lookup is what
+    gives a "I do not have this" flag its meaning. `user_equipment` and every
+    `exercise_equipment` row are untouched; what is gone is a write path whose semantics are
+    undecided. Re-adding it is PR #10's job, with the decision attached.
     """
 
     model_config = ConfigDict(extra="forbid")
 
     target_grade_id: LookupId | None = None
+    current_grade_id: LookupId | None = None
     sessions_per_week: SessionsPerWeek | None = None
     available_weekdays: AvailableWeekdays | None = None
+    strength_aspect_id: LookupId | None = None
+    weakness_aspect_id: LookupId | None = None
+    display_name: DisplayName | None = None
     show_body_metrics: bool | None = None
 
     # Each list REPLACES the set it names, and is bounded by the size of the vocabulary it
     # draws from — an unbounded list is a resource-exhaustion vector even when every id
     # in it is valid.
-    equipment_ids: Annotated[list[LookupId], Field(max_length=len(EQUIPMENT))] | None = None
     aspect_ratings: (
         Annotated[list[AspectRatingIn], Field(max_length=len(CLIMBING_ASPECTS))] | None
     ) = None
     injuries: Annotated[list[InjuryIn], Field(max_length=len(INJURY_AREAS))] | None = None
-
-    @field_validator("equipment_ids")
-    @classmethod
-    def _equipment_ids_are_unique(cls, value: list[int] | None) -> list[int] | None:
-        if value is not None and len(set(value)) != len(value):
-            raise ValueError("equipment ids must be unique")
-        return value
 
     @field_validator("aspect_ratings")
     @classmethod
@@ -230,6 +276,20 @@ class ProfilePatchRequest(BaseModel):
             raise ValueError("one flag per injury area")
         return value
 
+    @model_validator(mode="after")
+    def _strength_and_weakness_differ(self) -> "ProfilePatchRequest":
+        """The same aspect cannot be both, and this is the edge half of the CHECK.
+
+        Only when BOTH are in this body: one of them arriving alone is checked against the
+        stored row in `_validate_references`, which is the only place that can see it.
+        """
+        if (
+            self.strength_aspect_id is not None
+            and self.strength_aspect_id == self.weakness_aspect_id
+        ):
+            raise ValueError(_SAME_ASPECT_TWICE)
+        return self
+
     def is_empty(self) -> bool:
         """Nothing to write. A body like `{}` must not materialise a row (it used to).
 
@@ -244,24 +304,106 @@ def _unprocessable(detail: str) -> HTTPException:
     return HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=detail)
 
 
-def _discipline_of_grade(session: Session, grade_id: int) -> Discipline:
-    """The discipline a target grade implies, and the check that the grade exists.
+def _disciplines_of_grades(session: Session, grade_ids: set[int]) -> dict[int, Discipline]:
+    """Every id's discipline in ONE statement, and the check that each id exists.
 
-    One statement. The client sends a `grade_id` and never an ordinal or a label, so this
-    is also where a made-up id is turned into a 422 instead of a foreign-key error in the
-    middle of the upsert.
+    The client sends `grade_id`s and never an ordinal or a label, so this is also where a
+    made-up id becomes a 422 instead of a foreign-key error in the middle of the upsert.
+
+    One statement for the whole set rather than one per id: `_decide_grades` needs up to
+    three (the incoming target, the incoming current grade, and the stored current grade),
+    and three round trips is three helpings of Neon awake time for one question.
     """
-    discipline = session.scalar(
-        select(GradeSystem.discipline)
-        .join(Grade, Grade.grade_system_id == GradeSystem.id)
-        .where(Grade.id == grade_id)
-    )
-    if discipline is None:
+    if not grade_ids:
+        return {}
+    rows = session.execute(
+        select(Grade.id, GradeSystem.discipline)
+        .join(GradeSystem, Grade.grade_system_id == GradeSystem.id)
+        .where(Grade.id.in_(grade_ids))
+    ).all()
+    found = {row.id: row.discipline for row in rows}
+    if set(found) != grade_ids:
         raise _unprocessable(_UNKNOWN_GRADE)
-    return discipline
+    return found
 
 
-_LookupTable = type[ClimbingAspect] | type[Equipment] | type[InjuryArea]
+class _GradeDecision(NamedTuple):
+    """What the two grade columns imply for this write.
+
+    `discipline` is `primary_discipline`'s new value, or `None` to leave it alone — it is
+    derived from the target grade and is never accepted from a client.
+
+    `clear_current_grade` is the one place this endpoint writes a NULL that the body did not
+    ask for, and it is the alternative to a dead end. See `_decide_grades`.
+    """
+
+    discipline: Discipline | None
+    clear_current_grade: bool
+
+
+def _decide_grades(session: Session, user_id: int, payload: ProfilePatchRequest) -> _GradeDecision:
+    """The target/current grade pair, resolved against each other before anything is written.
+
+    ⚠️ **They must sit on the same DISCIPLINE.** `server/domain/grades.py` bands the ordinal
+    ladders per discipline and `convert` raises `CrossDisciplineError` rather than compare
+    across them, so "French 7a target, Font 7A current" is a row the plan generator can do
+    nothing with. The schema cannot express this — a CHECK cannot follow two foreign keys
+    into `grade` — so it is enforced here, at the edge, like every other closed input.
+    Two rules, and the asymmetry between them is the point:
+
+    - **an incoming current grade that disagrees is a 422.** The client locks both pickers to
+      one scale, so this is a malformed request rather than a user's mistake.
+    - **an incoming TARGET grade that disagrees with the STORED current grade clears it.** A
+      422 here would be a dead end: a climber who switches from sport to bouldering could
+      never change their goal, because the old current grade would refuse every new target.
+      Clearing is also exactly what the client does to its own pickers when the scale
+      changes, so the two halves agree.
+
+    Costs one extra statement, and only on a body that carries a grade — the wizard's step 1
+    and step 3. `None`/`False` short-circuits everything else.
+    """
+    if payload.target_grade_id is None and payload.current_grade_id is None:
+        return _GradeDecision(None, False)
+
+    stored = session.execute(
+        select(UserProfile.target_grade_id, UserProfile.current_grade_id).where(
+            UserProfile.user_id == user_id
+        )
+    ).one_or_none()
+    stored_target = None if stored is None else stored.target_grade_id
+    stored_current = None if stored is None else stored.current_grade_id
+
+    # Whichever target will be in force after this write.
+    target_id = payload.target_grade_id if payload.target_grade_id is not None else stored_target
+    wanted = {
+        grade_id
+        for grade_id in (target_id, payload.current_grade_id, stored_current)
+        if grade_id is not None
+    }
+    disciplines = _disciplines_of_grades(session, wanted)
+    target_discipline = None if target_id is None else disciplines[target_id]
+
+    if payload.current_grade_id is not None:
+        if (
+            target_discipline is not None
+            and disciplines[payload.current_grade_id] != target_discipline
+        ):
+            raise _unprocessable(_CROSS_DISCIPLINE_GRADES)
+        # `primary_discipline` is only rewritten when the TARGET moved; a current grade says
+        # nothing about it.
+        return _GradeDecision(
+            target_discipline if payload.target_grade_id is not None else None, False
+        )
+
+    clear = (
+        stored_current is not None
+        and target_discipline is not None
+        and disciplines[stored_current] != target_discipline
+    )
+    return _GradeDecision(target_discipline, clear)
+
+
+_LookupTable = type[ClimbingAspect] | type[InjuryArea]
 
 
 def _require_known_ids(
@@ -281,23 +423,23 @@ def _require_known_ids(
         raise _unprocessable(detail)
 
 
-def _validate_references(session: Session, payload: ProfilePatchRequest) -> Discipline | None:
+def _validate_references(
+    session: Session, user_id: int, payload: ProfilePatchRequest
+) -> _GradeDecision:
     """Every lookup id in the body, resolved before the first write. See the docstring.
 
-    Returns the discipline the target grade implies, or `None` when the body carried no
-    target grade.
+    Returns what the grade pair implies — the discipline to write, and whether a stored
+    current grade has to be cleared because the target moved to the other ladder.
     """
-    if payload.equipment_ids is not None:
-        _require_known_ids(
-            session, Equipment, set(payload.equipment_ids), detail=_UNKNOWN_EQUIPMENT
-        )
+    aspect_ids = {
+        aspect_id
+        for aspect_id in (payload.strength_aspect_id, payload.weakness_aspect_id)
+        if aspect_id is not None
+    }
     if payload.aspect_ratings is not None:
-        _require_known_ids(
-            session,
-            ClimbingAspect,
-            {entry.climbing_aspect_id for entry in payload.aspect_ratings},
-            detail=_UNKNOWN_ASPECT,
-        )
+        aspect_ids |= {entry.climbing_aspect_id for entry in payload.aspect_ratings}
+    _require_known_ids(session, ClimbingAspect, aspect_ids, detail=_UNKNOWN_ASPECT)
+
     if payload.injuries is not None:
         _require_known_ids(
             session,
@@ -305,16 +447,44 @@ def _validate_references(session: Session, payload: ProfilePatchRequest) -> Disc
             {entry.injury_area_id for entry in payload.injuries},
             detail=_UNKNOWN_INJURY_AREA,
         )
-    if payload.target_grade_id is None:
-        return None
-    return _discipline_of_grade(session, payload.target_grade_id)
+
+    _require_aspects_differ(session, user_id, payload)
+    return _decide_grades(session, user_id, payload)
+
+
+def _require_aspects_differ(session: Session, user_id: int, payload: ProfilePatchRequest) -> None:
+    """The half of "a strength is not a weakness" that the request alone cannot see.
+
+    `ProfilePatchRequest` catches a body carrying both. One arriving alone has to be checked
+    against the row, or a two-step client could set strength = Power and then weakness =
+    Power and land an `IntegrityError` on the CHECK — a 500 for what is a client mistake.
+
+    Costs one statement, and only when exactly one of the two is in the body.
+    """
+    incoming = (payload.strength_aspect_id, payload.weakness_aspect_id)
+    if incoming.count(None) != 1:
+        return
+    stored = session.execute(
+        select(UserProfile.strength_aspect_id, UserProfile.weakness_aspect_id).where(
+            UserProfile.user_id == user_id
+        )
+    ).one_or_none()
+    if stored is None:
+        return
+    other = (
+        stored.weakness_aspect_id
+        if payload.strength_aspect_id is not None
+        else stored.strength_aspect_id
+    )
+    if other is not None and other == (payload.strength_aspect_id or payload.weakness_aspect_id):
+        raise _unprocessable(_SAME_ASPECT_TWICE)
 
 
 def _upsert_profile(
     session: Session,
     user_id: int,
     payload: ProfilePatchRequest,
-    discipline: Discipline | None,
+    grades_decision: _GradeDecision,
 ) -> None:
     """At most ONE statement, writing only the columns the body carried.
 
@@ -326,18 +496,33 @@ def _upsert_profile(
     columns: dict[str, object] = {}
     if payload.target_grade_id is not None:
         columns["target_grade_id"] = payload.target_grade_id
-    if discipline is not None:
-        columns["primary_discipline"] = discipline
+    if grades_decision.discipline is not None:
+        columns["primary_discipline"] = grades_decision.discipline
+    if payload.current_grade_id is not None:
+        columns["current_grade_id"] = payload.current_grade_id
+    # ⚠️ The one NULL this endpoint writes that the body did not ask for: the stored current
+    # grade is on the ladder the new target just left. `_decide_grades` explains why this is
+    # a clear rather than a 422.
+    #
+    # `elif`, not `if`: `_decide_grades` only ever asks for this when the body carried no
+    # current grade, but writing the two as independent statements would make the outcome
+    # depend on dict-insertion order if that ever changed. Same key, one decision.
+    elif grades_decision.clear_current_grade:
+        columns["current_grade_id"] = None
     if payload.sessions_per_week is not None:
         columns["sessions_per_week"] = payload.sessions_per_week
     if payload.available_weekdays is not None:
         columns["available_weekdays"] = payload.available_weekdays
+    if payload.strength_aspect_id is not None:
+        columns["strength_aspect_id"] = payload.strength_aspect_id
+    if payload.weakness_aspect_id is not None:
+        columns["weakness_aspect_id"] = payload.weakness_aspect_id
+    if payload.display_name is not None:
+        columns["display_name"] = payload.display_name
     if payload.show_body_metrics is not None:
         columns["show_body_metrics"] = payload.show_body_metrics
     # Stamped for a list with rows AND for an empty one — the step was answered either
-    # way, and these columns are the only record that it was.
-    if payload.equipment_ids is not None:
-        columns["equipment_reviewed_at"] = func.now()
+    # way, and this column is the only record that it was.
     if payload.injuries is not None:
         columns["injuries_reviewed_at"] = func.now()
 
@@ -353,22 +538,6 @@ def _upsert_profile(
             index_elements=["user_id"], set_={**columns, "updated_at": func.now()}
         )
     )
-
-
-def _replace_equipment(session: Session, user_id: int, equipment_ids: list[int]) -> None:
-    ids = set(equipment_ids)
-
-    stale = delete(UserEquipment).where(UserEquipment.user_id == user_id)
-    if ids:
-        stale = stale.where(UserEquipment.equipment_id.not_in(ids))
-    session.execute(stale)
-
-    if ids:
-        session.execute(
-            pg_insert(UserEquipment)
-            .values([{"user_id": user_id, "equipment_id": row_id} for row_id in sorted(ids)])
-            .on_conflict_do_nothing(index_elements=["user_id", "equipment_id"])
-        )
 
 
 def _replace_aspect_ratings(session: Session, user_id: int, ratings: list[AspectRatingIn]) -> None:
@@ -467,22 +636,24 @@ def _read_profile(session: Session, user_id: int) -> ProfileResponse:
     """
     row = session.execute(
         select(
+            UserProfile.display_name,
             UserProfile.target_grade_id,
+            UserProfile.current_grade_id,
             UserProfile.primary_discipline,
             UserProfile.sessions_per_week,
             UserProfile.available_weekdays,
+            UserProfile.strength_aspect_id,
+            UserProfile.weakness_aspect_id,
             UserProfile.show_body_metrics,
-            UserProfile.equipment_reviewed_at,
             UserProfile.injuries_reviewed_at,
         ).where(UserProfile.user_id == user_id)
     ).one_or_none()
-    equipment_ids = list(
-        session.scalars(
-            select(UserEquipment.equipment_id)
-            .where(UserEquipment.user_id == user_id)
-            .order_by(UserEquipment.equipment_id)
-        )
-    )
+    # Deliberately a separate statement rather than a join. Selecting `app_user` LEFT JOIN
+    # `user_profile` would make `row` never None, and `row is None` is what ten lines below
+    # read to mean "nothing answered yet" — a shape worth more than one round trip on a
+    # connection that is already awake for the other three. It replaced the `user_equipment`
+    # select that issue #54 retired, so the count is unchanged.
+    email = session.scalar(select(AppUser.email).where(AppUser.id == user_id))
     ratings = session.execute(
         select(
             UserAspectRating.climbing_aspect_id,
@@ -499,17 +670,20 @@ def _read_profile(session: Session, user_id: int) -> ProfileResponse:
     ).all()
 
     return ProfileResponse(
+        email=email,
+        display_name=None if row is None else row.display_name,
         target_grade_id=None if row is None else row.target_grade_id,
+        current_grade_id=None if row is None else row.current_grade_id,
         primary_discipline=None if row is None else row.primary_discipline,
         sessions_per_week=None if row is None else row.sessions_per_week,
         available_weekdays=None if row is None else row.available_weekdays,
+        strength_aspect_id=None if row is None else row.strength_aspect_id,
+        weakness_aspect_id=None if row is None else row.weakness_aspect_id,
         # The one non-null field: `show_body_metrics` has a server default of TRUE and is
         # a setting rather than an answer, so a missing row reports the default it would
         # be created with.
         show_body_metrics=True if row is None else row.show_body_metrics,
-        equipment_reviewed_at=None if row is None else row.equipment_reviewed_at,
         injuries_reviewed_at=None if row is None else row.injuries_reviewed_at,
-        equipment_ids=equipment_ids,
         aspect_ratings=[
             AspectRatingOut(
                 climbing_aspect_id=entry.climbing_aspect_id,
@@ -560,11 +734,9 @@ def patch_profile(
         # in PATCH's clothing, and it must not be the thing that creates a profile.
         return _read_profile(session, user_id)
 
-    discipline = _validate_references(session, payload)
+    grades_decision = _validate_references(session, user_id, payload)
 
-    _upsert_profile(session, user_id, payload, discipline)
-    if payload.equipment_ids is not None:
-        _replace_equipment(session, user_id, payload.equipment_ids)
+    _upsert_profile(session, user_id, payload, grades_decision)
     if payload.aspect_ratings is not None:
         _replace_aspect_ratings(session, user_id, payload.aspect_ratings)
     if payload.injuries is not None:
@@ -572,6 +744,83 @@ def patch_profile(
 
     # Read inside the transaction that wrote, then commit: the response is what the
     # database now holds, and it costs no second connection.
+    profile = _read_profile(session, user_id)
+    session.commit()
+    return profile
+
+
+# Every column the four onboarding steps own, and nothing else. Named rather than inlined so
+# the endpoint's docstring and the statement cannot drift apart.
+#
+# ⚠️ `display_name` and `show_body_metrics` are NOT here: neither is one of the four steps.
+# A reset walks the setup flow again; it is not an account wipe. `equipment_reviewed_at` is
+# not here either — it is retired (see `server/models.py`), and writing to a column nothing
+# reads would be the reset pretending to do something.
+_RESET_COLUMNS: Final = (
+    "target_grade_id",
+    "current_grade_id",
+    "primary_discipline",
+    "sessions_per_week",
+    "available_weekdays",
+    "strength_aspect_id",
+    "weakness_aspect_id",
+    "injuries_reviewed_at",
+)
+
+
+@router.post("/reset")
+def reset_profile(principal: CurrentUser, session: RequestSession) -> ProfileResponse:
+    """Un-answer the four onboarding steps, in one transaction, and return the profile.
+
+    ## Why this exists instead of teaching `PATCH` to clear
+
+    Issue #54 needs a way back to a from-scratch wizard. The obvious alternative was to make
+    `null` mean "clear" in `ProfilePatchRequest` — and that was **considered and rejected**
+    (Kilian's call): `null` there means "not in this request" for every field, which is what
+    lets onboarding send one step at a time, and flipping it would turn every omission into a
+    destructive spelling one typo away. A named endpoint says what it does.
+
+    ## What it clears, and what it deliberately does not
+
+    - **Every column the four steps own** (`_RESET_COLUMNS`), back to NULL — including
+      `primary_discipline`, which is derived from the target grade and has to go with it.
+    - **Every `user_aspect_rating` row**, because the aspect step's answer *is* those rows.
+    - **Open `user_injury` rows only.** ⚠️ Resolved rows are HISTORY and are not touched:
+      flag -> resolve -> re-flag is what that table exists for (`0005`'s partial unique
+      index), and a reset is not a claim about a past injury. An open flag, by contrast, is
+      the step's current answer and has to go or the step would not read as unanswered.
+    - **Not** `display_name`, `show_body_metrics`, or anything in `user_equipment` — see
+      `_RESET_COLUMNS`.
+
+    ## Shape
+
+    A **Tier-1 write**, like `PATCH`: deliberate, low-frequency, and the user is waiting for
+    it. It returns the whole profile for the same reason `PATCH` does — the caller redraws
+    the completion bar from the response rather than from a follow-up GET, so the bar can
+    never disagree with the database about what is set.
+
+    **Idempotent**, and it does not create a row: `UPDATE` touches nothing when no profile
+    exists, and a profile that has answered nothing is what a reset is trying to produce
+    anyway. A demo token never reaches here — `POST` is a mutating method, so
+    `server/auth/deps.py` refuses it twice over (403 at the edge, read-only transaction
+    underneath).
+    """
+    user_id = principal.user_id
+
+    # ⚠️ ONE dict, not a dict plus `updated_at=…`: SQLAlchemy raises
+    # `ArgumentError: Can't pass positional and kwargs to values() simultaneously`, which
+    # would be a 500 on every call. Verified against the installed
+    # `sqlalchemy/sql/dml.py::values` rather than assumed.
+    session.execute(
+        update(UserProfile)
+        .where(UserProfile.user_id == user_id)
+        .values({**{column: None for column in _RESET_COLUMNS}, "updated_at": func.now()})
+    )
+    session.execute(delete(UserAspectRating).where(UserAspectRating.user_id == user_id))
+    session.execute(
+        delete(UserInjury).where(UserInjury.user_id == user_id, UserInjury.resolved_on.is_(None))
+    )
+
     profile = _read_profile(session, user_id)
     session.commit()
     return profile

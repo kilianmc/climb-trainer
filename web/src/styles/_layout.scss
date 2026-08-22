@@ -109,6 +109,25 @@
   // `ch` is font-relative and therefore mount-safe; it is deliberately not a `rem` constant,
   // because the number that matters is a character count.
   //
+  // A column NARROWER than the measure, centred inside it.
+  //
+  // The auth screens are the case, and it was a real misread of the frame: a credentials form
+  // capped at `26rem` is deliberate — nobody wants a 700px-wide password field — but a grid item
+  // with a `max-inline-size` and the default `justify-self: stretch` resolves to START, so the
+  // card sat hard left in a 44rem column while its own heading sat at the column's edge above it.
+  // Verified in the compiled sheet: `.ct-app__form { max-inline-size: 26rem }` with no inline
+  // margin anywhere.
+  //
+  // ⚠️ It is a WRAPPER rather than `margin-inline: auto` on the form, because the heading and the
+  // lede are SIBLINGS of the form: centring only the card would leave the title behind. One grid
+  // child, one left edge for everything inside it. No `display` or `gap` here on purpose — the
+  // children keep their own block margins, so nothing double-spaces.
+  &__narrow {
+    inline-size: 100%;
+    max-inline-size: 26rem;
+    margin-inline: auto;
+  }
+
   &__measured {
     box-sizing: border-box;
     max-inline-size: var(--ct-measure);

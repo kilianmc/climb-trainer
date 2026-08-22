@@ -24,7 +24,7 @@ import pytest
 from pydantic import TypeAdapter, ValidationError
 
 from server.fields import DURATION_MINUTES_MAX, DurationMinutes
-from server.models import SET_NOTE_MAX
+from server.models import DISPLAY_NAME_MAX, SET_NOTE_MAX
 from server.profile.routes import InjuryIn, ProfilePatchRequest
 
 _duration = TypeAdapter(DurationMinutes)
@@ -60,7 +60,8 @@ def test_an_empty_patch_is_valid_and_changes_nothing() -> None:
     """
     payload = ProfilePatchRequest()
     assert payload.target_grade_id is None
-    assert payload.equipment_ids is None
+    assert payload.current_grade_id is None
+    assert payload.display_name is None
 
 
 @pytest.mark.parametrize(
@@ -69,7 +70,7 @@ def test_an_empty_patch_is_valid_and_changes_nothing() -> None:
         pytest.param({}, True, id="nothing-at-all"),
         pytest.param({"target_grade_id": None}, True, id="an-explicit-null-is-still-no-change"),
         pytest.param({"available_weekdays": 0}, False, id="zero-days-is-an-answer"),
-        pytest.param({"equipment_ids": []}, False, id="an-empty-list-is-an-answer"),
+        pytest.param({"aspect_ratings": []}, False, id="an-empty-list-is-an-answer"),
         pytest.param({"injuries": []}, False, id="no-injuries-is-an-answer"),
     ],
 )
@@ -160,3 +161,75 @@ def test_a_note_is_stripped_and_a_whole_step_validates() -> None:
     )
     assert payload.injuries is not None
     assert payload.injuries[0].note == "left A2"
+
+
+# ---------------------------------------------------------------------------------------
+# Issue #54: the three answers that replaced eight sliders, and one free-text field
+# ---------------------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        pytest.param("Kilian", id="ordinary"),
+        pytest.param("a" * DISPLAY_NAME_MAX, id="exactly-the-column-length"),
+        pytest.param("  padded  ", id="stripped-not-rejected"),
+    ],
+)
+def test_a_display_name_within_the_column_is_accepted(name: str) -> None:
+    """The positive control, and it pins the STRIP: the column stores no leading spaces."""
+    assert ProfilePatchRequest(display_name=name).display_name == name.strip()
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        pytest.param("", id="empty-is-not-a-name"),
+        pytest.param("   ", id="whitespace-is-not-a-name-either"),
+        pytest.param("a" * (DISPLAY_NAME_MAX + 1), id="one-past-the-column"),
+    ],
+)
+def test_a_display_name_outside_the_column_is_a_422(name: str) -> None:
+    """One past `String(DISPLAY_NAME_MAX)` is a 500 without this bound, not a 422.
+
+    ⚠️ The two whitespace cases are the load-bearing ones, and they are why `min_length` is
+    applied AFTER stripping. `""` reaching the column would give "no name" two
+    representations — NULL and empty string — and every reader would have to remember both.
+    It also means **PATCH cannot clear a display name**: `null` is "no change" on this
+    endpoint and `""` is refused. That is deliberate, and `POST /api/profile/reset` is the
+    explicit affordance; see `server/fields.py::DisplayName`.
+    """
+    with pytest.raises(ValidationError):
+        ProfilePatchRequest(display_name=name)
+
+
+def test_one_aspect_cannot_be_both_strength_and_weakness() -> None:
+    """The edge half of `ck_user_profile_strength_and_weakness_differ`.
+
+    Without it the CHECK fires as an `IntegrityError` mid-handler — a 500 for what is a
+    client mistake, and one that aborts the transaction so nothing else in the request can
+    report a better message.
+
+    ⚠️ This only catches a body carrying BOTH. One arriving alone has to be checked against
+    the stored row, which only the handler can see: `_require_aspects_differ`.
+    """
+    with pytest.raises(ValidationError):
+        ProfilePatchRequest(strength_aspect_id=3, weakness_aspect_id=3)
+
+    # The positive control, in an independent spelling: two different ids are fine, and so
+    # is one of them alone.
+    assert ProfilePatchRequest(strength_aspect_id=3, weakness_aspect_id=4).weakness_aspect_id == 4
+    assert ProfilePatchRequest(strength_aspect_id=3).strength_aspect_id == 3
+
+
+def test_the_retired_equipment_field_is_REFUSED_rather_than_ignored() -> None:
+    """`extra="forbid"` is what makes a retired field safe to remove.
+
+    Issue #54 took the equipment step out of onboarding and `equipment_ids` out of this
+    model. A stale client that still sends it gets a 422 naming the field — not a silently
+    dropped answer, which is the failure mode that would have people wondering why their
+    gear never saved. `user_equipment` and every `exercise_equipment` row are untouched; the
+    owned-vs-lacked semantics are deferred to PR #10.
+    """
+    with pytest.raises(ValidationError):
+        ProfilePatchRequest.model_validate({"equipment_ids": [1, 2]})

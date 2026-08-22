@@ -198,9 +198,9 @@ export function Marketing({ onExploreDemo, demoPending, demoError }: MarketingPr
         <div className="ct-app__detail">
           <p className="ct-app__prose">
             A board, a pull-up bar and two evenings a week is a different plan from four sessions
-            and a full gym. Tell it your equipment, your availability and anything you are working
-            around, and the sessions it prescribes are ones you can actually do — a plan you skip
-            half of is not a plan.
+            and a full gym. Tell it the grade you are chasing, the time you have and anything you
+            are working around, and the sessions it prescribes are ones you can actually do — a plan
+            you skip half of is not a plan.
           </p>
           <figure className="ct-app__detail-media">
             <LandingPicture image={LANDING_IMAGES.detail} sizes="22rem" />

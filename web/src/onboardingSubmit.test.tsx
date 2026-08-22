@@ -5,6 +5,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 
 import type { Profile, Vocabulary } from './api/types';
 import { AuthProvider, createAuth } from './auth/AuthProvider';
+import { completionPercent, stepCompletion } from './profile/completion';
 import { createAppRouter, createQueryClient } from './router';
 
 /**
@@ -20,19 +21,35 @@ import { createAppRouter, createQueryClient } from './router';
  * — and the next thing to read that profile is the plan generator, which would prescribe
  * crimp loading on an injured elbow. Every unit test of the injuries step passed.
  *
+ * ⚠️ **Issue #54 changed where the last step LANDS, not what it waits for.** A resolved
+ * final write no longer navigates: it replaces the wizard with `OnboardingComplete`. So the
+ * unmount-before-settle shape is gone, and what is left to guard is the half that always
+ * mattered — a REJECTED final write must leave the form on screen, the step uncredited and
+ * the celebration unreached. `finish()` awaits `mutateAsync` and only then sets `finished`;
+ * remove the await and the first test below fails.
+ *
  * It is asserted through the real router, the real query client and the real API client,
  * because the bug lived in the seam between them: any harness that stubbed the mutation
  * would have reproduced the intended behaviour rather than the shipped one.
  */
-const GRADE_ID = 11;
+const TARGET_GRADE_ID = 11;
+const CURRENT_GRADE_ID = 10;
 const ELBOW_ID = 8;
+const FINGERS_ID = 1;
+const CORE_ID = 2;
 
 const VOCABULARY: Vocabulary = {
   grade_systems: [{ id: 1, key: 'font', name: 'Fontainebleau', discipline: 'boulder' }],
-  grades: [{ id: GRADE_ID, grade_system_id: 1, label: '6B', ordinal: 1012 }],
-  climbing_aspects: [
-    { id: 1, key: 'finger_strength', name: 'Finger strength', description: 'Force.' },
+  grades: [
+    { id: CURRENT_GRADE_ID, grade_system_id: 1, label: '6A', ordinal: 1010 },
+    { id: TARGET_GRADE_ID, grade_system_id: 1, label: '6B', ordinal: 1012 },
   ],
+  climbing_aspects: [
+    { id: FINGERS_ID, key: 'finger_strength', name: 'Finger strength', description: 'Force.' },
+    { id: CORE_ID, key: 'core', name: 'Core tension', description: 'Tension.' },
+  ],
+  // Still in the vocabulary payload and read by nobody in this flow: issue #54 removed the
+  // equipment STEP, and PR #10 decides what an owned-vs-lacked flag means.
   equipment: [{ id: 5, key: 'hangboard', name: 'Hangboard', description: 'Edges.' }],
   injury_areas: [{ id: ELBOW_ID, key: 'elbow', name: 'Elbow', description: 'Tendons.' }],
   enums: {
@@ -45,17 +62,28 @@ const VOCABULARY: Vocabulary = {
   },
 };
 
-/** Four steps answered, the injuries step not: 6 of 7 units, i.e. 86%. */
-const FOUR_OF_FIVE: Profile = {
-  target_grade_id: GRADE_ID,
+/**
+ * Three of the four steps answered, the injuries step not: `20 + 80 × 3/4` = **80%**.
+ *
+ * ⚠️ The percentages changed with issue #54 and the arithmetic is the whole reason they are
+ * written out: four steps and a 20% floor give 20/40/60/80/100, where five steps and a 29%
+ * floor gave 29/43/57/71/86. `equipment_ids` and `equipment_reviewed_at` are gone from
+ * `ProfileResponse` altogether, and the aspect step is now three real columns rather than a
+ * row count.
+ */
+const THREE_OF_FOUR: Profile = {
+  email: 'a@example.com',
+  display_name: null,
+  target_grade_id: TARGET_GRADE_ID,
+  current_grade_id: CURRENT_GRADE_ID,
   primary_discipline: 'boulder',
   sessions_per_week: 3,
   available_weekdays: 0b0010101,
+  strength_aspect_id: FINGERS_ID,
+  weakness_aspect_id: CORE_ID,
   show_body_metrics: true,
-  equipment_reviewed_at: '2026-08-21T09:00:00Z',
   injuries_reviewed_at: null,
-  equipment_ids: [5],
-  aspect_ratings: [{ climbing_aspect_id: 1, score: 3, rated_at: '2026-08-21T00:00:00Z' }],
+  aspect_ratings: [{ climbing_aspect_id: FINGERS_ID, score: 5, rated_at: '2026-08-21T00:00:00Z' }],
   injuries: [],
 };
 
@@ -71,13 +99,38 @@ const json = (body: unknown, status = 200) =>
     headers: { 'content-type': 'application/json' },
   });
 
+/**
+ * What the bar must read for a given profile, from the same function the screen uses.
+ *
+ * ⚠️ **Derived, not a literal, and that is deliberate.** What these tests assert is that the
+ * bar converges on the profile the SERVER committed and never on a step nobody persisted —
+ * a relation between two fixtures, not a particular pair of digits. Pinning the digits made
+ * every test in this file fail on a change to `ENDOWED_FLOOR_PERCENT` that has nothing to do
+ * with any of them, while still passing if the cache had installed the wrong profile and both
+ * numbers had moved together. `profile/completion.test.ts` is what pins the arithmetic.
+ *
+ * The non-vacuity guard is that the two profiles a test compares must disagree — asserted at
+ * the top of each test that uses more than one.
+ */
+const percentFor = (profile: Profile) => String(completionPercent(stepCompletion(profile)));
+
+/** Every PATCH body, in the order they were sent. */
+function patchBodies(): unknown[] {
+  return vi
+    .mocked(fetch)
+    .mock.calls.filter(([, init]) => init?.method === 'PATCH')
+    .map(([, init]) => {
+      const body = init?.body;
+      if (typeof body !== 'string') throw new Error(`a patch carried no JSON body: ${typeof body}`);
+      return JSON.parse(body) as unknown;
+    });
+}
+
 /** The one PATCH body, or a failure that names what happened instead of stringifying it. */
 function patchRequestBody(): unknown {
-  const call = vi.mocked(fetch).mock.calls.find(([, init]) => init?.method === 'PATCH');
-  if (call === undefined) throw new Error('no PATCH was made to /api/profile');
-  const body = call[1]?.body;
-  if (typeof body !== 'string') throw new Error(`the patch carried no JSON body: ${typeof body}`);
-  return JSON.parse(body);
+  const [first] = patchBodies();
+  if (first === undefined) throw new Error('no PATCH was made to /api/profile');
+  return first;
 }
 
 /** Drain the microtask queue and React's work, inside `act` so no update is unbatched. */
@@ -114,7 +167,7 @@ beforeEach(() => {
       const url = urlOf(input);
       if (url.endsWith('/api/vocabulary')) return Promise.resolve(json(VOCABULARY));
       if (url.endsWith('/api/profile') && (init?.method ?? 'GET') === 'GET') {
-        return Promise.resolve(json(FOUR_OF_FIVE));
+        return Promise.resolve(json(THREE_OF_FOUR));
       }
       if (url.endsWith('/api/profile')) {
         // The failure under test. 500 rather than 422 so nothing can be blamed on the
@@ -133,62 +186,84 @@ afterEach(() => {
 it('leaves the last step uncredited and on screen when its write fails', async () => {
   const { router } = renderOnboarding();
 
-  // It resumes on the first unanswered step — the fifth — rather than at step 1.
+  // It resumes on the first unanswered step — the fourth — rather than at step 1.
   expect(await screen.findByRole('heading', { name: 'Injuries' })).toBeInTheDocument();
-  expect(screen.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '86');
+  expect(screen.getByRole('progressbar')).toHaveAttribute(
+    'aria-valuenow',
+    percentFor(THREE_OF_FOUR),
+  );
 
+  // Ticking an area is also what un-ticks the default "nothing is hurting" answer, which is
+  // what makes the note field appear at all.
   fireEvent.click(screen.getByLabelText('Elbow'));
   fireEvent.change(screen.getByLabelText(/^Elbow —/), {
     target: { value: 'still sore on crimps' },
   });
-  fireEvent.click(screen.getByRole('button', { name: 'Finish' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Save and finish' }));
 
   expect(await screen.findByRole('alert')).toHaveTextContent(/could not be saved/);
 
-  // The three things the first draft got wrong, in one place.
-  expect(screen.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '86');
+  // The things the first draft got wrong, in one place. The last one replaced the
+  // navigation assertion when issue #54 replaced the navigation: "we told you it saved" is
+  // now the completion screen, and a rejected write must not reach it.
+  expect(screen.getByRole('progressbar')).toHaveAttribute(
+    'aria-valuenow',
+    percentFor(THREE_OF_FOUR),
+  );
   expect(screen.getByRole('heading', { name: 'Injuries' })).toBeInTheDocument();
   expect(router.state.location.pathname).toBe('/onboarding');
+  expect(screen.queryByRole('link', { name: 'Go to your dashboard' })).not.toBeInTheDocument();
 
   // And the note the user typed is still in the field, so retrying costs no retyping.
   expect(screen.getByLabelText(/^Elbow —/)).toHaveValue('still sore on crimps');
 });
 
-it('sends exactly the injuries step and advances only after the server accepts it', async () => {
+it('sends exactly the injuries step and celebrates only after the server accepts it', async () => {
   // ⚠️ This does NOT guard the entry-snapshot redirect. Reverting that check to read the
-  // live profile leaves every test in this file green — measured — because jsdom never
-  // renders the intermediate state: the router visits only /onboarding and /dashboard. The
-  // ordering is prevented structurally (`onboarding.lazy.tsx` decides from a `useState`
-  // snapshot taken on entry) and is deliberately recorded here as UNGUARDED rather than
-  // left with a comment claiming a guarantee these assertions do not provide.
+  // live profile leaves every test in this file green — measured — because the `finished`
+  // gate above it returns the completion screen first, and nothing renders the intermediate
+  // state. The ordering is prevented structurally (`onboarding.lazy.tsx` decides from a
+  // `useState` snapshot taken on entry) and is deliberately recorded here as UNGUARDED
+  // rather than left with a comment claiming a guarantee these assertions do not provide.
   vi.mocked(fetch).mockImplementation((input: unknown, init?: RequestInit) => {
     const url = urlOf(input);
     if (url.endsWith('/api/vocabulary')) return Promise.resolve(json(VOCABULARY));
     if (url.endsWith('/api/profile') && (init?.method ?? 'GET') === 'GET') {
-      return Promise.resolve(json(FOUR_OF_FIVE));
+      return Promise.resolve(json(THREE_OF_FOUR));
     }
-    return Promise.resolve(json({ ...FOUR_OF_FIVE, injuries_reviewed_at: '2026-08-21T10:00:00Z' }));
+    return Promise.resolve(
+      json({ ...THREE_OF_FOUR, injuries_reviewed_at: '2026-08-21T10:00:00Z' }),
+    );
   });
 
   const { router } = renderOnboarding();
   expect(await screen.findByRole('heading', { name: 'Injuries' })).toBeInTheDocument();
 
-  fireEvent.click(screen.getByRole('button', { name: 'Finish' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Save and finish' }));
 
-  // Waited on the RENDERED destination, not on `location.pathname`: `vi.waitFor` passes on
-  // a transient value. This is worth keeping — it is a real assertion that the finish path
-  // lands on the dashboard and stays there — it just is not a test of the snapshot.
-  expect(await screen.findByRole('heading', { name: 'Dashboard' })).toBeInTheDocument();
+  // Waited on the RENDERED destination, not on a flag: `vi.waitFor` passes on a transient
+  // value. The celebration replaces the wizard in place — so the assertion that it did NOT
+  // navigate is as load-bearing as the one that it arrived.
+  expect(
+    await screen.findByRole('heading', { name: 'Ready to start your training' }),
+  ).toBeInTheDocument();
+  expect(screen.getByRole('link', { name: 'Go to your dashboard' })).toHaveAttribute(
+    'href',
+    '/dashboard',
+  );
   // …and it is still there once every queued microtask and cache write has drained, which
   // is what makes the assertion non-transient rather than merely lucky.
   await settle();
-  expect(screen.getByRole('heading', { name: 'Dashboard' })).toBeInTheDocument();
-  expect(router.state.location.pathname).toBe('/dashboard');
+  expect(screen.getByRole('heading', { name: 'Ready to start your training' })).toBeInTheDocument();
+  expect(router.state.location.pathname).toBe('/onboarding');
+  // The wizard is gone, not hidden behind the celebration.
+  expect(screen.queryByRole('progressbar')).not.toBeInTheDocument();
 
   // `toEqual` pins the key SET: `ProfilePatchRequest` is `extra="forbid"`, so one extra
   // key is a 422 for the whole step. "No injuries" is a real answer and sends an empty
   // list, which is what stamps `injuries_reviewed_at` server-side.
   expect(patchRequestBody()).toEqual({ injuries: [] });
+  expect(patchBodies()).toHaveLength(1);
 });
 
 /**
@@ -204,8 +279,15 @@ it('sends exactly the injuries step and advances only after the server accepts i
  * - `mutate()` calls `removeObserver` on the in-flight mutation, so a superseded mutation
  *   never notifies: `isError` never flips for it and a per-call `onError` never fires.
  *
- * Round 3's own change is what made this reachable in two clicks: neither the equipment
- * step nor the aspects step needs any input, so Continue is live on both immediately.
+ * ⚠️ **The two steps that reach it changed with issue #54, the shape did not.** It used to be
+ * the equipment step followed by the aspects step, neither of which needed any input. The
+ * equipment step is gone and the aspect step now demands three answers, so the two clicks
+ * come from a profile that is HALF-answered on availability: `sessions_per_week` is stored and
+ * `available_weekdays` is not (a legal partial `PATCH` result — the column is nullable
+ * precisely so "unanswered" is expressible). The step is therefore submittable as it stands —
+ * the frequency is chosen and "any day" is the offered default — while `completion.ts`
+ * correctly refuses to credit it, and the step after it is answered already. Two Continues in
+ * one tick is an ordinary thing for that user to do.
  *
  * The fix is not a snapshot, and not an invalidation either (round 4 tried that and moved the
  * bug — see `profile/api.ts`). The cache holds server responses ONLY; the optimism is an
@@ -213,16 +295,24 @@ it('sends exactly the injuries step and advances only after the server accepts i
  * handlers live in `useMutation` rather than in the per-call options, so observer removal
  * cannot swallow them.
  */
-const TWO_STEPS_DONE: Profile = {
-  ...FOUR_OF_FIVE,
-  equipment_ids: [],
-  equipment_reviewed_at: null,
-  aspect_ratings: [],
-  injuries_reviewed_at: null,
-};
+const HALF_AVAILABILITY: Profile = { ...THREE_OF_FOUR, available_weekdays: null };
 
-/** 2 endowed + target grade + availability = 4 of 7. */
-const TRUTH_PERCENT = '57';
+/** Target grade + aspects, and neither availability nor injuries: 2 of the 4 steps. */
+const TRUTH_PERCENT = percentFor(HALF_AVAILABILITY);
+
+/** Availability answered as well: 3 of 4. What a successful availability write commits. */
+const AVAILABILITY_SAVED: Profile = { ...HALF_AVAILABILITY, available_weekdays: 0b111_1111 };
+const SAVED_PERCENT = percentFor(AVAILABILITY_SAVED);
+
+/**
+ * ⚠️ **The non-vacuity guard for every derived percentage below.** The tests that follow all
+ * say "the bar reads the committed truth and not the guess"; if those two readings were the
+ * same string, each of them would pass no matter which profile the cache held.
+ */
+it('distinguishes the committed truth from the optimistic guess', () => {
+  expect(TRUTH_PERCENT).not.toBe(SAVED_PERCENT);
+  expect(percentFor(THREE_OF_FOUR)).not.toBe(TRUTH_PERCENT);
+});
 
 /**
  * `patchResponses` and `getResponses` are consumed in order; the last entry repeats. The
@@ -241,14 +331,14 @@ function stubProfile(
 ) {
   let patchCount = 0;
   let getCount = 0;
-  const gets = options.getResponses ?? [() => json(options.profile ?? TWO_STEPS_DONE)];
+  const gets = options.getResponses ?? [() => json(options.profile ?? HALF_AVAILABILITY)];
   vi.mocked(fetch).mockImplementation((input: unknown, init?: RequestInit) => {
     const url = urlOf(input);
     if (url.endsWith('/api/vocabulary')) return Promise.resolve(json(VOCABULARY));
     if (url.endsWith('/api/profile') && (init?.method ?? 'GET') === 'GET') {
       const responder = gets[Math.min(getCount, gets.length - 1)];
       getCount += 1;
-      const respond = () => responder?.() ?? json(options.profile ?? TWO_STEPS_DONE);
+      const respond = () => responder?.() ?? json(options.profile ?? HALF_AVAILABILITY);
       return options.getDelayMs === undefined
         ? Promise.resolve(respond())
         : new Promise<Response>((resolve) =>
@@ -280,16 +370,17 @@ const shell = () =>
   });
 
 const failed = () => json({ detail: 'The server could not save that.' }, 500);
-const saved = () => json(TWO_STEPS_DONE);
-const saved4 = () => json(FOUR_OF_FIVE);
+const savedHalf = () => json(HALF_AVAILABILITY);
+const savedAvailability = () => json(AVAILABILITY_SAVED);
+const savedThree = () => json(THREE_OF_FOUR);
 
 it('does not credit a step when a CONCURRENT earlier write has failed', async () => {
   stubProfile([failed, failed]);
   renderOnboarding();
 
-  // Resumes on the equipment step, and both it and the next one are submittable as they
+  // Resumes on the availability step, and both it and the next one are submittable as they
   // stand — so two clicks in one tick is an ordinary thing for a user to do.
-  expect(await screen.findByRole('heading', { name: 'What you train on' })).toBeInTheDocument();
+  expect(await screen.findByRole('heading', { name: 'Availability' })).toBeInTheDocument();
   expect(screen.getByRole('progressbar')).toHaveAttribute('aria-valuenow', TRUTH_PERCENT);
 
   fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
@@ -299,20 +390,20 @@ it('does not credit a step when a CONCURRENT earlier write has failed', async ()
   await settle();
 
   // The bar must converge on what the database holds. Rolling back to the second
-  // mutation's snapshot left it at 71% — crediting a fabricated `equipment_reviewed_at`
-  // that no request ever persisted, for ten minutes, on a screen whose own alert said the
-  // answer had not been counted.
+  // mutation's snapshot left it one step high — crediting an `available_weekdays` that no
+  // request ever persisted, for ten minutes, on a screen whose own alert said the answer
+  // had not been counted. (Measured on the five-step flow as 71% against a truth of 57%.)
   expect(screen.getByRole('progressbar')).toHaveAttribute('aria-valuenow', TRUTH_PERCENT);
   // And BOTH failures are reported, naming their own steps.
-  expect(screen.getByRole('alert')).toHaveTextContent(/what you train on/i);
-  expect(screen.getByRole('alert')).toHaveTextContent(/self-rating/i);
+  expect(screen.getByRole('alert')).toHaveTextContent(/availability/i);
+  expect(screen.getByRole('alert')).toHaveTextContent(/where you are now/i);
 });
 
 it('still reports an earlier failure after a later step SUCCEEDS', async () => {
-  stubProfile([failed, saved]);
+  stubProfile([failed, savedHalf]);
   renderOnboarding();
 
-  expect(await screen.findByRole('heading', { name: 'What you train on' })).toBeInTheDocument();
+  expect(await screen.findByRole('heading', { name: 'Availability' })).toBeInTheDocument();
 
   fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
   fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
@@ -321,7 +412,7 @@ it('still reports an earlier failure after a later step SUCCEEDS', async () => {
 
   // The superseded mutation notified nobody, so this produced NO message at all and the
   // step was silently lost. A later success must not erase a different step's failure.
-  expect(await screen.findByRole('alert')).toHaveTextContent(/what you train on/i);
+  expect(await screen.findByRole('alert')).toHaveTextContent(/availability/i);
 });
 
 /**
@@ -334,7 +425,7 @@ it('still reports an earlier failure after a later step SUCCEEDS', async () => {
  * route-guard half is guarded by the next test, alone.
  */
 it('keeps the wizard, the draft and the retry when a write fails', async () => {
-  stubProfile([failed], { profile: FOUR_OF_FIVE });
+  stubProfile([failed], { profile: THREE_OF_FOUR });
   renderOnboarding();
 
   expect(await screen.findByRole('heading', { name: 'Injuries' })).toBeInTheDocument();
@@ -343,7 +434,7 @@ it('keeps the wizard, the draft and the retry when a write fails', async () => {
     target: { value: 'still sore on crimps' },
   });
 
-  fireEvent.click(screen.getByRole('button', { name: 'Finish' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Save and finish' }));
   expect(await screen.findByRole('alert')).toHaveTextContent(/could not be saved/);
   await settle();
 
@@ -352,7 +443,7 @@ it('keeps the wizard, the draft and the retry when a write fails', async () => {
   expect(screen.getByRole('progressbar')).toBeInTheDocument();
   expect(screen.getByLabelText(/^Elbow —/)).toHaveValue('still sore on crimps');
   expect(screen.getByRole('alert')).toBeInTheDocument();
-  expect(screen.getByRole('button', { name: 'Finish' })).toBeEnabled();
+  expect(screen.getByRole('button', { name: 'Save and finish' })).toBeEnabled();
 });
 
 /**
@@ -370,33 +461,42 @@ it('keeps the wizard, the draft and the retry when a write fails', async () => {
  * Mutation-tested: this is the test that fails when the guard goes back to `isError`.
  */
 it('survives a background refetch failure with data already in the cache', async () => {
-  stubProfile([saved], { profile: FOUR_OF_FIVE, getResponses: [saved4, shell] });
+  stubProfile([savedThree], { profile: THREE_OF_FOUR, getResponses: [savedThree, shell] });
   const { queryClient } = renderOnboarding();
 
   expect(await screen.findByRole('heading', { name: 'Injuries' })).toBeInTheDocument();
+  fireEvent.click(screen.getByLabelText('Elbow'));
+  fireEvent.change(screen.getByLabelText(/^Elbow —/), {
+    target: { value: 'still sore on crimps' },
+  });
+
   await act(async () => {
     await queryClient.invalidateQueries({ queryKey: ['profile'] });
   });
 
   await settle();
-  // `isRefetchError`, not `isLoadingError` — the data is still there, so the screen is too.
+  // `isRefetchError`, not `isLoadingError` — the data is still there, so the screen is too,
+  // and so is the draft that lives inside it.
   expect(screen.getByRole('heading', { name: 'Injuries' })).toBeInTheDocument();
   expect(screen.getByRole('progressbar')).toBeInTheDocument();
+  expect(screen.getByLabelText(/^Elbow —/)).toHaveValue('still sore on crimps');
 });
 
 /**
  * ⚠️ **The cache must converge on the newest COMMITTED state, never on an older read.**
  *
  * Round 4 issued the invalidation refetch from the failing mutation's `onError`, then the
- * scope gate released and the next mutation ran. That GET was in flight before the second
+ * scope gate released and the next mutation ran. That GET was in flight before the other
  * write committed, so it resolved second and overwrote the newer `onSuccess`. Measured with
- * a 30 ms GET: the bar read **71 at +5 ms and 57 once the GET landed**, then stayed 57 for
- * the full ten-minute `staleTime` — a write that really did persist reading as unanswered,
- * with the dashboard nagging for it.
+ * a 30 ms GET on the five-step flow: the bar read **71 at +5 ms and 57 once the GET
+ * landed**, then stayed 57 for the full ten-minute `staleTime` — a write that really did
+ * persist reading as unanswered, with the dashboard nagging for it.
  *
- * The success response therefore has to carry REAL progress, or the test is vacuous: round
- * 4's own concurrent test returned an unchanged profile from its successful PATCH and could
- * not see this at all.
+ * The SUCCESSFUL response therefore has to carry REAL progress, or the test is vacuous:
+ * round 4's own concurrent test returned an unchanged profile from its successful PATCH and
+ * could not see this at all. So here the availability write is the one that succeeds (60 →
+ * 80) and the aspect write is the one that fails; a stale read would drag the bar back to 60
+ * and leave it there.
  *
  * ⚠️ **Renamed, because the failure mode it was named for is now structurally unreachable**:
  * no read is issued on the error path, so there is no stale read to overwrite anything. What
@@ -404,31 +504,26 @@ it('survives a background refetch failure with data already in the cache', async
  * there — which is worth an assertion in its own right. Note it also survives deleting
  * `mutationKey`, so it is not a guard on the overlay; that is the last test in this file.
  */
-const ASPECTS_SAVED: Profile = {
-  ...TWO_STEPS_DONE,
-  aspect_ratings: [{ climbing_aspect_id: 1, score: 4, rated_at: '2026-08-21T10:00:00Z' }],
-};
-
 it('installs the newest committed profile and keeps it', async () => {
-  // Equipment fails, aspects succeeds. 2 endowed + target grade + availability + aspects.
-  stubProfile([failed, () => json(ASPECTS_SAVED)], { getDelayMs: 30 });
+  // Availability succeeds and carries real progress, the aspect write that follows it fails.
+  stubProfile([savedAvailability, failed], { getDelayMs: 30 });
   renderOnboarding();
 
-  expect(await screen.findByRole('heading', { name: 'What you train on' })).toBeInTheDocument();
+  expect(await screen.findByRole('heading', { name: 'Availability' })).toBeInTheDocument();
   fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
   fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
 
   await vi.waitFor(() =>
-    expect(screen.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '71'),
+    expect(screen.getByRole('progressbar')).toHaveAttribute('aria-valuenow', SAVED_PERCENT),
   );
 
   // Over TIME, not once: the clobbering read landed ~30 ms later and undid it.
   await act(async () => {
     await new Promise((resolve) => setTimeout(resolve, 80));
   });
-  expect(screen.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '71');
+  expect(screen.getByRole('progressbar')).toHaveAttribute('aria-valuenow', SAVED_PERCENT);
   // The failure is still reported, against its own step.
-  expect(screen.getByRole('alert')).toHaveTextContent(/what you train on/i);
+  expect(screen.getByRole('alert')).toHaveTextContent(/where you are now/i);
 });
 
 /**
@@ -445,29 +540,24 @@ it('installs the newest committed profile and keeps it', async () => {
  * `notifyManager.schedule` -> `systemSetTimeoutZero`, so the render lands on the next tick,
  * not in the click handler.
  */
-const EQUIPMENT_SAVED: Profile = {
-  ...TWO_STEPS_DONE,
-  equipment_reviewed_at: '2026-08-21T10:00:00Z',
-};
-
 it('moves the bar from the PENDING write, before any response has arrived', async () => {
-  stubProfile([() => json(EQUIPMENT_SAVED)], { patchDelayMs: 200 });
+  stubProfile([savedAvailability], { patchDelayMs: 200 });
   renderOnboarding();
 
-  expect(await screen.findByRole('heading', { name: 'What you train on' })).toBeInTheDocument();
+  expect(await screen.findByRole('heading', { name: 'Availability' })).toBeInTheDocument();
   expect(screen.getByRole('progressbar')).toHaveAttribute('aria-valuenow', TRUTH_PERCENT);
 
   fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
   await settle();
 
   // 200 ms of PATCH still to run: nothing has answered, and the bar has already moved.
-  expect(vi.mocked(fetch).mock.calls.some(([, init]) => init?.method === 'PATCH')).toBe(true);
-  expect(screen.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '71');
+  expect(patchBodies()).toEqual([{ sessions_per_week: 3, available_weekdays: 0b111_1111 }]);
+  expect(screen.getByRole('progressbar')).toHaveAttribute('aria-valuenow', SAVED_PERCENT);
 
   // And when the response does land it replaces the guess with the same number, so there is
   // no visible step backwards: `mutation.js` awaits `onSuccess` BEFORE dispatching `success`.
   await act(async () => {
     await new Promise((resolve) => setTimeout(resolve, 260));
   });
-  expect(screen.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '71');
+  expect(screen.getByRole('progressbar')).toHaveAttribute('aria-valuenow', SAVED_PERCENT);
 });

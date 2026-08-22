@@ -41,7 +41,7 @@ function Dashboard() {
  *
  * The plan's Zeigarnik point in one card: an unfinished profile is stated as a percentage
  * and a count of what is left, with a link straight back into the step that is next. It
- * **renders nothing at all** once the five steps are done — a nag that never goes away
+ * **renders nothing at all** once every step is done — a nag that never goes away
  * stops being information — and nothing while the query is in flight or failed, because
  * "0 sections left" and "we could not ask" must never look alike.
  *
