@@ -1,6 +1,6 @@
 {
   "name": "climb-trainer",
-  "version": "5.3.0",
+  "version": "6.0.0",
   "private": true,
   "description": "Climbing training app — plan generator, guided session player, training diary",
   "engines": {
