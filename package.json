@@ -1,6 +1,6 @@
 {
   "name": "climb-trainer",
-  "version": "5.2.0",
+  "version": "5.3.0",
   "private": true,
   "description": "Climbing training app — plan generator, guided session player, training diary",
   "engines": {
@@ -17,6 +17,8 @@
     "check:web": "npm --prefix web run format:check && npm --prefix web run lint && npm --prefix web run typecheck && npm --prefix web run build && npm --prefix web run test",
     "check:server": "uv run ruff check . && uv run ruff format --check . && uv run mypy && CORS_ORIGINS=http://localhost:5173 DATABASE_URL=\"${CT_TEST_DATABASE_URL:-}\" DATABASE_URL_UNPOOLED=\"\" uv run pytest -q",
     "check": "npm run check:web && npm run check:server",
+    "db:up": "bash scripts/local-db.sh up",
+    "db:reset": "bash scripts/local-db.sh reset",
     "codegen:api": "uv run python -m server.openapi_schema | node web/scripts/gen-api-types.mjs",
     "version:dev": "npm version minor --no-git-tag-version",
     "version:release": "npm version major --no-git-tag-version"

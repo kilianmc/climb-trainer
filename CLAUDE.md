@@ -114,8 +114,10 @@ are documented rather than fixed" · "PWA — only the decisions a reader would 
 reverse".
 
 **Running the app locally, or a blank page that is not your code** — "Local development" ·
-"⚠️ `npm run check` breaks a RUNNING dev server, and every route goes blank" (a blank *landing*
-page is the tell) · "`.env` is loaded for you — but only outside Vercel".
+"Local Postgres for the test suite" (`npm run db:up` / `db:reset`; the URL belongs in
+`CT_TEST_DATABASE_URL` and never in `.env`) · "⚠️ `npm run check` breaks a RUNNING dev server,
+and every route goes blank" (a blank *landing* page is the tell) · "`.env` is loaded for you —
+but only outside Vercel".
 
 **Writing tests** — "Testing policy". Every guard test
 here carries a positive control; a detector that cannot see its own violation is worse than
@@ -950,8 +952,9 @@ what the workflow echoes.**
 
 The schema uses native Postgres enums, composite foreign keys, `GENERATED … STORED`, GIN
 expression indexes and window functions. (It used `text[]` too, until the ascent-tags
-reversal on 2026-08-21 — the rest of the list is more than enough on its own.) Tests run against **real Postgres** (GitHub Actions `services:`
-container, pinned to Neon's major): once per session `alembic upgrade head` — so **CI
+reversal on 2026-08-21 — the rest of the list is more than enough on its own.) Tests run against **real Postgres** — GitHub Actions' `services:` container, and locally the
+native `postgresql@17` behind `npm run db:up`, both pinned to Neon's major: once per session
+`alembic upgrade head` — so **CI
 tests the migrations** — plus seeding from the same module production uses; per test
 `begin_nested()` + rollback. `alembic check` catches model drift. Do not "simplify" any
 of this to SQLite.
@@ -2057,6 +2060,44 @@ uv run uvicorn server.app:app --port 8000 --reload
 npm --prefix web run dev
 ```
 
+### Local Postgres for the test suite
+
+Native Homebrew **`postgresql@17`** — no Docker. It is **keg-only**, so its binaries live in
+`/opt/homebrew/opt/postgresql@17/bin` and are **not on PATH**; `scripts/local-db.sh` addresses
+them absolutely and so should anything else.
+
+```bash
+# ~/.zshrc — the one line that makes the DB-backed tests runnable
+export CT_TEST_DATABASE_URL=postgresql://postgres:postgres@localhost:5432/climb_trainer_test
+
+npm run db:up      # start the server if down, create the DB if missing, `alembic upgrade head` — idempotent
+npm run db:reset   # dropdb --force, createdb, upgrade to head
+npm run check:server   # now RUNS the DB-backed tests instead of skipping them
+```
+
+The `postgres` role and database name deliberately match CI's `postgres:17-alpine` service, so
+the same URL string is valid in both places and there is nothing to translate. The role is
+created once, by hand; `db:up`/`db:reset` own everything after that.
+
+**The URL lives in `CT_TEST_DATABASE_URL` and nowhere else — never put a database URL in
+`.env`.** `.env` on this machine holds the *production* Neon URL, `server/settings.py` loads it
+for every entrypoint, and that is exactly how a stray `alembic upgrade head` reached
+production's neighbour on 2026-08-18. So `scripts/local-db.sh` sets `DATABASE_URL_UNPOOLED`
+**only** as a prefix on its own `alembic` command, with `DATABASE_URL=""` beside it to stop
+python-dotenv (which runs `override=False`) filling that one in from `.env` — the same trick,
+inverted, that `check:server` uses.
+
+**It refuses a non-local host, with no override.** The check reuses
+`server.db.is_local_host` so it cannot drift from `LOCAL_DB_HOSTS`, and it is handed the
+**host**, never the URL: a URL bound to an argument or left as a frame local gets rendered in
+a traceback, password included (see `server/db.py::host_of` — that cost 51 printed passwords
+once). `require_migration_host` is **satisfied**, not bypassed — the host is genuinely local,
+and `CT_ALLOW_REMOTE_MIGRATION` is never set outside `.github/workflows/migrate.yml`.
+
+**Three Postgres majors move as one: local `postgresql@17` = CI's `postgres:17-alpine` =
+Neon's major.** Bump one, bump all three in the same PR. A local pass on a different major
+proves nothing about CI, and CI proves nothing about Neon.
+
 ### ⚠️ `npm run check` breaks a RUNNING dev server, and every route goes blank
 
 `npm run check` → `npm run build` → **`npm --prefix web ci`**, which reinstalls
@@ -2170,10 +2211,12 @@ and the same leak sent a stray `alembic upgrade head` at production's neighbour 
 DATABASE_URL="${CT_TEST_DATABASE_URL:-}" DATABASE_URL_UNPOOLED=""
 ```
 
-- **Locally**: both empty, the 31 DB-backed tests skip, nothing connects. A skip is visible;
+- **Locally**: both empty, the 86 DB-backed tests skip, nothing connects. A skip is visible;
   a silent connection to someone's real database is not.
-- **Deliberately, against a throwaway Postgres**: `CT_TEST_DATABASE_URL=postgresql://…
-  npm run check:server`. That is the only way to opt in, and it cannot happen by accident.
+- **Deliberately, against the local Postgres**: export `CT_TEST_DATABASE_URL` and run
+  `npm run db:up` once (see "Local Postgres for the test suite"). That is the only way to opt
+  in, and it cannot happen by accident. The guard in `tests/conftest.py` still refuses any
+  non-local host.
 - **`DATABASE_URL_UNPOOLED` has no opt-in and is pinned EMPTY, on purpose.** It is the
   *direct* endpoint, its only consumer is Alembic (`migrations/env.py`), and the gate never
   runs Alembic — so there is nothing for a value to be useful for, and it is precisely the
@@ -2184,8 +2227,9 @@ DATABASE_URL="${CT_TEST_DATABASE_URL:-}" DATABASE_URL_UNPOOLED=""
   the documented CI/local-Postgres path, so nothing needs it.
 - **CI**: the `server` job runs `uv run pytest -q` directly with `DATABASE_URL` pointing at
   its `postgres:17-alpine` service, so it never goes through this script and still runs the
-  full set. **CI is the only place the DB-backed tests execute, by design** — do not weaken
-  them on the assumption that nothing runs them.
+  full set. **CI is where they always run; locally they run only when `CT_TEST_DATABASE_URL`
+  is exported** — so never weaken them on the assumption that nothing runs them, and never
+  make the gate *require* a database.
 
 Never make the local gate *depend* on a database, and never substitute SQLite to avoid the
 skip. CI is where the migrations and the seed are actually executed.
