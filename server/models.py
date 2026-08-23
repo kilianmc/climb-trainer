@@ -130,6 +130,9 @@ NOTES_MAX = 2000
 SET_NOTE_MAX = 500
 ASCENT_NOTES_MAX = 1000
 JOURNAL_BODY_MAX = 4000
+# `user_profile.display_name`. 64 rather than 120: it is a name on a screen, not a route
+# name, and it is the same bound `invite.label` uses for the same kind of short label.
+DISPLAY_NAME_MAX = 64
 
 
 class Base(DeclarativeBase):
@@ -143,6 +146,21 @@ class GradeSystem(Base):
     `key` is the stable machine identifier (`server.domain.grades.GradeSystemKey`) and
     is what code matches on; `name` is display only, and `id` is what other tables
     reference.
+
+    ## `sort_order` exists because a SERIAL is not a display order (issue #55, `0006`)
+
+    `GET /api/vocabulary` used to order these by `id`, while its three sibling lookup
+    tables order by an explicit `sort_order`. That is a **latent** bug rather than a live
+    one, and the shape of it is worth keeping: insert a new system mid-tuple and CI — always
+    a fresh database, so serials follow declaration order — keeps passing, while dev and
+    production keep their old serials and render the new system LAST. The test pinning
+    declaration order would then assert a property the real databases do not have.
+
+    So this column is the same contract the siblings have: **the value is the tuple
+    position in `server.domain.grades.GRADE_SYSTEMS`**, written by the seed, so display
+    order is edited by moving a line rather than by renumbering a column. It is not in
+    `GradeSystemOut` — ordering is the server's job, and a client that could see it could
+    disagree with it.
     """
 
     __tablename__ = "grade_system"
@@ -151,6 +169,7 @@ class GradeSystem(Base):
     key: Mapped[str] = mapped_column(String(32), unique=True)
     name: Mapped[str] = mapped_column(String(64))
     discipline: Mapped[Discipline] = mapped_column(discipline_enum)
+    sort_order: Mapped[int] = mapped_column(SmallInteger)
 
     grades: Mapped[list["Grade"]] = relationship(
         back_populates="grade_system",
@@ -576,6 +595,55 @@ class UserProfile(Base):
     that wants "everyone free on Thursdays" — and `CHECK (0..127)` plus a named
     constant beats seven booleans nobody can loop over.
 
+    ## ⚠️ THREE COLUMNS ARE NULLABLE BECAUSE UNANSWERED IS A REAL STATE (0005)
+
+    `primary_discipline`, `sessions_per_week` and `available_weekdays` were `NOT NULL`
+    until revision `0005`. Onboarding writes this row **one step at a time** — that is
+    what lets an abandoned setup resume instead of restarting — so the row exists before
+    those questions have been asked, and `NOT NULL` forced the write path to invent
+    placeholder values. Two of them were indistinguishable from real answers
+    (`sessions_per_week = 3` is a perfectly plausible reply), so a progress bar counting
+    "has a value" credited work nobody had done, and the plan generator would have read a
+    number the user never chose.
+
+    **NULL means "not answered yet". It never means "zero", "none" or "default".**
+    Anything reading these must handle NULL as *absent input*, not substitute a fallback:
+
+    - `sessions_per_week IS NULL` -> the availability step is unanswered. The plan
+      generator (planned PR #11) must refuse to generate rather than assume a frequency.
+    - `available_weekdays IS NULL` -> same question, same answer. `0` is a legal *mask*
+      meaning "answered, no days", and **the API does accept and store it** — the Pydantic
+      bound is `ge=0` and `PATCH /api/profile` writes whatever it is given. Only the web
+      client's own submit gate declines to send it, and a client-side gate is not an API
+      property. A reader must handle 0 as an answer, not as an impossibility.
+    - `primary_discipline IS NULL` -> no target grade has been chosen, because the
+      discipline is derived from it (`server/profile/routes.py`).
+
+    ## The `*_reviewed_at` columns, and the rule for when a step needs one
+
+    **A step needs a `*_reviewed_at` column exactly when ZERO ROWS is a legitimate
+    answer.** Two of onboarding's five steps qualify:
+
+    - `injuries_reviewed_at` — "nothing is hurting" writes no `user_injury` rows.
+    - `equipment_reviewed_at` — "I own none of this" writes no `user_equipment` rows.
+      **For an outdoor-only climber with no gym membership and no home gear this was a hard
+      dead-end until `0005`**: every row seeded at the time was an indoor wall or a piece of
+      kit, so there was nothing they could honestly tick, the step could never be recorded
+      and 100% was unreachable. Both halves are fixed — this column, and two outdoor rows in
+      `server/domain/vocabulary.py::EQUIPMENT` — so **a profile with zero
+      `user_equipment` rows is a normal, complete profile and PR #11 must plan for it**
+      (an exercise with no `exercise_equipment` rows needs nothing and is always
+      prescribable).
+
+    Without the column, an empty child table means "asked, nothing" or "never asked" and
+    nothing can tell them apart. They are timestamps rather than booleans because "when did
+    you last look at this?" is the question a future prompt would ask.
+
+    **The other three steps must NOT get one**, and adding a third would be cargo-culting:
+    submitting the aspect step always writes eight rows, so a single rating already proves
+    it was taken, and the target grade and availability are scalar columns whose own NULL
+    carries it.
+
     ## `show_body_metrics`, and why it defaults to TRUE
 
     When this is off, **the weight trend and every %BW figure are hidden and nothing
@@ -597,22 +665,70 @@ class UserProfile(Base):
     user_id: Mapped[int] = mapped_column(
         ForeignKey("app_user.id", ondelete="CASCADE"), primary_key=True
     )
-    primary_discipline: Mapped[Discipline] = mapped_column(discipline_enum)
+    # NULL until a target grade is chosen: this is DERIVED from that grade's system, so
+    # the two can never disagree. See the class docstring.
+    primary_discipline: Mapped[Discipline | None] = mapped_column(discipline_enum, nullable=True)
     # The grade being trained for. NULL until onboarding asks. RESTRICT by default (no
     # ondelete): the seed never deletes a grade, and a cascade here would silently erase
     # somebody's goal if one were ever retired.
     target_grade_id: Mapped[int | None] = mapped_column(ForeignKey("grade.id"), nullable=True)
-    sessions_per_week: Mapped[int] = mapped_column(SmallInteger)
-    available_weekdays: Mapped[int] = mapped_column(SmallInteger)
+    # What they climb NOW, on the same ladder as the target. NULL until asked. Same
+    # RESTRICT-by-default reasoning as `target_grade_id`.
+    #
+    # ⚠️ It must sit on the same DISCIPLINE as the target, and `server/profile/routes.py`
+    # enforces that at the edge: the ordinal ladders are disjoint per discipline and
+    # `server.domain.grades.convert` raises `CrossDisciplineError` rather than compare
+    # across them, so a Font current grade under a French target is a row the plan
+    # generator can do nothing with.
+    current_grade_id: Mapped[int | None] = mapped_column(ForeignKey("grade.id"), nullable=True)
+    sessions_per_week: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
+    available_weekdays: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
+    # The headline answer about their climbing: one strength, one weakness, chosen from the
+    # eight aspects. NULL until asked. See `UserAspectRating` for why these exist alongside
+    # the eight scores rather than instead of them.
+    strength_aspect_id: Mapped[int | None] = mapped_column(
+        ForeignKey("climbing_aspect.id"), nullable=True
+    )
+    weakness_aspect_id: Mapped[int | None] = mapped_column(
+        ForeignKey("climbing_aspect.id"), nullable=True
+    )
+    # Free text, and the ELEVENTH row on CLAUDE.md's free-text inventory — the table there
+    # is updated in the same PR, as that section demands. NULL means "never set", and the
+    # client offers the account's email as a starting value without persisting it.
+    display_name: Mapped[str | None] = mapped_column(String(DISPLAY_NAME_MAX), nullable=True)
     show_body_metrics: Mapped[bool] = mapped_column(Boolean, server_default=TRUE)
+    # ⚠️ **`equipment_reviewed_at` is RETIRED and is deliberately still here.** Issue #54
+    # removed the equipment step from onboarding, so nothing reads or writes this column any
+    # more — it is absent from `ProfileResponse` and from the completion maths. It is not
+    # dropped because this repo migrates **expand -> deploy -> contract** and a `DROP COLUMN`
+    # on `user_profile` is exactly what `tests/test_migrations_additive.py` exists to refuse:
+    # the table holds real user rows. The contract half is a later revision, once a
+    # deployed-and-verified `0006` has proved nothing reads it.
+    equipment_reviewed_at: Mapped[datetime | None] = mapped_column(nullable=True)
+    # When the injuries step was last answered. NULL = never asked; a value with no rows in
+    # `user_injury` = asked, nothing to record. Nothing else can express the second.
+    injuries_reviewed_at: Mapped[datetime | None] = mapped_column(nullable=True)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
+    # Both CHECKs are unchanged by 0005 and still correct: a NULL is neither true nor
+    # false to a CHECK, so it passes both without either constraint having to mention it.
     __table_args__ = (
         CheckConstraint("sessions_per_week BETWEEN 1 AND 7", name="sessions_per_week_in_range"),
-        # 7 bits, Monday = 1. 0 is allowed: a profile mid-onboarding has picked nothing.
+        # 7 bits, Monday = bit 0. 0 is a legal mask and REACHABLE through the API
+        # ("answered, no days"); "not answered" is NULL, a different thing, and the one the
+        # progress bar reads.
         CheckConstraint(
             "available_weekdays BETWEEN 0 AND 127", name="available_weekdays_is_7_bits"
+        ),
+        # One aspect cannot be both the strongest and the weakest thing about a climber.
+        # `IS DISTINCT FROM` rather than `<>`, because `NULL <> NULL` is NULL and would pass
+        # this vacuously in exactly the state the columns spend most of their life in — and
+        # because both being NULL (nothing answered) has to stay legal.
+        CheckConstraint(
+            "strength_aspect_id IS NULL OR weakness_aspect_id IS NULL "
+            "OR strength_aspect_id IS DISTINCT FROM weakness_aspect_id",
+            name="strength_and_weakness_differ",
         ),
     )
 
@@ -629,7 +745,25 @@ class UserEquipment(Base):
 
 
 class UserAspectRating(Base):
-    """A self-rated 1-5 score per aspect: the generator's only picture of a weakness.
+    """A self-rated 1-5 score per aspect. Detail, not the headline.
+
+    ⚠️ **This used to say "the generator's only picture of a weakness", and issue #54 made
+    that false.** Eight 1-5 sliders were the aspect step, and they were the step most likely
+    to hand the generator garbage: they are hard to answer honestly, and eight middling
+    guesses look exactly like eight real answers. The headline is now
+    `user_profile.strength_aspect_id` and `weakness_aspect_id` — one of each, which anybody
+    can answer — and the eight scores are the optional detail behind a disclosure for
+    someone who wants to be specific.
+
+    So the generator has two pictures of a weakness and they are not equivalent:
+
+    - **the profile's `weakness_aspect_id`** is a deliberate answer to a direct question,
+      and is the one to trust;
+    - **these rows** are finer-grained and may be nothing more than the default an
+      untouched slider was left at, which is why the client marks a row it has moved.
+
+    Both are still written together — picking a strength or a weakness also writes that
+    aspect's score — so a profile never has one without the other.
 
     Self-rated rather than tested, because a testing protocol for eight aspects is a
     whole product of its own and this one has to work on day one. `rated_at` is here so
@@ -672,6 +806,23 @@ class UserInjury(Base):
     __table_args__ = (
         # The generator reads "this user's open injuries" on every generation.
         Index("ix_user_injury_user_id", "user_id"),
+        # ⚠️ AT MOST ONE OPEN INJURY PER AREA (0005). A partial unique INDEX rather than a
+        # constraint because Postgres has no partial unique *constraint*; the `uq_` name says
+        # what it enforces rather than that it is also an access path.
+        #
+        # It closes a real race, not a hypothetical one: `PATCH /api/profile` reads the open
+        # rows and then inserts the missing ones, so two concurrent requests both see "no
+        # open elbow row" and both insert, leaving one area open twice — a duplicated
+        # checkbox in the editor and a doubled contraindication in the generator. Resolved
+        # rows are deliberately outside the predicate: flagging, resolving and re-flagging the
+        # same area is the history this table exists to keep.
+        Index(
+            "uq_user_injury_open_area",
+            "user_id",
+            "injury_area_id",
+            unique=True,
+            postgresql_where=text("resolved_on IS NULL"),
+        ),
         CheckConstraint(
             "resolved_on IS NULL OR resolved_on >= started_on", name="resolved_after_started"
         ),

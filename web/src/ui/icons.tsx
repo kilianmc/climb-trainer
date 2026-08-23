@@ -127,3 +127,197 @@ export function IconSliders(props: IconProps) {
     </Icon>
   );
 }
+
+/**
+ * The nav's five glyphs, and the theme switch's three.
+ *
+ * All eight are on the shared `Icon` frame, so they are one family with the icons above: the
+ * same 24px grid, the same 1.75 stroke, `currentColor`, `aria-hidden` and `focusable="false"`.
+ * ⚠️ In the nav they sit **beside a visible label** and add nothing to the accessible name —
+ * they are decoration on a control that already reads correctly with images off.
+ */
+
+/** Dashboard: the overview, as tiles. */
+export function IconGrid(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <rect x="3.5" y="3.5" width="7" height="7" rx="1.5" />
+      <rect x="13.5" y="3.5" width="7" height="7" rx="1.5" />
+      <rect x="3.5" y="13.5" width="7" height="7" rx="1.5" />
+      <rect x="13.5" y="13.5" width="7" height="7" rx="1.5" />
+    </Icon>
+  );
+}
+
+/**
+ * The plan: a week, laid out in blocks.
+ *
+ * ⚠️ Redrawn in round 6, and the reason is SHAPE, not concept. It was a calendar — an upright
+ * rounded rectangle with a header rule — and `IconJournal` is an upright rounded rectangle with
+ * horizontal rules. At 16px, icon-only, those two silhouettes are the same object. This one is now
+ * landscape with VERTICAL dividers, so the pair differs in both aspect ratio and internal line
+ * direction, which is what the eye actually sorts on at that size.
+ */
+export function IconCalendar(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <rect x="2.75" y="7" width="18.5" height="10" rx="2" />
+      <path d="M8.9 7v10M15.1 7v10" />
+    </Icon>
+  );
+}
+
+/** The profile: the person whose plan it is. */
+export function IconUser(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <circle cx="12" cy="8" r="3.75" />
+      <path d="M4.75 20.5a7.25 7.25 0 0 1 14.5 0" />
+    </Icon>
+  );
+}
+
+/** Theme: light. */
+export function IconSun(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <circle cx="12" cy="12" r="4.25" />
+      <path d="M12 2.5v2.25M12 19.25v2.25M2.5 12h2.25M19.25 12h2.25M5.25 5.25l1.6 1.6M17.15 17.15l1.6 1.6M18.75 5.25l-1.6 1.6M6.85 17.15l-1.6 1.6" />
+    </Icon>
+  );
+}
+
+/** Theme: dark. */
+export function IconMoon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M20 14.5A8.5 8.5 0 0 1 9.5 4a8.5 8.5 0 1 0 10.5 10.5z" />
+    </Icon>
+  );
+}
+
+/**
+ * Log out — the power symbol (IEC 5009), not an arrow leaving a door.
+ *
+ * Kilian's call (round 6). It also survives the icon-only nav better than the arrow did: a broken
+ * ring with a stem is a silhouette people read instantly at 16px, where a door-and-arrow becomes
+ * two ambiguous strokes.
+ */
+export function IconPower(props: IconProps) {
+  return (
+    <Icon {...props}>
+      {/* A LONG stem and a WIDE gap, deliberately: `IconTimer` is also a ring with a mark at
+          twelve o'clock, and at 16px a short stem over a nearly-closed ring is the same
+          silhouette as a stopwatch. This one is unmistakably broken open. */}
+      <path d="M12 2.75v8.25" />
+      <path d="M7 7.1a7.2 7.2 0 1 0 10 0" />
+    </Icon>
+  );
+}
+
+/**
+ * The brand mark, as a THEMED tile — the same drawing as `web/public/mark.svg`, inlined.
+ *
+ * ## Why it is inline and not that file
+ *
+ * An `<img src>` cannot inherit anything from the host document's CSS: no `currentColor`, no
+ * custom properties. So an external file can only ever be the one green it was authored in,
+ * which is exactly what a themed tile cannot be. `public/mark.svg` therefore **stays untouched**
+ * as the PWA icon source (`pwa-assets.config.ts` generates every launcher icon from it, and its
+ * opaque background and hardcoded hexes are deliberate — a maskable icon a launcher crops must
+ * not be transparent). This is a second expression of the same drawing, and the two must be kept
+ * in step by hand.
+ *
+ * ## Why it does not use the shared `Icon` frame
+ *
+ * Checked rather than assumed: `Icon` is `fill="none"` + `stroke="currentColor"` on a **fixed
+ * 24px grid**, and `IconProps` deliberately `Omit`s `viewBox` ("not a caller's to set"). A filled
+ * tile needs a fill, and this drawing's coordinates are on a 512 grid. Forcing it in would mean
+ * loosening that type for one caller. It keeps the family's conventions instead — `aria-hidden`,
+ * `focusable="false"`, sized in `em` so it tracks the title beside it.
+ *
+ * ## The three tones, and the geometry
+ *
+ * Tile `--ct-accent`, holds knocked out in `--ct-accent-fg`, and the route a QUIET tone between
+ * the two (`_chrome.scss` carries the measurements). That is the app's existing BUTTON pairing
+ * plus a mix of it, so no new colour pair enters the system — `contrast.test.ts:87` already
+ * asserts `['accent-fg', 'accent']` in both schemes.
+ *
+ * ⚠️ **Not one coordinate, stroke width or radius is changed from `mark.svg`.** The only edit is
+ * the `viewBox`: `0 0 512 512` becomes `122 118 284 284`, which crops the maskable icon's
+ * safe-zone padding — the drawing occupies just 48% of that 512 square, because a launcher may
+ * crop it to a circle. Nothing here will. Cropping rather than re-weighting is what keeps this
+ * the same drawing: at a 22px render the 18-unit stroke lands at ~1.5px against the icon
+ * family's 1.75px, and the 26-unit holds at ~2.2px radius, so it reads at nav size without
+ * touching the artwork.
+ */
+export function BrandMark() {
+  return (
+    <svg
+      className="ct-app__brand-mark"
+      viewBox="122 118 284 284"
+      aria-hidden="true"
+      focusable="false"
+    >
+      {/* The tile. `currentColor` so one CSS declaration themes it. */}
+      <rect x="122" y="118" width="284" height="284" fill="currentColor" />
+      {/* ⚠️ Two classes, not one: the route is a QUIET tone and the holds are the bright
+          knockout, which is the figure-ground relationship `mark.svg` is drawn with. Knocking
+          both out at full strength reads as a fat zigzag with lumps. See `_chrome.scss` for the
+          measured tones. */}
+      <path
+        className="ct-app__brand-route"
+        d="M168 352 L232 264 L312 296 L352 176"
+        strokeWidth={18}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <circle className="ct-app__brand-hold" cx="168" cy="352" r="26" />
+      <circle className="ct-app__brand-hold" cx="232" cy="264" r="26" />
+      <circle className="ct-app__brand-hold" cx="312" cy="296" r="26" />
+      <circle className="ct-app__brand-hold" cx="352" cy="176" r="34" />
+    </svg>
+  );
+}
+
+/**
+ * Home, for the signed-out nav.
+ *
+ * A peaked roof over a body, checked against the six already in the nav before settling on it:
+ * `IconGrid` is four squares, `IconCalendar` a landscape strip, `IconTimer` and `IconPower` rings,
+ * `IconUser` a head and shoulders, `IconJournal` an upright rect with rules — and this is the only
+ * one with a diagonal apex, which is what the eye sorts on at 16px. It does share the upright body
+ * with `IconJournal`, and the roof is what separates them.
+ */
+export function IconHome(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M3.25 11 12 3.75 20.75 11" />
+      <path d="M5.6 9.35V20.25h12.8V9.35" />
+    </Icon>
+  );
+}
+
+/** The burger. Three rules, and nothing clever. */
+export function IconMenu(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M3.75 6.5h16.5M3.75 12h16.5M3.75 17.5h16.5" />
+    </Icon>
+  );
+}
+
+/**
+ * Injuries — a dressing, at an angle.
+ *
+ * The one glyph in the section-heading set with no existing candidate: nothing in this file was
+ * medical. Diagonal, so it does not collide with any of the uprights.
+ */
+export function IconBandage(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <rect x="1.9" y="8.4" width="20.2" height="7.2" rx="3.6" transform="rotate(-45 12 12)" />
+      <path d="M9.6 9.6 14.4 14.4M14.4 9.6 9.6 14.4" />
+    </Icon>
+  );
+}

@@ -42,7 +42,10 @@ read the applied revision back afterwards).
 
 **Anything that could destroy production user rows** — "⚠️ Production data durability — real
 accounts, no undo" (additive-only on `app_user`, never downgrade, snapshot first). Read it
-before writing a migration, not after.
+before writing a migration, not after. ⚠️ It is also why a column is **retired logically
+before it is dropped**: `user_profile.equipment_reviewed_at` is dead as of `0006` and the
+column still exists, because expand -> deploy -> contract and because
+`tests/test_migrations_additive.py` refuses a `DROP COLUMN` on a table holding user rows.
 
 **Touching auth, tokens or the route guard** — "Security rules" · "Auth implementation —
 where each piece lives" · "Auth UI — the client half of the contract" (the three realms, the
@@ -77,6 +80,25 @@ keys, the index every `SET NULL` needs, why the plan tree is relational) · "⚠
 inventory — NINE fields, and two of them get forgotten" · "SQLite is disqualified for tests"
 (the grade ladder).
 
+**Adding or changing an endpoint's request/response models** — "OpenAPI codegen — the
+generated types are COMMITTED" (regenerate, and how staleness is caught) · "Validate at the
+edge with Pydantic" · `server/fields.py`.
+
+**Onboarding, the profile, or the completion bar** — "Onboarding and the profile (PR #9,
+redesigned by #54)" (the partial upsert, the nullable columns, where the 20% floor comes from
+and why it is step 0, the step whose honest answer writes no rows, why gating a step on that
+was a hard dead-end, **`POST /api/profile/reset` and why `PATCH` was deliberately left
+alone**, the two grade columns that must share a discipline, and the grade floor that lives
+in the client on purpose).
+
+**⚠️ Touching a MUTATION, the query cache, or a route-level query guard** — the three bullets
+in "Onboarding and the profile (PR #9)" beginning "THE QUERY CACHE HOLDS SERVER RESPONSES
+ONLY", "A ROUTE MAY ONLY REPLACE ITSELF WITH AN ERROR WHEN THERE IS NOTHING TO SHOW",
+"A CREDENTIAL CHANGE MUST RESET THE QUERY CACHE" and "must be VERIFIED against
+`web/node_modules/@tanstack/query-core/`". Three consecutive review
+rounds found a bug here and all three came from reasoning about TanStack Query's semantics
+instead of reading them. Read `web/src/profile/api.ts` before changing any of it.
+
 **Dependencies, versions and CI** — "Dependency policy" · "TypeScript stays on 6.x" ·
 "ESLint 10 rests on a forced jsx-a11y peer" · "`.github/dependabot.yml`" · "⚠️ Pinned actions
 Dependabot can never bump" · "Quality gate" (nine checks locally, fourteen in CI; never
@@ -86,16 +108,22 @@ rename a job) · "Versioning".
 considered and REJECTED" · "Accessibility is part of the design, not a later pass" · "The
 reading measure is a GRID COLUMN, not a `max-inline-size` on `.ct-app`" · "Landing imagery —
 self-hosted, generated out-of-band, and URL-resolved at runtime" · "Container queries, not
-media queries — and tokens on `.ct-app`, not `:root`" · "PWA — only the decisions a reader
-would otherwise reverse".
+media queries — and tokens on `.ct-app`, not `:root`" · "⚠️ The nav's thresholds are
+MEASUREMENTS, not breakpoints" · "Light and dark: the `data-theme` override, and two gaps that
+are documented rather than fixed" · "PWA — only the decisions a reader would otherwise
+reverse".
 
 **Running the app locally, or a blank page that is not your code** — "Local development" ·
-"⚠️ `npm run check` breaks a RUNNING dev server, and every route goes blank" (a blank *landing*
-page is the tell) · "`.env` is loaded for you — but only outside Vercel".
+"Local Postgres for the test suite" (`npm run db:up` / `db:reset`; the URL belongs in
+`CT_TEST_DATABASE_URL` and never in `.env`) · "⚠️ `npm run check` breaks a RUNNING dev server,
+and every route goes blank" (a blank *landing* page is the tell) · "`.env` is loaded for you —
+but only outside Vercel".
 
 **Writing tests** — "Testing policy". Every guard test
 here carries a positive control; a detector that cannot see its own violation is worse than
-none.
+none. ⚠️ Note the newest one: **a class name in markup with no matching CSS fails silently**,
+and `styles/markupCss.test.ts` is the only thing in the gate that can see it — `tsc`, ESLint,
+`designGuard` and `contrast` were all green while twelve classes lost their styling twice.
 
 **Building the session player** — "Session player invariants" · "Screen Wake Lock — a
 user-owned TOGGLE, and a progressive enhancement".
@@ -144,6 +172,10 @@ server/               the FastAPI application actually lives here
   seed.py             reference-data seed — the same module CI and production use
   devseed.py          ten LOCAL test accounts. DEV ONLY; refuses to run in CI. Not seed.py.
   admin.py            operator CLI: create-invite, set-password. No workflow runs it.
+  fields.py           bounded Pydantic field types — one per persisted CHECK
+  openapi_schema.py   the OpenAPI document + its fingerprint, for the TS codegen
+  profile/            GET/PATCH /api/profile
+  vocabulary/         GET /api/vocabulary — grades, lookup tables, closed enums
   domain/             PURE Python: no DB, no clock, no RNG, no I/O
 web/                  the Vite SPA, built to web/dist
 tests/                pytest (backend). conftest.py skips DB tests without DATABASE_URL.
@@ -523,6 +555,59 @@ against a known-bad component to confirm the rules still fire — a plugin that 
 register is silent, and an a11y lint that checks nothing looks exactly like one that
 passes.
 
+### OpenAPI codegen — the generated types are COMMITTED
+
+`web/src/api/schema.ts` is written by `npm run codegen:api` and **committed**, exactly as
+`src/routeTree.gen.ts` is. Deferred from PR #8 (no endpoints existed to generate from) and
+landed with PR #9's first two.
+
+```bash
+npm run codegen:api   # uv run python -m server.openapi_schema | node web/scripts/gen-api-types.mjs
+```
+
+- **Committed, not generated in CI, and the reason is toolchain reach.** The document comes
+  from Python and the types from Node; the `web` CI job and Vercel's SPA build have Node and
+  **no Python**, so nothing in that half of the build can produce the file. Generating it in
+  the `server` job instead would need `web/node_modules`, which that job does not install.
+- **Piped, so there is exactly ONE generated artifact.** Writing the OpenAPI JSON to disk
+  first would commit a second file that says the same thing and can disagree with it.
+- **TWO digests in the header, and one of them alone was not enough.**
+  `openapi-sha256` is the digest of the exact bytes `server/openapi_schema.py` printed —
+  the **input** — and catches "I added an endpoint and forgot to regenerate".
+  `types-sha256` is the digest of the generated body below the header — the **output** —
+  and catches a hand-edit. The first shipped alone and was one-sided: changing
+  `sessions_per_week: number` to `number | null` inside the committed file left the digest,
+  `tsc`, ESLint and the whole gate green while the client believed a nullability the API
+  does not have. "Do not edit this file" is a convention; the second digest is the guard.
+  Both are recomputed by `tests/test_vocabulary_contract.py`, so both failures land in the
+  **local** gate with no Node and no network, and both have been watched to fail. It is
+  tamper-EVIDENT, not tamper-proof — an editor who also recomputes the digest gets through,
+  exactly as with the committed route tree.
+  `info.version` is normalised out of the hashed document, or every `npm run version:dev`
+  would invalidate it over a string the types do not contain.
+- **⚠️ A FastAPI or Pydantic bump fails this test, and Dependabot CANNOT fix it.** Those
+  libraries build `app.openapi()`, so a version bump can change the document (a new
+  `openapi` version string, a different `anyOf` shape, a renamed validation-error schema)
+  without a line of this repo changing. The fix is `npm run codegen:api`, which needs Python
+  **and** `web/node_modules` in one job — which no CI job has, by the same argument that
+  makes the types committed. **Expect red dependency PRs on those two packages** and treat
+  a regenerate-and-commit as part of reviewing them. Do not "fix" it by loosening the digest.
+- **`openapi-typescript` needs a forced `typescript` peer**, same idiom and same scoping as
+  the jsx-a11y override: 7.13.0 peers `typescript@^5.x` and this repo is on 6.x, so
+  `npm install` fails `ERESOLVE` without it. Verified before forcing it — it uses the
+  compiler's factory/printer API, which TS 6 (the last JS release) still exposes in full,
+  and it generates, formats, typechecks and lints clean. **Not `--legacy-peer-deps`**, which
+  would let unrelated peer conflicts through unnoticed. Delete the override when upstream
+  publishes a `^6` peer.
+- **The output is Prettier-formatted by the script**, via `resolveConfig` — `format()` does
+  **not** read `.prettierrc.json` on its own, and without that the file keeps the
+  generator's double quotes and 80-column wrapping and `format:check` fails on a file nobody
+  is allowed to edit. That is why it needs no `.prettierignore` entry, unlike the route tree.
+- **`web/src/api/vocabularies.ts` is GONE.** It mirrored the six closed vocabularies by hand
+  until codegen existed. Its contract test was re-pointed at the generated file rather than
+  deleted — see the note on `GET /api/vocabulary`'s `enums` field for what had to be true
+  first.
+
 ### PWA — only the decisions a reader would otherwise reverse
 
 `vite-plugin-pwa` v1, `generateSW`, configured in `web/vite.config.ts` **after** `federation()`.
@@ -867,8 +952,9 @@ what the workflow echoes.**
 
 The schema uses native Postgres enums, composite foreign keys, `GENERATED … STORED`, GIN
 expression indexes and window functions. (It used `text[]` too, until the ascent-tags
-reversal on 2026-08-21 — the rest of the list is more than enough on its own.) Tests run against **real Postgres** (GitHub Actions `services:`
-container, pinned to Neon's major): once per session `alembic upgrade head` — so **CI
+reversal on 2026-08-21 — the rest of the list is more than enough on its own.) Tests run against **real Postgres** — GitHub Actions' `services:` container, and locally the
+native `postgresql@17` behind `npm run db:up`, both pinned to Neon's major: once per session
+`alembic upgrade head` — so **CI
 tests the migrations** — plus seeding from the same module production uses; per test
 `begin_nested()` + rollback. `alembic check` catches model drift. Do not "simplify" any
 of this to SQLite.
@@ -888,8 +974,11 @@ the single most expensive thing to retrofit.
 
 ### The domain schema — the shapes worth knowing before you query it
 
-`server/models.py` carries the full reasoning per table; migration `0004` is the DDL. Four
-decisions are the ones a reader would otherwise try to undo:
+`server/models.py` carries the full reasoning per table; migration `0004` is the DDL, plus
+`0005` for `user_profile` (three columns lose `NOT NULL` so "unanswered" is expressible,
+`injuries_reviewed_at` arrives, and `user_injury` gains a partial unique index on the open
+row per area — see "Onboarding and the profile (PR #9)"). Four decisions are the ones a
+reader would otherwise try to undo:
 
 - **`activity` is a SUPERTYPE, and `logged_session` is a 1:1 subtype of it.** One row per
   activity of *any* kind (`activity_kind`: `climbing` · `cardio` · `strength` · `mobility` ·
@@ -1700,7 +1789,7 @@ well suited to it — almost everything the user tells us is a choice from a kno
   migration. Do not restore the array as "simpler"; see
   `server/domain/vocabulary.py::ASCENT_TAGS`.
 
-#### ⚠️ The free-text inventory — NINE fields, and two of them get forgotten
+#### ⚠️ The free-text inventory — ELEVEN fields, and three of them get forgotten
 
 An earlier version of this section said "the only genuinely free-text fields are the diary
 notes" and listed four. **That was wrong, and it was not a harmless undercount**: this list
@@ -1722,6 +1811,7 @@ column unbounded.
 | `plan.name` | user-editable plan title |
 | `planned_session.title` | user-editable session title |
 | `invite.label` | who the invite is for ("Bob, from the gym") |
+| `user_profile.display_name` | what to call the account holder on screen |
 
 Plus **email and password** at registration. `invite.label` is the tenth and was missed by
 the rewrite that fixed the count from four to nine — which is worth recording, because it
@@ -1729,8 +1819,17 @@ is the same undercount twice: it is written by an *operator* rather than by the 
 holder, through `python -m server.admin create-invite`, so it does not feel like user input.
 It is 64 characters of free text that reaches an API response and a rendered list, and both
 halves of the rule bind it. **When you add a free-text column, add the row here in the same
-PR** — this table has now been wrong twice, and each time the reason was that the new field
-did not look like "a note".
+PR** — this table has now been wrong three times, and each time the reason was that the new
+field did not look like "a note".
+
+`user_profile.display_name` is the eleventh, added by `0006` (issue #54), and it is the
+counter-example that proves the rule is worth following: it is 64 characters
+(`DISPLAY_NAME_MAX`, mirrored by `server/fields.py::DisplayName`), it is chosen by the
+account holder, and it will end up rendered beside their training data on every screen that
+greets them. Its bound strips whitespace and refuses an empty string, so "no name" has one
+representation (NULL) rather than two — which also means **`PATCH` cannot clear it**: `null`
+is "no change" on that endpoint, and `POST /api/profile/reset` deliberately does not touch it
+either, because a display name is not one of the four onboarding steps.
 
 That is the whole surface, and it is still small and well-known — keep it that way: if a new feature seems to want a free-text field,
 check first whether it is really a closed set. Note that `exercise.name`,
@@ -1961,6 +2060,44 @@ uv run uvicorn server.app:app --port 8000 --reload
 npm --prefix web run dev
 ```
 
+### Local Postgres for the test suite
+
+Native Homebrew **`postgresql@17`** — no Docker. It is **keg-only**, so its binaries live in
+`/opt/homebrew/opt/postgresql@17/bin` and are **not on PATH**; `scripts/local-db.sh` addresses
+them absolutely and so should anything else.
+
+```bash
+# ~/.zshrc — the one line that makes the DB-backed tests runnable
+export CT_TEST_DATABASE_URL=postgresql://postgres:postgres@localhost:5432/climb_trainer_test
+
+npm run db:up      # start the server if down, create the DB if missing, `alembic upgrade head` — idempotent
+npm run db:reset   # dropdb --force, createdb, upgrade to head
+npm run check:server   # now RUNS the DB-backed tests instead of skipping them
+```
+
+The `postgres` role and database name deliberately match CI's `postgres:17-alpine` service, so
+the same URL string is valid in both places and there is nothing to translate. The role is
+created once, by hand; `db:up`/`db:reset` own everything after that.
+
+**The URL lives in `CT_TEST_DATABASE_URL` and nowhere else — never put a database URL in
+`.env`.** `.env` on this machine holds the *production* Neon URL, `server/settings.py` loads it
+for every entrypoint, and that is exactly how a stray `alembic upgrade head` reached
+production's neighbour on 2026-08-18. So `scripts/local-db.sh` sets `DATABASE_URL_UNPOOLED`
+**only** as a prefix on its own `alembic` command, with `DATABASE_URL=""` beside it to stop
+python-dotenv (which runs `override=False`) filling that one in from `.env` — the same trick,
+inverted, that `check:server` uses.
+
+**It refuses a non-local host, with no override.** The check reuses
+`server.db.is_local_host` so it cannot drift from `LOCAL_DB_HOSTS`, and it is handed the
+**host**, never the URL: a URL bound to an argument or left as a frame local gets rendered in
+a traceback, password included (see `server/db.py::host_of` — that cost 51 printed passwords
+once). `require_migration_host` is **satisfied**, not bypassed — the host is genuinely local,
+and `CT_ALLOW_REMOTE_MIGRATION` is never set outside `.github/workflows/migrate.yml`.
+
+**Three Postgres majors move as one: local `postgresql@17` = CI's `postgres:17-alpine` =
+Neon's major.** Bump one, bump all three in the same PR. A local pass on a different major
+proves nothing about CI, and CI proves nothing about Neon.
+
 ### ⚠️ `npm run check` breaks a RUNNING dev server, and every route goes blank
 
 `npm run check` → `npm run build` → **`npm --prefix web ci`**, which reinstalls
@@ -2074,10 +2211,12 @@ and the same leak sent a stray `alembic upgrade head` at production's neighbour 
 DATABASE_URL="${CT_TEST_DATABASE_URL:-}" DATABASE_URL_UNPOOLED=""
 ```
 
-- **Locally**: both empty, the 31 DB-backed tests skip, nothing connects. A skip is visible;
+- **Locally**: both empty, the 86 DB-backed tests skip, nothing connects. A skip is visible;
   a silent connection to someone's real database is not.
-- **Deliberately, against a throwaway Postgres**: `CT_TEST_DATABASE_URL=postgresql://…
-  npm run check:server`. That is the only way to opt in, and it cannot happen by accident.
+- **Deliberately, against the local Postgres**: export `CT_TEST_DATABASE_URL` and run
+  `npm run db:up` once (see "Local Postgres for the test suite"). That is the only way to opt
+  in, and it cannot happen by accident. The guard in `tests/conftest.py` still refuses any
+  non-local host.
 - **`DATABASE_URL_UNPOOLED` has no opt-in and is pinned EMPTY, on purpose.** It is the
   *direct* endpoint, its only consumer is Alembic (`migrations/env.py`), and the gate never
   runs Alembic — so there is nothing for a value to be useful for, and it is precisely the
@@ -2088,13 +2227,26 @@ DATABASE_URL="${CT_TEST_DATABASE_URL:-}" DATABASE_URL_UNPOOLED=""
   the documented CI/local-Postgres path, so nothing needs it.
 - **CI**: the `server` job runs `uv run pytest -q` directly with `DATABASE_URL` pointing at
   its `postgres:17-alpine` service, so it never goes through this script and still runs the
-  full set. **CI is the only place the DB-backed tests execute, by design** — do not weaken
-  them on the assumption that nothing runs them.
+  full set. **CI is where they always run; locally they run only when `CT_TEST_DATABASE_URL`
+  is exported** — so never weaken them on the assumption that nothing runs them, and never
+  make the gate *require* a database.
 
 Never make the local gate *depend* on a database, and never substitute SQLite to avoid the
 skip. CI is where the migrations and the seed are actually executed.
 
 **Batch your edits and run `npm run check` once at the end**, not once per file.
+
+**⚠️ `.gitleaks.toml` exists, and `useDefault = true` is the only line in it that matters.**
+The generated `web/src/api/schema.ts` header carries two SHA-256 digests, and gitleaks'
+`generic-api-key` rule reads `openapi-sha256: <64 hex>` as a credential ("openapi" contains
+its `api` keyword; measured entropy 3.675) — a false positive that failed the `secrets` job on
+PR #53. The config allowlists **that line shape**, by content: a `paths` entry would allowlist
+the whole generated file, because `gitleaks-action@v3` runs **8.24.3**, whose allowlist struct
+has no condition field and therefore ORs its criteria. **A config without `[extend] useDefault
+= true` REPLACES the default ruleset** — every rule gone, scanner green on everything, which
+is why `tests/test_gitleaks_config.py` asserts both properties and why the config was verified
+by planting an `AKIA…` key inside `schema.ts` and confirming it was still reported. Never
+weaken the digest header to satisfy a scanner; it is the codegen freshness guard.
 
 **CI has three required jobs: `web`, `server`, and `secrets`** (gitleaks over full
 history). Kilian's call: **require all three** rather than collapsing them into a single
@@ -2174,6 +2326,37 @@ be real — no snapshot-everything, no asserting on mock call counts as a proxy 
 behaviour, and integration over unit where the integration is the risky part (which is
 why the backend tests run against real Postgres, not SQLite).
 
+### ⚠️ A guard test must be SHOWN to fail before it is trusted
+
+Not a style note — a requirement, and the reason every guard in this repo carries a positive
+control. Break the thing it guards, watch the test go red, restore, watch it go green, and put
+the captured failure in the PR. `test_migrations_additive.py`'s own docstring says it plainly: a
+detector nobody has seen fail is a detector nobody should trust, and a control assembled from the
+constant it tests would cheerfully confirm a typo to itself.
+
+### ⚠️ A class name in markup with no CSS fails SILENTLY — `styles/markupCss.test.ts`
+
+The newest guard, and it earned its place the hard way: **twice** during #54's prototype a
+scripted rewrite of `_profile.scss` replaced the span between two comment markers and swallowed
+unrelated rules with it. Twelve `ct-app__*` classes were left in the markup with nothing behind
+them — the select chevron vanished, the checkboxes rendered as bare native controls, the sliders
+lost their row layout, the disclosures lost their panel styling, the grade warning lost its
+colour — and **`tsc`, ESLint, `designGuard` and `contrast` were all green the whole time.**
+Nothing in the gate could see it, because a missing rule is not a type error, a lint error or an
+unscoped selector.
+
+So it asserts both directions: no class used in `web/src/**/*.tsx` is missing from the compiled
+stylesheet, and no `ct-app__*` selector in the stylesheet is unused by any markup (dead CSS).
+Two notes for whoever touches it:
+
+- **It compiles the Sass in-process** rather than scanning the partials. Source `.scss` uses
+  `&__suffix` nesting, so the literal `ct-app__choice` appears nowhere in it; and reading `dist/`
+  would need a production build, which the local gate must not require.
+- **Interpolated class names are its one blind spot.** `` `ct-app__bento--${area}` `` trips both
+  directions at once, so it carries the narrowest possible allowlist with a comment saying why —
+  the same discipline as `test_migrations_additive.py`'s arm 6, where a false positive costs a
+  developer a minute and a false negative costs production.
+
 ## UI design direction
 
 `web/src/styles/` is the design system. `@use`-based partials, no `@import`:
@@ -2186,7 +2369,7 @@ why the backend tests run against real Postgres, not SQLite).
 | `_primitives.scss` | button (3 variants), input, field, error, badge, text primitives |
 | `_card.scss` | the card surface and its `@container` rules |
 | `_bento.scss` | the bento grid's named areas |
-| `_chrome.scss` | nav, status renders, bottom-anchored action bar |
+| `_chrome.scss` | nav (the brand, the three regimes and their measured thresholds), status renders, bottom-anchored action bar |
 | `_landing.scss` | the landing page's photographic bands, detail split and icon rules |
 | `app.scss` | the `@use` entry and the `.ct-app` root; imported from `routes/__root.tsx` |
 | `global.scss` | the document reset. `main.tsx` only, and the ONLY file allowed `:root` |
@@ -2291,6 +2474,22 @@ lighting.
   not. Asserted on the built remote stylesheet by `distContract.test.ts`; inline
   `style={{ position: 'fixed' }}` in a component never becomes CSS, so `designGuard.test.ts` scans
   the `.tsx` sources for that separately.
+  ⚠️ **The viewport-unit half of that rule had NO detector at all until PR #9** — three guards
+  covered `position: fixed` from two directions and nothing looked for `vh`/`vw`/`dvh`/`svh`.
+  `designGuard.test.ts` now greps every stylesheet for them, with **no exemption**: neither
+  `main.tsx`-only sheet wants one today, and a dead exemption is worse than none (add one, with a
+  control, the day the update bar needs `100dvh`). **The `.tsx` sources are scanned too**, with
+  `sizes="…"` stripped first: an inline `style={{ blockSize: '100vh' }}` never becomes CSS and
+  would otherwise pass the whole gate, while the two `sizes="100vw"` hints on `<LandingPicture>`
+  are resource selection — they can fetch one rung too many in the shell, they can never move a
+  box. **The pattern needs a digit next to the unit, so anything COMPUTED slips past** —
+  `#{$h}vh` in Sass, `` `${h}vh` `` or `'100' + 'vh'` in a component — and for the `.tsx` half
+  there is **no backstop at all**, because an inline style never becomes CSS and
+  `distContract.test.ts` scans built CSS for `fixed` and not for units. (An earlier version of
+  this paragraph claimed `distContract` covered it. It does not.) What IS greppable and is now
+  guarded is the same bug in JavaScript: **`window.innerHeight` / `innerWidth` /
+  `visualViewport` in a component**, which is how a "full height" screen gets built in React
+  and which measures kilianmc.com's window in the federated mount.
 
 ### The reading measure is a GRID COLUMN, not a `max-inline-size` on `.ct-app`
 
@@ -2408,6 +2607,471 @@ Both of these are structural, not stylistic. Do not "simplify" either.
     outside `.ct-app` and inherits nothing. `_tokens.scss` therefore exposes
     `@mixin declare`, included by both `.ct-app` and `.ct-update-bar`. A second `.ct-app`
     element is **not** the fix: that element's padding, max-width and background would apply.
+
+### ⚠️ The nav's thresholds are MEASUREMENTS, not breakpoints
+
+`web/src/styles/_chrome.scss` carries **the table** — five numbers with the content-width
+arithmetic behind each — directly above `&__nav`. **Read it there rather than duplicating it
+here**; a table in two places is a table that disagrees with itself. What belongs in this file
+is why it is shaped that way at all:
+
+- **Every threshold is derived from what the row actually needs**, in px of nav content, and
+  then rounded up to the next `rem` **plus slack for the estimate error** (glyph advances here
+  are ±5%, which is ±8px on the wordmark and ±25px across five labels). Kilian's rule, in his
+  words: "make the buttons appear as soon as they fit, so no 765, if they fit at 600 do it
+  there." A conventional 768/1024 pair was explicitly rejected.
+- **They are CONTAINER widths, not viewport widths.** `container: ct-app` measures the app, and
+  in the federated mount the app is a panel inside kilianmc.com's `ProjectViewer` — so the px in
+  brackets is the standalone reading and is approximate by design. That is the whole reason
+  these are container queries.
+- **The two variants have their own pairs.** The anonymous nav has three destinations and no
+  Log out; sharing the authenticated numbers made it wait for ~130px it does not need and show
+  its icons ~9rem late. One Sass mixin, two includes — the numbers differ per variant and the
+  rules must not.
+  ⚠️ Per-variant *thresholds* are not the same thing as the per-variant *centring* that was
+  reverted: Kilian did not want the group centred, and both variants stay right-aligned.
+- **The tooltip band is derived from the icon threshold**, as `[$icons, $labels − 0.001rem]`.
+  Container ranges are INCLUSIVE, so the upper bound has to exclude the label threshold, and
+  `and not (…)` is not valid syntax in a container condition (`not` may only lead the whole
+  condition). If you move a threshold, the band moves with it — that is why it is computed
+  rather than written twice.
+- **One query is deliberately INVERTED.** The label is inline by default and becomes a
+  hover/focus bubble inside the band, because `_card.scss`'s rule is that a box matching no
+  query must get the *safe* outcome — a cramped but labelled nav is fine, six unnamed glyphs are
+  not.
+- ⚠️ **An icon-only control owes two things** (`ui/icons.tsx` sets them): its own `aria-label`,
+  and the 44px `--ct-tap` floor on both axes. `&__button--icon` trims the inline padding for all
+  three of them in one declaration — `&__button`'s padding is sized for a word, and on a 24px
+  glyph it makes a button visibly wider than it is tall.
+- **Touch gets neither hover nor focus**, so on a phone the glyph is the only carrier of meaning
+  and the `aria-label` is the only channel for anyone who cannot see it. That is what makes the
+  glyph choice load-bearing rather than decorative, and why two of them were redrawn for
+  silhouette rather than concept (a landscape week-strip so Plan stops looking like Diary's
+  upright rules; a wider gap on the power ring so Log out stops looking like Session's clock).
+
+**`--ct-nav-compress` is a RATIO, and it is local on purpose.** Below the tightest threshold
+every reduced value is `calc(<the token it replaces> * var(--ct-nav-compress))`, so the narrow
+bar moves as one and nothing drifts off the space scale when that scale is retuned. It lives on
+`.ct-app__nav` in `_chrome.scss`, **not** in `_tokens.scss`: that file is the design system's
+vocabulary, every entry in it is consumed by many components and `contrast.test.ts` parses its
+two scheme mixins key-for-key, whereas this is one component's parameter. It is on `.ct-app__nav`
+— inside `.ct-app`, never `:root` — so the brand inherits it as a child. Note the consequence
+of "a fraction of the token it replaces": the values it produces are **not all equal** (a
+`--ct-space-4` inset becomes 0.4rem, a `--ct-space-3` gap becomes 0.3rem), and that is the
+intended reading. Gaps that go to *zero* are written as `0`, not as a ratio — a fraction of
+something that becomes nothing is not a fraction.
+
+### Light and dark: the `data-theme` override, and two gaps that are documented rather than fixed
+
+`web/src/theme.ts` is the store; `_tokens.scss` has the mechanism. Two states, sun and moon, no
+"System" position — the first visit seeds from `prefers-color-scheme` through `matchMedia`, and
+after that it is a plain toggle. The cost is accepted and stated: once a choice is stored,
+changing the OS scheme no longer moves the app.
+
+**How the override wins, and why it needs no `!important`:** `_tokens.scss::declare` emits the
+light values plus a `@media (prefers-color-scheme: dark)` block. **A media query carries no
+specificity**, so an attribute selector on the same element beats both blocks whatever the source
+order — which is the entire mechanism. `overrides` is therefore a *separate* mixin from `declare`
+and is included by `.ct-app` only, never by `.ct-update-bar`: nothing sets the attribute on the
+update bar, which is rendered from `main.tsx` outside the router. The attribute goes on `.ct-app`
+and nowhere else — not `<html>`, not `<body>`, which belong to kilianmc.com in the federated
+mount. `global.scss` bridges the standalone document canvas with `body:has(.ct-app[data-theme…])`,
+which is legal *there* because that file never ships to the shell.
+
+⚠️ **Two known gaps. Kilian's call: documented, not fixed.** Neither is a correctness bug, and
+both are recorded in `theme.ts` for the next person:
+
+1. **`index.html`'s two `theme-color` metas follow the OS, not the override**, because they select
+   with `media="(prefers-color-scheme: …)"`. Closing it needs JS (a meta tag cannot read a
+   `data-` attribute) and that JS must be standalone-only, since in the federated mount the
+   document head belongs to the portfolio. Not worth that machinery for a strip of browser UI.
+2. **The choice cannot be applied before first paint.** The usual fix is a blocking inline
+   `<script>`, and CSP here is `script-src 'self'` with no `unsafe-inline` — the right response to
+   which is not to weaken the policy for a flash. One light frame before React mounts, and what
+   flashes is the document canvas rather than any app surface.
+
+Also worth knowing: **`.ct-app` carries `isolation: isolate`**. The nav needs a `z-index` for its
+sticky bar, its burger panel and its label bubbles; that one declaration means no index inside the
+app can ever escape into the shell's stacking context.
+
+⚠️ **`position: sticky` is not forbidden the way `fixed` is, but it resolves against the nearest
+SCROLLING ANCESTOR** — and this stylesheet ships to two of them. Verified in the shell's own
+source rather than assumed: `portfolio-shell/src/components/ProjectViewer.scss` sets
+`.viewer__frame { flex: 1; overflow: auto; }`, so in the federated mount the nav sticks to the top
+of that panel, which is where it should stick; standalone, nothing scrolls above it, so it is the
+document. Both are right. Note the difference from the inert `sticky` that was removed from
+`&__actionbar`: **a sticky element's range is its containing block**, which for the nav is the
+whole page and for that action bar was a content-sized form (range ≈ 0).
+
+## Onboarding and the profile (PR #9, redesigned by #54)
+
+Four steps, one decision each, in a fixed order; the same field groups serve the wizard
+(`/onboarding`) and the editor (`/profile`). `web/src/profile/` is the client half and
+`server/profile/routes.py` the server half, and both carry their reasoning. What follows is
+what a reader would otherwise undo.
+
+⚠️ **Issue #54 rebuilt this after Kilian walked PR #53.** It was five steps; what changed, and
+why, is recorded in the bullets below rather than in a changelog — but the headlines are: the
+endowed floor is **20%** and is now explicitly step 0 (the account), the **equipment step is
+gone entirely**, eight self-rating sliders became **one current grade plus one strength and one
+weakness**, the editor became sections rather than a second wizard, and there is a real
+**`POST /api/profile/reset`**. Revision `0006` carries the four new columns.
+
+- **`PATCH /api/profile` takes a PARTIAL profile and upserts, and that is load-bearing.**
+  Each step persists as it completes, so an abandoned onboarding **resumes** rather than
+  restarting — which means the row is created on step 1, not step 4. `None` means "not in
+  this request" for every field; the two collection fields (`aspect_ratings`, `injuries`)
+  **replace** the set they name, so `[]` is a real answer.
+  ⚠️ **That `null` contract is load-bearing in a second way now.** #54 needed a way to
+  un-answer the steps, and teaching `null` to mean "clear" here was **considered and rejected**
+  (Kilian's call): it would give every omission a destructive second meaning, one typo from a
+  wiped answer, in the one flow whose whole premise is not losing people mid-way. The named
+  endpoint does that job instead — see the reset bullet below.
+- **`primary_discipline` is DERIVED from the target grade and is not accepted from a
+  client.** The ladder is banded per discipline, so a French 7a target *is* a rope goal;
+  accepting both would let them contradict each other, and the contradiction would only
+  surface in the plan generator.
+- **⚠️ UNANSWERED IS `NULL`, and revision `0005` is what made that expressible.**
+  `primary_discipline`, `sessions_per_week` and `available_weekdays` were `NOT NULL` in
+  `0004`, so a row created on step 1 had to carry invented values for questions steps 2 and
+  4 had not asked. Two of them were indistinguishable from real answers —
+  `sessions_per_week = 3` is a perfectly plausible reply — so the bar credited work nobody
+  had done and PR #11's generator would have read a number the user never chose. `0005`
+  drops all three `NOT NULL`s. **Nothing may substitute a fallback for a NULL here**: the
+  generator must refuse to generate rather than assume a training frequency. `0` remains a
+  legal weekday *mask* meaning "answered, no days" — a different thing from NULL, and **the
+  API does accept and store it** (`ge=0`, and `PATCH` writes what it is given). Only the web
+  client's own submit gate declines to send it, and a client-side gate is not an API
+  property; an earlier version of this bullet claimed it was unreachable.
+- **`PATCH {}` writes nothing at all**, not even a row. It used to create one, with those
+  placeholders, purely because the handler always ran its upsert.
+- **⚠️ A step needs a `*_reviewed_at` column exactly when ZERO ROWS is a legitimate
+  answer.** Exactly one step qualifies now: `injuries_reviewed_at` ("nothing is hurting"
+  writes no `user_injury` rows). The server stamps it whenever that step is submitted, with or
+  without rows; an empty child table otherwise means "asked, nothing" or "never asked" and
+  nothing can tell them apart. **No other step gets one** — the aspect step's answer is three
+  scalar columns, and the grades and availability are scalars whose NULL carries it.
+  `injuries_reviewed_at` also replaced a device-local `localStorage` flag that could only ever
+  understate (PR #9's first draft, deleted with it).
+  ⚠️ **`equipment_reviewed_at` was the second one and is RETIRED (`0006`).** Nothing reads or
+  writes it; it is absent from `ProfileResponse` and from the completion maths. **The column
+  still exists on purpose** — expand -> deploy -> contract, and
+  `tests/test_migrations_additive.py` correctly refuses a `DROP COLUMN` on a table holding user
+  rows. Dropping it is a later revision, once a deployed-and-verified `0006` has proved nothing
+  reads it. Do not "tidy" it away in the same PR that stops using it.
+- **⚠️ Gating a step because its empty answer is unrecordable was a HARD DEAD-END, and this
+  is the lesson worth keeping.** The equipment step required at least one tick. Every one of
+  the fifteen seeded rows was indoor gear or an indoor facility, so an outdoor-only climber
+  had nothing they could honestly select: Continue never enabled, the editor's Save never
+  enabled, 100% unreachable, and the dashboard nagged them forever about a step they had
+  answered correctly. `draft.ts` even *stated* the cause — "an empty answer is
+  indistinguishable from no answer" — and then resolved it by disabling a button. **"The
+  answer cannot be stored" is a schema problem and gets a schema fix; it is never a reason to
+  disable a control.**
+- **⚠️ THE EQUIPMENT STEP IS GONE, AND THE SEMANTICS ARE DELIBERATELY DEFERRED (#54).** The
+  step asked users to tick what they *have* out of seventeen rows, and Kilian's verdict was
+  that this is backwards: someone with gym access has most of it, and enumerating gear is the
+  wrong question. The new model is **assume access to everything**, and let a user flag "I do
+  not have this" on the exercise that needs it, where the app can offer an alternative.
+  **What this PR did and did not do:** the step is out of onboarding, `equipment_ids` is out of
+  both request and response models, and `equipment_reviewed_at` is retired. **`user_equipment`,
+  every `exercise_equipment` requirement and the whole vocabulary are untouched.** Whether
+  `user_equipment` becomes a record of what is LACKED, or a second concept beside it, is
+  **PR #10's decision** — the issue says so explicitly, because the alternatives lookup is what
+  gives the flag its meaning, and choosing now would be choosing without the thing that
+  decides it. Re-adding a write path is that PR's job, with the decision attached.
+  The three bullets that follow are the history of the step that was, and every one of them is
+  still worth reading before designing its replacement.
+- **The equipment vocabulary covers FACILITIES, GEAR AND ROCK — it is not a gear inventory**
+  (Kilian, 2026-08-21). It carries `outdoor_boulders` and `outdoor_routes`, split by
+  discipline for the same reason `server/domain/grades.py` keeps boulder and rope on disjoint
+  ordinal bands: they are different training stimuli and the generator must be able to
+  prescribe one without the other. **The step RENDERS each row's description**, unlike the
+  injury and weekday lists — "an indoor wall climbed without a rope" versus "bouldering on real
+  rock" is the sentence that tells a rock climber which box is theirs, and for one release that
+  copy existed only in the API payload and the contract test, where no user could read it. **A climber without gear is not a climber who cannot
+  train** — they train by climbing, on rock, and with their own body. Seed data, so adding a
+  row is a tuple edit and never a migration (`_upsert_reference_rows` upserts on `key` and
+  rewrites `sort_order` from the tuple position).
+- **⚠️ There is deliberately no `bodyweight` equipment row, and two obligations replace it.**
+  A checkbox for having a body is noise, and a user who forgot to tick it would be back in
+  the "empty set means nothing" hole. Instead: **an exercise with no `exercise_equipment`
+  rows requires nothing and is always prescribable**, which makes two things owed —
+  **PR #10** must seed enough such exercises (bodyweight strength, core, mobility, prehab)
+  that a profile with zero equipment still gets a real plan, and must carry any per-exercise
+  substitution hints ("no dumbbell? a loaded backpack") on the exercise row next to the
+  movement they apply to, not in a vocabulary; **PR #11** must never refuse to generate for
+  lack of equipment. `tests/test_equipment_vocabulary.py` guards the no-`bodyweight`-row half
+  and the outdoor-coverage half.
+- **⚠️ The improvised-load copy on that step has a SAFETY boundary that is not optional.**
+  It says most exercises that add weight work with whatever is to hand — a loaded backpack,
+  water bottles, a rock — and then says finger-strength protocols need a real edge and are
+  left out rather than improvised. **Never suggest improvising finger loading** (home-made
+  hangboards, door-frame edges, towel hangs): it is the most injury-prone thing a climber can
+  rig, and it would contradict the whole reason `exercise_contraindication` exists. Static
+  copy, deliberately: no `improvised_weight` row, no substitution mapping, no new column.
+- **⚠️ `uq_user_injury_open_area` — at most one OPEN injury per area** (`0005`), a partial
+  unique index because Postgres has no partial unique *constraint*. It closes a real race:
+  the write path reads the open rows and then inserts the missing ones, so two concurrent
+  PATCHes both saw "no open elbow row" and both inserted. The insert is
+  `ON CONFLICT … WHERE resolved_on IS NULL DO UPDATE`, which **infers that index** — so the
+  loser of the race updates instead of duplicating. Resolved rows are outside the predicate
+  on purpose: flag → resolve → re-flag is the history the table exists for.
+  ⚠️ `index_where=` needs `sqlalchemy.text(...)`; **`func.text(...)` compiles to a nonsense
+  `WHERE text($1)`** that type-checks, lints and passes every local test, and fails only
+  against real Postgres.
+- **⚠️ The availability select opens on NOTHING chosen, and that is finding-2 territory.**
+  `0005` stopped the server inventing `sessions_per_week = 3`; a select that opened on 3 put
+  the identical placeholder back from the client, and the step's submit gate — which only
+  checked the weekday mask — would have sent it the moment one day was ticked, into the
+  column whose docstring tells PR #11 it may trust the value. Both halves are now required
+  before the step can be submitted, exactly as the grade picker requires a grade. **When a
+  column is nullable because "unanswered" is real, the control has to be able to say so too.**
+- **⚠️ EIGHT SLIDERS WERE REPLACED BY THREE ANSWERS (#54), and the reasoning is the useful
+  part.** The aspect step was eight 1-5 self-ratings, and Kilian's verdict was that it was the
+  step most likely to hand the generator garbage: eight middling guesses are indistinguishable
+  from eight real answers, and self-rating is hard to do honestly. It now asks three things
+  anybody can answer, each with its own `0006` column:
+  - **`current_grade_id`** — "I climb 6c" plus a 7a target tells the generator far more than any
+    self-rating, because a 6c climber is *measurably* closer to 7a than a 6a climber is;
+  - **`strength_aspect_id` and `weakness_aspect_id`** — one of each, from the eight aspects.
+  The eight sliders survive **behind a disclosure** for anyone who wants to be specific, and
+  picking a strength or weakness also writes that aspect's score, so the two can never
+  disagree. `ck_user_profile_strength_and_weakness_differ` refuses the same aspect for both, at
+  the edge (`ProfilePatchRequest`), against the stored row (`_require_aspects_differ`) and in
+  the schema.
+  ⚠️ **`UserAspectRating`'s docstring used to call itself "the generator's only picture of a
+  weakness". #54 made that false and the docstring is rewritten** — the profile's
+  `weakness_aspect_id` is the deliberate answer to a direct question and is the one to trust;
+  a rating row may be nothing more than an untouched default. The old bullet's argument (that
+  an accepted default IS a recorded answer) was right for a step whose eight controls were all
+  visible, and is wrong now that they are behind a disclosure — which is why `canSubmit`
+  requires the two picks rather than accepting eight 3s.
+- **⚠️ The two grade columns must share a DISCIPLINE, and one of them can be cleared for you.**
+  The ordinal ladders are banded per discipline and `domain.grades.convert` raises
+  `CrossDisciplineError` rather than compare across them, so "French 7a goal, Font 7A now" is a
+  row the plan generator can do nothing with. A CHECK cannot express it (it would have to follow
+  two foreign keys into `grade`), so `server/profile/routes.py::_decide_grades` does, and the
+  asymmetry is deliberate: an incoming **current** grade that disagrees is a **422** (the client
+  locks both pickers to one scale, so it is a malformed request), while an incoming **target**
+  that disagrees with the stored current grade **clears it**. A 422 there would be a dead end —
+  a climber moving from sport to bouldering could never change their goal — and clearing is
+  exactly what the client does to its own pickers. It is the one NULL that endpoint writes
+  without being asked, and it is marked as such in the code.
+- **⚠️ The grade FLOOR lives in the client, and that was re-decided when the schema opened.**
+  Nobody sets a training goal of Font 4, so the pickers start at the rung whose label is `5` in
+  each ladder's reference system — Font 5 / V2 for boulder, French 5 / 5.8 for sport — derived
+  from one anchor label and applied by ordinal (`web/src/profile/grades.ts`). It **fails open**:
+  a discipline with no `5` keeps every grade, because an empty picker is a dead end and a long
+  one is not. It stays client-side for three reasons, all recorded in that file: the ladder is
+  domain truth that `convert()` needs whole; `GET /api/vocabulary` is shared reference data
+  behind a one-hour cache and the next consumer is an ascent log, where **Font 4 is a real thing
+  to have climbed**; and a stored below-floor grade must still RENDER, which a filtered
+  vocabulary would break. "We do not offer that as a goal" is not the claim "that grade does not
+  exist".
+- **The completion percentage is computed on the CLIENT** (`web/src/profile/completion.ts`),
+  from raw state the endpoint returns. The server deliberately does not compute it: the
+  definition of "a step" would then exist on both sides of the wire. Every one of the four
+  tests reads a nullable column or a timestamp — **it is server truth, with no local
+  component**, and `0006` is what finally made that true of the aspect step too (the three
+  answers had no columns during the prototype and were held on the device; that scaffolding and
+  its `ct:` storage key are deleted).
+  The aspect step is complete when **all three** of `current_grade_id`, `strength_aspect_id`
+  and `weakness_aspect_id` are set — deliberately *not* "at least one rating", because since
+  #54 a rating row can be an untouched default and would credit a step nobody answered.
+- **The bar opens at 20%, and the floor IS step 0.** It was 29% (2 of 7 units); #54 dropped it
+  to 20% because that reads less manipulative, and the formula is
+  `20 + 80 × steps_done / total_steps`. With four steps that is 20/40/60/80/100 — no rounding,
+  every step worth the same.
+  ⚠️ **The identity is what makes the framing honest, and it is worth checking before touching
+  the arithmetic:** `20 + 80 × done/4` is identically `100 × (1 + done) / 5`. So the floor is
+  not a gift — it is **one of five units already done**, and the unit is the account that
+  exists. That is why the rail draws a node `0` labelled Account, ticked from the start, with
+  the 0->1 connector filled: the tick and the 20% are one fact stated twice.
+  `profile/completion.test.ts` asserts that equivalence directly.
+  **A mechanic is allowed only if the progress it signals is TRUE** — that rule governs the
+  whole feature, and it is why there is no labour-illusion spinner anywhere in the flow.
+  (An earlier version of this bullet noted that "the display name is known" was aspirational
+  because no such column existed. `0006` adds one, and it is deliberately **not** credited: it
+  is not one of the four steps, and the floor stands for the account, not for a name.)
+- **⚠️ Steps 1-4 are OPTIMISTIC and never wait; the FINAL step is awaited, and only it.**
+  The round-1 bug was not the optimism — it was navigating in the same handler as the write.
+  On the last step that unmounted the component before the mutation settled, so a failed
+  write left the bar at **100%** with no injury in the database and the error rendered
+  nowhere; the next reader of that profile is the plan generator, which would prescribe crimp
+  work on an injured elbow. For the first four steps nothing unmounts, so the write is
+  optimistic and does not wait: the overlay applies, the step advances, and a failure reports
+  itself. Awaiting there would buy nothing and cost a Neon cold start at each of four
+  boundaries, in the one flow whose whole premise is not losing people mid-way. The final step
+  awaits because it is the only boundary where "we told you it saved" cannot be corrected
+  afterwards. `web/src/onboardingSubmit.test.tsx` is the regression test; it fails if that
+  await is removed, confirmed twice.
+- **⚠️ THE QUERY CACHE HOLDS SERVER RESPONSES ONLY. The optimistic view is DERIVED.** This
+  is the rule that finally made this layer correct, after three consecutive review rounds
+  found three bugs in it — every one of them caused by having two writers for one cache
+  entry. `web/src/profile/api.ts` carries the full reasoning and the source citations; the
+  short version, because each attempt looks obviously right until it is measured:
+  1. **Snapshot in `onMutate`, restore in `onError`** is correct only while exactly one write
+     is in flight. `mutation.js` dispatches `pending` and runs `onMutate` *before*
+     `retryer.start()`, and the `scope` gate is `canRun()` *inside* the retryer — so `scope`
+     serialises the network call, **not** `onMutate`. A second `mutate()` snapshots a cache
+     that already holds the first one's guess. Measured: two Continue clicks in one tick with
+     both PATCHes failing left the bar at **71% against a truth of 57%**, for the full
+     ten-minute `staleTime`, while the alert said the answer had not been counted.
+  2. **`invalidateQueries` on error** moved the bug. The refetch is issued from the failing
+     mutation's `onError`, before the next write commits, so it resolves second and overwrites
+     a newer `onSuccess` — measured **71 at +5 ms, then 57**: a write that really did persist
+     reading as unanswered, with the dashboard nagging for it.
+  3. **And when that refetch itself fails** — the ordinary case, since whatever kills the
+     PATCH usually kills the GET — `query.js`'s `case "error"` reducer sets `status: "error"`
+     **unconditionally, data or no data**. `isError` flipped, the route swapped the wizard for
+     its load-error paragraph, and the user's unsaved draft (a `useState` inside the wizard,
+     including a typed injury note) went with it, with no way back because
+     `refetchOnWindowFocus` is off.
+
+  So: **no `onMutate`, no snapshot, and nothing at all on the error path.** `onSuccess` writes
+  the server's own answer and is the only cache write in the file; the overlay comes from
+  `useMutationState({ mutationKey, status: 'pending' })` at render time. It works because
+  `mutation.js` dispatches `pending` **synchronously before** the retryer — so the overlay is
+  established by the click and rendered **on the next tick** (`useMutationState` delivers
+  through `notifyManager.schedule` -> `systemSetTimeoutZero`; measured, and the same scheduler
+  a `setQueryData` went through, so nothing regressed) — and, on success, awaits
+  `options.onSuccess` **before** dispatching `success`, so real data lands before the overlay
+  drops and the bar cannot flicker backwards. A failed write now issues **no request at all**, which is
+  also one less Neon wake. `scope` stays, for what it does buy: serialised requests, so
+  `onSuccess` fires in commit order.
+- **⚠️ A ROUTE MAY ONLY REPLACE ITSELF WITH AN ERROR WHEN THERE IS NOTHING TO SHOW.** Gate on
+  `data === undefined`, never on `isError` — `queryObserver.js` derives
+  `isLoadingError = isError && !hasData`, and that is the question being asked. Every screen
+  holding unsaved input is one bad refetch away from losing it otherwise, and this is exactly
+  how it was lost. `ProfileFallback` also carries a **retry button**, because nothing else
+  will: `refetchOnWindowFocus` is off app-wide.
+- **⚠️ A CREDENTIAL CHANGE MUST RESET THE QUERY CACHE, and the wiring is `createAppContext`.**
+  Both session transitions here are client-side — the nav's `logOut()` navigates with the
+  router, `/login` uses `router.history.push` — so **nothing reloads the page**, and no query
+  key carries a user id. Measured before the fix: user A's dashboard at 86%, log out, log in as
+  B, and B saw **86%** with `GET /api/profile` called once in the whole session (the profile's
+  `staleTime` is ten minutes). The same cache entry feeds `draftFrom()` in the wizard and the
+  editor, so B's form came prefilled with A's target grade, availability, equipment and
+  self-ratings, and one Continue would have written A's answers into B's row. Two accounts in
+  one tab is the dev and demo path, not a contrived setup.
+  - **`queryClient.clear()` fires from `auth/authClient.ts`, beside the `session.clear()` that
+    already guards all four credential calls.** It cannot hang off the session store:
+    `refresh.ts` drops the token before **every** refresh POST (the same "drop the token
+    before every `POST /api/auth/*`" rule), so a store-level hook on the token going null
+    would wipe the cache on every silent rotation.
+  - **`createAppContext()` in `router.tsx` is what links the pair**, and both entries use it.
+    Wiring it per entry fails open — the first version did, and the test that was supposed to
+    prove it built its own unlinked pair and passed. Do not go back to calling `createAuth()`
+    and `createQueryClient()` separately in an entry.
+  - **The query key is deliberately NOT scoped by user id.** The client has no user id before
+    the first fetch — the field was removed from `ProfileResponse` in review, and this repo
+    never decodes the token client-side — so keying on identity is chicken-and-egg, and keying
+    on the token itself would change on every rotation and refetch the world. `clear()` at the
+    transition is the fix; identity in the key would be a second mechanism for the same
+    property.
+  - **Both queries carry `enabled: isAuthenticated`, and that is a compute-budget fix, not
+    hygiene.** Clearing the cache while a screen is still mounted makes its observer refetch:
+    measured on the real logout path, **one extra `GET /api/profile`** issued after the token
+    was dropped, which is a 401, which `refresh.ts` answers with a refresh POST — a **Postgres
+    write** on a path that previously did none. `queryObserver.js:445/451/461` gate every fetch
+    decision on `enabled`, so this closes it at the source. Re-measured after: zero.
+- **⚠️ Anything touching mutations, the query cache or a route-level query guard must be
+  VERIFIED against `web/node_modules/@tanstack/query-core/` for the installed version** —
+  not from memory, not from the docs, not from reasoning about what would be sensible. Three
+  rounds of bugs here were all "I reasoned about the semantics". State the invariant, read the
+  source, write the failing test and record the measured numbers, and cite what you read in
+  any comment that asserts library behaviour.
+- **The "already complete" redirect reads an ENTRY SNAPSHOT, not the live profile.**
+  Finishing the last step updates the cache before `navigate` runs, so a live check would
+  race `/dashboard` against `<Navigate to="/profile">`. The snapshot is taken in a `useState`
+  initialiser, which also keeps every hook unconditional. ⚠️ **Not test-guarded, and
+  deliberately recorded as such**: reverting it to a live check leaves
+  `onboardingSubmit.test.tsx` green, because jsdom never renders the intermediate state (the
+  router visits only `/onboarding` then `/dashboard`). Structural prevention only — do not
+  expect a test to catch its removal.
+- **The profile mutation carries `scope: { id: 'profile' }`.** The editor has five Save
+  buttons sharing one mutation; without a scope two saves can overlap, the older response
+  can land second, and `setQueryData` installs a profile from before the newer write — the
+  bar drops a step. Query serialises same-scope mutations.
+- **`useProfile` carries a 10-minute `staleTime`.** The dashboard is where every
+  authenticated session lands and it used to issue **zero SQL**; every PATCH response already
+  replaces the cache. ⚠️ **A second TAB is stale for up to
+  those ten minutes and focusing it will not refresh it** — `refetchOnWindowFocus` is `false`
+  globally, because a gym phone flaps between focused and blurred constantly. Benign (the tab
+  that did the writing is correct, and the number is a progress bar), but it is not "only
+  another device can make this stale".
+- **⚠️ `POST /api/profile/reset` exists so that `PATCH` did not have to change.** #54 needs a
+  way back to a from-scratch wizard. Making `null` mean "clear" in `ProfilePatchRequest` was
+  considered and **rejected** — that is the whole reason this endpoint exists, so do not
+  "simplify" it away later. It clears, in ONE transaction: every column the four steps own
+  (including `primary_discipline`, which is derived from the target grade and has to go with
+  it), every `user_aspect_rating` row, and **only the OPEN `user_injury` rows**.
+  ⚠️ **Resolved injuries are history and are not touched.** `flag -> resolve -> re-flag` is what
+  that table exists for — it is why `0005` added a *partial* unique index — and a reset is not a
+  claim about a past injury. It also does **not** clear `display_name` or `show_body_metrics`:
+  neither is one of the four steps, and a reset walks the setup flow again rather than wiping an
+  account. It is idempotent, it creates no row (same touch-on-read rule as `GET` and `PATCH {}`),
+  and it returns the whole profile so the caller redraws the bar from the response.
+- **The editor is SECTIONS; the wizard is the linear one-card flow.** They shared a stepper for
+  one round and it was wrong: changing a target grade meant walking past three answered
+  questions. So `/profile` renders every section at once with one Save at the end, and the rail
+  doubles as an index into it. ⚠️ **Save sends only the steps that were TOUCHED** — a step joins
+  the set when one of its own fields reports a change. It used to be "shown", which was the same
+  thing while one card was visible and is not now: with every section on the page, "shown" means
+  "all of them", and pressing Save after editing a grade would stamp `injuries_reviewed_at` and
+  write eight default ratings for questions nobody looked at. `patchForAll(draft, [])` is `{}`,
+  and `profile/draft.test.ts` pins it.
+- **⚠️ The rail is BOTH the progress bar and the canonical stepper, and the nodes are SIBLINGS of
+  the progressbar element.** There used to be two components — a percentage bar and a separate
+  step list — and #54 collapsed them, because a filled track beside a node rail is the same
+  thing said twice in two units, which is how a stepper starts disagreeing with a bar. So
+  `ProfileProgress` renders one object: the `role="progressbar"` element is the spine and carries
+  the name plus `aria-valuenow`, and the numbered nodes sit **outside** it in a
+  `<nav aria-label>` -> `<ol>` -> `<li>` with `aria-current="step"`.
+  ⚠️ **Not inside it: a `progressbar`'s contents are presentational, so focusable children there
+  are invalid ARIA** — and these are real buttons that navigate. The connectors carry the fill
+  instead of a percentage-width bar, which is also what makes the fill terminate at a node's edge
+  rather than painting through it: each connector is a flex child of the gap it occupies, so its
+  ends ARE the two nodes' edges and there is no length to compute. **Where the fill ends is
+  presentation; what the bar reports is `completionPercent`.** Do not recompute one from the
+  other. The last node is drawn "Finish" because it IS the last step (Injuries), not a terminal
+  node after it, and its accessible name leads with that word because WCAG 2.5.3 requires the
+  visible text to be contained in the name.
+- **The accessibility contract is fixed** (`ProfileProgress.tsx`):
+  stepper as `<nav aria-label>` → `<ol>` → `<li>` with `aria-current="step"` (it moved into
+  `ProfileProgress` when the separate list was deleted, and `OnboardingStepper.tsx` is gone);
+  the bar as `role="progressbar"` with an accessible **name** plus `aria-valuenow/min/max`;
+  **announcements at step boundaries only**, through one polite live region that is always
+  in the DOM (a region added at the same moment as its text is frequently not announced);
+  the fill transition under `prefers-reduced-motion` while the **number updates instantly**;
+  never colour alone — the percentage is text at 4.5:1, the active step is weight plus an
+  outline, and a finished step says "Done" in words.
+- **`GET /api/vocabulary` carries an `enums` object, and its justification is the TYPE
+  CONTRACT — not a runtime consumer.** Five of the six closed vocabularies are referenced by
+  no profile field, so without this object they never reach the OpenAPI schema, and retiring
+  the hand-written `api/vocabularies.ts` would have silently dropped five of
+  `test_vocabulary_contract.py`'s six assertions instead of re-pointing them. **Nothing in
+  `web/src` reads `.enums` today** — an earlier draft of this section and of the module
+  docstring claimed the pickers did, which was false; they iterate the real arrays
+  (`climbing_aspects`, `equipment`, `injury_areas`). The cost is six short arrays in every
+  response and zero database time, and the six assertions are worth that. Say only that.
+- **Caching on that endpoint is `private, max-age=3600`, not the library rule's
+  `public, immutable`.** It is user-independent and only a deploy can change it, but there is
+  no build id in the URL (so a year-long immutable cache would pin a stale vocabulary) and it
+  requires a bearer token (so it has no business in a shared CDN cache). React Query holds it
+  at `staleTime: Infinity` for the rest of the session. ⚠️ **There is no `Vary:
+  Authorization`, and that is only safe while the body is user-independent** — a browser
+  cache keys on the URL alone, so two accounts sharing a browser share the entry. The moment
+  any field there becomes user-scoped, that header goes in the same commit or the caching
+  comes out. `tests/test_vocabulary_api.py` asserts both the header and the premise.
+- **A demo token cannot write, so the wizard and the editor disable their buttons and say
+  so** rather than producing a 403 the user cannot act on. The dashboard's "finish your
+  profile" card is hidden in demo mode for the same reason.
+- `show_body_metrics` is a real setting and is deliberately **not** on either screen — it is
+  not one of the four steps, and it belongs with the settings work. (`display_name` IS on that
+  screen, in its own Account section, because #54 asked for it — but it belongs to no step
+  either, so the editor composes it separately and it can never move the completion bar.)
 
 ## Session player invariants (PR #15a onward)
 

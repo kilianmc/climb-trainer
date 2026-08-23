@@ -1,0 +1,46 @@
+# Gitleaks configuration. One allowlist, for one line shape.
+#
+# ⚠️ `useDefault = true` IS THIS FILE'S SAFETY. Without it this config REPLACES the default
+# ruleset instead of extending it, so every built-in rule disappears and the scanner goes
+# green on everything — a fail-open indistinguishable from "no secrets found".
+# `tests/test_gitleaks_config.py` asserts it, and it was proved rather than assumed: with this
+# config in place, an `AKIA…`-shaped key planted in a scratch file AND one planted inside
+# `web/src/api/schema.ts` itself were both still reported, on 8.24.3 and 8.30.1.
+[extend]
+useDefault = true
+
+# WHAT THIS IS FOR
+#
+# `web/src/api/schema.ts` is GENERATED (`npm run codegen:api`) and its header carries two
+# SHA-256 digests — of the OpenAPI document it was built from, and of the types below it.
+# They are what stop the committed API types drifting from the server; they caught a
+# `maxItems` 15 -> 17 change nobody predicted. So the guard is not weakened to suit a
+# scanner: the format stays, the digest stays 64 hex characters, and it stays on one line.
+#
+# `generic-api-key` reads `openapi-sha256: <64 hex>` as a credential because "openapi"
+# contains its `api` keyword and the digest has the entropy of a real key (measured: 3.675).
+# Only that line trips today — `types-sha256` has no keyword before its colon — and it is
+# matched here too so a future rule or version bump cannot reintroduce the failure.
+#
+# ⚠️ WHY THIS IS SCOPED BY LINE CONTENT AND *NOT* BY PATH
+#
+# A `paths` entry would be a fail-open on the version CI actually runs. `gitleaks-action@v3`
+# runs **8.24.3**, whose TOML allowlist struct is
+# `{ Commits, Paths, RegexTarget, Regexes, StopWords }` — read out of the binary — with **no
+# condition field**: its criteria are always OR'd, and neither `condition` nor
+# `matchCondition` is honoured (both tried; the planted key inside `schema.ts` went
+# unreported). So `paths = [schema.ts]` would allowlist that whole file for every rule, and
+# it is machine-written, so a real credential pasted into it would never be read by a human
+# either.
+#
+# `regexTarget = "line"` is therefore load-bearing: the default target is the matched secret,
+# so a regex on the digest alone would allowlist any 64-hex secret anywhere. Requiring the
+# surrounding `* openapi-sha256:` context is what keeps this to our own generated header.
+#
+# When the action ships a gitleaks that parses `condition`, this can be tightened to
+# `paths` + `regexes` with `condition = "AND"`, which 8.30.1 already honours. Verify with
+# the planted-key probe before trusting it.
+[allowlist]
+description = "The generated OpenAPI digest header (web/src/api/schema.ts)"
+regexTarget = "line"
+regexes = ['''^\s*\*\s+(?:openapi|types)-sha256:\s+[0-9a-f]{64}\s*$''']

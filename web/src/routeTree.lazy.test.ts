@@ -26,7 +26,13 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
  * depend on which test navigated first.
  */
 // Route IDS, which carry the pathless `_authed` segment; the URL paths are still /plan etc.
-const LAZY = ['/_authed/plan', '/_authed/session', '/_authed/diary', '/_authed/profile'] as const;
+const LAZY = [
+  '/_authed/plan',
+  '/_authed/session',
+  '/_authed/diary',
+  '/_authed/profile',
+  '/_authed/onboarding',
+] as const;
 const EAGER = ['/', '/login', '/register', '/$', '/_authed/dashboard'] as const;
 
 async function freshRouter() {
@@ -46,7 +52,7 @@ beforeEach(() => {
   vi.resetModules();
 });
 
-describe('the four heavy leaves are code-split', () => {
+describe('the heavy leaves are code-split', () => {
   it.each(LAZY)('%s has not loaded its component before navigation', async (id) => {
     expect((await freshRoutes())[id].options.component).toBeUndefined();
   });

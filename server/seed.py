@@ -107,10 +107,18 @@ class SeedResult:
 
 def seed_reference_data(session: Session) -> SeedResult:
     """Upsert every grade system and grade, plus the demo account. Does NOT commit."""
+    # `sort_order` is the tuple position, exactly like the four `_REFERENCE_TABLES` — so
+    # display order is edited by moving a line in `server/domain/grades.py` rather than by
+    # renumbering a column, and it no longer depends on the serial (issue #55, `0006`).
     system_stmt = insert(GradeSystem).values(
         [
-            {"key": spec.key.value, "name": spec.name, "discipline": spec.discipline}
-            for spec in grades.GRADE_SYSTEMS
+            {
+                "key": spec.key.value,
+                "name": spec.name,
+                "discipline": spec.discipline,
+                "sort_order": position,
+            }
+            for position, spec in enumerate(grades.GRADE_SYSTEMS)
         ]
     )
     session.execute(
@@ -119,6 +127,7 @@ def seed_reference_data(session: Session) -> SeedResult:
             set_={
                 "name": system_stmt.excluded.name,
                 "discipline": system_stmt.excluded.discipline,
+                "sort_order": system_stmt.excluded.sort_order,
             },
         )
     )

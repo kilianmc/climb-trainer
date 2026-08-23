@@ -118,6 +118,7 @@ describe('every route is public on purpose or guarded', () => {
     expect(ids.filter((id) => id.startsWith(`${GUARD_ID}/`)).sort()).toEqual([
       '/_authed/dashboard',
       '/_authed/diary',
+      '/_authed/onboarding',
       '/_authed/plan',
       '/_authed/profile',
       '/_authed/session',

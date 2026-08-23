@@ -2,8 +2,8 @@ import { QueryClientProvider } from '@tanstack/react-query';
 import { RouterProvider } from '@tanstack/react-router';
 import { useState } from 'react';
 
-import { AuthProvider, createAuth } from './auth/AuthProvider';
-import { createAppRouter, createQueryClient } from './router';
+import { AuthProvider } from './auth/AuthProvider';
+import { createAppContext, createAppRouter } from './router';
 import { createRemoteHistory } from './remoteHistory';
 
 /**
@@ -31,8 +31,8 @@ export default function ClimbTrainerApp() {
   // Per mount instance, not per module: a module-level router would keep its location,
   // its cache AND its session across shell navigations away from and back to this project.
   const [mount] = useState(() => {
-    const auth = createAuth();
-    const queryClient = createQueryClient();
+    // The linked pair — see `createAppContext`.
+    const { auth, queryClient } = createAppContext();
     return {
       auth,
       queryClient,
