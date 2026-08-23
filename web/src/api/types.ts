@@ -28,6 +28,18 @@ export type Grade = Schemas['GradeOut'];
 export type ReferenceRow = Schemas['ReferenceRowOut'];
 export type Discipline = Schemas['Discipline'];
 
+/**
+ * `GET /api/library?v=<buildId>` — the exercise library, whole, in one response.
+ *
+ * ⚠️ Reference content, identical for every user, **permanently**: the response is CDN
+ * cached with no `Vary: Authorization`. If a field on `LibraryExercise` ever describes the
+ * *reader* rather than the exercise, that is a cross-account leak, not a feature — see the
+ * rule at the top of `server/library/routes.py`.
+ */
+export type ExerciseLibrary = Schemas['ExerciseLibraryResponse'];
+export type LibraryExercise = Schemas['ExerciseOut'];
+export type Prescription = Schemas['PrescriptionOut'];
+
 /** `GET /api/profile` and the body of every `PATCH` response. */
 export type Profile = Schemas['ProfileResponse'];
 export type AspectRating = Schemas['AspectRatingOut'];

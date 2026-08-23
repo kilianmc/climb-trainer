@@ -30,6 +30,7 @@ const LAZY = [
   '/_authed/plan',
   '/_authed/session',
   '/_authed/diary',
+  '/_authed/library',
   '/_authed/profile',
   '/_authed/onboarding',
 ] as const;

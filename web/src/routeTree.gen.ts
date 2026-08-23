@@ -19,6 +19,7 @@ import { Route as RegisterRouteImport } from './routes/register'
 import { Route as AuthedDashboardRouteImport } from './routes/_authed/dashboard'
 
 const AuthedDiaryLazyRouteImport = createFileRoute('/_authed/diary')()
+const AuthedLibraryLazyRouteImport = createFileRoute('/_authed/library')()
 const AuthedOnboardingLazyRouteImport = createFileRoute('/_authed/onboarding')()
 const AuthedPlanLazyRouteImport = createFileRoute('/_authed/plan')()
 const AuthedProfileLazyRouteImport = createFileRoute('/_authed/profile')()
@@ -58,6 +59,13 @@ const AuthedDiaryLazyRoute = AuthedDiaryLazyRouteImport.update({
   path: '/diary',
   getParentRoute: () => AuthedRoute,
 } as any).lazy(() => import('./routes/_authed/diary.lazy').then((d) => d.Route))
+const AuthedLibraryLazyRoute = AuthedLibraryLazyRouteImport.update({
+  id: '/library',
+  path: '/library',
+  getParentRoute: () => AuthedRoute,
+} as any).lazy(() =>
+  import('./routes/_authed/library.lazy').then((d) => d.Route),
+)
 const AuthedOnboardingLazyRoute = AuthedOnboardingLazyRouteImport.update({
   id: '/onboarding',
   path: '/onboarding',
@@ -92,6 +100,7 @@ export interface FileRoutesByFullPath {
   '/register': typeof RegisterRoute
   '/dashboard': typeof AuthedDashboardRoute
   '/diary': typeof AuthedDiaryLazyRoute
+  '/library': typeof AuthedLibraryLazyRoute
   '/onboarding': typeof AuthedOnboardingLazyRoute
   '/plan': typeof AuthedPlanLazyRoute
   '/profile': typeof AuthedProfileLazyRoute
@@ -104,6 +113,7 @@ export interface FileRoutesByTo {
   '/register': typeof RegisterRoute
   '/dashboard': typeof AuthedDashboardRoute
   '/diary': typeof AuthedDiaryLazyRoute
+  '/library': typeof AuthedLibraryLazyRoute
   '/onboarding': typeof AuthedOnboardingLazyRoute
   '/plan': typeof AuthedPlanLazyRoute
   '/profile': typeof AuthedProfileLazyRoute
@@ -118,6 +128,7 @@ export interface FileRoutesById {
   '/register': typeof RegisterRoute
   '/_authed/dashboard': typeof AuthedDashboardRoute
   '/_authed/diary': typeof AuthedDiaryLazyRoute
+  '/_authed/library': typeof AuthedLibraryLazyRoute
   '/_authed/onboarding': typeof AuthedOnboardingLazyRoute
   '/_authed/plan': typeof AuthedPlanLazyRoute
   '/_authed/profile': typeof AuthedProfileLazyRoute
@@ -132,6 +143,7 @@ export interface FileRouteTypes {
     | '/register'
     | '/dashboard'
     | '/diary'
+    | '/library'
     | '/onboarding'
     | '/plan'
     | '/profile'
@@ -144,6 +156,7 @@ export interface FileRouteTypes {
     | '/register'
     | '/dashboard'
     | '/diary'
+    | '/library'
     | '/onboarding'
     | '/plan'
     | '/profile'
@@ -157,6 +170,7 @@ export interface FileRouteTypes {
     | '/register'
     | '/_authed/dashboard'
     | '/_authed/diary'
+    | '/_authed/library'
     | '/_authed/onboarding'
     | '/_authed/plan'
     | '/_authed/profile'
@@ -222,6 +236,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthedDiaryLazyRouteImport
       parentRoute: typeof AuthedRoute
     }
+    '/_authed/library': {
+      id: '/_authed/library'
+      path: '/library'
+      fullPath: '/library'
+      preLoaderRoute: typeof AuthedLibraryLazyRouteImport
+      parentRoute: typeof AuthedRoute
+    }
     '/_authed/onboarding': {
       id: '/_authed/onboarding'
       path: '/onboarding'
@@ -256,6 +277,7 @@ declare module '@tanstack/react-router' {
 interface AuthedRouteChildren {
   AuthedDashboardRoute: typeof AuthedDashboardRoute
   AuthedDiaryLazyRoute: typeof AuthedDiaryLazyRoute
+  AuthedLibraryLazyRoute: typeof AuthedLibraryLazyRoute
   AuthedOnboardingLazyRoute: typeof AuthedOnboardingLazyRoute
   AuthedPlanLazyRoute: typeof AuthedPlanLazyRoute
   AuthedProfileLazyRoute: typeof AuthedProfileLazyRoute
@@ -265,6 +287,7 @@ interface AuthedRouteChildren {
 const AuthedRouteChildren: AuthedRouteChildren = {
   AuthedDashboardRoute: AuthedDashboardRoute,
   AuthedDiaryLazyRoute: AuthedDiaryLazyRoute,
+  AuthedLibraryLazyRoute: AuthedLibraryLazyRoute,
   AuthedOnboardingLazyRoute: AuthedOnboardingLazyRoute,
   AuthedPlanLazyRoute: AuthedPlanLazyRoute,
   AuthedProfileLazyRoute: AuthedProfileLazyRoute,

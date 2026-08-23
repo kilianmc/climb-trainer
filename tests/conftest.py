@@ -50,6 +50,7 @@ from sqlalchemy.orm import Session
 
 from server.app import app
 from server.auth import invites
+from server.contentseed import seed_exercise_library
 from server.db import (
     get_engine,
     get_session,
@@ -104,6 +105,25 @@ _REQUIRED_TABLES = {
     "journal_entry": "0004",
 }
 
+# ⚠️ **Column granularity, because the list above cannot see a revision that adds no
+# table.** `0007` adds two columns to `exercise` and nothing else, and the session-scoped
+# `seeded` fixture writes one of them — so against a database still at `0006` the
+# table check passed, the fixture raised `UndefinedColumn`, and every DB-backed test
+# ERRORED out of a session-scoped fixture instead of skipping. That is precisely the
+# failure the skip exists to prevent: migrations here run out-of-band behind an approval
+# gate, so a developer whose `CT_TEST_DATABASE_URL` points at an un-upgraded database
+# should be told to upgrade, not handed a wall of red.
+#
+# Same discipline as the table list: **one canary per revision that adds only columns**,
+# not an inventory of every column the suite touches. Add an entry when a revision adds a
+# column that a FIXTURE or a widely-used helper writes — a column only one test reads can
+# stay out, because that test fails on its own and reads clearly.
+_REQUIRED_COLUMNS: dict[tuple[str, str], str] = {
+    # Both written by `seed_exercise_library` on every run of the `seeded` fixture.
+    ("exercise", "substitution_hint"): "0007",
+    ("exercise", "retired_at"): "0007",
+}
+
 # Long enough to clear the 32-character floor, and constructed by repetition so it has
 # almost no entropy — gitleaks scans this repo's full history and a random-looking
 # string next to the word "secret" is exactly what its generic rule looks for.
@@ -145,24 +165,47 @@ def engine() -> Engine:
     )
 
     db_engine = get_engine()
-    tables = set(inspect(db_engine).get_table_names())
-    missing = sorted(set(_REQUIRED_TABLES) - tables)
+    inspector = inspect(db_engine)
+    tables = set(inspector.get_table_names())
+    missing = {
+        table: revision for table, revision in _REQUIRED_TABLES.items() if table not in tables
+    }
+    if not missing:
+        # Only worth asking once the tables are all there: `get_columns` on a table that
+        # does not exist raises rather than returning nothing, and the table-level answer
+        # is the more useful message anyway.
+        present = {
+            table: {column["name"] for column in inspector.get_columns(table)}
+            for table in {table for table, _ in _REQUIRED_COLUMNS}
+        }
+        missing = {
+            f"{table}.{column}": revision
+            for (table, column), revision in _REQUIRED_COLUMNS.items()
+            if column not in present[table]
+        }
     if missing:
-        revisions = sorted({_REQUIRED_TABLES[table] for table in missing})
         pytest.skip(
-            f"database is reachable but not migrated to head: missing {missing}, which "
-            f"revision(s) {revisions} create. Run `uv run alembic upgrade head` locally, "
-            f"or dispatch `migrate.yml` — migrations here are out-of-band behind an "
-            f"approval gate, so this is a skip rather than a failure."
+            f"database is reachable but not migrated to head: missing "
+            f"{sorted(missing)}, which revision(s) {sorted(set(missing.values()))} create. "
+            f"Run `uv run alembic upgrade head` locally, or dispatch `migrate.yml` — "
+            f"migrations here are out-of-band behind an approval gate, so this is a skip "
+            f"rather than a failure."
         )
     return db_engine
 
 
 @pytest.fixture(scope="session")
 def seeded(engine: Engine) -> Engine:
-    """Reference data, seeded once per test session from the production seed module."""
+    """Reference data AND the exercise library, from the two production seed modules.
+
+    Both, in production's order: `server/contentseed.py` resolves aspect, equipment and
+    injury *keys* to ids, so it needs the vocabularies to exist first. Same argument as the
+    fixture itself — a test fixture that hand-wrote its own exercises would be testing a
+    library production never has.
+    """
     with session_scope() as session:
         seed_reference_data(session)
+        seed_exercise_library(session)
     return engine
 
 

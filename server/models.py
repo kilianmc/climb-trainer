@@ -133,6 +133,10 @@ JOURNAL_BODY_MAX = 4000
 # `user_profile.display_name`. 64 rather than 120: it is a name on a screen, not a route
 # name, and it is the same bound `invite.label` uses for the same kind of short label.
 DISPLAY_NAME_MAX = 64
+# `exercise.substitution_hint` (revision `0007`). Authored content, not user input, so it
+# has no Pydantic request bound — the same 255 the lookup tables' `description` uses,
+# because it is the same kind of thing: one sentence of display text.
+SUBSTITUTION_HINT_MAX = 255
 
 
 class Base(DeclarativeBase):
@@ -437,7 +441,11 @@ class AscentTag(Base):
 
 
 class Exercise(Base):
-    """One library exercise. Reference data: immutable per deploy, never user-authored.
+    """One library exercise. Reference data: written only by the seed, never by a user.
+
+    **Removing a key from `server/domain/exercises.py` removes the ROW**, unless a plan or
+    a logged set points at it — in which case `retired_at` is set and the row stays. See
+    that column and `server/contentseed.py`.
 
     **`progression_of_id` / `regression_of_id` are self-referential and independent.**
     Two columns rather than one, because the graph is not a clean chain: "easier version
@@ -467,9 +475,30 @@ class Exercise(Base):
     # that only make sense on a rope or only on a boulder.
     discipline: Mapped[Discipline | None] = mapped_column(discipline_enum, nullable=True)
     instructions: Mapped[str] = mapped_column(String(2000))
+    # "No dumbbell? A packed backpack." Lives on the exercise, next to the movement it
+    # applies to, rather than in a vocabulary — CLAUDE.md, "There is deliberately no
+    # `bodyweight` equipment row". NULL where there is nothing honest to suggest, which
+    # ⚠️ INCLUDES EVERY FINGER-LOADING PROTOCOL: a hangboard, campus or no-hang exercise
+    # must never carry one, because the only substitutes are improvised edges. Never
+    # rendered as HTML (see the output-escaping rules in CLAUDE.md).
+    substitution_hint: Mapped[str | None] = mapped_column(
+        String(SUBSTITUTION_HINT_MAX), nullable=True
+    )
     # A URL to a demo clip, hosted wherever the library content is hosted. NULL until
     # one exists; never rendered as HTML (see the output-escaping rules in CLAUDE.md).
     media_url: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    # ⚠️ **Logical retirement is the FALLBACK, not the rule.** An exercise dropped from
+    # `server/domain/exercises.py` is genuinely DELETED by `server/contentseed.py` when
+    # nothing references it — Kilian's call: hiding a row he judged weak is not deleting
+    # it. This column is what happens when something does reference it. `session_block`
+    # and `logged_set` point here with `NO ACTION`, so Postgres refuses the delete rather
+    # than cascading into somebody's training diary, and the seed sets this instead.
+    # Retired rows are filtered out of `GET /api/library` and are never prescribable; the
+    # row stays so that a six-month-old diary entry still resolves to a name.
+    # A timestamp, not a boolean: "when did this leave the library" is the question an old
+    # log entry actually raises. Deliberately NOT in the API response — see the CDN rule
+    # in `server/library/routes.py`.
+    retired_at: Mapped[datetime | None] = mapped_column(nullable=True)
     progression_of_id: Mapped[int | None] = mapped_column(ForeignKey("exercise.id"), nullable=True)
     regression_of_id: Mapped[int | None] = mapped_column(ForeignKey("exercise.id"), nullable=True)
 
@@ -859,10 +888,14 @@ class Plan(Base):
 
     **One-active-plan-per-user is NOT enforced here, deliberately.** The natural
     expression is a partial unique index, and Alembic compares partial-index predicates
-    as text: there is no local Postgres on this machine to verify the rendering against,
-    so shipping one risks a false `alembic check` failure in CI on a constraint nobody
-    asked for. It belongs with the activate endpoint (PR #10), where the transaction that
-    activates one plan is the transaction that stands down the other.
+    as text, with no local Postgres at the time to verify the rendering against — so
+    shipping one risked a false `alembic check` failure in CI on a constraint nobody
+    asked for. **That premise has expired: a local Postgres now exists, so the index is
+    verifiable and the structural option is open again** (`uq_user_injury_open_area` in
+    `0005` is the precedent). Index or application-level assertion, the decision belongs
+    with the activate endpoint, where the transaction that activates one plan is the
+    transaction that stands down the other. Tracked in **issue #62** — NOT PR #10, which
+    shipped a read-only library.
     """
 
     __tablename__ = "plan"
@@ -1337,7 +1370,7 @@ class LoggedSet(Base):
 
     When `prescribed_set_id` is set, `exercise_id` should equal
     `prescribed_set -> session_block.exercise_id`. Nothing in the database enforces that:
-    **it is a PR #10 write-path invariant**, and the endpoint that accepts a flush must
+    **it is a write-path invariant (issue #62)**, and the endpoint that accepts a flush must
     assert it rather than trust the client's `exercise_id`.
 
     Making it structural was considered and rejected on cost. The composite-FK technique
