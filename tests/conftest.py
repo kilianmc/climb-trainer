@@ -1,9 +1,10 @@
 """Shared fixtures, and the rule for database-backed tests.
 
-**Tests that need Postgres SKIP when `DATABASE_URL` is unset.** There is no local
-Postgres and no Docker on the development machine, so `npm run check` must stay green
-without one; CI provides a real Postgres service container, runs
-`alembic upgrade head` against it, and therefore is where these tests actually execute.
+**Tests that need Postgres SKIP when `DATABASE_URL` is unset.** `npm run check` must stay
+green on a clone with no database, so skipping is the default. To actually run them locally,
+export `CT_TEST_DATABASE_URL` and `npm run db:up` — native `postgresql@17`, no Docker; see
+CLAUDE.md, "Local Postgres for the test suite". CI always runs them, against a service
+container it has brought to head with `alembic upgrade head`.
 
 **SQLite is NOT an option here** and must never be introduced as a stand-in. The schema
 depends on native enums, composite foreign keys, `GENERATED ... STORED`, GIN expression
@@ -61,8 +62,9 @@ from server.seed import seed_reference_data
 from server.settings import AUTH_SECRET_ENV, POOLED_URL_ENV, pooled_database_url
 
 _SKIP_REASON = (
-    f"{POOLED_URL_ENV} is not set — this test needs real Postgres. Local development "
-    f"has no database by design; CI runs it against the postgres service container."
+    f"{POOLED_URL_ENV} is not set — this test needs real Postgres. Export "
+    f"CT_TEST_DATABASE_URL and run `npm run db:up` to run these locally; CI always runs them "
+    f"against its postgres service container."
 )
 
 # The allowlist and the refusal both live in `server/db.py`, so this file and
