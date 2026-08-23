@@ -11,8 +11,8 @@
  *   openapi-sha256  the OpenAPI document it was generated from
  *   types-sha256    everything below this comment block
  *
- * openapi-sha256: 54db6adb61c74fd35c7f1561c12bc8965d1323634ff4919145e026053cc98035
- * types-sha256: 9cb08830b8efd7f70dd814103c6dc622139ba40bc0a90677885033d9161cd63c
+ * openapi-sha256: a26e48618a0aa16053bac814afb9ae215d3050061322fe2499889f493d69c5b0
+ * types-sha256: b98a1fc9b6488b6d069b1e602ccec88c82568aee75a5e9948ebb0aa2df068308
  */
 
 export interface paths {
@@ -225,6 +225,34 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/library': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Read Library
+     * @description The library, ordered by aspect. Authenticated like every other route.
+     *
+     *     User-independent: nothing here is scoped by `user_id` because nothing here belongs to
+     *     a user, and per the rule at `_CACHE_CONTROL` nothing here ever will. Read-only — the
+     *     library is written by `server/contentseed.py`, out of band.
+     *
+     *     `v` is **declared and deliberately unused**. It exists so the client can put a build id
+     *     in the URL and so the schema documents it; reading it here — even to log it — is the
+     *     one change that would make the CDN's single cache entry wrong.
+     */
+    get: operations['read_library_api_library_get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/profile': {
     parameters: {
       query?: never;
@@ -425,6 +453,56 @@ export interface components {
      */
     Discipline: 'boulder' | 'sport';
     /**
+     * ExerciseLibraryResponse
+     * @description The whole library. An object rather than a bare array, so the payload can grow a
+     *     sibling field (a content revision, say) without breaking every client.
+     */
+    ExerciseLibraryResponse: {
+      /** Exercises */
+      exercises: components['schemas']['ExerciseOut'][];
+    };
+    /**
+     * ExerciseOut
+     * @description One library exercise, with everything a browse + detail UI needs.
+     *
+     *     `key` is the data contract and the rest is display or generator input, the same split
+     *     as `ReferenceSpec`. `equipment_ids` is an **AND set**: every id is a requirement, so
+     *     an empty list means the exercise needs nothing and is always prescribable — which is
+     *     what replaces the `bodyweight` equipment row that deliberately does not exist.
+     *
+     *     `discipline` is NULL for most of the library (a hangboard protocol serves boulderers
+     *     and rope climbers alike). `substitution_hint` is NULL for every finger-loading
+     *     protocol on purpose — see `server/domain/exercises.py` for the safety boundary.
+     */
+    ExerciseOut: {
+      /** Climbing Aspect Id */
+      climbing_aspect_id: number;
+      /** Contraindicated Injury Area Ids */
+      contraindicated_injury_area_ids: number[];
+      discipline: components['schemas']['Discipline'] | null;
+      /** Equipment Ids */
+      equipment_ids: number[];
+      /** Id */
+      id: number;
+      /** Instructions */
+      instructions: string;
+      /** Key */
+      key: string;
+      /** Media Url */
+      media_url: string | null;
+      /** Name */
+      name: string;
+      /** Prescriptions */
+      prescriptions: components['schemas']['PrescriptionOut'][];
+      /** Progression Of Id */
+      progression_of_id: number | null;
+      protocol_kind: components['schemas']['ProtocolKind'];
+      /** Regression Of Id */
+      regression_of_id: number | null;
+      /** Substitution Hint */
+      substitution_hint: string | null;
+    };
+    /**
      * GradeOut
      * @description One rung of one scale.
      *
@@ -532,6 +610,32 @@ export interface components {
      * @enum {string}
      */
     Phase: 'base' | 'strength' | 'power' | 'power_endurance' | 'performance' | 'deload' | 'taper';
+    /**
+     * PrescriptionOut
+     * @description The default prescription for one exercise in one phase.
+     *
+     *     `reps` and `work_seconds` are independent and both nullable — a repeater has seconds
+     *     and no reps, a pull-up set has reps and no seconds, and a circuit legitimately has
+     *     neither. `intensity_pct` has no anchor field: what the percentage is *of* follows from
+     *     the exercise's `protocol_kind` (see `PrescriptionTemplate` in `server/models.py`).
+     */
+    PrescriptionOut: {
+      /** Intensity Pct */
+      intensity_pct: number | null;
+      phase: components['schemas']['Phase'];
+      /** Reps */
+      reps: number | null;
+      /** Rest Between Sets Seconds */
+      rest_between_sets_seconds: number | null;
+      /** Rest Seconds */
+      rest_seconds: number | null;
+      /** Sets */
+      sets: number;
+      /** Target Rpe */
+      target_rpe: number | null;
+      /** Work Seconds */
+      work_seconds: number | null;
+    };
     /**
      * ProfilePatchRequest
      * @description Any subset of the profile. Everything omitted is left as it is.
@@ -915,6 +1019,37 @@ export interface operations {
           'application/json': {
             [key: string]: string;
           };
+        };
+      };
+    };
+  };
+  read_library_api_library_get: {
+    parameters: {
+      query?: {
+        v?: string | null;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ExerciseLibraryResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
         };
       };
     };

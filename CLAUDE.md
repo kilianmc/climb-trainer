@@ -34,7 +34,9 @@ Actions `production` environment. `gitleaks` runs in CI on full history.
 Anchored by **heading text**, never line number. If you are about to touch one of these,
 read the named section first; every rule there records a failure that already happened.
 
-**Adding or running a migration** — "Migrations run out-of-band" · "How to actually run one:
+**Adding or running a migration** — "Migrations run out-of-band" (**TWO** seed modules run
+behind the one `seed` input; and when an uncommitted revision may be AMENDED rather than
+stacked) · "How to actually run one:
 `.github/workflows/migrate.yml`" · "⚠️ Three traps, all paid for on the day it first ran"
 (the ref chooses the migrations, the environment chooses the database) · "SQLite is
 disqualified for tests" · "Branch model" (migrate production **before** promoting, and
@@ -71,6 +73,13 @@ is not Vercel's rewrite).
 "Two write tiers" · "The other compute rules" · "Engine config — the omissions are the point"
 · "Injection defence and input minimisation (OWASP)" (bound parameters, allowlisted
 identifiers, closed inputs, Pydantic at the edge, no echoed request in a 422).
+
+**⚠️ Touching `GET /api/library`, or adding ANY field to it** — the library bullet in "The
+other compute rules" and, below it, "⚠️ `/api/library` is USER-INDEPENDENT, permanently".
+One endpoint serves the whole library from a **shared** CDN with no `Vary: Authorization`, so
+**adding a user-scoped field there is a security change, not a feature change** and no
+behavioural test can see the leak. `server/library/routes.py` carries the read-shape decision
+(one endpoint, no `/{key}` detail route, and payload size is the number to watch).
 
 **Touching the domain schema, body metrics, or anything the plan generator says to the
 user** — "⚠️ The app never recommends losing weight" (a hard rule with a schema-level guard:
@@ -115,7 +124,8 @@ reverse".
 
 **Running the app locally, or a blank page that is not your code** — "Local development" ·
 "Local Postgres for the test suite" (`npm run db:up` / `db:reset`; the URL belongs in
-`CT_TEST_DATABASE_URL` and never in `.env`) · "⚠️ `npm run check` breaks a RUNNING dev server,
+`CT_TEST_DATABASE_URL` and never in `.env`; and the behind-head canary is TWO lists, whose
+skip path has never actually run) · "⚠️ `npm run check` breaks a RUNNING dev server,
 and every route goes blank" (a blank *landing* page is the tell) · "`.env` is loaded for you —
 but only outside Vercel".
 
@@ -170,10 +180,12 @@ server/               the FastAPI application actually lives here
   db.py               engine + session wiring. READ ITS DOCSTRING before touching it.
   models.py           SQLAlchemy 2 models, naming convention, TIMESTAMPTZ default
   seed.py             reference-data seed — the same module CI and production use
+  contentseed.py      the exercise-library CONTENT seed. Also production's. Runs AFTER seed.py.
   devseed.py          ten LOCAL test accounts. DEV ONLY; refuses to run in CI. Not seed.py.
   admin.py            operator CLI: create-invite, set-password. No workflow runs it.
   fields.py           bounded Pydantic field types — one per persisted CHECK
   openapi_schema.py   the OpenAPI document + its fingerprint, for the TS codegen
+  library/            GET /api/library — the whole seeded exercise library, CDN-cached
   profile/            GET/PATCH /api/profile
   vocabulary/         GET /api/vocabulary — grades, lookup tables, closed enums
   domain/             PURE Python: no DB, no clock, no RNG, no I/O
@@ -184,6 +196,12 @@ tests/                pytest (backend). conftest.py skips DB tests without DATAB
 `server/` being importable from `api/index.py` was genuinely uncertain before S0 — it
 works because `api/index.py` inserts the deployment root onto `sys.path`. Don't move
 the app into `api/`; don't delete that `sys.path` line.
+
+⚠️ **A new `server/` subpackage must be added to `[tool.setuptools] packages` in
+`pyproject.toml` in the same commit.** That list is written out — there is no autodiscovery
+and no `[build-system]` table to supply one — so an omitted subpackage is absent from the
+installed distribution while still importing perfectly from the repo root. `server/library/`
+is the newest entry.
 
 ---
 
@@ -250,6 +268,17 @@ Anything named `VITE_*` is **inlined into the client bundle at build time**. It 
 to every visitor as plain text in a JS file. **Never give a secret that prefix**, and
 remember this repo is public on GitHub, so there is no second line of defence. Server
 secrets are read in `server/settings.py` from unprefixed env vars.
+
+⚠️ **The one build-time value this repo injects is deliberately NOT a `VITE_*` var.**
+`__BUILD_ID__` — the `define` in `web/vite.config.ts`, read through `web/src/buildId.ts` —
+keys `GET /api/library?v=…`. It goes through `define` precisely so that **nothing has to be
+configured in the Vercel project** for a deploy to bust that cache: a build id that depends on
+somebody remembering to set an env var is a build id that eventually stops changing, and a
+year-long `immutable` then pins a stale exercise library. The value is a public deploy
+identifier **by design** — it ships to every visitor and that is fine, which is why the
+`VITE_*` rule above does not apply to it. **Locally it is a fresh timestamp, not the git SHA**:
+a SHA does not move when the working tree does, so an uncommitted content edit would be served
+out of a cache that believes it is immutable — the one case that actually bites in development.
 
 ### 5. Function region and Neon region must match
 
@@ -778,13 +807,42 @@ recorded it as a side effect, batch it.**
     overwrite the header afterwards (`x-vercel-forwarded-for` is the documented escape
     hatch, and there is no such proxy), and **locally** under bare `uvicorn` the header
     is whatever the client sends, so the limiter is trivially bypassable in development.
-- `GET /api/library?v=<buildId>` is user-independent and immutable per deploy — serve
-  `public, s-maxage=31536000, immutable` with `staleTime: Infinity`. Zero DB time and
-  zero invocations after the first request per deploy.
+- **`GET /api/library?v=<buildId>` — implemented as prescribed** (`server/library/routes.py`):
+  `public, s-maxage=31536000, immutable` with `staleTime: Infinity`, so the whole library
+  costs one origin read per deploy and then no DB time and no invocations at all. `?v=` is the
+  deploy id from `web/src/buildId.ts`, and the parameter is **accepted and ignored** — a
+  response that varied on it would give the cache one body per build ever made. Its only job
+  is that a content edit ships a *new URL* rather than waiting out a year of `immutable`.
+  **It stays AUTHENTICATED, and that is not theatre now that the body is publicly cacheable.**
+  Auth gates who can cause a cache **MISS**, and a miss is an origin read and therefore a Neon
+  wake — so an unauthenticated library endpoint would hand a bot exactly the wake that
+  `POST /api/auth/demo` was rewritten to remove. It is deliberately not in `PUBLIC_ROUTES`.
+  ⚠️ `GET /api/vocabulary` deliberately keeps `private, max-age=3600`. **The two rules differ
+  on purpose** — see that endpoint's own bullet under "Onboarding and the profile" for why it
+  has no business in a shared cache; do not "harmonise" them.
 - **Two connection strings**: the pooled `-pooler` endpoint for the app
   (`DATABASE_URL`), the **direct** endpoint for Alembic (`DATABASE_URL_UNPOOLED`) —
   DDL and `CREATE TYPE` need a real session, and a migration through the pooler tends
   to **hang rather than error**.
+
+#### ⚠️ `/api/library` is USER-INDEPENDENT, permanently
+
+`/api/library` is served from a **shared** CDN, keyed on the URL alone, with **no
+`Vary: Authorization`**. So a per-user field on that response is handed out of one user's
+cache entry to a different user, and **no behavioural test can catch it**: the leak happens
+between two requests, inside an intermediary this repository does not run, with every test in
+the suite green. **Adding a user-scoped field to this response is a SECURITY change, not a
+feature change.**
+
+Per-user state *about* exercises — the "I don't have this gear" flag, personal bests, anything
+derived from a `user_*` table — goes on a **separate endpoint that is never CDN-cached**. This
+is concrete rather than hypothetical: **PR #11's "I don't have this gear" flag is exactly the
+field that would spring it**, and it is the obvious thing to bolt onto a payload that already
+lists every exercise's equipment requirements.
+
+`tests/test_library_contract.py` pins the field list and the cache header. It needs no
+database, so it runs in the local gate, and it goes red on the diff that adds the field — a
+pinned list is the only guard shape available when the failure is invisible to behaviour.
 
 ### Engine config — the omissions are the point
 
@@ -824,13 +882,32 @@ line that appeared in the original plan:
   nothing in `server/` reads `alembic_version`, so a schema/code mismatch is not detected
   or warned about at boot. If one is ever added it must only **READ** and **warn**, never
   migrate; weigh it against the Neon wake it would cost on every cold start.
-- Seeding reference data is `uv run python -m server.seed`, run **after** a migration.
-  `server/seed.py` is the **single** seed module — CI, local work and production all
-  call it, because a test fixture with hand-written rows tests a table production never
-  has. It **upserts and never deletes**: user rows reference `grade.id`, so retiring a
-  grade is a deliberate migration, not a side effect of editing a tuple. It also seeds
-  the **demo account** (`demo@climb-trainer.example`, `password_hash = NULL`), which is
+- Seeding is **TWO modules, in this order**, both run **after** a migration:
+  `uv run python -m server.seed`, then `uv run python -m server.contentseed`. CI, local work
+  and production all call both, because a test fixture with hand-written rows tests a table
+  production never has. The split is **derived vocabulary versus authored content**:
+  `server/seed.py` holds what comes from a tuple, `server/contentseed.py` holds the exercise
+  library, and the second resolves aspect, equipment and injury **keys** to ids — so it cannot
+  run first, and it fails loudly rather than quietly if the vocabularies are missing.
+  `server/seed.py` **upserts and never deletes**: user rows reference `grade.id`, so retiring
+  a grade is a deliberate migration, not a side effect of editing a tuple. **`contentseed.py`
+  is the documented exception to that** — see the durability section below. `seed.py` also
+  seeds the **demo account** (`demo@climb-trainer.example`, `password_hash = NULL`), which is
   deployment fixture data, not user data.
+- **Shipping a content edit to production is `action=upgrade` + `seed=true`.** There is no
+  seed-only action and both seed steps hang off that one `seed` input, so a library change
+  rides an upgrade run even when the revision it needs is already applied. ⚠️ **And it needs
+  the ref**: the job definition *and* the content both come from the ref you select, so a
+  dispatch without `--ref dev` runs `main`'s workflow file and seeds `main`'s library — which,
+  before a promotion, is the library you were trying to replace. See trap 2 below.
+- **An UNCOMMITTED, UNDEPLOYED revision may be AMENDED rather than stacked**, and the check is
+  two-part: `git log --all -- migrations/versions/<file>` returns nothing, **and** both
+  environments' applied revision is read back. Both, because either alone is a guess — history
+  says nobody else can be holding it, the readback says no database has run it. Amending one
+  that has run anywhere is how two databases end up with the same revision id over different
+  schemas. `0007` qualified on both counts: never committed, and production run
+  `32654384094` and dev run `32653834390` each read back `0006 (head)`. Once a revision exists
+  on any branch or is applied anywhere it is frozen, and the fix is a new revision.
 - **`DEMO_USER_ID` is pinned at 1 and is part of the data contract** — demo tokens carry
   it as `sub` so `POST /api/auth/demo` needs no lookup. Changing it is a migration. The
   seed inserts that id explicitly and therefore **repairs `app_user_id_seq`** afterwards
@@ -871,6 +948,23 @@ rules, not preferences.
   deletes**, so re-seeding production cannot remove an account; and `app_user.invite_id` is
   **`ON DELETE RESTRICT`**, so a spent invite cannot be deleted out from under the record of
   who used it.
+- **⚠️ `server/contentseed.py` DOES delete `exercise` rows, and it is the one seed that may.**
+  Kilian's call: dropping a key from `server/domain/exercises.py` must *really* delete the
+  exercise, because a library that only ever grows is a library nobody can curate. What makes
+  that safe against a real training diary is a chain of three, and **all three links are
+  load-bearing**:
+  1. `session_block.exercise_id` and `logged_set.exercise_id` are **`NO ACTION`**, so Postgres
+     refuses to delete a referenced exercise rather than cascading into somebody's history.
+  2. The seed asks **`EXISTS` first and never catches the foreign-key error.** A failed
+     statement aborts the whole Postgres transaction and this module runs inside one
+     `session_scope()`, so a caught `IntegrityError` would poison every statement after it and
+     the run would report success having written nothing.
+  3. A referenced exercise gets **`retired_at`** instead: the row stays, and it disappears from
+     `GET /api/library`. A diary that forgets what you did is worse than a library carrying one
+     row too many.
+  Deletes are scoped twice over — to the exercise ids the module authors, and to child rows
+  nothing in the schema can reference — so no user row can be orphaned by one. Vocabulary rows
+  are upserted here too and are never deleted.
 
 #### How to actually run one: `.github/workflows/migrate.yml`
 
@@ -1007,7 +1101,8 @@ reader would otherwise try to undo:
   hygiene, they are FK targets. **The technique is the house pattern for a denormalisation:
   if you copy a column down, tie it back.** One place deliberately does not
   (`logged_set.exercise_id` vs its prescription's) — see that model's docstring for the cost
-  argument and the PR #10 write-path obligation it creates instead.
+  argument and the write-path obligation it creates instead — **issue #62**, not PR #10,
+  which shipped a read-only library and no write path at all.
 
 - **`ascent.tags` is gone.** Tags were `text[]` + a GIN index; they are now the seeded
   `ascent_tag` lookup plus the `ascent_tag_link` join (Kilian, 2026-08-21 — reasoning in
@@ -1033,9 +1128,19 @@ reader would otherwise try to undo:
     constraint *looks* like coverage.
   - ⚠️ **Every remaining foreign key is `NO ACTION`/`RESTRICT` and is deliberately
     unindexed** — a different argument, not an oversight. Those parents are reference rows
-    the seed never deletes (`grade`, `exercise`, `equipment`, `climbing_aspect`,
-    `injury_area`, `ascent_tag`) or, for `app_user.invite_id`, a row RESTRICT exists to make
-    undeletable. No delete means no referencing-side scan and nothing for an index to save.
+    nothing deletes (`grade`, `equipment`, `climbing_aspect`, `injury_area`, `ascent_tag`)
+    or, for `app_user.invite_id`, a row RESTRICT exists to make undeletable. No delete means
+    no referencing-side scan and nothing for an index to save.
+    ⚠️ **`exercise` is no longer one of those, and the decision is unchanged.**
+    `server/contentseed.py` deletes unauthored exercises, so the `EXISTS` that decides
+    delete-versus-retire really does seq-scan `session_block`. **Still no index**, on a
+    different argument: that scan runs only on a **seed dispatch** — a rare, manual,
+    out-of-band admin operation — and only for keys the content has *dropped*, so on virtually
+    every run there are none and the query is skipped outright; and `session_block` is small
+    (~30 blocks per generated plan). An index would buy write amplification and storage on
+    every plan generated, forever, to save milliseconds on an operation nobody performs in the
+    request path. (`logged_set.exercise_id` is already indexed for unrelated reasons, so that
+    half is free.)
     **Do not "complete the set"** — that is a dozen indexes bought with write cost and
     storage against a 0.5 GB budget, for a lookup nothing performs.
 - **`activity.srpe_load` casts: `rpe::integer * duration_minutes`.** Both operands are
@@ -2094,6 +2199,22 @@ a traceback, password included (see `server/db.py::host_of` — that cost 51 pri
 once). `require_migration_host` is **satisfied**, not bypassed — the host is genuinely local,
 and `CT_ALLOW_REMOTE_MIGRATION` is never set outside `.github/workflows/migrate.yml`.
 
+**The behind-head canary in `tests/conftest.py` is TWO lists, and a column-only revision needs
+an entry.** It *skips* rather than fails when the database is reachable but behind head, because
+migrations here are out-of-band behind an approval gate — being told to upgrade is useful, a
+wall of red is not. `_REQUIRED_TABLES` cannot see a revision that adds no table: `0007` adds two
+`exercise` columns and nothing else, the session-scoped `seeded` fixture writes one of them, so
+against a database still at `0006` the table check passed and every DB-backed test **errored out
+of a session-scoped fixture** instead of skipping. `_REQUIRED_COLUMNS` is the fix, on the same
+discipline as the table list: **one canary per revision that adds only columns, and only for a
+column a FIXTURE or a shared helper writes.** A column a single test reads stays out — that test
+fails on its own and reads clearly.
+⚠️ **Recorded honestly: this skip path has never executed in either environment.** It needs a
+reachable database sitting at an older revision, and neither place can produce one — the local
+gate pins `DATABASE_URL` empty so nothing connects at all, and CI runs `alembic upgrade head`
+before pytest and then *fails the build* on any skip. The branch is reasoned, not observed;
+treat a change to it as untested code and construct the state by hand if you need to trust it.
+
 **Three Postgres majors move as one: local `postgresql@17` = CI's `postgres:17-alpine` =
 Neon's major.** Bump one, bump all three in the same PR. A local pass on a different major
 proves nothing about CI, and CI proves nothing about Neon.
@@ -2211,7 +2332,7 @@ and the same leak sent a stray `alembic upgrade head` at production's neighbour 
 DATABASE_URL="${CT_TEST_DATABASE_URL:-}" DATABASE_URL_UNPOOLED=""
 ```
 
-- **Locally**: both empty, the 86 DB-backed tests skip, nothing connects. A skip is visible;
+- **Locally**: both empty, the 102 DB-backed tests skip, nothing connects. A skip is visible;
   a silent connection to someone's real database is not.
 - **Deliberately, against the local Postgres**: export `CT_TEST_DATABASE_URL` and run
   `npm run db:up` once (see "Local Postgres for the test suite"). That is the only way to opt
@@ -2303,7 +2424,10 @@ it breaks on every refactor and catches nothing.
   before it is written.
 - Project-wide invariants that silently rot — the routing contract
   (`tests/test_routing.py`), the version wiring (`tests/test_version.py`), the
-  route-enumeration auth and demo-mode tests.
+  route-enumeration auth and demo-mode tests, and **`/api/library`'s pinned field list**
+  (`tests/test_library_contract.py`), whose failure mode is invisible to every behavioural
+  test *by construction*: a shared-cache leak happens between two requests in an intermediary
+  this repo does not run, so a literal list going red on the diff is the only guard available.
 
 **SKIP tests for:**
 
@@ -2777,9 +2901,13 @@ weakness**, the editor became sections rather than a second wizard, and there is
   both request and response models, and `equipment_reviewed_at` is retired. **`user_equipment`,
   every `exercise_equipment` requirement and the whole vocabulary are untouched.** Whether
   `user_equipment` becomes a record of what is LACKED, or a second concept beside it, is
-  **PR #10's decision** — the issue says so explicitly, because the alternatives lookup is what
-  gives the flag its meaning, and choosing now would be choosing without the thing that
-  decides it. Re-adding a write path is that PR's job, with the decision attached.
+  **still open** — the alternatives lookup is what gives the flag its meaning, and choosing
+  without it would be choosing without the thing that decides it. **PR #10 decided only where
+  it CANNOT live: not on `GET /api/library`.** That response is cached for every user at once
+  in a shared CDN, so a "this user lacks it" field there is a cross-account leak by
+  construction — see "⚠️ `/api/library` is USER-INDEPENDENT, permanently". Whatever shape the
+  storage takes, the read path is a separate endpoint that is never CDN-cached. Re-adding a
+  write path is a later PR's job, with the decision attached.
   The three bullets that follow are the history of the step that was, and every one of them is
   still worth reading before designing its replacement.
 - **The equipment vocabulary covers FACILITIES, GEAR AND ROCK — it is not a gear inventory**
@@ -2796,13 +2924,25 @@ weakness**, the editor became sections rather than a second wizard, and there is
 - **⚠️ There is deliberately no `bodyweight` equipment row, and two obligations replace it.**
   A checkbox for having a body is noise, and a user who forgot to tick it would be back in
   the "empty set means nothing" hole. Instead: **an exercise with no `exercise_equipment`
-  rows requires nothing and is always prescribable**, which makes two things owed —
-  **PR #10** must seed enough such exercises (bodyweight strength, core, mobility, prehab)
-  that a profile with zero equipment still gets a real plan, and must carry any per-exercise
-  substitution hints ("no dumbbell? a loaded backpack") on the exercise row next to the
-  movement they apply to, not in a vocabulary; **PR #11** must never refuse to generate for
-  lack of equipment. `tests/test_equipment_vocabulary.py` guards the no-`bodyweight`-row half
-  and the outdoor-coverage half.
+  rows requires nothing and is always prescribable**, which made two things owed. Both are now
+  settled, and neither landed as written.
+  **PR #10 paid the first, NARROWED** (Kilian, 2026-08-23). Every *aspect* has a gearless
+  option, but coverage is not per cell: a modern climbing gym has the full equipment set and
+  gym access is the expected case, so the library spends its breadth on gear rather than on a
+  bodyweight variant of every (phase, aspect) pair. **17 cells have no gearless candidate**,
+  enumerated in `CELLS_WITH_NO_GEARLESS_OPTION` (`server/domain/exercises.py`) behind a guard
+  that fails in **both** directions — so the list can rot into neither an oversight nor a
+  stale exemption for a cell somebody has since filled. Substitution hints ("no dumbbell? a
+  loaded backpack") did land where required: `exercise.substitution_hint`, next to the
+  movement, not in a vocabulary.
+  **The second is SUPERSEDED.** "PR #11 must never refuse to generate for lack of equipment"
+  is withdrawn (Kilian, 2026-08-23): the generator **may** refuse, but it must **say so and
+  name the missing equipment**. A plan silently thinned to whatever is at hand is worse than
+  being told what to go and find. Tracked as **issue #61** and deferred to a later PR, with
+  one constraint attached: **it must not become the deleted onboarding equipment step behind a
+  gate** — re-read the hard dead-end bullet above before designing it.
+  `tests/test_equipment_vocabulary.py` still guards the no-`bodyweight`-row half and the
+  outdoor-coverage half.
 - **⚠️ The improvised-load copy on that step has a SAFETY boundary that is not optional.**
   It says most exercises that add weight work with whatever is to hand — a loaded backpack,
   water bottles, a rock — and then says finger-strength protocols need a real edge and are
