@@ -78,10 +78,27 @@ PUBLIC_ROUTES: Final[frozenset[tuple[str, str]]] = frozenset(
 
 MUTATING_METHODS: Final[frozenset[str]] = frozenset({"POST", "PUT", "PATCH", "DELETE"})
 
-# The single route a demo token is allowed to POST to: the one that mints it. Enumerated
-# rather than pattern-matched, so widening it is a visible diff.
+# The routes a demo token may POST to. Enumerated rather than pattern-matched, so widening
+# it is a visible diff — and this list is deliberately tiny, because it is the one place
+# "demo mode is read-only" can be undone. **A reviewer should stop on any addition here.**
+#
+# 1. `POST /api/auth/demo` mints the token, so a client that already holds one must still be
+#    able to call it. It issues zero SQL.
+# 2. `POST /api/plans/preview` **writes nothing**, and that is enforced three ways rather
+#    than asserted:
+#      - the generator is a pure module — no DB, no clock, no RNG — held pure by the ruff
+#        `TID251` rule in `server/domain/.ruff.toml`, which bans `server.db`, `server.models`
+#        and `sqlalchemy` inside `server/domain/`;
+#      - the handler in `server/plans/routes.py` issues only `SELECT`s, and
+#        `tests/test_plans_api.py` proves it behaviourally by counting `plan`, `mesocycle`
+#        and `planned_session` rows after a successful preview;
+#      - for a demo principal `get_request_session` below has already issued
+#        `SET LOCAL transaction_read_only`, so **Postgres itself** would refuse a write.
+#    It is a POST only because a per-user body on a cacheable verb is the `/api/library` CDN
+#    trap; without this entry the demo mount 403s and the plan screen is dead there, which
+#    is the one screen the portfolio exists to show.
 DEMO_WRITE_EXEMPT_ROUTES: Final[frozenset[tuple[str, str]]] = frozenset(
-    {("POST", "/api/auth/demo")}
+    {("POST", "/api/auth/demo"), ("POST", "/api/plans/preview")}
 )
 
 # A literal constant. There is no interpolation here and there must never be any — this

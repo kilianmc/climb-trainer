@@ -19,7 +19,12 @@ The ones that earn their place loudest:
    prevents is not a broken build, it is a pulley injury. The matcher is word-boundary
    based and carries its own positive control, because the naive substring version found
    `"door"` inside `"outdoor"` and would have gone red on an honest hint.
-3. **Every equipment row is reachable.** A vocabulary row no exercise requires is a
+3. **The coverage guard uses the GENERATOR's `candidates()`.** It describes itself as
+   "everything the generator could prescribe in one cell of the grid", and that claim is
+   only true while it *is* the generator's function — a private copy here would keep passing
+   after the generator's filter changed. `tests/test_planner_selection.py` tests that
+   function directly, positive control included, so this file's use of it cannot go vacuous.
+4. **Every equipment row is reachable.** A vocabulary row no exercise requires is a
    checkbox that changes nothing, which is the dead end `outdoor_boulders` and
    `outdoor_routes` were added to fix in the first place.
 
@@ -29,9 +34,18 @@ cells PR #11 has to handle by fallback.
 
 Each was shown to fail before being trusted (CLAUDE.md, "A guard test must be SHOWN to
 fail"): dropping `hip_mobility_flow`'s equipment-free status, adding a hint to
-`max_hangs_20mm`, giving `hollow_body_hold` an equipment requirement, emptying the two
-`foam_roller` requirements and deleting a row from `DELIBERATELY_UNPRESCRIBED` each turn
-the relevant test red, naming the aspect, the exercise or the cell.
+`max_hangs_20mm`, giving `hollow_body_hold` an equipment requirement and emptying the two
+`foam_roller` requirements each turn the relevant test red, naming the aspect, the exercise
+or the cell.
+
+⚠️ **Deleting a row from `DELIBERATELY_UNPRESCRIBED` no longer reaches a test in this file,
+and the shape has moved twice.** `selection.py`'s `_validate_aspect_emphasis()` runs at
+import and raises first, so the coverage guard's own red is shadowed. Re-measured 2026-08-24:
+it is now not even a collection error here — `tests/conftest.py` imports `server.app`, which
+since `POST /api/plans/preview` imports the planner, so the `ValueError` aborts **conftest
+import and therefore the whole suite**. Louder, and a more accurate diagnosis (the emphasis
+table really is missing an aspect the library prescribes), but it is not this file going red;
+`_validate_aspect_emphasis`'s message points here for that reason.
 """
 
 import re
@@ -47,6 +61,7 @@ from server.domain.exercises import (
     ExerciseSpec,
     PrescriptionSpec,
 )
+from server.domain.planner.selection import candidates
 from server.domain.vocabulary import (
     CLIMBING_ASPECTS,
     EQUIPMENT,
@@ -56,6 +71,11 @@ from server.domain.vocabulary import (
 )
 from server.models import SUBSTITUTION_HINT_MAX
 
+# ⚠️ PUBLIC because `tests/test_planner_gearless.py` imports it: a shortfall message is the
+# other place an improvised-edge suggestion could appear, and the two must be checked by the
+# SAME matcher. A second copy there would drift, and the copy that drifts is the one that
+# stops catching things.
+#
 # Word STEMS that only appear in a hint if someone is suggesting an improvised edge. Matched
 # against `substitution_hint` **only**, and not against `instructions`: the no-equipment
 # finger option names a door frame and a towel precisely in order to rule them out, and a
@@ -68,7 +88,7 @@ from server.models import SUBSTITUTION_HINT_MAX
 # test — and the tempting fix is to delete the entry, which is the one change that must
 # never be made here. A leading `\b` with no trailing one keeps `doorway`, `doors`,
 # `improvised`, `edges` and `rungs` caught.
-_IMPROVISED_EDGE_STEMS = (
+IMPROVISED_EDGE_STEMS = (
     "door",
     "towel",
     "improvis",
@@ -82,7 +102,7 @@ _IMPROVISED_EDGE_STEMS = (
     "rung",
     "joist",
 )
-_IMPROVISED_EDGE_RE = re.compile(r"\b(?:" + "|".join(_IMPROVISED_EDGE_STEMS) + ")", re.IGNORECASE)
+IMPROVISED_EDGE_RE = re.compile(r"\b(?:" + "|".join(IMPROVISED_EDGE_STEMS) + ")", re.IGNORECASE)
 
 
 def test_every_aspect_has_an_exercise_that_needs_no_equipment() -> None:
@@ -107,16 +127,6 @@ def test_every_aspect_has_an_exercise_that_needs_no_equipment() -> None:
     )
 
 
-def _candidates(phase: Phase, aspect_key: str) -> list[ExerciseSpec]:
-    """Everything the generator could prescribe in one cell of the (phase, aspect) grid."""
-    return [
-        spec
-        for spec in EXERCISES
-        if spec.aspect_key == aspect_key
-        and any(prescription.phase is phase for prescription in spec.prescriptions)
-    ]
-
-
 def test_every_phase_and_aspect_pair_is_prescribable_or_deliberately_not() -> None:
     """The coverage contract: no silent holes in the 56-cell grid.
 
@@ -134,7 +144,7 @@ def test_every_phase_and_aspect_pair_is_prescribable_or_deliberately_not() -> No
         (phase, spec.key)
         for spec in CLIMBING_ASPECTS
         for phase in Phase
-        if not _candidates(phase, spec.key)
+        if not candidates(phase, spec.key)
     }
     undocumented = sorted((phase.value, aspect) for phase, aspect in empty - exempt)
     assert not undocumented, (
@@ -162,8 +172,8 @@ def test_the_gearless_gap_inventory_matches_the_library() -> None:
         (phase, spec.key)
         for spec in CLIMBING_ASPECTS
         for phase in Phase
-        if (candidates := _candidates(phase, spec.key))
-        and not any(not candidate.equipment_keys for candidate in candidates)
+        if (cell := candidates(phase, spec.key))
+        and not any(not candidate.equipment_keys for candidate in cell)
     }
     recorded = set(CELLS_WITH_NO_GEARLESS_OPTION)
     assert computed == recorded, (
@@ -221,7 +231,7 @@ def test_no_substitution_hint_suggests_improvising_an_edge() -> None:
     offenders = {
         spec.key: spec.substitution_hint
         for spec in EXERCISES
-        if spec.substitution_hint is not None and _IMPROVISED_EDGE_RE.search(spec.substitution_hint)
+        if spec.substitution_hint is not None and IMPROVISED_EDGE_RE.search(spec.substitution_hint)
     }
     assert not offenders, (
         f"these substitution hints read as improvised finger loading: {offenders}. Adding "
@@ -242,7 +252,7 @@ def test_the_improvised_edge_matcher_reads_words_not_substrings() -> None:
         "No dumbbell? A packed backpack or a full bottle is load enough.",
         "No band? Hold a broom handle wide and trace the same arc.",
     ):
-        assert not _IMPROVISED_EDGE_RE.search(safe), f"false positive on {safe!r}"
+        assert not IMPROVISED_EDGE_RE.search(safe), f"false positive on {safe!r}"
     for unsafe in (
         "No hangboard? A door frame works at the same depth.",
         "Hang from a ceiling joist or an exposed beam.",
@@ -251,7 +261,7 @@ def test_the_improvised_edge_matcher_reads_words_not_substrings() -> None:
         "Any edge or ledge around the house will do.",
         "A home-made hangboard costs nothing.",
     ):
-        assert _IMPROVISED_EDGE_RE.search(unsafe), f"missed {unsafe!r}"
+        assert IMPROVISED_EDGE_RE.search(unsafe), f"missed {unsafe!r}"
 
 
 def test_keys_are_unique() -> None:

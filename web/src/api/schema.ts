@@ -11,8 +11,8 @@
  *   openapi-sha256  the OpenAPI document it was generated from
  *   types-sha256    everything below this comment block
  *
- * openapi-sha256: a26e48618a0aa16053bac814afb9ae215d3050061322fe2499889f493d69c5b0
- * types-sha256: b98a1fc9b6488b6d069b1e602ccec88c82568aee75a5e9948ebb0aa2df068308
+ * openapi-sha256: e9d2093543ca5f1a231a89257f6d37160dd428c4e7041c15a51b8f70515c64b6
+ * types-sha256: 101f76ecc633990bacf89149f63eeadcbad88278c7ee792baced9b3cd0a32346
  */
 
 export interface paths {
@@ -253,6 +253,33 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/plans/preview': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Preview Plan
+     * @description Build the plan this user's profile implies, and return it. **Writes nothing.**
+     *
+     *     "Writes nothing" is enforced three ways rather than asserted: the generator is pure
+     *     (ruff `TID251` in `server/domain/.ruff.toml`), this handler issues only `SELECT`s, and
+     *     for a demo principal `get_request_session` has already issued
+     *     `SET LOCAL transaction_read_only`, so Postgres itself would refuse. The behavioural
+     *     proof is in `tests/test_plans_api.py`, which counts `plan`, `mesocycle` and
+     *     `planned_session` rows after a successful preview.
+     */
+    post: operations['preview_plan_api_plans_preview_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/profile': {
     parameters: {
       query?: never;
@@ -421,6 +448,34 @@ export interface components {
       rated_at: string;
       /** Score */
       score: number;
+    };
+    /**
+     * BlockOut
+     * @description One block of a session.
+     *
+     *     `exercise_key`, not `exercise_id`: the domain is DB-free and speaks keys, the client
+     *     already holds `key` from `useLibrary()`, and it saves a `SELECT`. #11b resolves keys to
+     *     ids at persist time.
+     *
+     *     `rest_between_sets_seconds` has no home in the persisted plan tree — the template has it
+     *     and `session_block` does not — and is carried anyway so the preview is honest. #11b needs
+     *     a column or a redefinition.
+     */
+    BlockOut: {
+      /** Aspect Key */
+      aspect_key: string;
+      /** Exercise Key */
+      exercise_key: string;
+      /** Order Index */
+      order_index: number;
+      protocol_kind: components['schemas']['ProtocolKind'];
+      /** Rest After Seconds */
+      rest_after_seconds: number | null;
+      /** Rest Between Sets Seconds */
+      rest_between_sets_seconds: number | null;
+      /** Sets */
+      sets: components['schemas']['SetOut'][];
+      shortfall: components['schemas']['ShortfallOut'] | null;
     };
     /**
      * ClosedVocabulariesOut
@@ -600,6 +655,60 @@ export interface components {
       user_id: number;
     };
     /**
+     * MesocycleOut
+     * @description One phase block, `start_week`..`end_week` inclusive and 1-based.
+     *
+     *     Not in the plan document's list of nested models, which named only the microcycle and
+     *     below while listing `mesocycles[]` on the response — `mesocycle_spans` has to arrive as
+     *     something, and flattening the tree would drop the phase spans the `/plan` timeline draws.
+     */
+    MesocycleOut: {
+      /** End Week */
+      end_week: number;
+      /** Microcycles */
+      microcycles: components['schemas']['MicrocycleOut'][];
+      phase: components['schemas']['Phase'];
+      /** Start Week */
+      start_week: number;
+    };
+    /**
+     * MicrocycleOut
+     * @description One week. `is_deload` is exactly `phase is Phase.DELOAD`; a taper is known by `phase`.
+     */
+    MicrocycleOut: {
+      /** Is Deload */
+      is_deload: boolean;
+      phase: components['schemas']['Phase'];
+      /** Sessions */
+      sessions: components['schemas']['SessionOut'][];
+      /**
+       * Start Date
+       * Format: date
+       */
+      start_date: string;
+      /** Week No */
+      week_no: number;
+    };
+    /**
+     * NoteKind
+     * @description Why a plan carries a note. Closed, so the client can style or order them.
+     *
+     *     A note is **never a gate**: the plan is complete and nothing is disabled. It exists so
+     *     that a plan which is not quite what was asked for says so, in the plan, instead of
+     *     leaving the user to notice.
+     * @enum {string}
+     */
+    NoteKind: 'fewer_sessions_than_requested' | 'target_beyond_one_plan';
+    /**
+     * NoteOut
+     * @description One honest caveat about the plan as a whole. `kind` is the contract, `message` is copy.
+     */
+    NoteOut: {
+      kind: components['schemas']['NoteKind'];
+      /** Message */
+      message: string;
+    };
+    /**
      * Phase
      * @description A mesocycle's training emphasis.
      *
@@ -610,6 +719,63 @@ export interface components {
      * @enum {string}
      */
     Phase: 'base' | 'strength' | 'power' | 'power_endurance' | 'performance' | 'deload' | 'taper';
+    /**
+     * PlanPreviewRequest
+     * @description One field, and `extra="forbid"` so a probing or typo'd field is a 422, never silence.
+     *
+     *     `start_date` is optional: omitted means "the Monday on or after today, UTC". The server
+     *     normalises whatever it is given the same way, so the two paths cannot disagree — which
+     *     also means a Monday is returned unchanged and today counts as "on or after today".
+     */
+    PlanPreviewRequest: {
+      /** Start Date */
+      start_date?: string | null;
+    };
+    /**
+     * PlanPreviewResponse
+     * @description The whole plan, plus what would be needed to reproduce it.
+     *
+     *     `generator_input` is the canonical JSON of the `PlannerInput` actually used, plus
+     *     `generator_version` and `library_digest`. That digest is load-bearing:
+     *     `server/models.py::Plan` promises that re-running a version on the same input reproduces
+     *     the tree, and **the library is a third input** — without it the promise is false the
+     *     first time content is edited, and the failure is silent.
+     *
+     *     ⚠️ `target_grade_id` and `current_grade_id` are set HERE and are always `None` on the
+     *     blueprint: `PlannerInput` carries ordinals, so the domain never sees a `grade.id`. Note
+     *     `plan` has no `current_grade_id` column, so the field is a preview-only convenience the
+     *     `/plan` header uses for `compareToGoal`; #11b needs a column or has to drop it.
+     */
+    PlanPreviewResponse: {
+      /** Current Grade Id */
+      current_grade_id: number | null;
+      discipline: components['schemas']['Discipline'];
+      /** Generator Input */
+      generator_input: {
+        [key: string]: unknown;
+      };
+      /** Generator Version */
+      generator_version: string;
+      /** Grade Gap */
+      grade_gap: number;
+      /** Mesocycles */
+      mesocycles: components['schemas']['MesocycleOut'][];
+      /** Name */
+      name: string;
+      /** Notes */
+      notes: components['schemas']['NoteOut'][];
+      /** Shortfalls */
+      shortfalls: components['schemas']['ShortfallOut'][];
+      /**
+       * Start Date
+       * Format: date
+       */
+      start_date: string;
+      /** Target Grade Id */
+      target_grade_id: number | null;
+      /** Week Count */
+      week_count: number;
+    };
     /**
      * PrescriptionOut
      * @description The default prescription for one exercise in one phase.
@@ -785,6 +951,28 @@ export interface components {
       password: string;
     };
     /**
+     * SessionOut
+     * @description One planned session. `estimated_minutes` is `null` for a session with no blocks.
+     */
+    SessionOut: {
+      activity_kind: components['schemas']['ActivityKind'];
+      /** Blocks */
+      blocks: components['schemas']['BlockOut'][];
+      /** Estimated Minutes */
+      estimated_minutes: number | null;
+      /**
+       * Scheduled On
+       * Format: date
+       */
+      scheduled_on: string;
+      /** Shortfalls */
+      shortfalls: components['schemas']['ShortfallOut'][];
+      /** Title */
+      title: string;
+      /** Weekday */
+      weekday: number;
+    };
+    /**
      * SessionStatus
      * @description Where a *planned* session got to. Never used on a logged one.
      *
@@ -794,6 +982,48 @@ export interface components {
      * @enum {string}
      */
     SessionStatus: 'planned' | 'in_progress' | 'completed' | 'skipped' | 'rescheduled';
+    /**
+     * SetOut
+     * @description One prescribed set, straight off the `(exercise, phase)` prescription template.
+     *
+     *     `target_load_kg` and `target_grade_id` are present and always `null` in v1.0.0, so the
+     *     wire shape is stable when they are filled. Deriving a load is the one place a bodyweight
+     *     figure could creep into a plan, which CLAUDE.md's weight rule forbids outright.
+     */
+    SetOut: {
+      /** Set Index */
+      set_index: number;
+      /** Target Grade Id */
+      target_grade_id: number | null;
+      /** Target Intensity Pct */
+      target_intensity_pct: number | null;
+      /** Target Load Kg */
+      target_load_kg: string | null;
+      /** Target Reps */
+      target_reps: number | null;
+      /** Target Rest Seconds */
+      target_rest_seconds: number | null;
+      /** Target Rpe */
+      target_rpe: number | null;
+      /** Target Work Seconds */
+      target_work_seconds: number | null;
+    };
+    /**
+     * ShortfallOut
+     * @description An aspect this phase cannot train with the gear assumed, and what would unlock it.
+     *
+     *     `options` is an OR of AND sets: each inner list is a combination that would fill the
+     *     cell. Never a gate — the plan is complete and nothing is disabled.
+     */
+    ShortfallOut: {
+      /** Aspect Key */
+      aspect_key: string;
+      /** Message */
+      message: string;
+      /** Options */
+      options: string[][];
+      phase: components['schemas']['Phase'];
+    };
     /**
      * TokenResponse
      * @description The access token, for the client to hold **in memory only**.
@@ -1041,6 +1271,39 @@ export interface operations {
         };
         content: {
           'application/json': components['schemas']['ExerciseLibraryResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  preview_plan_api_plans_preview_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['PlanPreviewRequest'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['PlanPreviewResponse'];
         };
       };
       /** @description Validation Error */

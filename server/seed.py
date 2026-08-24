@@ -25,7 +25,7 @@ which looks like raw SQL but is `func.setval(...)` with bound values throughout.
 
 from dataclasses import dataclass
 
-from sqlalchemy import func, null, select
+from sqlalchemy import Select, func, null, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
@@ -48,6 +48,7 @@ from server.models import (
     Grade,
     GradeSystem,
     InjuryArea,
+    UserProfile,
 )
 
 # The `.example` TLD is reserved by RFC 2606 and can never be registered, so this
@@ -174,6 +175,7 @@ def seed_reference_data(session: Session) -> SeedResult:
     )
 
     _seed_demo_user(session)
+    _seed_demo_profile(session)
 
     return SeedResult(
         grade_systems=len(grades.GRADE_SYSTEMS),
@@ -277,6 +279,120 @@ def _seed_demo_user(session: Session) -> None:
     _advance_user_id_sequence(session)
 
 
+# The demo profile, as decided with Kilian (2026-08-24). Deployment fixture data, exactly
+# like the demo account it hangs off — the demo mount has to show a real plan, and a plan
+# needs a plannable profile.
+#
+# **French 6a now, French 6b target.** A two-rung sport gap, which the periodisation table
+# turns into 4 blocks and therefore **16 weeks** — long enough to show a base block, the
+# strength/power/power-endurance middle and a performance block with its taper, short enough
+# to scroll. `tests/test_plans_api.py` pins the 16 as a guard: a change to the gap table or
+# to these two labels must not silently reshape the one plan a portfolio visitor sees.
+_DEMO_CURRENT_GRADE_LABEL = "6a"
+_DEMO_TARGET_GRADE_LABEL = "6b"
+
+# Monday, Wednesday, Saturday — bits 0, 2 and 5. Three days for three sessions, so the
+# weekday chooser has exactly one answer and the demo plan is the same every time.
+_DEMO_AVAILABLE_WEEKDAYS = 0b0100101
+_DEMO_SESSIONS_PER_WEEK = 3
+
+# One strength and one weakness, and they MUST differ —
+# `ck_user_profile_strength_and_weakness_differ`. Endurance as the strength and finger
+# strength as the weakness is the ordinary shape of a 6a sport climber, and it is the pair
+# that makes the weakness bias visible in the plan: finger strength is prescribable in six
+# of the seven phases, so it appears in nearly every session.
+_DEMO_STRENGTH_ASPECT_KEY = "endurance"
+_DEMO_WEAKNESS_ASPECT_KEY = "finger_strength"
+
+
+def _seeded_id(session: Session, statement: Select[tuple[int]], what: str) -> int:
+    """One id read back out of the seed's own output, or a loud failure.
+
+    Every id below is resolved by its **key or label through the seeded ladder**, never
+    hardcoded: a serial follows INSERT order, so a literal id is correct only on the database
+    it was read from. A missing row means the vocabulary moved under the demo profile, which
+    is a content decision to take deliberately rather than a row to invent.
+    """
+    found = session.scalar(statement)
+    if found is None:
+        raise DemoUserSeedError(
+            f"the demo profile needs {what}, and the seeded reference data has no such row. "
+            f"Either it was renamed in server/domain/, or this seed ran before its own "
+            f"reference upserts. Fix the reference to match, or retire the demo profile."
+        )
+    return int(found)
+
+
+def _seed_demo_profile(session: Session) -> None:
+    """Upsert the demo account's training profile. Idempotent, and it deletes nothing.
+
+    No migration: every column here exists as of `0006`, and this is a row, not a schema
+    change. **Zero `user_equipment` rows, exactly like every real user** — issue #54 deleted
+    the step that wrote them and `POST /api/plans/preview` assumes the whole vocabulary
+    instead, so seeding gear here would make the demo the one account in the system whose
+    plan came from a different input than everyone else's.
+    """
+    current_grade_id = _seeded_id(
+        session,
+        select(Grade.id)
+        .join(GradeSystem, Grade.grade_system_id == GradeSystem.id)
+        .where(
+            GradeSystem.key == grades.GradeSystemKey.FRENCH.value,
+            Grade.label == _DEMO_CURRENT_GRADE_LABEL,
+        ),
+        f"French {_DEMO_CURRENT_GRADE_LABEL}",
+    )
+    target_grade_id = _seeded_id(
+        session,
+        select(Grade.id)
+        .join(GradeSystem, Grade.grade_system_id == GradeSystem.id)
+        .where(
+            GradeSystem.key == grades.GradeSystemKey.FRENCH.value,
+            Grade.label == _DEMO_TARGET_GRADE_LABEL,
+        ),
+        f"French {_DEMO_TARGET_GRADE_LABEL}",
+    )
+    strength_aspect_id = _seeded_id(
+        session,
+        select(ClimbingAspect.id).where(ClimbingAspect.key == _DEMO_STRENGTH_ASPECT_KEY),
+        f"the {_DEMO_STRENGTH_ASPECT_KEY} aspect",
+    )
+    weakness_aspect_id = _seeded_id(
+        session,
+        select(ClimbingAspect.id).where(ClimbingAspect.key == _DEMO_WEAKNESS_ASPECT_KEY),
+        f"the {_DEMO_WEAKNESS_ASPECT_KEY} aspect",
+    )
+
+    columns = {
+        # Derived from the target grade and never accepted from a client, the same rule
+        # `PATCH /api/profile` follows: a French target IS a rope goal.
+        "primary_discipline": grades.Discipline.SPORT,
+        "target_grade_id": target_grade_id,
+        "current_grade_id": current_grade_id,
+        "sessions_per_week": _DEMO_SESSIONS_PER_WEEK,
+        "available_weekdays": _DEMO_AVAILABLE_WEEKDAYS,
+        "strength_aspect_id": strength_aspect_id,
+        "weakness_aspect_id": weakness_aspect_id,
+        "display_name": "Demo climber",
+        # The injuries step, answered with "nothing is hurting": a timestamp and no
+        # `user_injury` rows is the only way to express that, and without it the demo
+        # account reads as a profile that never reached step 4.
+        "injuries_reviewed_at": func.now(),
+    }
+    statement = insert(UserProfile).values({"user_id": DEMO_USER_ID, **columns})
+    session.execute(
+        # Every column is rewritten on every run, for the same reason `password_hash` is
+        # forced back to NULL above: the demo profile is a fixture, so the seed is what
+        # defines it and a stray edit is undone by the next run. Nothing is deleted — the
+        # demo has no child rows to delete, and `seed.py` never deletes.
+        statement.on_conflict_do_update(
+            index_elements=[UserProfile.user_id],
+            set_={name: statement.excluded[name] for name in columns},
+        )
+    )
+    session.flush()
+
+
 def _advance_user_id_sequence(session: Session) -> None:
     """Push `app_user_id_seq` past the explicitly-inserted demo id.
 
@@ -323,7 +439,7 @@ def main() -> None:
     counts = ", ".join(f"{count} {name}" for name, count in result.reference_rows)
     print(
         f"seeded {result.grade_systems} grade systems, {result.grades} grades, "
-        f"{counts}, and the demo account"
+        f"{counts}, and the demo account with its plannable profile"
     )
 
 

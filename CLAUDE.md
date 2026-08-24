@@ -135,6 +135,13 @@ none. ⚠️ Note the newest one: **a class name in markup with no matching CSS 
 and `styles/markupCss.test.ts` is the only thing in the gate that can see it — `tsc`, ESLint,
 `designGuard` and `contrast` were all green while twelve classes lost their styling twice.
 
+**Touching the plan generator, or `POST /api/plans/preview`** — "The plan generator" (the pure
+module and its ruff-enforced import ban, the grade-gap week table, deload and taper as real
+mesocycles rather than multipliers, the weekday-spread rule and why the obvious "maximise the
+minimum gap" one is wrong, what `generator_version` + `generator_input` + `library_digest`
+promise *together*, the endpoint's `private, no-store` and its demo exemption, and the measured
+payload).
+
 **Building the session player** — "Session player invariants" · "Screen Wake Lock — a
 user-owned TOGGLE, and a progressive enhancement".
 
@@ -2158,12 +2165,32 @@ opt-out flag.
 Two processes. The API on 8000, the SPA on 5173 with Vite proxying `/api` to it:
 
 ```bash
-# terminal 1 — API
-uv run uvicorn server.app:app --port 8000 --reload
+# terminal 1 — API, against LOCAL Postgres
+npm run dev:api
 
 # terminal 2 — SPA (Vite proxies /api -> 127.0.0.1:8000)
-npm --prefix web run dev
+npm run dev
 ```
+
+**`dev:api` is what makes "local" mean local, and it is not optional.** `.env`'s
+`DATABASE_URL` is **dev Neon**, so a bare `uv run uvicorn server.app:app` serves *dev* data
+out of a local process — which is backwards (Kilian's rule: local runs against local, dev
+against dev, production against production). The script therefore prefixes uvicorn with
+`DATABASE_URL="${CT_TEST_DATABASE_URL:-}" DATABASE_URL_UNPOOLED=""`, exactly the trick
+`check:server` already uses for pytest. Run the bare uvicorn command only when you *mean* to
+target dev — and remember a seed added in a feature branch does not exist on dev until the
+branch merges and a seed is dispatched, which is why #11a's demo mount showed a refusal at
+sign-off while local Postgres had the row and every test was green.
+
+Three facts make the prefix work, all in `server/settings.py::_load_local_dotenv()`: **only
+`.env` is read** — `.env.local` is a Vite convention and the API never looks at it — **an
+exported variable beats the file** (`override=False`), and the port must be **8000** because
+`web/vite.config.ts` hardcodes the proxy target.
+
+⚠️ **A local database means LOCAL ACCOUNTS ONLY.** Your dev-Neon account does not exist there
+and registration is invite-gated, so a first login needs an invite minted against the local
+URL — `DATABASE_URL="$CT_TEST_DATABASE_URL" uv run python -m server.admin create-invite
+--label local` — or `server/devseed.py`'s ten accounts.
 
 ### Local Postgres for the test suite
 
@@ -2179,6 +2206,13 @@ npm run db:up      # start the server if down, create the DB if missing, `alembi
 npm run db:reset   # dropdb --force, createdb, upgrade to head
 npm run check:server   # now RUNS the DB-backed tests instead of skipping them
 ```
+
+⚠️ **That export lives in `~/.zshrc`, which a NON-INTERACTIVE shell does not read.** Run the
+gate from a script, a tool call or an agent's shell and the variable is unset, the Postgres
+suite **silently skips**, and the gate is green for the wrong reason. Prefix it —
+`eval "$(grep -h '^export CT_TEST_DATABASE_URL=' ~/.zshrc)"; export CT_TEST_DATABASE_URL` —
+and then **confirm the skip count is 0**, because a bare "N passed" does not distinguish the
+two outcomes.
 
 The `postgres` role and database name deliberately match CI's `postgres:17-alpine` service, so
 the same URL string is valid in both places and there is nothing to translate. The role is
@@ -2900,14 +2934,25 @@ weakness**, the editor became sections rather than a second wizard, and there is
   **What this PR did and did not do:** the step is out of onboarding, `equipment_ids` is out of
   both request and response models, and `equipment_reviewed_at` is retired. **`user_equipment`,
   every `exercise_equipment` requirement and the whole vocabulary are untouched.** Whether
-  `user_equipment` becomes a record of what is LACKED, or a second concept beside it, is
-  **still open** — the alternatives lookup is what gives the flag its meaning, and choosing
-  without it would be choosing without the thing that decides it. **PR #10 decided only where
+  `user_equipment` becomes a record of what is LACKED, or a second concept beside it, was
+  open until #11a and is **now decided — see the next paragraph**. **PR #10 decided only where
   it CANNOT live: not on `GET /api/library`.** That response is cached for every user at once
   in a shared CDN, so a "this user lacks it" field there is a cross-account leak by
   construction — see "⚠️ `/api/library` is USER-INDEPENDENT, permanently". Whatever shape the
   storage takes, the read path is a separate endpoint that is never CDN-cached. Re-adding a
   write path is a later PR's job, with the decision attached.
+  **⚠️ DECIDED (Kilian, 2026-08-24): the "I don't have access to this" flag is UNIFORM across
+  all 17 equipment rows, outdoor ones included — only the wording differs.** His words: *"a
+  user with no 'outdoor' access can also uncheck it, the same as a user with no hangboard can
+  uncheck an exercise. The only difference is the text we show, I would suggest using 'I don't
+  have access to this' or something similar."* So `user_equipment` becomes a record of what is
+  LACKED: one flag, one storage shape, one read path, no outdoor special case — and still
+  **never on `GET /api/library`**, which is the one part of this that was already settled.
+  **PR #11a assumes the full 17-row vocabulary for every user**, because every real user has
+  zero `user_equipment` rows since #54 deleted the step, so reading that table would thin every
+  plan to its bodyweight options. It is behind one named constant —
+  **`_ASSUMED_EQUIPMENT_KEYS` in `server/plans/routes.py`** — so the day the flag lands there is
+  one line to change.
   The three bullets that follow are the history of the step that was, and every one of them is
   still worth reading before designing its replacement.
 - **The equipment vocabulary covers FACILITIES, GEAR AND ROCK — it is not a gear inventory**
@@ -2935,12 +2980,24 @@ weakness**, the editor became sections rather than a second wizard, and there is
   stale exemption for a cell somebody has since filled. Substitution hints ("no dumbbell? a
   loaded backpack") did land where required: `exercise.substitution_hint`, next to the
   movement, not in a vocabulary.
-  **The second is SUPERSEDED.** "PR #11 must never refuse to generate for lack of equipment"
-  is withdrawn (Kilian, 2026-08-23): the generator **may** refuse, but it must **say so and
-  name the missing equipment**. A plan silently thinned to whatever is at hand is worse than
-  being told what to go and find. Tracked as **issue #61** and deferred to a later PR, with
-  one constraint attached: **it must not become the deleted onboarding equipment step behind a
-  gate** — re-read the hard dead-end bullet above before designing it.
+  **The second is SUPERSEDED, and #11a has now answered it.** "PR #11 must never refuse to
+  generate for lack of equipment" was withdrawn (Kilian, 2026-08-23): the generator **may**
+  refuse, but it must **say so and name the missing equipment**. **#11a took the
+  generate-and-name-the-shortfall branch and never refuses for equipment** — every session is
+  built from what the climber has, and each thin or empty slot carries a `Shortfall` naming the
+  gear that would fill it (`selection.unlock_options` / `shortfall_message`). **Equipment
+  refusal is therefore not a thing to "restore"**: none of the six `RefusalReason` members is
+  about gear. **Issue #61 is half-shipped** — the naming exists, the refusing deliberately does
+  not. The constraint still stands: **it must not become the deleted onboarding equipment step
+  behind a gate** — re-read the hard dead-end bullet above before designing it.
+  ⚠️ **The invariant that decision rests on is MEASURED, and two phases have ZERO margin.**
+  Every phase has at least `BLOCKS_PER_SESSION` (3) aspects a gearless climber can train — but
+  `power_endurance` and `performance` have **exactly 3**. One content edit retiring a gearless
+  exercise in either phase silently takes those sessions to two blocks, which is why
+  `tests/test_planner_gearless.py` is parametrised per phase. And read the claim the right way:
+  **"gearless, injury-free" means the CLIMBER has no open injuries, not that the exercise
+  carries no contraindication.** Under the second reading the claim is *false* — 0 fillable
+  aspects in those same two phases — and somebody will eventually read it that way.
   `tests/test_equipment_vocabulary.py` still guards the no-`bodyweight`-row half and the
   outdoor-coverage half.
 - **⚠️ The improvised-load copy on that step has a SAFETY boundary that is not optional.**
@@ -3213,6 +3270,85 @@ weakness**, the editor became sections rather than a second wizard, and there is
   screen, in its own Account section, because #54 asked for it — but it belongs to no step
   either, so the editor composes it separately and it can never move the completion bar.)
 
+## The plan generator (PR #11a — preview only)
+
+`server/domain/planner/` turns a profile into a whole plan tree and `POST /api/plans/preview`
+returns it. **#11a writes no row** — persistence is #11b. Module docstrings carry the detail;
+this is the map and the traps.
+
+- **Module layout.** `contract.py` (`GENERATOR_VERSION`, `PlannerInput`, `RefusalReason`,
+  `CannotPlanError`, `REFUSAL_MESSAGES`) · `periodisation.py` (gap → weeks, phase order,
+  mesocycle spans) · `schedule.py` (weekday mask, date maths) · `selection.py` (`candidates`,
+  `prescribable`, `ASPECT_EMPHASIS`, the shortfall machinery) · `generate.py` (`generate`) ·
+  `blueprint.py` (the frozen output tree) · `fingerprint.py` (`library_digest`,
+  `generator_input`) · `__init__.py`, **a re-export facade that defines nothing** — the
+  definitions live in `contract.py` because `schedule.py` has to raise a refusal, and a
+  definition in the facade the facade re-exports is a cycle. Purity is enforced by
+  `server/domain/.ruff.toml`; see the purity bullet under "Session player invariants".
+- **`week_count` comes from the grade-gap ORDINAL, and the table is literal.** A block is
+  `LOADING_WEEKS 3 + UNLOAD_WEEKS 1`, so weeks are `4 × blocks`:
+
+  | gap | ≤0 | 1 | 2 | 3 | 4 | 5 | ≥6 |
+  | --- | --- | --- | --- | --- | --- | --- | --- |
+  | blocks | 2 | 3 | 4 | 5 | 6 | 7 | 8 |
+  | weeks | 8 | 12 | 16 | 20 | 24 | 28 | 32 |
+
+  ⚠️ The "your target is more than one plan away" note fires at **`gap > 6`, not `>=`**
+  (Kilian, 2026-08-24): at exactly 6 the formula asks for `MAX_BLOCKS` and gets it, so nothing
+  was truncated and telling the user their plan was capped is untrue. **The approved plan
+  document says `>= 6` and is wrong on this point** — do not restore it to match.
+- **Phases are BLOCKS, and deload and taper are real mesocycles.** Each block is its phase's
+  loading weeks plus one `deload` week, and the plan ends on a `taper`. Both read **their own
+  `prescription_template` rows** and are **never a multiplier** over the previous phase's
+  numbers — a deload is a different session, not a quieter one. `is_deload` is exactly
+  `phase is Phase.DELOAD`; the taper is identified by its phase, never by that flag.
+- **⚠️ The weekday spread maximises the ASCENDING-SORTED GAP PROFILE, lexicographically — and
+  the obvious rule is wrong.** "The n-subset maximising the **minimum circular gap**,
+  tie-broken lexicographically" is *undefined past 3 sessions a week*: with 4 of 7 days some
+  pair is always adjacent, so every subset ties at a minimum gap of 1 and the lexicographic
+  tie-break returns **Mon/Tue/Wed/Thu** — four on, three off, the exact opposite of the "it
+  spreads rest" invariant the rule exists for. Every gap profile for a given `n` sums to 7, so
+  "most even profile" *is* "most even", it agrees with the minimum-gap rule everywhere that
+  rule actually decides (Mon–Fri/2 → Mon/Thu, full week/3 → Mon/Wed/Fri) and it decides where
+  that rule does not (full week/4 → Mon/Tue/Thu/Sat). Pinned as literals in
+  `tests/test_planner_schedule.py`. The chosen set is the **same every week**; only the
+  aspect-emphasis rotation varies week to week.
+- **Determinism rests on THREE inputs, and the third is the one nobody would guess.**
+  `server/models.py:874-882` promises that the same `generator_version` + `generator_input`
+  reproduce the same tree. That is false with two inputs, because **the exercise library is an
+  input too**. So `generator_input` carries **`library_digest`**: a sha256 over `EXERCISES`
+  canonicalised through `dataclasses.fields()`, so a new spec field joins it automatically and
+  a *reorder* moves it (authored order is content `selection` reads). **Without the digest that
+  promise breaks the first time a content edit ships, silently.** Deliberately not cached —
+  `functools.cache` would stop a guard test substituting a library.
+- **`POST /api/plans/preview` is `private, no-store`, and that is a security decision, not a
+  cache-tuning one.** The body is per-user and **names the user's open injuries**, so it must
+  never reach the shared CDN-cached path `/api/library` uses — see "⚠️ `/api/library` is
+  USER-INDEPENDENT, permanently" for what a shared cache does with a user-scoped body. It is
+  also the one endpoint where a query-cache persister would be a real data leak rather than a
+  policy breach.
+- **It is the second entry in `DEMO_WRITE_EXEMPT_ROUTES`, and all three demo mechanisms still
+  hold.** It is a `POST` only because the request carries a body: it issues **no `INSERT` and
+  no `UPDATE`** (asserted by a row-count test), the deny-by-default middleware exempts exactly
+  this route and nothing else, and `SET LOCAL transaction_read_only` is still on for a demo
+  principal — so the database would refuse a write even if the code attempted one. Without the
+  entry the demo mount cannot see a plan at all.
+- **The measured payload**, recorded the way `server/library/routes.py:20-27` records the
+  library's, because payload size is the number to watch on both:
+
+  | case | weeks | sessions | prescribed sets | raw | gzip -6 |
+  | --- | --- | --- | --- | --- | --- |
+  | worst (gap ≥7, 7 sessions/wk, full mask, all 17 equipment) | 32 | 224 | 2,421 | 583.2 KiB | 17.5 KiB |
+  | the demo profile (6a→6b, 3/wk) | 16 | 48 | 507 | 124.6 KiB | 4.9 KiB |
+
+  ⚠️ **Even the demo's 16-week plan is larger raw than the entire 85-exercise library** (~90
+  KB); the worst case is ~6.5× it. The plan document's estimate (~1,150 sets, 170–250 KB) was
+  low by 2–3×. What reaches the wire is the compressed figure — Vercel gzips by default — so
+  the transfer is small and the real cost is `JSON.parse` and the client object graph.
+  ⚠️ **Two profiles that look extreme are not the worst case**: zero equipment is *smaller*
+  (fewer prescribable candidates → fewer sets), and a bigger gap is capped at 32 weeks. If it
+  ever bites, the lever is trimming sets beyond the first N weeks, not splitting the endpoint.
+
 ## Session player invariants (PR #15a onward)
 
 Recorded here because each is a specific bug that a naive implementation ships:
@@ -3231,10 +3367,17 @@ Recorded here because each is a specific bug that a naive implementation ships:
   on `visibilitychange`. The **iOS hardware silent switch mutes Web Audio with no
   workaround**, hence a "Test sound" button before the session starts.
 - The plan generator (`server/domain/planner/`) is a **pure module with no DB
-  access** — no clock, no RNG, no I/O; dates are passed in. To be enforced by a ruff
-  banned-import rule, which lands with the planner itself. That purity is what makes
-  `POST /api/plans/preview` (blueprint without writing) possible, which is what makes the
-  demo mount interactive.
+  access** — no clock, no RNG, no I/O; dates are passed in. **Enforced** by the `TID251`
+  banned-import rule in **`server/domain/.ruff.toml`** (`sqlalchemy`, `server.db`,
+  `server.models`, `random`, `secrets`, `time`, `datetime.datetime.now`,
+  `datetime.date.today` — the last two as *attribute accesses*, so importing `date`
+  legitimately and then calling `.today()` is still caught). ⚠️ **Ruff has no per-directory
+  rule section**, so the scoping is hierarchical config discovery: a nested `.ruff.toml` that
+  `extend`s the root, picked up by a plain `ruff check .` with no `--config`. A global ban plus
+  `per-file-ignores` was **rejected** — it inverts a guard into a lint that fires on legitimate
+  code in every other package and gets "fixed" by widening a list. That purity is what makes
+  `POST /api/plans/preview` (blueprint without writing) possible, which is what makes the demo
+  mount interactive — see "The plan generator".
 
 ### Screen Wake Lock — a user-owned TOGGLE, and a progressive enhancement
 

@@ -42,10 +42,15 @@ gearless option is prescribed in `base` hands a gearless climber an empty `power
 Kilian's call, 2026-08-23, is that this is acceptable — the expected user has climbing-gym
 access, so the library spends its breadth on gear rather than on a bodyweight variant per
 cell. `CELLS_WITH_NO_GEARLESS_OPTION` at the bottom of this module is the exhaustive list of
-where that bites. PR #11 is *not* obliged to generate regardless — that obligation was
-withdrawn on the same day, and the generator may refuse as long as it says so and names the
-missing equipment (issue #61). The list exists because those cells need an answer chosen
-deliberately, fallback or refusal, rather than discovered as an empty session at runtime.
+where that bites.
+
+**Decided, 2026-08-24 (Kilian), and this closes issue #61: the generator GENERATES, and
+names the shortfall.** A cell with no prescribable candidate is *displaced* — the slot takes
+the next aspect in `server/domain/planner/selection.py::ASPECT_EMPHASIS` that can be filled —
+and the block carries a `Shortfall` naming the equipment rows that would have opened the
+original. Never a refusal for lack of gear, never a whole-plan refusal, never a gate in front
+of the plan. An earlier reading of this docstring left refusal open as an option; it is not
+one, so do not reintroduce it as a fix for an awkward cell.
 
 ## Empty cells are decisions, and the decision is written down
 
@@ -2689,12 +2694,13 @@ DELIBERATELY_UNPRESCRIBED: Final[tuple[UnprescribedCell, ...]] = (
 # gear gets a real session out of every aspect" — that promise now holds per *aspect*
 # (`tests/test_exercise_library.py` still enforces it) and not per *phase*.
 #
-# The consequence is owed to PR #11: in each cell below, a user who has ticked nothing has no
-# candidate at all, so the generator has to answer for it deliberately — fall back (nearest
-# phase, adjacent aspect, or a rest slot it names honestly), or refuse and name the missing
-# equipment (issue #61; CLAUDE.md's older "must never refuse" obligation was withdrawn on
-# 2026-08-23) — rather than emit an empty session. Discovering that at runtime is the failure
-# this list exists to prevent.
+# The consequence was owed to PR #11 and is now settled (Kilian, 2026-08-24, closing issue
+# #61): **the generator generates, and names the shortfall.** In each cell below a climber
+# who has ticked nothing has no candidate, so the slot is displaced to the next aspect in
+# `ASPECT_EMPHASIS` that can be filled and the block carries a `Shortfall` listing the
+# equipment rows that would have opened this one. It is never a refusal and never a gate.
+# ⚠️ `tests/test_planner_gearless.py` asserts every cell below yields a shortfall with a
+# non-empty `options`, so a cell added here without an unlocking requirement fails loudly.
 #
 # It is an inventory, not a floor: when it changes, update it. The guard test compares it
 # with the library and fails either way round, which is what stops it going stale.

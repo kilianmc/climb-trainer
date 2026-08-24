@@ -45,7 +45,9 @@ packages = [
     "server",
     "server.auth",
     "server.domain",
+    "server.domain.planner",
     "server.library",
+    "server.plans",
     "server.profile",
     "server.vocabulary",
 ]
