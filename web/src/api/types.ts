@@ -49,3 +49,30 @@ export type Injury = Schemas['InjuryOut'];
 export type ProfilePatch = Schemas['ProfilePatchRequest'];
 export type AspectRatingInput = Schemas['AspectRatingIn'];
 export type InjuryInput = Schemas['InjuryIn'];
+
+/**
+ * `POST /api/plans/preview` — the plan the generator would build, never written.
+ *
+ * ⚠️ **A read expressed as a POST, and per-user.** `private, no-store`: unlike
+ * `ExerciseLibrary` this body is assembled from one climber's grades, availability,
+ * declared weakness and open injuries, so it must never reach a shared cache. `useQuery`
+ * is still the right hook — Query's split is about cache semantics, not HTTP verbs.
+ *
+ * Two shapes worth knowing before writing the screen: a block names an `exercise_key`, not
+ * an id (join it against `useLibrary()`), and `PrescribedSetTarget.target_load_kg` is a
+ * **string** (a `Decimal` on the wire) and is `null` for every set in v1.0.0.
+ */
+export type PlanPreviewRequest = Schemas['PlanPreviewRequest'];
+export type PlanPreview = Schemas['PlanPreviewResponse'];
+export type PlanMesocycle = Schemas['MesocycleOut'];
+export type PlanMicrocycle = Schemas['MicrocycleOut'];
+export type PlanSession = Schemas['SessionOut'];
+export type PlanBlock = Schemas['BlockOut'];
+export type PrescribedSetTarget = Schemas['SetOut'];
+/** An aspect a phase cannot train with the gear assumed, and what would unlock it. Never a gate. */
+export type PlanShortfall = Schemas['ShortfallOut'];
+/** An honest caveat about the plan as a whole — fewer sessions than asked, or a capped gap. */
+export type PlanNote = Schemas['NoteOut'];
+export type Phase = Schemas['Phase'];
+export type ActivityKind = Schemas['ActivityKind'];
+export type ProtocolKind = Schemas['ProtocolKind'];

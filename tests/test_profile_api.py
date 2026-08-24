@@ -40,6 +40,7 @@ from server.models import (
     UserInjury,
     UserProfile,
 )
+from server.seed import DEMO_USER_ID
 
 _EMAIL = "onboarding@example.com"
 _PASSWORD = "a-long-enough-passphrase"
@@ -65,6 +66,21 @@ def _patch(client: TestClient, auth: dict[str, str], body: dict[str, object]) ->
     assert response.status_code == 200, response.text
     result: dict[str, Any] = response.json()
     return result
+
+
+def _profiles_other_than_the_demo_fixture(session: Session) -> list[int]:
+    """Every `user_profile` row except the seeded demo account's.
+
+    ⚠️ These tests used to assert the table was **empty**, which stopped being the right
+    claim in PR #11a: `server/seed.py` now seeds a plannable profile for `DEMO_USER_ID`, so
+    the demo mount has a real plan to show. The claim each caller actually makes is that a
+    read, a rejected patch or an empty patch created no row **for the account under test** —
+    excluding the fixture is what makes the assertion say that rather than depending on the
+    seed happening to write no profiles.
+    """
+    return list(
+        session.scalars(select(UserProfile.user_id).where(UserProfile.user_id != DEMO_USER_ID))
+    )
 
 
 def _first_grade_id(session: Session, discipline: str) -> int:
@@ -127,7 +143,7 @@ def test_a_new_account_has_an_empty_profile_and_no_row_is_created_by_reading_it(
     # The one non-null field: a setting with a server default, not an answer.
     assert body["show_body_metrics"] is True
 
-    assert db_session.scalars(select(UserProfile)).all() == []
+    assert _profiles_other_than_the_demo_fixture(db_session) == []
 
 
 def test_step_one_creates_the_row_and_derives_the_discipline_from_the_grade(
@@ -318,7 +334,7 @@ def test_an_id_that_does_not_exist_is_a_422_and_writes_nothing(
     """
     response = api_client.patch("/api/profile", json=body, headers=auth)
     assert response.status_code == 422, response.text
-    assert db_session.scalars(select(UserProfile)).all() == [], (
+    assert _profiles_other_than_the_demo_fixture(db_session) == [], (
         "a rejected patch left a user_profile row behind — validate every lookup id "
         "before the first write"
     )
@@ -360,7 +376,7 @@ def test_an_empty_patch_writes_nothing_at_all(
     """
     response = api_client.patch("/api/profile", json={}, headers=auth)
     assert response.status_code == 200, response.text
-    assert db_session.scalars(select(UserProfile)).all() == []
+    assert _profiles_other_than_the_demo_fixture(db_session) == []
 
 
 def test_submitting_the_injuries_step_with_NO_injuries_still_records_the_answer(
@@ -641,7 +657,7 @@ def test_reset_is_idempotent_and_creates_no_row(
 
     assert first.status_code == 200, first.text
     assert first.json() == second.json()
-    assert db_session.scalar(select(func.count()).select_from(UserProfile)) == 0
+    assert _profiles_other_than_the_demo_fixture(db_session) == []
 
 
 def test_one_users_reset_never_reaches_another(

@@ -1,6 +1,6 @@
 {
   "name": "climb-trainer",
-  "version": "6.1.0",
+  "version": "6.2.0",
   "private": true,
   "description": "Climbing training app — plan generator, guided session player, training diary",
   "engines": {
@@ -8,6 +8,7 @@
   },
   "scripts": {
     "dev": "npm --prefix web run dev",
+    "dev:api": "DATABASE_URL=\"${CT_TEST_DATABASE_URL:-}\" DATABASE_URL_UNPOOLED=\"\" uv run uvicorn server.app:app --port 8000 --reload",
     "build": "npm --prefix web ci && npm --prefix web run build",
     "lint": "npm --prefix web run lint",
     "format": "npm --prefix web run format",
