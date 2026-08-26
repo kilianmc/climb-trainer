@@ -13,7 +13,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from server.app import _CSP_EXEMPT_PATHS, app
-from server.security_headers import API_CSP, PERMISSIONS_POLICY
+from server.security_headers import _FALLBACK_CACHE_CONTROL, API_CSP, PERMISSIONS_POLICY
 from server.settings import get_settings
 
 client = TestClient(app, base_url="https://climb.kilianmc.com", raise_server_exceptions=False)
@@ -59,6 +59,35 @@ def test_every_header_is_set_on_success_and_on_errors(
         f"{method} {path} -> {res.status_code} did not carry the expected security "
         f"headers:\n" + "\n".join(wrong)
     )
+
+
+@pytest.mark.parametrize(
+    ("method", "path", "expected_status"),
+    [
+        ("GET", "/api/health", 200),
+        ("GET", "/api/auth/me", 401),
+        ("GET", "/api/definitely-not-a-route", 404),
+        ("POST", "/api/auth/login", 422),
+    ],
+)
+def test_a_response_that_declares_no_cache_control_is_made_UNCACHEABLE(
+    method: str, path: str, expected_status: int
+) -> None:
+    """The fallback, and it is about error paths.
+
+    A route that stamps `cache-control` onto its injected `Response` **loses it whenever an
+    `HTTPException` propagates** — FastAPI builds the error response from scratch — so before
+    the fallback every 401/404/422 on `/api/plans*` carried no directive at all. Measured on
+    all three of #11b's routes; `tests/test_plans_persist.py` asserts them per route.
+
+    ⚠️ The complement of this test is
+    `tests/test_library_api.py::library`, which asserts `GET /api/library` still answers
+    `public, s-maxage=31536000, immutable` — a real response through this middleware. That
+    pair is the whole invariant: absent means uncacheable, present means untouched.
+    """
+    res = client.request(method, path)
+    assert res.status_code == expected_status
+    assert res.headers.get("cache-control") == _FALLBACK_CACHE_CONTROL
 
 
 def test_the_csp_permits_nothing_dangerous() -> None:

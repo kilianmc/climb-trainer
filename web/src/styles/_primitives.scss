@@ -135,6 +135,10 @@
 
     // Sits in the nav beside links, so it must not read as a call to action. Still a full
     // tap target, and still visibly pressable — quiet is about weight, not about feedback.
+    // Icon and nav buttons ONLY. It is borderless and transparent by design, so a content
+    // button wearing it reads as plain text beside its bordered siblings — which is exactly
+    // how it went wrong on the plan screen's Abandon and Keep actions. Use the base
+    // `&__button` for anything in the page body, destructive actions included.
     &--quiet {
       @include mixins.press(var(--ct-hover));
 
