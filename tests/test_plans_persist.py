@@ -1,39 +1,24 @@
 """`POST /api/plans`, `GET /api/plans/active`, `POST /api/plans/{id}/abandon` — the WRITE path.
 
-The half of PR #11b that can lose data. CLAUDE.md's testing policy asks for real tests on
-"anything that can lose user data" and on "core user paths", and this endpoint is both: it
-inserts a ~2,400-row tree in one transaction and it is the only way a plan ever comes into
-existence.
+The half of PR #11b that can lose data: it inserts a ~2,400-row tree in one transaction and is
+the only way a plan comes into existence.
 
-`tests/test_plans_api.py` covers `/preview` and owns the mirror-image assertion — that a
-preview writes NOTHING. Nothing here duplicates it, and nothing here asserts which exercise
-landed in which block: that is the domain's, tested DB-free in the six `test_planner_*.py`
-files, and restating it would break this file on every content edit.
+`tests/test_plans_api.py` covers `/preview` and owns the mirror-image assertion — that a preview
+writes NOTHING. Nothing here asserts which exercise landed in which block: that is the domain's,
+tested DB-free in the six `test_planner_*.py` files, and restating it would break this file on
+every content edit.
 
-## What each test is FOR, because "it passed" is not the point
+⚠️ **The one-active-plan index needs BOTH of its tests, and both were shown to fail** against the
+local database, each for a different sabotage:
 
-- **The counts across all six tables.** Round 1 of this PR shipped, briefly, a version that
-  committed the `plan` row and silently dropped all ~2,400 descendants — HTTP 201, one
-  `SAWarning`, and nothing in the schema objected, because nothing requires a plan to have a
-  mesocycle. `test_persisting_writes_the_COMPLETE_TREE...` counts every level and, more
-  importantly, counts the rows **reachable from the plan by joins**, so a row that exists
-  but hangs off the wrong parent fails too.
-- **All-or-nothing.** `test_a_failure_PART_WAY_THROUGH...` breaks the insert at the fourth
-  level down, after three levels have already flushed, and demands zero rows everywhere.
-- **The one-active-plan index, and it is a PAIR.** ⚠️ Both halves were SHOWN to fail
-  before being trusted, against the local database, and each one fails for a different
-  sabotage:
-  - `DROP INDEX uq_plan_one_active_per_user` turns
-    `test_the_database_REFUSES_a_second_ACTIVE_plan` red with
-    `E Failed: DID NOT RAISE IntegrityError` — two active plans for one user, accepted.
-  - Recreating it WITHOUT the `postgresql_where` predicate (a plain
-    `CREATE UNIQUE INDEX ... ON plan (user_id)`, which is the one-line edit that loses it)
-    leaves that test passing and turns
-    `test_an_ABANDONED_plan_does_not_block_a_new_active_one` red with
-    `UniqueViolation: duplicate key value violates unique constraint
-    "uq_plan_one_active_per_user"`.
-  Neither test alone distinguishes the right index from a plausible wrong one, which is why
-  there are two. `npm run db:reset` restored it and both went green again.
+- `DROP INDEX uq_plan_one_active_per_user` turns `test_the_database_REFUSES_a_second_ACTIVE_plan`
+  red with `Failed: DID NOT RAISE IntegrityError` — two active plans for one user, accepted.
+- Recreating it WITHOUT the `postgresql_where` predicate (a plain
+  `CREATE UNIQUE INDEX ... ON plan (user_id)`, the one-line edit that loses it) leaves that test
+  passing and turns `test_an_ABANDONED_plan_does_not_block_a_new_active_one` red with
+  `UniqueViolation: ... "uq_plan_one_active_per_user"`.
+
+Neither alone distinguishes the right index from a plausible wrong one.
 
 **Skips without `DATABASE_URL`** (`conftest.py`); CI runs it for real.
 """
@@ -83,22 +68,21 @@ _PASSWORD = "a-long-enough-passphrase"
 # Monday, Wednesday, Saturday — bits 0, 2 and 5.
 _MON_WED_SAT = 0b0100101
 
-# ⚠️ **A ONE-rung gap on purpose, and it is about runtime, not coverage.** The gap drives
-# `week_count`, which drives how many rows a persist inserts: `6c -> 7a+` is 2,421 sets and
-# this file persists a plan a dozen times over. One rung is the shortest real plan, and the
-# tree's *shape* is what these tests assert, not its size. `test_plans_api.py` keeps the
-# long-gap case, and the 2,421-set worst case is measured in `_insert_plan_tree`'s docstring.
+# ⚠️ **A ONE-rung gap on purpose: runtime, not coverage.** The gap drives `week_count`, which
+# drives how many rows each persist inserts, and this file persists a plan a dozen times over.
+# One rung is the shortest real plan, and the tree's *shape* is what these tests assert.
+# `test_plans_api.py` keeps the long-gap case.
 _ONE_RUNG_TARGET = "6c+"
 
 # Committed by the concurrency test, which cannot use the savepoint fixture.
 _RACE_EMAIL = "persist-race@example.com"
 
-# ⚠️ **A FIXED address for the concurrency test, outside `_source_ips`' range, and it is what
-# makes that test locally repeatable.** Its registration COMMITS a `rate_limit` row, and
-# `REGISTER` is 3/hour — so with a counter-allocated address the row could not be cleaned up
-# (the bucket is an HMAC of an address nobody recorded) and the fourth full-file run inside an
-# hour failed on `_register`'s `assert response.status_code == 201`, naming REGISTRATION
-# rather than the limiter. A constant address is a bucket `_purge_race_rows` can compute.
+# ⚠️ **A FIXED address for the concurrency test, outside `_source_ips`' range: it is what makes
+# that test locally repeatable.** Its registration COMMITS a `rate_limit` row and `REGISTER` is
+# 3/hour, so with a counter-allocated address the row could not be cleaned up (the bucket is an
+# HMAC of an address nobody recorded) and the fourth run inside an hour failed on `_register`'s
+# 201, naming REGISTRATION rather than the limiter. A constant is a bucket `_purge_race_rows` can
+# compute.
 _RACE_SOURCE_IP = "203.0.113.119"
 
 # One source address per registration; see `_register`. Starts above `_RACE_SOURCE_IP`, and
@@ -126,14 +110,10 @@ def _register(
 ) -> dict[str, str]:
     """A registered account's bearer header, from its OWN source IP.
 
-    ⚠️ The `x-forwarded-for` is not decoration. `ratelimit.REGISTER` is 3 per hour per IP,
-    this file registers a dozen accounts, and the concurrency test's registration COMMITS
-    its `rate_limit` row rather than rolling it back with a savepoint — so a shared source
-    address makes the limiter, not the plan code, decide the outcome of whichever test runs
-    fourth. Same device as `tests/test_auth_invites.py`, and the same TEST-NET-3 block.
-
-    `source_ip` is passed only by the committing test, which needs a *knowable* bucket — see
-    `_RACE_SOURCE_IP`.
+    ⚠️ The `x-forwarded-for` is not decoration: `ratelimit.REGISTER` is 3/hour/IP and this file
+    registers a dozen accounts, so a shared address would make the limiter decide the outcome of
+    whichever test runs fourth. Same device and TEST-NET-3 block as `tests/test_auth_invites.py`.
+    `source_ip` is passed only by the committing test, which needs a *knowable* bucket.
     """
     response = client.post(
         "/api/auth/register",
@@ -216,10 +196,9 @@ def _body_counts(body: dict[str, Any]) -> dict[str, int]:
 def _reachable_counts(session: Session, plan_id: int) -> dict[str, int]:
     """The same six counts, but only rows REACHABLE FROM THE PLAN by its foreign keys.
 
-    This is the assertion that would have caught round 1's dropped-subtree bug in its other
-    possible form: a row that exists but hangs off the wrong parent is counted by
-    `_counts` and missed here. Every join below is the real foreign key, including
-    `microcycle`'s composite `(mesocycle_id, plan_id)`.
+    A row that exists but hangs off the wrong parent is counted by `_counts` and missed here —
+    the other possible form of the dropped-subtree bug. Every join below is the real foreign key,
+    including `microcycle`'s composite `(mesocycle_id, plan_id)`.
     """
     meso = select(Mesocycle.id).where(Mesocycle.plan_id == plan_id).subquery()
     micro = (
@@ -282,16 +261,15 @@ def test_persisting_writes_the_COMPLETE_TREE_across_ALL_SIX_TABLES(
 ) -> None:
     """201, and every node of the returned tree is a row hanging off the right parent.
 
-    ⚠️ **This is the test round 1 needed and did not have.** Its first draft of
-    `_insert_plan_tree` attached children with `Mesocycle(plan=plan, ...)` — the child-side
-    form — which fails SQLAlchemy's `track_cascade_events` initiator-key gate and persisted
-    the plan row with **none** of its ~2,400 descendants. It returned 201 and committed.
-    Nothing in the schema requires a plan to have a mesocycle, so no constraint objected.
+    ⚠️ **The backref-cascade trap is what this exists for.** Attaching children with
+    `Mesocycle(plan=plan, ...)` — the child-side form — fails SQLAlchemy's `track_cascade_events`
+    initiator-key gate and persists the plan row with **none** of its ~2,400 descendants, with a
+    201 and a commit. **Nothing in the schema requires a plan to have a mesocycle**, so no
+    constraint objects.
 
-    Three counts have to agree, and each catches a different failure: the RESPONSE's tree
-    (what the client was promised), the TABLE totals (what exists), and the rows REACHABLE
-    FROM THE PLAN (what is correctly parented). A dropped subtree fails the second, a
-    mis-parented row fails the third, and a serialiser that invents nodes fails the first.
+    Three counts have to agree, each catching a different failure: the RESPONSE's tree (what the
+    client was promised), the TABLE totals (what exists), and the rows REACHABLE FROM THE PLAN
+    (what is correctly parented).
     """
     _complete_profile(api_client, auth, db_session)
 
@@ -300,8 +278,8 @@ def test_persisting_writes_the_COMPLETE_TREE_across_ALL_SIX_TABLES(
     assert response.status_code == 201, response.text
     body = response.json()
     promised = _body_counts(body)
-    # Not a smoke check: a plan with one empty mesocycle would satisfy every other
-    # assertion here, and is exactly what the dropped-subtree bug produced one level down.
+    # Not a smoke check: a plan with one empty mesocycle satisfies every other assertion here,
+    # and is exactly what the dropped-subtree bug produced one level down.
     assert promised["prescribed_set"] > 0, f"the plan the endpoint returned is empty: {promised}"
     assert _counts(db_session) == promised
     assert _reachable_counts(db_session, body["id"]) == promised
@@ -314,32 +292,25 @@ def test_a_failure_PART_WAY_THROUGH_the_insert_leaves_ZERO_ROWS_IN_ALL_SIX_TABLE
     monkeypatch: pytest.MonkeyPatch,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    """All-or-nothing. **The test this PR exists for.**
+    """All-or-nothing.
 
-    The failure is injected where a real one would land: `_exercise_ids` is made to resolve
-    every key to an `exercise.id` that does not exist, so the insert dies on
-    `session_block`'s foreign key — the FOURTH level, after `plan`, `mesocycle`,
-    `microcycle` and `planned_session` have all flushed. Anything less than a full rollback
-    leaves a plan whose weeks exist and whose sessions have no exercises: a plan the
-    `/plan` screen would render as real.
+    The failure is injected where a real one would land: `_exercise_ids` resolves every key to an
+    `exercise.id` that does not exist, so the insert dies on `session_block`'s foreign key — the
+    FOURTH level, after four levels have flushed. Anything less than a full rollback leaves a plan
+    whose weeks exist and whose sessions have no exercises, which the `/plan` screen renders as
+    real.
 
-    ⚠️ **This test does NOT prove the handler's own `session.rollback()` is necessary**, and
-    an earlier version of this docstring claimed it did. In production it is redundant:
-    `get_session` closes the session, and `Session.close()` rolls back. The test is still
-    non-vacuous — `conftest.py::api_client` hands the handler a savepoint-joined session that
-    is deliberately never closed, so here nothing else would undo the flush — but that is a
-    property of the harness. Do not delete the `rollback()` on the strength of this test
-    passing, and do not keep it on the strength of a reason that is wrong.
+    ⚠️ **This does NOT prove the handler's own `session.rollback()` is necessary** (an earlier
+    version of this docstring claimed it did). In production it is redundant: `get_session` closes
+    the session, and `Session.close()` rolls back. The test is still non-vacuous, because
+    `conftest.py::api_client` hands the handler a savepoint-joined session that is never closed —
+    but that is a property of the harness. Do not delete the `rollback()` on the strength of this
+    test passing, and do not keep it on the strength of a reason that is wrong.
 
-    A 500 is the right answer — an unresolvable exercise id is a bug here, not something the
-    user did — and the 409 branch checks the constraint name, so it does not swallow this.
-
-    ## The 500 must not carry the DB detail, and neither must the LOG
-
-    `str(IntegrityError)` includes the statement **and its bound parameters**, which on the
-    `plan` INSERT means `generator_input` — the climber's open-injury keys. So the profile
-    below declares an injury and this test asserts that key reaches neither the response nor
-    the log, while the constraint name (the thing worth debugging with) reaches the log.
+    **The 500 must not carry the DB detail, and neither must the LOG.** `str(IntegrityError)`
+    includes the statement and its bound parameters, which on the `plan` INSERT means
+    `generator_input` — the climber's open-injury keys. So the profile below declares an injury and
+    this asserts that key reaches neither the response nor the log, while the constraint name does.
     """
     _complete_profile(
         api_client,
@@ -382,12 +353,10 @@ def test_a_MISSING_EXERCISE_KEY_raises_rather_than_inserting_NULL_or_skipping_th
 ) -> None:
     """The library and `server/domain/exercises.py` disagreeing is a 500, and writes nothing.
 
-    Not mocked: an exercise row the generator is about to prescribe is genuinely deleted
-    first (possible only because nothing references it yet), which is the real shape of the
-    failure — a content edit shipped without re-seeding. `_exercise_ids` raises before any
-    insert, and the two alternatives it rejects are both worse: a NULL `exercise_id` is
-    refused by the column, and skipping the block ships a session missing an exercise the
-    user was told they would do.
+    Not mocked: an exercise row the generator is about to prescribe is genuinely deleted first,
+    which is the real shape of the failure — a content edit shipped without re-seeding.
+    `_exercise_ids` raises before any insert; both alternatives are worse (a NULL `exercise_id` is
+    refused by the column, and skipping the block ships a session missing an exercise).
     """
     _complete_profile(api_client, auth, db_session)
     preview = api_client.post("/api/plans/preview", json={}, headers=auth)
@@ -414,15 +383,11 @@ def test_the_database_REFUSES_a_second_ACTIVE_plan(
 ) -> None:
     """`uq_plan_one_active_per_user`, at the level that still holds if a handler forgets it.
 
-    ⚠️ **Shown to fail before being trusted.** With the index dropped from the local
-    database this test reported `E Failed: DID NOT RAISE IntegrityError` — i.e. two active
-    plans for one user, accepted — and went green again once `npm run db:reset` restored it.
-    Without that demonstration this is a test that passes because Postgres refuses
-    *something*, and you cannot tell which. See the module docstring for the other half.
+    ⚠️ **Shown to fail** — see the module docstring for both sabotages.
 
-    Deliberately NOT through the endpoint: `create_plan` stands the old plan down first, so
-    it can never produce two active rows on one connection. This inserts them directly,
-    which is what a future write path that forgot the stand-down would do.
+    Deliberately NOT through the endpoint: `create_plan` stands the old plan down first, so it can
+    never produce two active rows on one connection. This inserts them directly, which is what a
+    future write path that forgot the stand-down would do.
     """
     user_id = _user_id(db_session, _EMAIL)
     db_session.add(_bare_plan(user_id, activated=True))
@@ -442,15 +407,10 @@ def test_an_ABANDONED_plan_does_not_block_a_new_active_one(
 ) -> None:
     """The index is the PARTIAL one, and this is the half that proves the predicate.
 
-    A total unique index on `user_id` would pass the test above and fail this one, which is
-    the realistic way the predicate gets lost — dropping a `postgresql_where` from a
-    revision is a one-line edit that leaves a plausible-looking index behind. A climber who
-    abandons a plan and generates another must not be refused.
-
-    ⚠️ **Shown to fail**: with the index recreated as a plain
-    `CREATE UNIQUE INDEX uq_plan_one_active_per_user ON plan (user_id)` this went red with
-    `UniqueViolation: duplicate key value violates unique constraint
-    "uq_plan_one_active_per_user"`, while its sibling above stayed green.
+    A total unique index on `user_id` would pass the test above and fail this one — the realistic
+    way the predicate gets lost, since dropping a `postgresql_where` is a one-line edit that
+    leaves a plausible-looking index behind. A climber who abandons a plan and generates another
+    must not be refused. ⚠️ **Shown to fail**; see the module docstring.
     """
     user_id = _user_id(db_session, _EMAIL)
     db_session.add(_bare_plan(user_id, activated=True, abandoned=True))
@@ -472,17 +432,14 @@ def test_a_LOST_RACE_is_a_409_and_not_a_500(
 ) -> None:
     """The 409 branch: the index refused the insert, and that is a legitimate answer.
 
-    ⚠️ **The stand-down is suppressed rather than raced, deliberately, and the brief for
-    this round asked for two real connections instead.** Two connections cannot produce a
-    409 *deterministically*: if the two requests happen not to overlap, the second one
-    stands the first down and both correctly return 201. So the concurrency invariant and
-    the 409 branch are two different tests. This is the branch —
-    `_stand_down_active_plan` neutered is exactly the state a request is in when it loses
-    the race, with the previous plan still active when its INSERT lands — and
-    `test_TWO_REAL_CONNECTIONS...` below is the invariant under genuine concurrency.
+    ⚠️ **The stand-down is suppressed rather than raced, deliberately.** Two real connections
+    cannot produce a 409 *deterministically* — if the requests do not overlap, the second stands
+    the first down and both correctly return 201 — so the branch and the concurrency invariant are
+    two tests. Neutering `_stand_down_active_plan` is exactly the state a request is in when it
+    loses the race; `test_TWO_REAL_CONNECTIONS...` below covers genuine concurrency.
 
-    A 500 here would be the real failure: the user does have an active plan, so the client
-    needs "you already have one, refetch", not "something broke".
+    A 500 here would be the real failure: the user does have an active plan, so the client needs
+    "you already have one, refetch".
     """
     _complete_profile(api_client, auth, db_session)
     db_session.add(_bare_plan(_user_id(db_session, _EMAIL), activated=True))
@@ -503,10 +460,9 @@ def test_activating_B_stands_A_down_IN_ONE_TRANSACTION(
 ) -> None:
     """The switch, which is why there is no separate "switch" endpoint.
 
-    Two calls; afterwards exactly one plan is active, the other carries `abandoned_at`, and
-    the two timestamps are the SAME instant — which is the observable consequence of the
-    stand-down and the activation being one transaction with one `_now_utc()`. A gap between
-    them would mean a window with no active plan; an overlap would mean two.
+    Afterwards exactly one plan is active, the other carries `abandoned_at`, and the two timestamps
+    are the SAME instant — the observable consequence of one transaction with one `_now_utc()`. A
+    gap would mean a window with no active plan; an overlap would mean two.
     """
     _complete_profile(api_client, auth, db_session)
     first = _persist(api_client, auth)
@@ -539,11 +495,10 @@ def test_activating_B_stands_A_down_IN_ONE_TRANSACTION(
 def _purge_race_rows() -> None:
     """Committed rows need explicit cleanup — the concurrency test cannot use a savepoint.
 
-    ⚠️ **Two tables, and the second one is the one that was missing.** Deleting the account
-    cascades the plans, but `rate_limit` hangs off nothing: its row survived, and the fourth
-    run of this file inside an hour then 429d the *registration*. The bucket is computable
-    only because `_RACE_SOURCE_IP` is a constant and `conftest.py::_auth_secret` fixes the
-    HMAC key for the whole session.
+    ⚠️ **Two tables.** Deleting the account cascades the plans, but `rate_limit` hangs off nothing,
+    so its row survived and the fourth run of this file inside an hour 429d the *registration*. The
+    bucket is computable only because `_RACE_SOURCE_IP` is a constant and
+    `conftest.py::_auth_secret` fixes the HMAC key for the session.
     """
     with session_scope() as cleanup:
         cleanup.execute(delete(AppUser).where(AppUser.email == _RACE_EMAIL))
@@ -557,13 +512,12 @@ def _purge_race_rows() -> None:
 def test_TWO_REAL_CONNECTIONS_cannot_both_end_up_active(seeded: Engine) -> None:
     """Two genuine simultaneous creates, and the invariant that has to survive them.
 
-    The assertion is the OUTCOME, not the status codes, because the outcome is what matters
-    and the codes are timing: if the two transactions overlap the loser gets a 409, and if
-    they happen to serialise the second one legitimately stands the first down and both get
-    201. Both are correct; **two active plans, or a 500, are not.**
+    The assertion is the OUTCOME, not the status codes: overlapping transactions give the loser a
+    409, and serialised ones legitimately give both 201. Both are correct; **two active plans, or a
+    500, are not.**
 
-    Does NOT use `db_session` or `api_client`: a savepoint on one connection cannot race
-    itself. The rows are committed and cleaned up by hand, like
+    Does NOT use `db_session` or `api_client` — a savepoint on one connection cannot race itself.
+    Rows are committed and cleaned up by hand, like
     `tests/test_auth_invites.py::test_two_simultaneous_registrations_cannot_both_spend_the_last_use`.
     """
     assert not app.dependency_overrides, "this test needs the app's REAL session dependency"
@@ -619,9 +573,8 @@ def test_no_plan_yet_is_a_200_with_a_NULL_plan(
 ) -> None:
     """Every new account's state, and it is an ordinary render rather than an error.
 
-    A 404 would make the normal case a failure at three layers that all treat 4xx as one:
-    `apiFetch` throws, the retry predicate skips 4xx as unwinnable, and a route guard would
-    see `data === undefined`.
+    A 404 would make the normal case a failure at three layers that all treat 4xx as one — see
+    `ActivePlanResponse`.
     """
     response = api_client.get("/api/plans/active", headers=auth)
 
@@ -634,11 +587,9 @@ def test_abandon_sets_the_timestamp_and_is_IDEMPOTENT(
 ) -> None:
     """Marks, never deletes — and a second press keeps the ORIGINAL timestamp.
 
-    When a plan was stood down is the fact the diary wants, not when somebody last pressed
-    the button. Afterwards `GET /active` has nothing to return, and the plan's rows are all
-    still there: `activity.planned_session_id` is the only link from a logged activity to
-    the plan it satisfied, so a delete would destroy the adherence record of sessions the
-    user really did.
+    *When* a plan was stood down is the fact the diary wants. Afterwards `GET /active` has nothing
+    to return and every row is still there: `activity.planned_session_id` is the only link from a
+    logged activity to the plan it satisfied, so a delete would destroy the adherence record.
     """
     _complete_profile(api_client, auth, db_session)
     created = _persist(api_client, auth)
@@ -663,9 +614,9 @@ def test_abandon_404s_on_ANOTHER_USERS_plan_and_does_not_leak_that_it_exists(
 ) -> None:
     """The scoping IS the security property, so the two answers must be identical.
 
-    A 403 on someone else's plan and a 404 on a plan that never existed would let a caller
-    enumerate plan ids — the IDOR read this project treats as its real extraction risk. Both
-    the status and the message are compared, not just the status.
+    A 403 on someone else's plan against a 404 on one that never existed would let a caller
+    enumerate plan ids — the IDOR read this project treats as its real extraction risk. Status
+    *and* message are compared.
     """
     _complete_profile(api_client, auth, db_session)
     created = _persist(api_client, auth)
@@ -692,13 +643,9 @@ def test_a_DEMO_TOKEN_cannot_reach_either_of_the_two_WRITE_routes(
     """403 on both POSTs, with no new code — and the reason there are two, not three.
 
     ⚠️ `GET /api/plans/active` is deliberately NOT refused: `enforce_auth` gates on
-    `MUTATING_METHODS`, and a demo principal reading its own (nonexistent) plan writes
-    nothing. Refusing it would break the demo mount's `/plan` screen for no gain. So the
-    claim is "both write routes are refused", not "all three new routes are".
-
-    Both refusals come from `enforce_auth`, before any handler runs, and
-    `get_request_session` would additionally have issued `SET LOCAL transaction_read_only`
-    on the demo path — Postgres itself is the second layer.
+    `MUTATING_METHODS`, and refusing a read that writes nothing would break the demo mount's
+    `/plan` screen for no gain. Both refusals come from `enforce_auth` before any handler runs,
+    with `SET LOCAL transaction_read_only` as the second layer.
     """
     assert api_client.post("/api/plans", json={}, headers=demo_auth).status_code == 403
     assert api_client.post("/api/plans/1/abandon", headers=demo_auth).status_code == 403
@@ -712,8 +659,8 @@ def test_the_WRITE_routes_are_ABSENT_from_DEMO_WRITE_EXEMPT_ROUTES() -> None:
     """The exemption list is the hole in "demo mode is read-only"; these must not join it.
 
     `/preview` is in it because it writes nothing. These write ~2,400 rows to a shared demo
-    account, and adding an entry would remove BOTH layers of the refusal at once — the 403
-    and the read-only transaction — because the same list gates both.
+    account, and one entry would remove BOTH layers of the refusal, because the same list gates
+    the 403 and the read-only transaction.
     """
     assert ("POST", "/api/plans") not in DEMO_WRITE_EXEMPT_ROUTES
     assert not any(
@@ -732,11 +679,10 @@ def test_the_GENERATION_RECORD_and_the_new_columns_all_ROUND_TRIP(
 ) -> None:
     """`generator_version`, `generator_input`, `current_grade_id`, the block rest, the caveats.
 
-    `generator_version` + `generator_input` together are the reproducibility promise
-    `server/models.py::Plan` makes, and `library_digest` is inside the input because the
-    library is a third input to the generator. `current_grade_id` is stored rather than
-    derived because the profile's current grade drifts as the climber improves.
-    `rest_between_sets_seconds` is `0008`'s other new column and is one of THREE distinct
+    `generator_version` + `generator_input` are the reproducibility promise
+    `server/models.py::Plan` makes, with `library_digest` inside the input because the library is
+    a third input. `current_grade_id` is stored rather than derived because the profile's current
+    grade drifts as the climber improves. `rest_between_sets_seconds` is one of THREE distinct
     rests in this tree, none of which may absorb another.
     """
     _complete_profile(api_client, auth, db_session)
@@ -791,15 +737,15 @@ def test_the_GENERATION_RECORD_and_the_new_columns_all_ROUND_TRIP(
 def test_the_PERSISTED_response_is_the_PREVIEW_shape_plus_ids(
     api_client: TestClient, auth: dict[str, str], db_session: Session
 ) -> None:
-    """ONE wire shape, so `plan.lazy.tsx` needs ONE renderer. The point of round 2.
+    """ONE wire shape, so `plan.lazy.tsx` needs ONE renderer.
 
-    Round 1 returned a parallel shape that dropped `shortfalls`, `notes`, `grade_gap` and a
-    block's `aspect_key`, which would have forced a second renderer for the same tree. The
-    keys are compared structurally at all five levels rather than field by field, so a field
-    added to one path and not the other fails here rather than in the browser.
+    A parallel persisted shape drops `shortfalls`, `notes`, `grade_gap` and a block's
+    `aspect_key`, which forces a second renderer for the same tree. Keys are compared structurally
+    at all five levels rather than field by field, so a field added to one path and not the other
+    fails here rather than in the browser.
 
-    Also asserted: `POST` and `GET /active` return the SAME body, so a client never has to
-    care which one it has, and every `id` is filled on the persisted path.
+    Also asserted: `POST` and `GET /active` return the SAME body, and every `id` is filled on the
+    persisted path.
     """
     _complete_profile(api_client, auth, db_session)
     preview = api_client.post("/api/plans/preview", json={}, headers=auth)
@@ -851,11 +797,10 @@ def test_the_PERSISTED_response_is_the_PREVIEW_shape_plus_ids(
     readback = api_client.get("/api/plans/active", headers=auth)
     assert readback.status_code == 200, readback.text
     reloaded = readback.json()["plan"]
-    # ⚠️ `activated_at` is the ONE field the two bodies render differently, and it is a
-    # rendering difference rather than a data one: the POST serialises the in-memory
-    # `datetime.now(UTC)` as `...Z`, while the re-read gets it back from psycopg in the
-    # server's timezone as `...+02:00`. Same instant, and any ISO-8601 parser agrees — so it
-    # is compared as an instant and everything else is compared byte for byte.
+    # ⚠️ `activated_at` is the ONE field the two bodies render differently, and it is a rendering
+    # difference rather than a data one: the POST serialises the in-memory `datetime.now(UTC)` as
+    # `...Z`, while the re-read comes back from psycopg in the server's timezone. Same instant, so
+    # it is compared as an instant and everything else byte for byte.
     assert datetime.fromisoformat(reloaded.pop("activated_at")) == datetime.fromisoformat(
         persisted["activated_at"]
     )
@@ -872,15 +817,14 @@ def test_the_generators_CAVEATS_survive_a_reload(
 ) -> None:
     """The `/plan` screen's equipment-gap banners, after a reload. `0008`'s new column.
 
-    A real shortfall needs missing gear, and `_ASSUMED_EQUIPMENT_KEYS` is the full
-    vocabulary for every user (Kilian's decision 3) — so the constant is emptied here, which
-    is the ONE line that changes the day the "I don't have access to this" flag lands. The
-    domain is already tested against `()` in `tests/test_planner_gearless.py`; what is under
-    test here is that the caveats reach a column and come back.
+    A real shortfall needs missing gear, and `_ASSUMED_EQUIPMENT_KEYS` is the full vocabulary for
+    every user, so the constant is emptied here. The domain is already tested against `()` in
+    `tests/test_planner_gearless.py`; what is under test is that the caveats reach a column and
+    come back.
 
-    ⚠️ Both levels are asserted. A block's `shortfall` names the aspect the generator
-    **wanted and could not fill**, which is NOT the block's own `aspect_key` — that is
-    exactly why it cannot be derived from the persisted row and has to be stored.
+    ⚠️ Both levels are asserted. A block's `shortfall` names the aspect the generator **wanted and
+    could not fill**, which is NOT the block's own `aspect_key` — exactly why it cannot be derived
+    from the persisted row.
     """
     monkeypatch.setattr("server.plans.routes._ASSUMED_EQUIPMENT_KEYS", ())
     _complete_profile(api_client, auth, db_session)
@@ -915,10 +859,10 @@ def test_an_UNRECOGNISED_caveats_shape_DEGRADES_instead_of_500ing(
 ) -> None:
     """A plan somebody is halfway through must stay OPENABLE, whatever is in the column.
 
-    `plan.generator_caveats` is schemaless by design, so the read path has to survive a
-    shape it does not recognise — a `Shortfall` that gained a required field, a `Phase` that
-    was retired, a hand-edited row. The rule is "treat it as no caveats", never a 500: the
-    plan tree is untouched and the banners are the only thing lost.
+    `plan.generator_caveats` is schemaless by design, so the read path has to survive a shape it
+    does not recognise — a `Shortfall` that gained a required field, a retired `Phase`, a
+    hand-edited row. The rule is "treat it as no caveats", never a 500: the tree is untouched and
+    the banners are all that is lost.
     """
     _complete_profile(api_client, auth, db_session)
     created = _persist(api_client, auth)
@@ -956,18 +900,13 @@ def _conditions(predicate: str) -> set[str]:
 def test_the_ACTIVE_CRITERION_and_the_INDEX_PREDICATE_cannot_drift(db_session: Session) -> None:
     """`_ACTIVE_STATE` and `uq_plan_one_active_per_user`'s predicate, compared as SQL.
 
-    Round 3 shipped `_active_plan_query` with a docstring promising the criterion existed
-    "as a function and not three inlined `where` clauses in three handlers" — and
-    `_stand_down_active_plan` inlined all four predicates verbatim anyway. They agreed, which
-    is exactly why nothing failed. There is now one tuple, and this is the second half: the
-    index can only refuse a SECOND active row, so if the app's criterion and the index's
-    predicate diverged the index would keep passing while the app stopped agreeing with it,
-    and the visible symptom would be a plan that is active to Postgres and invisible to
+    The index can only refuse a SECOND active row, so if the app's criterion and the index's
+    predicate diverged the index would keep passing while the app stopped agreeing with it. The
+    visible symptom would be a plan that is active to Postgres and invisible to
     `GET /api/plans/active`.
 
-    Read back out of `pg_indexes`, i.e. from Postgres' own normalised rendering, rather than
-    from the migration text — `0008` could be edited without a reset and this would still be
-    reading what the database actually enforces.
+    Read back out of `pg_indexes` — Postgres' own normalised rendering — rather than from the
+    migration text, so an edited `0008` cannot fool it.
     """
     indexdef = db_session.scalar(
         text("SELECT indexdef FROM pg_indexes WHERE indexname = :name"),
@@ -992,17 +931,15 @@ def test_a_SUPPLIED_start_date_is_HONOURED_and_NORMALISED_to_a_MONDAY(
 ) -> None:
     """The one field the client owns, on the route that makes it durable.
 
-    ⚠️ Every other test in this file posts `json={}`, so before this one the persist route's
-    date handling was **entirely untested on the server** — and the web half sends
-    `plan.start_date` precisely so a tab left open across midnight cannot save a plan a week
-    from the one on screen. Regressing `create.mutate` to a freshly-recomputed Monday is a
-    silent bug (a plan that starts seven days off), so it needs a loud test on both sides;
-    `web/src/planPersist.test.tsx` holds the other one.
+    ⚠️ Every other test in this file posts `json={}`, so without this the persist route's date
+    handling is untested on the server — and the web half sends `plan.start_date` precisely so a
+    tab left open across midnight cannot save a plan a week off. `web/src/planPersist.test.tsx`
+    holds the other side.
 
-    Two cases, because "normalised" has to mean the same thing twice: a mid-week date moves
-    FORWARD to the following Monday, and a Monday is returned unchanged. Asserted on the
-    response, on the `plan` row, and on the first microcycle — the last is what would catch a
-    normalisation applied to the response and not to the tree.
+    Two cases, because "normalised" has to mean the same thing twice: a mid-week date moves FORWARD
+    to the following Monday, and a Monday is returned unchanged. Asserted on the response, the
+    `plan` row and the first microcycle — the last catches a normalisation applied to the response
+    and not to the tree.
     """
     _complete_profile(api_client, auth, db_session)
     today = datetime.now(UTC).date()
@@ -1031,10 +968,8 @@ def test_a_SUPPLIED_start_date_is_HONOURED_and_NORMALISED_to_a_MONDAY(
 def test_a_start_date_OUTSIDE_THE_BOUND_is_a_422_and_writes_nothing(
     api_client: TestClient, auth: dict[str, str], db_session: Session
 ) -> None:
-    """A stale tab is the real caller here — see `_START_DATE_BACKDATE_DAYS`.
-
-    A page left open more than a week posts a `start_date` the validator refuses, and the
-    422 is what the web half turns into "reload this page" rather than a generic failure.
+    """A stale tab is the real caller here — see `_START_DATE_BACKDATE_DAYS`. The 422 is what the
+    web half turns into "reload this page" rather than a generic failure.
     """
     _complete_profile(api_client, auth, db_session)
     stale = datetime.now(UTC).date() - timedelta(days=30)
@@ -1047,13 +982,12 @@ def test_a_start_date_OUTSIDE_THE_BOUND_is_a_422_and_writes_nothing(
 # `cache-control` on all three routes, on BOTH the happy path and the error paths
 # ---------------------------------------------------------------------------------
 #
-# The bodies are assembled from one climber's grades, availability, declared weakness and
-# **open injuries**, so a shared-cache entry would hand a stranger a picture of somebody's
-# injuries — and no behavioural test would see it happen. The three routes set the header on
-# their injected `Response`, which FastAPI DISCARDS when an `HTTPException` propagates, so
-# every 401/404/422 here carried no directive at all until `SecurityHeadersMiddleware` grew a
-# fallback. See `tests/test_security_headers.py` for the fallback itself and for the
-# complementary guard that `/api/library` keeps its `immutable` directive.
+# The bodies name one climber's **open injuries**, so a shared-cache entry would hand a stranger
+# a picture of somebody's injuries and no behavioural test would see it happen. The routes set the
+# header on their injected `Response`, which FastAPI DISCARDS when an `HTTPException` propagates —
+# so every 401/404/422 carried no directive at all until `SecurityHeadersMiddleware` grew a
+# fallback. `tests/test_security_headers.py` covers the fallback and the complementary guard that
+# `/api/library` keeps its `immutable` directive.
 
 
 def test_the_routes_own_directive_and_the_middleware_fallback_AGREE() -> None:

@@ -29,43 +29,30 @@ import { compareToGoal } from '../../profile/grades';
 
 /**
  * `/plan` — the plan this climber is on, or the one we would build, phase by phase and week by
- * week. **PR #11b made this screen a write surface**: `POST /api/plans` persists a preview
- * activated, and `POST /api/plans/{id}/abandon` stands it down. `POST /api/plans/preview` still
- * writes nothing.
+ * week. Also a write surface: `POST /api/plans` persists a preview activated, and
+ * `POST /api/plans/{id}/abandon` stands it down.
  *
- * ## ⚠️ ONE RENDERER, because a preview and a persisted plan are the SAME SHAPE
+ * ⚠️ **ONE RENDERER, because a preview and a persisted plan are the SAME SHAPE.** `PlanBody`
+ * takes a `PlanTree` without caring which route produced it; the only difference is which
+ * nullable fields are filled (a preview is not a row, so every `id`, plus a block's
+ * `exercise_id`, a session's `status` and the plan's `activated_at`, is `null`). **Do not fork
+ * this into a preview renderer and an active-plan renderer.** What the plan *is* — offered or
+ * running — is said once, above the body, by the affordances.
  *
- * `PlanBody` is unchanged by this PR and takes a `PlanTree` without caring which route produced
- * it. That is what round 2's server work bought: the only difference between the two is which
- * nullable fields are filled — a preview is not a row, so every `id`, plus a block's
- * `exercise_id`, a session's `status` and the plan's `activated_at`, is `null`. Everything the
- * markup reads has the same name and the same meaning on both paths. **Do not fork this into a
- * preview renderer and an active-plan renderer.** What the plan *is* — offered or running — is
- * said once, above the body, by the affordances.
+ * **Four reads, and the order between two of them is a compute decision.** `useProfileScreen`
+ * gives the profile and the vocabulary; `useLibrary` turns a block's `exercise_key` into a name;
+ * `useActivePlanView` says what the climber has. `usePlanPreview` is **held off** until the
+ * active read says there is nothing running or the climber asks for an alternative — generating
+ * 32 weeks is the most expensive read in the app. See `plan/api.ts`.
  *
- * ## Five reads, and the order between two of them is a compute decision
+ * ⚠️ **`ProfileFallback` is deliberately NOT reused.** Its props name two reads; this screen has
+ * four, and each of the extra two failing means something else ("we could not name your
+ * exercises", "we could not check whether you already have a plan") — a different sentence and a
+ * different retry. Widening its props to a list would make it say less on both screens.
  *
- * `useProfileScreen` gives the profile (which decides whether a plan can be asked for at all)
- * and the vocabulary (grade labels, and `compareToGoal` for the goal line); `useLibrary` turns a
- * block's `exercise_key` into a name; `useActivePlanView` says what the climber has.
- * `usePlanPreview` is **held off** until either the active read says there is nothing running or
- * the climber asks for an alternative — generating 32 weeks is the most expensive read in the
- * app, and nobody asked for a second plan by arriving here. See `plan/api.ts`.
- *
- * **⚠️ `ProfileFallback` is deliberately NOT reused, and this is not an oversight to tidy up
- * later.** Its props are `profileFailed` / `vocabularyFailed` and its copy names two reads; this
- * screen has four, and each of the extra two failing means something else — "we could not name
- * your exercises", "we could not check whether you already have a plan" — which is a different
- * sentence and a different retry. Widening those props to a list would make the
- * component say less on both screens than each says now. If you are here to "simplify" this into
- * `ProfileFallback`, that is the argument you have to beat.
- *
- * **Performance is a real constraint here, measured rather than assumed.** The worst-case
- * response is 583 KiB of JSON carrying 2,421 prescribed sets across 32 weeks (the demo's
- * 16-week plan is 124.6 KiB / 507). So the exercise index is built **once** and passed down, a
- * block renders **one line for all of its sets** (`setsLine`), and nothing sorts or filters
- * inside a loop. There is deliberately no virtualisation and no pagination — that is not this
- * PR — but nothing here is per-set either.
+ * **Performance is a real constraint**, so the exercise index is built **once** and passed down,
+ * a block renders one line for all its sets (`setsLine`), and nothing sorts or filters inside a
+ * loop. No virtualisation and no pagination — but nothing here is per-set either.
  */
 function Plan() {
   const { profile, vocabulary, profileFailed, vocabularyFailed, retry } = useProfileScreen();
@@ -74,42 +61,35 @@ function Plan() {
   // Whether the climber has asked to see an alternative to the plan they are already on. Off by
   // default, because that is what keeps the expensive read unmade — see `usePlanPreview`.
   const [replacing, setReplacing] = useState(false);
-  // ⚠️ A committed Start ENDS the replacement flow, and it has to be said here rather than left
-  // to fall out: `shown` prefers the proposal while `replacing` is true, so without this the
-  // screen would keep offering "Start this instead" for a plan that had just become the running
-  // one. Attached to the mutation, not to `mutate(vars, {…})` — see `plan/api.ts`.
+  // ⚠️ A committed Start ENDS the replacement flow: `shown` prefers the proposal while
+  // `replacing` is true, so without this the screen would keep offering "Start this instead" for
+  // the plan that had just become the running one. Attached to the mutation, not to
+  // `mutate(vars, {…})` — see `plan/api.ts`.
   const create = useCreatePlan({
     onSuccess: () => {
       setReplacing(false);
     },
   });
   const abandon = useAbandonPlan();
-  // A demo token is read-only at the database level, so every "go and finish your profile"
-  // affordance on this screen is a lie in demo scope. Same idiom as `onboarding.lazy.tsx`.
-  //
-  // ⚠️ Issue #65's rule, and it is the reason `readOnly` is threaded rather than turned into a
-  // `disabled` prop: **in demo scope the UI never OFFERS an action the principal cannot
-  // perform**, so the write affordances below are absent from the tree, not greyed out. Both
-  // POSTs 403 for a demo token; `GET /api/plans/active` does not (it writes nothing) and answers
-  // `{plan: null}`, so the demo mount still lands on the preview and still reads a whole plan.
+  // ⚠️ Issue #65's rule, and why `readOnly` is threaded rather than turned into a `disabled`
+  // prop: **in demo scope the UI never OFFERS an action the principal cannot perform**, so the
+  // write affordances below are absent from the tree, not greyed out. Both POSTs 403 for a demo
+  // token; `GET /api/plans/active` does not, so the demo mount still reads a whole plan.
   const readOnly = useAuth().scope === 'demo';
 
   // ⚠️ `active.plan` here is the OVERLAID value, so an abandon in flight starts generating the
-  // plan we will offer next. Deliberate: the climber who just abandoned wants a replacement, and
-  // this is the one moment where paying for the generation early is what the next click needs.
-  // The cost of getting it wrong is bounded — one wasted generation if the abandon then fails.
+  // plan we will offer next — the climber who just abandoned wants a replacement. Cost of being
+  // wrong is bounded: one wasted generation if the abandon then fails.
   const preview = usePlanPreview(profile, active.plan === null || replacing);
 
   const exercises = library.data?.exercises;
 
   // ⚠️ Gated on "there is nothing to show", NEVER on `isError`: query-core's error reducer sets
   // `status: "error"` even with data present, so a failed background refetch must not replace a
-  // rendered plan. `isLoadingError` is `isError && !hasData`, which is exactly this condition —
-  // see `profile/api.ts:174-189` for the bug that taught us.
-  // ⚠️ `active.plan === undefined` is the FIRST READ not having landed, and it belongs in this
-  // gate because nothing can be decided without it — whether to offer Start or Abandon, and
-  // whether the expensive preview is even wanted. `active.plan === null` is NOT here: that is
-  // "no plan yet", a normal screen with a Start button, and a 200 from the server.
+  // rendered plan. `isLoadingError` is `isError && !hasData` — see `profile/api.ts:174-189`.
+  // ⚠️ `active.plan === undefined` is the first read not having landed, and nothing can be decided
+  // without it. `active.plan === null` is NOT here: that is "no plan yet", a normal screen with a
+  // Start button, and a 200 from the server.
   if (
     profile === undefined ||
     vocabulary === undefined ||
@@ -124,8 +104,8 @@ function Plan() {
         {failed ? (
           <>
             <p className="ct-app__status ct-app__status--error" role="alert">
-              {/* Four reads, four failures, four sentences: naming the wrong one sends the
-                  reader looking in the wrong place. */}
+              {/* Four reads, four sentences: naming the wrong one sends the reader looking in
+                  the wrong place. */}
               {profileFailed
                 ? 'Your profile could not be loaded, so there is nothing to build a plan from.'
                 : vocabularyFailed
@@ -160,19 +140,13 @@ function Plan() {
   const blocker = previewBlocker(profile);
   const running = active.plan;
 
-  // What is actually on screen, and there are only three answers.
-  //
-  // ⚠️ The precedence is deliberate: a plan the climber HAS outranks a preview, and while they
-  // are looking at an alternative the alternative outranks the plan. The last `?? preview.data`
-  // is the empty state — `running` is `null` there, so the preview is the only thing to show.
-  //
-  // ⚠️ And note what does NOT happen: asking for an alternative does not take the running plan
-  // off the screen while the generator works. `shown` falls back to `running`, so a slow — or
-  // failed — regeneration leaves the plan the climber is following exactly where it was.
+  // ⚠️ The precedence: a plan the climber HAS outranks a preview, and while they are looking at
+  // an alternative the alternative outranks the plan. The last `?? preview.data` is the empty
+  // state. Note what does NOT happen — asking for an alternative never takes the running plan off
+  // the screen, because `shown` falls back to `running` while the generator works or fails.
   const proposed = replacing ? preview.data : undefined;
   const shown = proposed ?? running ?? preview.data;
-  // Is this the plan they have, or one we are offering? Identity, not a flag: `shown` is one of
-  // two objects and this asks which.
+  // Identity, not a flag: `shown` is one of two objects and this asks which.
   const isRunning = shown !== undefined && shown === running;
 
   return (
@@ -180,10 +154,9 @@ function Plan() {
       <h1>Plan</h1>
       <GoalLine profile={profile} vocabulary={vocabulary} plan={shown} />
 
-      {/* The blocker branch is skipped entirely when a plan is running: the answers behind a plan
-          can drift after it is built (a climber who reaches their target grade clears it), and a
-          plan does not stop existing because the profile moved. Regenerating is what needs a
-          plannable profile, and `PlanActions` gates on the same `blocker`. */}
+      {/* Skipped entirely when a plan is running: the answers behind a plan can drift after it is
+          built, and a plan does not stop existing because the profile moved. Regenerating is what
+          needs a plannable profile, and `PlanActions` gates on the same `blocker`. */}
       {blocker !== null && running === null ? (
         readOnly ? (
           <DemoUnplannable />
@@ -229,7 +202,7 @@ function Plan() {
             abandon={abandon}
             readOnly={readOnly}
           />
-          {/* ONE renderer, for both. See the note at the top of the file. */}
+          {/* ONE renderer, for both — see the top of the file. */}
           <PlanBody plan={shown} exercises={exercises} />
         </>
       )}
@@ -241,22 +214,14 @@ function Plan() {
  * Everything the climber can DO about the plan on screen, and the sentences that say what each
  * action means before it is taken.
  *
- * ## ⚠️ Demo scope: hidden, not disabled
+ * ⚠️ **Demo scope: hidden, not disabled** (issue #65). `readOnly` returns `null` for the whole
+ * component, plus one sentence saying why — a Start button that is merely absent looks like a
+ * missing feature, and a `disabled` one reads as broken software rather than as a demo.
  *
- * `readOnly` returns `null` for the whole component. Issue #65's rule is that the UI never offers
- * an action the principal cannot perform, and CLAUDE.md carries the precedent that a `disabled`
- * control is **not** the fix — it reads as broken software rather than as a demo. The demo mount
- * still reads a whole plan; it is simply offered nothing to press. The one thing it does get is a
- * sentence saying why, because a Start button that is merely absent looks like a missing feature.
- *
- * ## The three states
- *
- * - **Nothing running.** One primary action: Start this plan.
- * - **A plan running.** Abandon, behind a confirmation, plus an offer to build something else —
- *   with the consequence of the *second* click stated before the first one.
- * - **A plan running and an alternative on screen.** Start (which replaces), or keep the current
- *   one. The replacement is one server transaction: `POST /api/plans` stands the old plan down
- *   and activates the new one together, so there is no window where the climber has none.
+ * Three states: nothing running (Start); a plan running (Abandon behind a confirmation, plus an
+ * offer to build something else, with the consequence of the *second* click stated before the
+ * first); and a plan running with an alternative on screen (Start, which replaces, or keep). The
+ * replacement is one server transaction, so there is no window where the climber has no plan.
  */
 function PlanActions({
   plan,
@@ -296,9 +261,8 @@ function PlanActions({
   }
 
   if (isRunning) {
-    // `plan.id` is non-null on every persisted plan and the whole point of `POST /api/plans`
-    // returning the tree with ids. Nothing to abandon without one, so no button rather than a
-    // request to `/api/plans/null/abandon`.
+    // Non-null on every persisted plan — the point of `POST /api/plans` returning the tree with
+    // ids. No id means no button, rather than a request to `/api/plans/null/abandon`.
     const planId = plan.id;
     return (
       <>
@@ -350,15 +314,14 @@ function PlanActions({
         <button
           type="button"
           className="ct-app__button ct-app__button--primary"
-          // A busy control, not an optimistic one. Fabricating a plan tree is exactly what the
-          // "cache holds server responses only" rule forbids, so a create in flight says so and
-          // waits. See `plan/api.ts::useActivePlanView`.
+          // Busy, not optimistic: fabricating a plan tree is what the "cache holds server
+          // responses only" rule forbids. See `plan/api.ts::useActivePlanView`.
           disabled={create.isPending}
           onClick={() => {
-            // ⚠️ The plan's OWN `start_date`, not today's Monday recomputed. The server
-            // normalises both routes the same way, so echoing what the preview showed is what
-            // guarantees the saved plan starts on the day that is on screen — a tab left open
-            // across midnight would otherwise persist a plan a week out.
+            // ⚠️ The plan's OWN `start_date`, not today's Monday recomputed. Both routes
+            // normalise identically, so echoing what the preview showed is what guarantees the
+            // saved plan starts on the day on screen — a tab left open across midnight would
+            // otherwise persist a plan a week out.
             create.mutate(plan.start_date);
           }}
         >
@@ -381,28 +344,20 @@ function PlanActions({
 /**
  * Why a Start did not land — and it must not claim that nothing was saved.
  *
- * ## ⚠️ THE COPY THIS REPLACES WAS FALSE IN ONE CASE, AND IT IS THE EXPENSIVE ONE
+ * ⚠️ **Never say "nothing was saved".** That copy shipped and was false in the expensive case:
+ * `create_plan` serialises before `commit()`, so it holds for almost every failure but not for
+ * one at or after the commit (a dropped socket, or the function killed mid-response). Then the
+ * new plan IS active and the old one IS abandoned, and the sentence asserted the opposite for up
+ * to `ACTIVE_PLAN_STALE_TIME_MS` with `refetchOnWindowFocus` off app-wide.
  *
- * It said *"That could not be saved, so nothing was: your current plan is untouched."*
- * `create_plan` serialises the body **before** `commit()`, so for almost every failure that is
- * exactly true. It is not true for a failure at or after the commit — a dropped socket, or the
- * function killed while writing the ~640 KiB body. Then the new plan IS active and the old one
- * IS abandoned, and this sentence asserted the opposite for up to ten minutes
- * (`ACTIVE_PLAN_STALE_TIME_MS`, with `refetchOnWindowFocus` off app-wide).
+ * ⚠️ **The fix is the copy, NOT the data flow.** An `onError` refetch here is precisely the PR #9
+ * bug this file refuses to reintroduce, and it buys nothing a reload does not. So this says what
+ * is known (the write did not confirm), never what is not (whether it landed).
  *
- * ⚠️ **The fix is the copy, NOT the data flow.** An `onError` refetch here is precisely the
- * PR #9 bug this file refuses to reintroduce, and it would buy nothing the reload does not:
- * the honest instruction is "go and look", and a reload is how the climber does that. So this
- * says what is known (the write did not confirm), never what is not (whether it landed), and
- * gives the one action that resolves it.
- *
- * ## The 422 is a stale TAB, and it deserves its own sentence
- *
- * `_START_DATE_BACKDATE_DAYS` is 7 and the client sends the `start_date` the preview showed —
- * so a page open for more than eight days posts a date the server refuses. The generic
- * sentence sends the reader looking for a fault that is not there; this one names the cause and
- * the fix. No refetch and no auto-reload: a plan screen that reloads itself under someone
- * reading it is worse than a sentence.
+ * **The 422 is a stale TAB and gets its own sentence.** `_START_DATE_BACKDATE_DAYS` is 7 and the
+ * client sends the `start_date` the preview showed, so a page open longer than that posts a date
+ * the server refuses. No auto-reload: a plan screen that reloads itself under someone reading it
+ * is worse than a sentence.
  */
 function CreateFailure({ error }: { error: unknown }) {
   const stale = error instanceof ApiError && error.status === 422;
@@ -416,11 +371,9 @@ function CreateFailure({ error }: { error: unknown }) {
 }
 
 /**
- * An alternative was asked for and has not arrived. The running plan is still below this, which
- * is the point — see `shown` in `Plan`.
- *
- * ⚠️ Gated on `isLoadingError`, not `isError`, for the reason the whole file gates that way: a
- * failed generation must not take a plan the climber is reading off the screen.
+ * An alternative was asked for and has not arrived. The running plan is still below this — see
+ * `shown` in `Plan`. Gated on `isLoadingError`, not `isError`: a failed generation must not take
+ * a plan the climber is reading off the screen.
  */
 function ReplacementPending({
   preview,
@@ -461,34 +414,25 @@ function ReplacementPending({
 /**
  * Abandon, behind a real confirmation.
  *
- * ## Why not `window.confirm`
+ * **Not `window.confirm`**: unstyleable, blocks the main thread, suppressible, and its text
+ * cannot say that the logged work survives — which is the sentence this confirmation exists for.
  *
- * It is unstyleable, it blocks the main thread, it is suppressible by the browser, and its text
- * cannot say what this one has to say. More to the point, abandoning discards a plan the climber
- * may be weeks into — so the confirmation is the place to say that the logged work survives, and
- * a native dialog has nowhere to put that sentence.
- *
- * ## Why an inline panel rather than a modal
- *
- * A modal needs a focus trap, a scroll lock and an inert background, and every one of those is a
- * federated-mount hazard: this route tree renders inside kilianmc.com's page, where `position:
- * fixed` and `inert` resolve against the HOST document and not against the card the remote was
- * given (`_layout.scss` carries the same argument about `50% - 50vw`). An inline panel needs none
- * of it and keeps the plan being abandoned visible behind the question, which is the context the
- * decision needs.
+ * **An inline panel rather than a modal**, because a modal needs a focus trap, a scroll lock and
+ * an inert background, and `position: fixed` and `inert` resolve against kilianmc.com's document
+ * in the federated mount. An inline panel also keeps the plan being abandoned visible behind the
+ * question.
  *
  * The accessible pattern, deliberately not skipped:
  *
- * - `role="group"` with `aria-labelledby` pointing at the panel's own heading, so the question is
- *   the panel's accessible name rather than something a screen reader has to infer.
- * - **Focus moves to the confirming button** when the panel opens, and back to the trigger when
- *   it closes. The trigger is remounted by the same render that unmounts the panel, and effects
- *   run after commit, so its ref is populated by the time the effect reads it.
- * - **Escape dismisses**, and the handler sits on the two buttons rather than on the panel: focus
- *   can only be on one of them (it starts on Confirm and Tab reaches Keep), and a `keydown` on a
- *   non-interactive container is what `jsx-a11y/no-noninteractive-element-interactions` exists to
- *   refuse.
- * - The safe choice carries the visual weight (`--primary`) and the destructive one does not.
+ * - `role="group"` + `aria-labelledby` on the panel's own heading, so the question is its
+ *   accessible name.
+ * - **Focus moves to the confirming button** on open and back to the trigger on close. The
+ *   trigger is remounted by the same render that unmounts the panel, and effects run after
+ *   commit, so its ref is populated by the time the effect reads it.
+ * - **Escape dismisses**, with the handler on the two buttons rather than the panel: focus can
+ *   only be on one of them, and a `keydown` on a non-interactive container is what
+ *   `jsx-a11y/no-noninteractive-element-interactions` exists to refuse.
+ * - The safe choice carries the visual weight (`--primary`); the destructive one does not.
  */
 function AbandonAction({
   planId,
@@ -500,8 +444,8 @@ function AbandonAction({
   const [confirming, setConfirming] = useState(false);
   const confirmRef = useRef<HTMLButtonElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
-  // "Has this panel ever been open?", so the very first render does not steal focus from wherever
-  // the router put it.
+  // "Has this panel ever been open?", so the first render does not steal focus from wherever the
+  // router put it.
   const opened = useRef(false);
 
   useEffect(() => {
@@ -586,9 +530,9 @@ function AbandonAction({
 }
 
 /**
- * Current grade against the goal, from the profile rather than from the plan, so it is on screen
- * before the preview lands. `compareToGoal` returns `null` when the question cannot be asked
- * (one grade missing, or the two on different ladders), and then the line is simply absent.
+ * Current grade against the goal, from the profile rather than the plan, so it is on screen before
+ * the preview lands. `compareToGoal` returns `null` when the question cannot be asked (one grade
+ * missing, or the two on different ladders), and then the line is simply absent.
  */
 function GoalLine({
   profile,
@@ -632,15 +576,13 @@ function PreviewPending({
 }) {
   if (!preview.isLoadingError) return <p className="ct-app__status">Building your plan…</p>;
 
-  // A 422 is the server's own refusal sentence for stored state the client could not see —
-  // today that is only cross-discipline grades. Rendered verbatim, alone, because it already
-  // says what to do. Anything else is a fault and reads as one.
+  // A 422 is the server's own refusal sentence for stored state the client could not see (today,
+  // only cross-discipline grades). Rendered verbatim because it already says what to do.
   const error = preview.error;
   const refusal = error instanceof ApiError && error.status === 422 ? error.message : null;
 
-  // A refusal names an answer only a real account can change, and it cannot come back
-  // differently on a retry here — so in demo scope it gets the non-actionable explanation
-  // instead of the sentence and a button. A genuine fault below still offers "Try again".
+  // A refusal names an answer only a real account can change, so a retry cannot help: in demo
+  // scope it gets the explanation instead of a button. A genuine fault below still offers a retry.
   if (refusal !== null && readOnly) return <DemoUnplannable />;
 
   return (
@@ -662,11 +604,9 @@ function PreviewPending({
 }
 
 /**
- * Every refusal, in demo scope. A demo principal is read-only at the database level
- * (`get_request_session` issues `SET LOCAL transaction_read_only`), so the profile editor the
- * other arm links to is a dead end — the fields render and nothing can be saved. So: no link, no
- * button, and deliberately no disabled control either, which reads as broken rather than as a
- * demo. The invariant is that this screen never offers the demo mount an action it cannot take.
+ * Every refusal, in demo scope. A demo principal is read-only at the database level, so the
+ * profile editor the other arm links to is a dead end. No link, no button, and deliberately no
+ * disabled control either: this screen never offers the demo mount an action it cannot take.
  */
 function DemoUnplannable() {
   return (
@@ -681,7 +621,7 @@ function DemoUnplannable() {
 }
 
 function PlanBody({ plan, exercises }: { plan: PlanTree; exercises: readonly LibraryExercise[] }) {
-  // ONCE, for the whole plan. See the note at the top of the file.
+  // ONCE, for the whole plan.
   const index = exercisesByKey(exercises);
 
   return (
@@ -740,10 +680,7 @@ function PlanBody({ plan, exercises }: { plan: PlanTree; exercises: readonly Lib
   );
 }
 
-/**
- * The phases in order, with the weeks each covers. One badge per mesocycle — there are `2n` of
- * them (a phase block plus its deload, and a taper last), so a 32-week plan draws sixteen.
- */
+/** The phases in order, one badge per mesocycle — a phase block plus its deload, taper last. */
 function PhaseTimeline({ mesocycles }: { mesocycles: readonly PlanMesocycle[] }) {
   return (
     <p className="ct-app__tags">
@@ -758,11 +695,9 @@ function PhaseTimeline({ mesocycles }: { mesocycles: readonly PlanMesocycle[] })
 }
 
 /**
- * One week: its sessions, each behind a disclosure so a 32-week plan is readable without
- * scrolling past 2,421 prescribed sets.
- *
- * `week_no` is plan-global (1..`week_count`), not per mesocycle, so it is unique across the
- * whole screen and is the key.
+ * One week: its sessions, each behind a disclosure so a 32-week plan is readable without scrolling
+ * past a few thousand prescribed sets. `week_no` is plan-global (1..`week_count`), not per
+ * mesocycle, so it is unique across the screen and is the key.
  */
 function WeekCard({
   microcycle,
@@ -798,8 +733,8 @@ function WeekCard({
             </ul>
           )}
 
-          {/* A session-level shortfall is the honest empty session: zero blocks, and this is
-              the sentence that says why. */}
+          {/* A session-level shortfall is the honest empty session: zero blocks, and the
+              sentence that says why. */}
           {session.shortfalls.map((shortfall) => (
             <ShortfallNotice
               shortfall={shortfall}
@@ -813,18 +748,14 @@ function WeekCard({
 }
 
 /**
- * ⚠️ **The server's wording, verbatim.** It is assembled from the equipment and aspect display
- * names by `server/domain/planner/selection.py::shortfall_message`, and it is guarded there
- * against suggesting an improvised finger edge. Re-wording it client-side would put that guard
- * behind a second copy nothing checks. It never disables anything and never opens a modal: a
- * shortfall is a note, and the plan around it is complete.
+ * ⚠️ **The server's wording, verbatim.** `server/domain/planner/selection.py::shortfall_message`
+ * assembles it and is guarded there against suggesting an improvised finger edge; re-wording it
+ * client-side would put that guard behind a second copy nothing checks. A shortfall is a note —
+ * it never disables anything.
  *
- * ⚠️ **`shortfall.aspect_key` is the aspect the generator WANTED and could not fill. On a block
- * it is NOT the block's own `aspect_key`** — the block trains something, and its shortfall names
- * something else it could not also train. That is why this component renders the message and
- * nothing else: the only place an `aspect_key` is put on screen is the plan-level "What you'd
- * need" list, where the shortfall is the whole subject and there is no block's aspect beside it
- * to be confused with. Do not add `humanise(shortfall.aspect_key)` here.
+ * ⚠️ **`shortfall.aspect_key` is the aspect the generator WANTED and could not fill; on a block it
+ * is NOT the block's own `aspect_key`.** That is why this renders the message and nothing else.
+ * Do not add `humanise(shortfall.aspect_key)` here.
  */
 function ShortfallNotice({ shortfall }: { shortfall: PlanShortfall }) {
   return (

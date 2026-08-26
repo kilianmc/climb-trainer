@@ -3398,15 +3398,15 @@ standing the previous plan down in the same transaction. `GET /api/plans/active`
 - **`generator_caveats` is COORDINATE-ADDRESSED, not positional, and it DEGRADES rather than
   500ing.** The generator's commentary is not recoverable from the tree (a block's shortfall
   names the aspect it *wanted*), so it is stored — keyed by `(week_no, weekday, order_index)`
-  rather than by list position, because a later generator that emits a different number of
+  rather than by list position, because a later generator emitting a different number of
   sessions would otherwise silently reattach caveats to the wrong ones. A shape
-  `_StoredCaveats` does not recognise is read as "no caveats", so no schema change can make an
+  `_StoredCaveats` does not recognise reads as "no caveats", so no schema change can make an
   already-persisted plan unopenable.
-- **A preview and a persisted plan are ONE response shape.** `PlanOut` serves all four routes;
-  the only difference is that a preview is not a row, so every `id` — plus `exercise_id`,
-  `status` and `activated_at` — is `null`. Round 1 shipped a parallel `Persisted*Out` hierarchy
-  and a second renderer, which is where the two drift. `aspect_key` is the one field read live
-  from the exercise rather than snapshotted; recorded as an accepted asymmetry on
+- **A preview and a persisted plan are ONE response shape**, so the client needs one renderer;
+  a second renderer is where the two drift. `PlanOut` serves all four routes and the only
+  difference is that a preview is not a row, so every `id` — plus `exercise_id`, `status` and
+  `activated_at` — is `null`. ⚠️ `aspect_key` is the one field read **live** from the exercise
+  rather than snapshotted, so it can drift; an accepted asymmetry, recorded on
   `models.py::SessionBlock`.
 - **⚠️ THE BACKREF-CASCADE TRAP, and only a six-table row count catches it.** Round 1
   committed the `plan` row and silently dropped all ~2,400 descendants: HTTP **201**, one
@@ -3415,31 +3415,21 @@ standing the previous plan down in the same transaction. `GET /api/plans/active`
   whole tree; building children with a bare `mesocycle_id` does not. So the tests count rows in
   all six tables *and* count the rows **reachable from the plan by its foreign keys**, which is
   the assertion a wrongly-parented row fails.
-- **The statement counts, and neither is per-row.** The read is **six** `SELECT`s — one per
-  level via `selectinload`, not one wide join, because a join down five 1:N edges repeats every
-  ancestor's columns on every leaf row. The write is **~6 statements per level**: Postgres has
-  `use_insertmanyvalues` with a 1000-row page, so the worst case's 2,472 `prescribed_set` rows
-  are **3** statements, not 2,472, and the ids come back in `RETURNING` with no re-read.
-  `server/plans/routes.py::_insert_plan_tree` cites the SQLAlchemy 2.0.52 source line by line —
-  the ORM-graph-versus-explicit-insert decision rests on it.
+- **Neither statement count is per-row.** The read is six `SELECT`s (one per level via
+  `selectinload`) and the write is ~6 statements per level, because Postgres has
+  `use_insertmanyvalues` with a 1000-row page. `server/plans/routes.py::_insert_plan_tree` cites
+  the SQLAlchemy 2.0.52 source line by line — the ORM-graph-versus-explicit-insert decision
+  rests on it.
 - **⚠️ An `IntegrityError` is never re-raised.** `str(IntegrityError)` carries the statement
   *and its bound parameters*, which on the `plan` INSERT is `generator_input` — the climber's
   open-injury keys — in the function log. The handler logs the constraint name plus plan-level
   metadata and raises a 500 with `from None`. Input minimisation applies to the **log**, not
   only to the response.
-- **The measured PERSISTED payload** (2026-08-26; boulder, 12-ordinal gap, 7 sessions/week,
-  full weekday mask, all 17 equipment, weakness `technique`):
-
-  | | weeks | sessions | blocks | sets | compact raw | gzip -6 |
-  | --- | --- | --- | --- | --- | --- | --- |
-  | persisted worst case | 32 | 224 | 672 | 2,472 | 640.7 KiB | **33.3 KiB** |
-  | the same tree previewed | 32 | 224 | 672 | 2,472 | 640.7 KiB | 17.6 KiB |
-
-  ⚠️ **Raw size is identical and COMPRESSED size nearly doubles.** Each filled `id` replaces a
-  `null` — about the same four bytes — but 2,472 repeated `null`s compress away and 2,472
-  distinct integers do not. So size against the *persisted* figure. ⚠️ This re-measurement
-  also **does not reproduce #11a's 2,421 sets / 583.2 KiB** for the worst case; that row is
-  stale and the sweep behind these numbers is in PR #11b's notes.
+- **⚠️ Size against the PERSISTED payload, not the preview.** Raw size is identical for the same
+  tree (a filled `id` costs about what a `null` did) but **compressed size nearly doubles**,
+  because thousands of repeated `null`s compress away and distinct integers do not. Figures and
+  the sweep behind them are in PR #11b's notes; note they **do not reproduce #11a's 2,421 sets /
+  583.2 KiB** worst case, which is stale.
 - **`cache-control` is set by the routes AND defaulted by the middleware.** All three are
   `private, no-store` — the bodies name the climber's open injuries — and FastAPI discards a
   route's injected header whenever an `HTTPException` propagates, so `SecurityHeadersMiddleware`

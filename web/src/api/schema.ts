@@ -11,8 +11,8 @@
  *   openapi-sha256  the OpenAPI document it was generated from
  *   types-sha256    everything below this comment block
  *
- * openapi-sha256: 12f51c6650876718ad30b3584ee0fe334137cb69d8f89f04647fe517756bf805
- * types-sha256: ee471a5a0b047055902bf9cace76884c1bbeb325528a7745f560e2c708c71ce3
+ * openapi-sha256: 213e9326b563d84b483373aa98e0ac4ecf4b9e4e8af1debd59f7f51f2ecae7c1
+ * types-sha256: 4896cd9d43cca13a5638e651f6515152cacca3be7905e1eb9bb860746c2e4012
  */
 
 export interface paths {
@@ -266,43 +266,23 @@ export interface paths {
      * Create Plan
      * @description Generate this user's plan, persist it activated, and return it with ids. **201.**
      *
-     *     A **Tier-1 write** (CLAUDE.md, "Two write tiers", which already groups creating,
-     *     switching, activating and abandoning a plan as one write-through): one request, one
-     *     transaction, one Neon wake.
+     *     A **Tier-1 write**: one request, one transaction, one Neon wake.
      *
-     *     ## The server regenerates; it never accepts a tree
+     *     **The server regenerates; it never accepts a tree.** The body is `PlanPreviewRequest` —
+     *     `start_date` and nothing else, `extra="forbid"`. A client-supplied tree would let any caller
+     *     fabricate an arbitrary plan, prescriptions against exercises their injuries contraindicate
+     *     included, and it would be a ~600 KiB request body. `user_id` comes from `principal.user_id`
+     *     and from nowhere else. The generation path is the preview's, reused rather than reimplemented,
+     *     so a plan can never be persisted in a shape the preview would not have shown.
      *
-     *     The request body is `PlanPreviewRequest` — `start_date` and nothing else, `extra
-     *     ="forbid"`. **A client-supplied tree is not accepted and must never be**, for two
-     *     independent reasons: it would let any caller fabricate an arbitrary plan (prescriptions
-     *     against exercises their injuries contraindicate, included), and it would be a 583 KiB
-     *     request body. `user_id` comes from `principal.user_id` and from nowhere else — no path
-     *     parameter, no body field, no query parameter in this module names a user.
+     *     **One transaction, all-or-nothing.** Four steps, one `commit()` at the end (each route commits
+     *     itself; `get_session` deliberately does not): stand the active plan down, resolve every
+     *     `exercise_key`, insert the tree, serialise. A failure anywhere leaves zero rows in all six
+     *     tables, because nothing before the `commit()` is durable.
      *
-     *     The generation path is the preview's, reused rather than reimplemented
-     *     (`_planner_input` -> `generate` -> `_grade_ids`), so a plan can never be persisted in a
-     *     shape the preview would not have shown.
-     *
-     *     ## One transaction, all-or-nothing
-     *
-     *     Four steps, one `commit()` at the end, following `server/profile/routes.py::patch_profile`
-     *     (each route commits itself; `get_session` deliberately does not):
-     *
-     *     1. Stand the currently-active plan down — see `_stand_down_active_plan` for why this is
-     *        the same transaction and why it is first.
-     *     2. Resolve every `exercise_key` to an id in one statement, raising if any is missing.
-     *     3. Insert the tree, with `generator_version`, `generator_input` and `activated_at`.
-     *     4. Build the response from the in-memory objects, then commit.
-     *
-     *     A failure anywhere — the refusal, the missing key, an insert, the unique index — leaves
-     *     zero rows in all six tables, because nothing before the `commit()` is durable.
-     *
-     *     ## 409 is a legitimate answer, not a fault
-     *
-     *     A double-tap races: both requests stand the same plan down and both insert an active
-     *     one, and the second trips `uq_plan_one_active_per_user`. That is not an error state —
-     *     the user does have an active plan — so it comes back as a **409** for the client to
-     *     treat as "you already have one" and refetch.
+     *     **409 is a legitimate answer, not a fault.** A double-tap races: both requests stand the same
+     *     plan down and both insert, and the second trips `uq_plan_one_active_per_user`. The user does
+     *     have an active plan, so the client treats it as "you already have one" and refetches.
      */
     post: operations['create_plan_api_plans_post'];
     delete?: never;
@@ -322,12 +302,9 @@ export interface paths {
      * Active Plan
      * @description This user's active plan with ids, or `{"plan": null}`. Always **200** — see the model.
      *
-     *     Without this endpoint a persisted plan is invisible after a page reload and the whole
-     *     write path delivers nothing observable.
-     *
-     *     `.one_or_none()` rather than `.first()`: "at most one" is `uq_plan_one_active_per_user`'s
-     *     job, and if the index were ever dropped, a silent `LIMIT 1` would hide that while
-     *     quietly picking an arbitrary plan.
+     *     `.one_or_none()` rather than `.first()`: "at most one" is `uq_plan_one_active_per_user`'s job,
+     *     and if the index were ever dropped a silent `LIMIT 1` would hide that while quietly picking an
+     *     arbitrary plan.
      */
     get: operations['active_plan_api_plans_active_get'];
     put?: never;
@@ -351,12 +328,10 @@ export interface paths {
      * Preview Plan
      * @description Build the plan this user's profile implies, and return it. **Writes nothing.**
      *
-     *     "Writes nothing" is enforced three ways rather than asserted: the generator is pure
-     *     (ruff `TID251` in `server/domain/.ruff.toml`), this handler issues only `SELECT`s, and
-     *     for a demo principal `get_request_session` has already issued
-     *     `SET LOCAL transaction_read_only`, so Postgres itself would refuse. The behavioural
-     *     proof is in `tests/test_plans_api.py`, which counts `plan`, `mesocycle` and
-     *     `planned_session` rows after a successful preview.
+     *     Enforced three ways rather than asserted: the generator is pure (ruff `TID251` in
+     *     `server/domain/.ruff.toml`), this handler issues only `SELECT`s, and for a demo principal
+     *     `SET LOCAL transaction_read_only` is already on, so Postgres itself would refuse.
+     *     `tests/test_plans_api.py` counts rows after a successful preview.
      */
     post: operations['preview_plan_api_plans_preview_post'];
     delete?: never;
@@ -378,23 +353,17 @@ export interface paths {
      * Abandon Plan
      * @description Stand a plan down. **Marks, never deletes.** Idempotent, and 404 for anyone else's.
      *
-     *     ## Why a timestamp and not a delete
+     *     **A timestamp and not a delete**, because `activity.planned_session_id` is the only link from a
+     *     logged activity to the plan it satisfied: deleting would cascade through the tree and destroy
+     *     the adherence record of sessions the user really did.
      *
-     *     `activity.planned_session_id` is the only link from a logged activity to the plan it
-     *     satisfied, so deleting an abandoned plan would cascade through the tree and destroy the
-     *     adherence record of sessions the user really did.
+     *     **The 404 is scoped, and the scoping is the security property.** The `WHERE` names both the id
+     *     and `principal.user_id`, so another user's plan is indistinguishable from one that never
+     *     existed. A 403 would confirm the row exists — the IDOR read this project treats as its real
+     *     extraction risk.
      *
-     *     ## The 404 is scoped, and the scoping is the security property
-     *
-     *     The `WHERE` names both the id and `principal.user_id`, so another user's plan is
-     *     indistinguishable from one that does not exist — the same answer, the same message. A
-     *     403 here would confirm the row exists, which is the IDOR read this project treats as its
-     *     real extraction risk.
-     *
-     *     **Idempotent:** an already-abandoned plan keeps its original timestamp and nothing is
-     *     written, because when it was stood down is the fact the diary wants, not when someone
-     *     last pressed the button. `completed_at` is deliberately untouched — completing and
-     *     abandoning are different things and only one of them is in scope for #11b.
+     *     **Idempotent:** an already-abandoned plan keeps its original timestamp, because *when* it was
+     *     stood down is the fact the diary wants. `completed_at` is deliberately untouched.
      */
     post: operations['abandon_plan_api_plans__plan_id__abandon_post'];
     delete?: never;
@@ -522,16 +491,14 @@ export interface components {
      * ActivePlanResponse
      * @description `{"plan": null}` when there is none — a **200**, not a 404.
      *
-     *     "No plan yet" is the state every new account is in and the `/plan` screen has to render
-     *     it as an ordinary view with a Generate button, not as an error. A 404 would make the
-     *     normal case an error at three layers that all treat 4xx as failure: `apiFetch` throws on
-     *     it, the query retry predicate skips 4xx as unwinnable, and a route-level guard would
-     *     have `data === undefined` and swap itself for a fallback. Every one of those would then
-     *     need a special case for "the expected answer".
+     *     "No plan yet" is the state every new account is in, and the `/plan` screen renders it as an
+     *     ordinary view with a Generate button. A 404 would make the normal case an error at three
+     *     layers that all treat 4xx as failure: `apiFetch` throws, the query retry predicate skips 4xx
+     *     as unwinnable, and a route-level guard would see `data === undefined` and swap itself for a
+     *     fallback.
      *
-     *     A wrapper object rather than a bare nullable body, so the endpoint can grow a sibling
-     *     field (a count of past plans, say) without changing shape, and so no client has to
-     *     handle a top-level `null`.
+     *     A wrapper object rather than a bare nullable body, so the endpoint can grow a sibling field
+     *     without changing shape and no client has to handle a top-level `null`.
      */
     ActivePlanResponse: {
       plan: components['schemas']['PlanOut'] | null;
@@ -595,15 +562,14 @@ export interface components {
      * @description One block of a session.
      *
      *     ⚠️ **`exercise_key` AND `exercise_id`, not one or the other.** The domain is DB-free and
-     *     speaks keys, so a preview has the key and no id; a persisted block holds the id, and the
-     *     key is derived from it (`_exercise_reference`). Carrying both means the client's library
-     *     lookup is written once for both paths — dropping the key on the persisted path was what
-     *     forced round 1 towards a second renderer.
+     *     speaks keys, so a preview has the key and no id; a persisted block holds the id and the key is
+     *     derived from it (`_exercise_reference`). Carrying both means the client's library lookup is
+     *     written once for both paths.
      *
-     *     `aspect_key` is the aspect of the exercise that actually landed here, derived on the
-     *     persisted path from `exercise.climbing_aspect_id`. ⚠️ It is **not** the same aspect as
-     *     `shortfall.aspect_key`, which names the aspect the generator *wanted* and could not
-     *     fill — that is precisely why a block's shortfall cannot be derived and has to be stored.
+     *     ⚠️ `aspect_key` is read LIVE off `exercise.climbing_aspect_id` and can therefore drift, unlike
+     *     the snapshotted `protocol_kind` — an accepted asymmetry, recorded on `models.py::SessionBlock`.
+     *     It is also **not** `shortfall.aspect_key`, which names the aspect the generator *wanted* and
+     *     could not fill — precisely why a block's shortfall has to be stored rather than derived.
      */
     BlockOut: {
       /** Aspect Key */
@@ -806,9 +772,7 @@ export interface components {
      * MesocycleOut
      * @description One phase block, `start_week`..`end_week` inclusive and 1-based.
      *
-     *     Not in the plan document's list of nested models, which named only the microcycle and
-     *     below while listing `mesocycles[]` on the response — `mesocycle_spans` has to arrive as
-     *     something, and flattening the tree would drop the phase spans the `/plan` timeline draws.
+     *     Flattening the tree here would drop the phase spans the `/plan` timeline draws.
      */
     MesocycleOut: {
       /** End Week */
@@ -893,27 +857,21 @@ export interface components {
      *
      *     `generator_input` is the canonical JSON of the `PlannerInput` actually used, plus
      *     `generator_version` and `library_digest`. That digest is load-bearing:
-     *     `server/models.py::Plan` promises that re-running a version on the same input reproduces
-     *     the tree, and **the library is a third input** — without it the promise is false the
-     *     first time content is edited, and the failure is silent.
+     *     `server/models.py::Plan` promises that re-running a version on the same input reproduces the
+     *     tree, and **the library is a third input** — without it the promise is silently false the
+     *     first time content is edited.
      *
-     *     ⚠️ `target_grade_id` and `current_grade_id` are set by this MODULE and are always `None`
-     *     on the blueprint: `PlannerInput` carries ordinals, so the domain never sees a `grade.id`.
-     *     Both are real columns on `plan`, so both survive a reload (`0008`) — the profile's
-     *     current grade drifts as the climber improves and nothing else recovers what the plan was
-     *     built from.
+     *     ⚠️ `target_grade_id` and `current_grade_id` are set by this MODULE and are always `None` on
+     *     the blueprint, because `PlannerInput` carries ordinals and the domain never sees a `grade.id`.
+     *     Both are real `plan` columns (`0008`), so both survive a reload — the profile's current grade
+     *     drifts as the climber improves and nothing else recovers what the plan was built from.
      *
      *     `grade_gap` is derived on the persisted path rather than stored; see `_grade_gap`.
      *
-     *     ⚠️ **The measured PERSISTED worst case** (re-measured 2026-08-26; boulder, 12-ordinal
-     *     gap, 7 sessions/week, full weekday mask, all 17 equipment, weakness `technique`): 32
-     *     weeks / 224 sessions / 672 blocks / **2,472 sets / 640.7 KiB compact raw / 33.3 KiB
-     *     gzip -6**. Raw size is the *same* as the preview's for the same tree — every filled `id`
-     *     replaces a `null`, which costs about the same four bytes — but **gzipped it is ~1.9x**
-     *     (17.6 KiB previewed), because 2,472 repeated `null`s compress away and 2,472 distinct
-     *     integers do not. So the persisted response is the one to size against. One request
-     *     rather than create-then-fetch is the point; if it ever bites, the lever is trimming sets
-     *     beyond the first N weeks, not splitting the endpoint.
+     *     ⚠️ **Size against the PERSISTED response, not the preview** (figures in PR #11b): the raw
+     *     bytes are identical for the same tree, but gzipped the persisted body is ~1.9x, because
+     *     thousands of repeated `null` ids compress away and distinct integers do not. If it ever bites,
+     *     the lever is trimming sets beyond the first N weeks, not splitting the endpoint.
      */
     PlanOut: {
       /** Activated At */
@@ -1139,13 +1097,11 @@ export interface components {
      * SessionOut
      * @description One planned session. `estimated_minutes` is `null` for a session with no blocks.
      *
-     *     `status` is `null` on a preview and real on a persisted session: a preview has no
-     *     lifecycle, and inventing `planned` for it would make "not a row yet" and "a row nobody
-     *     has started" the same answer.
+     *     `status` is `null` on a preview: a preview has no lifecycle, and inventing `planned` would
+     *     make "not a row yet" and "a row nobody has started" the same answer.
      *
-     *     `shortfalls` here are the slots that produced **no block at all** — the terminal
-     *     injury/gear case. They are stored, not derived: nothing in the tree records a slot that
-     *     was never filled.
+     *     `shortfalls` here are the slots that produced **no block at all**. Stored, not derived —
+     *     nothing in the tree records a slot that was never filled.
      */
     SessionOut: {
       activity_kind: components['schemas']['ActivityKind'];
@@ -1182,13 +1138,13 @@ export interface components {
      * SetOut
      * @description One prescribed set, straight off the `(exercise, phase)` prescription template.
      *
-     *     `target_load_kg` and `target_grade_id` are present and always `null` in v1.0.0, so the
-     *     wire shape is stable when they are filled. Deriving a load is the one place a bodyweight
-     *     figure could creep into a plan, which CLAUDE.md's weight rule forbids outright.
+     *     `target_load_kg` and `target_grade_id` are present and always `null` in v1.0.0, so the wire
+     *     shape is stable when they are filled. Deriving a load is the one place a bodyweight figure
+     *     could creep into a plan, which CLAUDE.md's weight rule forbids outright.
      *
-     *     The id is the point of the persisted response: the session player logs a `logged_set`
-     *     against `prescribed_set.id`, so a client that had to re-fetch to learn it would need a
-     *     second round trip before the user could start.
+     *     The id is the point of the persisted response: the session player logs a `logged_set` against
+     *     `prescribed_set.id`, so re-fetching to learn it would cost a round trip before the user could
+     *     start.
      */
     SetOut: {
       /** Id */
