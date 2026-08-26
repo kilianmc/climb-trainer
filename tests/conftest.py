@@ -45,7 +45,7 @@ from collections.abc import Iterator
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import Engine, inspect
+from sqlalchemy import Engine, func, inspect, select
 from sqlalchemy.orm import Session
 
 from server.app import app
@@ -59,6 +59,7 @@ from server.db import (
     require_local_host,
     session_scope,
 )
+from server.models import AppUser
 from server.seed import seed_reference_data
 from server.settings import AUTH_SECRET_ENV, POOLED_URL_ENV, pooled_database_url
 
@@ -122,6 +123,13 @@ _REQUIRED_COLUMNS: dict[tuple[str, str], str] = {
     # Both written by `seed_exercise_library` on every run of the `seeded` fixture.
     ("exercise", "substitution_hint"): "0007",
     ("exercise", "retired_at"): "0007",
+    # ⚠️ Written by no fixture — a judgement call against the rule above, and the reason is
+    # blast radius rather than reach. `POST /api/plans` writes both columns on every call,
+    # and #11b's test suite exercises that endpoint from a dozen tests plus a shared
+    # persist helper; against a database still at `0007` each one would raise
+    # `UndefinedColumn` from inside the handler, which is the wall of red this skip exists
+    # to replace. One canary per revision, so `plan` stands in for `session_block` too.
+    ("plan", "current_grade_id"): "0008",
 }
 
 # Long enough to clear the 32-character floor, and constructed by repetition so it has
@@ -194,6 +202,25 @@ def engine() -> Engine:
     return db_engine
 
 
+def _refuse_a_polluted_database(session: Session) -> None:
+    """Fail loudly when the database carries accounts no test created.
+
+    `npm run dev:api` reads `CT_TEST_DATABASE_URL`, so the database you click the app
+    against IS the one the suite runs on. One hand-made account leaves rows behind, and the
+    tests that assert a GLOBAL row count then fail naming *profile validation* — a red
+    pointing at the code instead of at the database. CI is unaffected; its Postgres is
+    per-run and empty.
+    """
+    stray = session.scalar(select(func.count()).select_from(AppUser).where(~AppUser.is_demo))
+    if stray:
+        raise RuntimeError(
+            f"{stray} non-demo app_user row(s) present before seeding. This database has "
+            f"accounts the suite did not create — most likely from clicking through "
+            f"`npm run dev:api`. Tests asserting global row counts would fail for the wrong "
+            f"reason. Run `npm run db:reset` then `uv run alembic upgrade head`."
+        )
+
+
 @pytest.fixture(scope="session")
 def seeded(engine: Engine) -> Engine:
     """Reference data AND the exercise library, from the two production seed modules.
@@ -204,6 +231,7 @@ def seeded(engine: Engine) -> Engine:
     library production never has.
     """
     with session_scope() as session:
+        _refuse_a_polluted_database(session)
         seed_reference_data(session)
         seed_exercise_library(session)
     return engine

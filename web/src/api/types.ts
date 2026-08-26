@@ -58,12 +58,28 @@ export type InjuryInput = Schemas['InjuryIn'];
  * declared weakness and open injuries, so it must never reach a shared cache. `useQuery`
  * is still the right hook — Query's split is about cache semantics, not HTTP verbs.
  *
- * Two shapes worth knowing before writing the screen: a block names an `exercise_key`, not
- * an id (join it against `useLibrary()`), and `PrescribedSetTarget.target_load_kg` is a
- * **string** (a `Decimal` on the wire) and is `null` for every set in v1.0.0.
+ * Two shapes worth knowing before writing the screen: a block names an `exercise_key` on
+ * every path and additionally an `exercise_id` once persisted (join either against
+ * `useLibrary()`), and `PrescribedSetTarget.target_load_kg` is a **string** (a `Decimal` on
+ * the wire) and is `null` for every set in v1.0.0.
+ *
+ * ⚠️ **`PlanTree` is ONE type for a previewed plan and a persisted one**, so the screen has
+ * one renderer. The difference is which nullable fields are filled: a preview is not a row,
+ * so every `id` — plus a block's `exercise_id`, a session's `status` and the plan's
+ * `activated_at` — is `null`. A persisted plan fills all of them. Every other field has the
+ * same name and the same meaning on both paths, `shortfalls` and `notes` included.
  */
 export type PlanPreviewRequest = Schemas['PlanPreviewRequest'];
-export type PlanPreview = Schemas['PlanPreviewResponse'];
+export type PlanTree = Schemas['PlanOut'];
+/**
+ * `GET /api/plans/active`. ⚠️ **`{plan: null}` is a 200 and it is the empty state**, not an
+ * error — every new account is in it. An envelope rather than a bare nullable body so the
+ * endpoint can grow a sibling field without changing shape; `server/plans/routes.py::
+ * ActivePlanResponse` carries the reasoning.
+ */
+export type ActivePlanResponse = Schemas['ActivePlanResponse'];
+/** `POST /api/plans/{plan_id}/abandon`. The timestamp set, or the one already there. */
+export type PlanAbandoned = Schemas['PlanAbandonResponse'];
 export type PlanMesocycle = Schemas['MesocycleOut'];
 export type PlanMicrocycle = Schemas['MicrocycleOut'];
 export type PlanSession = Schemas['SessionOut'];

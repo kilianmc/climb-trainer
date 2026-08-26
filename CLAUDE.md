@@ -125,8 +125,9 @@ reverse".
 **Running the app locally, or a blank page that is not your code** — "Local development" ·
 "Local Postgres for the test suite" (`npm run db:up` / `db:reset`; the URL belongs in
 `CT_TEST_DATABASE_URL` and never in `.env`; and the behind-head canary is TWO lists, whose
-skip path has never actually run) · "⚠️ `npm run check` breaks a RUNNING dev server,
-and every route goes blank" (a blank *landing* page is the tell) · "`.env` is loaded for you —
+skip path has never actually run) · "⚠️ A dev server and the gate at the same time can blank
+every route" (a blank *landing* page is the tell; the trigger is UNCONFIRMED and the old
+`npm ci` explanation was wrong) · "`.env` is loaded for you —
 but only outside Vercel".
 
 **Writing tests** — "Testing policy". Every guard test
@@ -141,6 +142,12 @@ mesocycles rather than multipliers, the weekday-spread rule and why the obvious 
 minimum gap" one is wrong, what `generator_version` + `generator_input` + `library_digest`
 promise *together*, the endpoint's `private, no-store` and its demo exemption, and the measured
 payload).
+
+**Persisting a plan, or `GET /api/plans/active`** — "Persisting a plan" (persist == activate,
+the one-active partial index and why the endpoint half is not optional, the
+stand-down-in-the-same-transaction rule, coordinate-addressed `generator_caveats`, one wire
+shape for preview and persisted, the backref-cascade trap that only a six-table row count
+catches, and the measured statements and payload).
 
 **Building the session player** — "Session player invariants" · "Screen Wake Lock — a
 user-owned TOGGLE, and a progressive enhancement".
@@ -2207,6 +2214,13 @@ npm run db:reset   # dropdb --force, createdb, upgrade to head
 npm run check:server   # now RUNS the DB-backed tests instead of skipping them
 ```
 
+⚠️ **The dev database and the test database are the SAME database**, because `npm run dev:api`
+reads `CT_TEST_DATABASE_URL` too. So an account you register to click the app through leaves rows
+behind, and the ~15 tests that assert a **global** row count then fail naming *profile
+validation* — a red that points at the code rather than at the database. `tests/conftest.py`'s
+`_refuse_a_polluted_database` now fails first with the real reason; the fix is `npm run db:reset`
+plus `uv run alembic upgrade head`. CI never sees this: its Postgres is per-run and empty.
+
 ⚠️ **That export lives in `~/.zshrc`, which a NON-INTERACTIVE shell does not read.** Run the
 gate from a script, a tool call or an agent's shell and the variable is unset, the Postgres
 suite **silently skips**, and the gate is green for the wrong reason. Prefix it —
@@ -2253,11 +2267,23 @@ treat a change to it as untested code and construct the state by hand if you nee
 Neon's major.** Bump one, bump all three in the same PR. A local pass on a different major
 proves nothing about CI, and CI proves nothing about Neon.
 
-### ⚠️ `npm run check` breaks a RUNNING dev server, and every route goes blank
+### ⚠️ A dev server and the gate at the same time can blank every route — trigger UNCONFIRMED
 
-`npm run check` → `npm run build` → **`npm --prefix web ci`**, which reinstalls
-`web/node_modules` underneath a dev server that is still holding its pre-baked optimized deps.
-The next page load dies in `node_modules/.vite/deps/…?v=<hash>` with
+**The symptom, the tells and the fix below are real and were hit on 2026-08-20. The mechanism
+this section used to give is not.** It claimed `npm run check` → `npm run build` →
+`npm --prefix web ci`, reinstalling `web/node_modules` under a running dev server. That chain
+does not exist: `check` → `check:web` + `check:server`, and `check:web`'s `build` step is the
+**web** package's own `tsc -b && vite build`. **Nothing in `check` runs `npm ci`.** Only the
+**root** `build` script is `npm --prefix web ci && npm --prefix web run build`, and `check`
+never calls it. Verified against both `package.json` files, 2026-08-26.
+
+So what actually invalidated the dev server's optimized deps is **not established**. The two
+candidates, neither confirmed: a `vite build` sharing `web/node_modules/.vite` with a running
+dev server, or a separate `npm ci`/`npm install` (the root `build`, or a Vercel-style build run
+by hand) around the same time. **Do not substitute a fresh guess for the old one** — if you
+reproduce it, record what you actually ran.
+
+The symptom: the next page load dies in `node_modules/.vite/deps/…?v=<hash>` with
 `TypeError: Cannot read properties of undefined (reading 'd')` at `createRoot`, and **every**
 route renders blank — including unguarded ones — while the HTML still serves **200** with
 `#root` present.
@@ -2273,9 +2299,9 @@ you just wrote.** Two tells, both cheap:
   branch.** Then nothing about your changes can explain it, and the stack frame pointing into
   `.vite/deps` with a `?v=` hash is the confirmation.
 
-Hit on 2026-08-20. It is a property of running the gate and the dev server at the same time, so
-it will happen again — the gate is deliberately a single command and `npm ci` is deliberately
-clean-install.
+Hit on 2026-08-20, once. Treat "the gate and a dev server running together" as the risk
+surface and stop the dev server before a full gate — that costs nothing and needs no confirmed
+mechanism.
 
 ### `.env` is loaded for you — but only outside Vercel
 
@@ -3348,6 +3374,77 @@ this is the map and the traps.
   ⚠️ **Two profiles that look extreme are not the worst case**: zero equipment is *smaller*
   (fewer prescribable candidates → fewer sets), and a bigger gap is capped at 32 weeks. If it
   ever bites, the lever is trimming sets beyond the first N weeks, not splitting the endpoint.
+
+## Persisting a plan (PR #11b — persist == activate)
+
+`POST /api/plans` regenerates the tree from the profile and inserts it **already activated**,
+standing the previous plan down in the same transaction. `GET /api/plans/active` reads it back;
+`POST /api/plans/{id}/abandon` stands one down. Module docstrings carry the detail.
+
+- **There is no "activate" endpoint and there will not be one.** A plan is created activated,
+  so `activated_at` is never `NULL` on a persisted row and no state machine exists to get
+  wrong. Abandon marks; it never deletes — `activity.planned_session_id` is the only link from
+  a logged activity to the plan it satisfied.
+- **One active plan per user is enforced TWICE, and neither half is optional.**
+  `uq_plan_one_active_per_user` (partial unique index, `0008`) can only *refuse* a second
+  active row — it cannot choose which one survives — so `create_plan` stands the old plan down
+  in the **same transaction**, and **before** the insert, because the index is not deferrable
+  and is checked per statement. What the index buys is that a concurrent double-tap is a
+  **409** instead of two active plans, and 409 is a legitimate answer the client recovers from
+  by reading. ⚠️ `_ACTIVE_STATE` in `server/plans/routes.py` is the app's one definition of
+  "active" and is kept character-identical to the index predicate;
+  `test_the_ACTIVE_CRITERION_and_the_INDEX_PREDICATE_cannot_drift` reads the predicate back out
+  of `pg_indexes` and compares them.
+- **`generator_caveats` is COORDINATE-ADDRESSED, not positional, and it DEGRADES rather than
+  500ing.** The generator's commentary is not recoverable from the tree (a block's shortfall
+  names the aspect it *wanted*), so it is stored — keyed by `(week_no, weekday, order_index)`
+  rather than by list position, because a later generator that emits a different number of
+  sessions would otherwise silently reattach caveats to the wrong ones. A shape
+  `_StoredCaveats` does not recognise is read as "no caveats", so no schema change can make an
+  already-persisted plan unopenable.
+- **A preview and a persisted plan are ONE response shape.** `PlanOut` serves all four routes;
+  the only difference is that a preview is not a row, so every `id` — plus `exercise_id`,
+  `status` and `activated_at` — is `null`. Round 1 shipped a parallel `Persisted*Out` hierarchy
+  and a second renderer, which is where the two drift. `aspect_key` is the one field read live
+  from the exercise rather than snapshotted; recorded as an accepted asymmetry on
+  `models.py::SessionBlock`.
+- **⚠️ THE BACKREF-CASCADE TRAP, and only a six-table row count catches it.** Round 1
+  committed the `plan` row and silently dropped all ~2,400 descendants: HTTP **201**, one
+  `SAWarning`, and nothing in the schema objected — **nothing requires a plan to have a
+  mesocycle.** Appending through `plan.mesocycles` is what makes the unit-of-work cascade the
+  whole tree; building children with a bare `mesocycle_id` does not. So the tests count rows in
+  all six tables *and* count the rows **reachable from the plan by its foreign keys**, which is
+  the assertion a wrongly-parented row fails.
+- **The statement counts, and neither is per-row.** The read is **six** `SELECT`s — one per
+  level via `selectinload`, not one wide join, because a join down five 1:N edges repeats every
+  ancestor's columns on every leaf row. The write is **~6 statements per level**: Postgres has
+  `use_insertmanyvalues` with a 1000-row page, so the worst case's 2,472 `prescribed_set` rows
+  are **3** statements, not 2,472, and the ids come back in `RETURNING` with no re-read.
+  `server/plans/routes.py::_insert_plan_tree` cites the SQLAlchemy 2.0.52 source line by line —
+  the ORM-graph-versus-explicit-insert decision rests on it.
+- **⚠️ An `IntegrityError` is never re-raised.** `str(IntegrityError)` carries the statement
+  *and its bound parameters*, which on the `plan` INSERT is `generator_input` — the climber's
+  open-injury keys — in the function log. The handler logs the constraint name plus plan-level
+  metadata and raises a 500 with `from None`. Input minimisation applies to the **log**, not
+  only to the response.
+- **The measured PERSISTED payload** (2026-08-26; boulder, 12-ordinal gap, 7 sessions/week,
+  full weekday mask, all 17 equipment, weakness `technique`):
+
+  | | weeks | sessions | blocks | sets | compact raw | gzip -6 |
+  | --- | --- | --- | --- | --- | --- | --- |
+  | persisted worst case | 32 | 224 | 672 | 2,472 | 640.7 KiB | **33.3 KiB** |
+  | the same tree previewed | 32 | 224 | 672 | 2,472 | 640.7 KiB | 17.6 KiB |
+
+  ⚠️ **Raw size is identical and COMPRESSED size nearly doubles.** Each filled `id` replaces a
+  `null` — about the same four bytes — but 2,472 repeated `null`s compress away and 2,472
+  distinct integers do not. So size against the *persisted* figure. ⚠️ This re-measurement
+  also **does not reproduce #11a's 2,421 sets / 583.2 KiB** for the worst case; that row is
+  stale and the sweep behind these numbers is in PR #11b's notes.
+- **`cache-control` is set by the routes AND defaulted by the middleware.** All three are
+  `private, no-store` — the bodies name the climber's open injuries — and FastAPI discards a
+  route's injected header whenever an `HTTPException` propagates, so `SecurityHeadersMiddleware`
+  fills it in **only when absent**. ⚠️ Absent-means-uncacheable, never a blanket: overwriting
+  `GET /api/library`'s `public, s-maxage=31536000, immutable` would be a real regression.
 
 ## Session player invariants (PR #15a onward)
 

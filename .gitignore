@@ -23,5 +23,5 @@ coverage/
 
 # working notes for the in-flight PR — a round-to-round handoff and its draft PR body,
 # neither of them a deliverable
-.claude/pr-11a-state.md
-.claude/pr-11a-body.md
+.claude/pr-*-state.md
+.claude/pr-*-body.md

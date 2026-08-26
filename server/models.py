@@ -886,16 +886,51 @@ class Plan(Base):
     would record only *that* — and the diary wants the dates. "Active" is
     `activated_at IS NOT NULL AND abandoned_at IS NULL AND completed_at IS NULL`.
 
-    **One-active-plan-per-user is NOT enforced here, deliberately.** The natural
-    expression is a partial unique index, and Alembic compares partial-index predicates
-    as text, with no local Postgres at the time to verify the rendering against — so
-    shipping one risked a false `alembic check` failure in CI on a constraint nobody
-    asked for. **That premise has expired: a local Postgres now exists, so the index is
-    verifiable and the structural option is open again** (`uq_user_injury_open_area` in
-    `0005` is the precedent). Index or application-level assertion, the decision belongs
-    with the activate endpoint, where the transaction that activates one plan is the
-    transaction that stands down the other. Tracked in **issue #62** — NOT PR #10, which
-    shipped a read-only library.
+    **One-active-plan-per-user IS enforced here, by `uq_plan_one_active_per_user`** — a
+    partial unique index on `user_id` whose predicate is the definition of "active" above,
+    verbatim (`0008`; `uq_user_injury_open_area` in `0005` is the precedent, and Postgres
+    has no partial unique *constraint*). The objection this docstring used to record — that
+    Alembic compares partial-index predicates as text with no local Postgres to verify the
+    rendering against, so shipping one risked a false `alembic check` failure — **expired
+    with PR #57**, which brought one up. Issue **#62**.
+
+    ⚠️ **The index does not replace the endpoint's obligation, and neither is sufficient
+    alone.** `server/plans/routes.py::create_plan` stands the previous plan down in the same
+    transaction that activates the new one, because the index can only refuse a second
+    active plan, never choose which one survives. What the index buys is that a concurrent
+    double-tap is a `409` rather than two active plans. Keep the predicate and the sentence
+    above character-identical: two definitions of "active" that drift is an invariant that
+    holds for one of them.
+
+    ## `generator_caveats` is the THIRD generation column, and it is `jsonb`
+
+    What the generator *said* about the plan it built: the plan-level shortfall roll-up, the
+    schedule notes, the per-session unfilled slots and the per-block substitutions. Stored
+    because none of it is recoverable from the tree — a block's shortfall names the aspect
+    the generator WANTED and could not fill, which no row anywhere records — and because
+    without it the `/plan` screen loses every equipment-gap banner on reload. The plan is
+    complete either way (a shortfall is never a gate), but a plan that silently stops
+    explaining itself is worse than one that never explained itself.
+
+    **One column, not four, and not one per table.** It is one fact — the generator's own
+    commentary at the moment of generation — written by one statement and read by one
+    screen, and nothing queries inside it: exactly the argument that makes `generator_input`
+    `jsonb`. The alternative was a mostly-NULL `jsonb` column on `session_block` too, i.e.
+    ~2,400 NULLs per plan to record a handful of caveats. The three `generator_*` columns
+    together are the generation record.
+
+    ⚠️ **`server/plans/routes.py::_StoredCaveats` treats a shape it does not recognise as
+    "no caveats" rather than raising**, so a change to `Shortfall` or `ScheduleNote` can
+    never make an already-persisted plan unopenable. `generator_version` is what tells a
+    reader which generator wrote the row.
+
+    ## `current_grade_id` is stored, not derived
+
+    The profile's current grade drifts as the climber improves, so once they log 6b nothing
+    recovers what the plan was built from — and `generator_input` carries the *ordinal*, not
+    the id, so it is not a substitute. `NO ACTION` and deliberately unindexed, like
+    `target_grade_id`: `grade` is reference data nothing deletes, so there is no
+    referencing-side scan for an index to save.
     """
 
     __tablename__ = "plan"
@@ -905,10 +940,13 @@ class Plan(Base):
     name: Mapped[str] = mapped_column(String(80))
     discipline: Mapped[Discipline] = mapped_column(discipline_enum)
     target_grade_id: Mapped[int | None] = mapped_column(ForeignKey("grade.id"), nullable=True)
+    current_grade_id: Mapped[int | None] = mapped_column(ForeignKey("grade.id"), nullable=True)
     start_date: Mapped[date] = mapped_column(Date)
     week_count: Mapped[int] = mapped_column(SmallInteger)
     generator_version: Mapped[str] = mapped_column(String(32))
     generator_input: Mapped[dict[str, Any]] = mapped_column(JSONB)
+    # ⚠️ Server-written only, and read DEFENSIVELY — see the docstring section above.
+    generator_caveats: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
     activated_at: Mapped[datetime | None] = mapped_column(nullable=True)
     abandoned_at: Mapped[datetime | None] = mapped_column(nullable=True)
@@ -923,6 +961,18 @@ class Plan(Base):
     __table_args__ = (
         # "this user's plans, newest first" and "this user's active plan" both land here.
         Index("ix_plan_user_id_created_at", "user_id", "created_at"),
+        # At most one active plan per user. ⚠️ `text(...)`, never `func.text(...)` — the
+        # latter compiles to a nonsense function call that type-checks, lints and passes
+        # every local test, then fails against real Postgres (the trap `0005` documents).
+        # The predicate must stay character-identical to this class's docstring.
+        Index(
+            "uq_plan_one_active_per_user",
+            "user_id",
+            unique=True,
+            postgresql_where=text(
+                "activated_at IS NOT NULL AND abandoned_at IS NULL AND completed_at IS NULL"
+            ),
+        ),
         CheckConstraint("week_count BETWEEN 1 AND 52", name="week_count_in_range"),
     )
 
@@ -1072,6 +1122,15 @@ class SessionBlock(Base):
     key, so that re-authoring the library never silently rewrites a plan somebody is
     halfway through. The same reasoning is why `prescribed_set` holds real numbers rather
     than pointing at a `prescription_template`.
+
+    ⚠️ **The ASPECT is the one thing not snapshotted, and it is a known, accepted
+    asymmetry.** `BlockOut.aspect_key` is read live from `exercise.climbing_aspect_id`
+    (`server/plans/routes.py::_exercise_reference`), so re-authoring an exercise's aspect
+    changes what an already-persisted plan says a block trains — exactly what the snapshot
+    above exists to prevent. Not a bug today: nothing keys off it and the aspect is the most
+    stable field on an exercise. Recorded so it is a decision rather than a mystery; the fix
+    would be a `climbing_aspect_id` column here, and it belongs to whichever PR first needs
+    the aspect to be historically true.
     """
 
     __tablename__ = "session_block"
@@ -1083,6 +1142,13 @@ class SessionBlock(Base):
     order_index: Mapped[int] = mapped_column(SmallInteger)
     exercise_id: Mapped[int] = mapped_column(ForeignKey("exercise.id"))
     protocol_kind: Mapped[ProtocolKind] = mapped_column(protocol_kind_enum)
+    # ⚠️ THREE distinct rests live in this tree and none may absorb another:
+    # `prescribed_set.target_rest_seconds` is rest *within* a set (between reps on a
+    # repeater), this column is rest *between* sets of the block, and `rest_after_seconds`
+    # is rest *after* the whole block. Mirrors `prescription_template
+    # .rest_between_sets_seconds`, which is where the generator reads the value from
+    # (`0008`; see `server/domain/planner/blueprint.py`'s departure 4).
+    rest_between_sets_seconds: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
     rest_after_seconds: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
 
     planned_session: Mapped[PlannedSession] = relationship(back_populates="blocks")

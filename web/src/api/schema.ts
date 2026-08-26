@@ -11,8 +11,8 @@
  *   openapi-sha256  the OpenAPI document it was generated from
  *   types-sha256    everything below this comment block
  *
- * openapi-sha256: e9d2093543ca5f1a231a89257f6d37160dd428c4e7041c15a51b8f70515c64b6
- * types-sha256: 101f76ecc633990bacf89149f63eeadcbad88278c7ee792baced9b3cd0a32346
+ * openapi-sha256: 12f51c6650876718ad30b3584ee0fe334137cb69d8f89f04647fe517756bf805
+ * types-sha256: ee471a5a0b047055902bf9cace76884c1bbeb325528a7745f560e2c708c71ce3
  */
 
 export interface paths {
@@ -253,6 +253,91 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/plans': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Create Plan
+     * @description Generate this user's plan, persist it activated, and return it with ids. **201.**
+     *
+     *     A **Tier-1 write** (CLAUDE.md, "Two write tiers", which already groups creating,
+     *     switching, activating and abandoning a plan as one write-through): one request, one
+     *     transaction, one Neon wake.
+     *
+     *     ## The server regenerates; it never accepts a tree
+     *
+     *     The request body is `PlanPreviewRequest` — `start_date` and nothing else, `extra
+     *     ="forbid"`. **A client-supplied tree is not accepted and must never be**, for two
+     *     independent reasons: it would let any caller fabricate an arbitrary plan (prescriptions
+     *     against exercises their injuries contraindicate, included), and it would be a 583 KiB
+     *     request body. `user_id` comes from `principal.user_id` and from nowhere else — no path
+     *     parameter, no body field, no query parameter in this module names a user.
+     *
+     *     The generation path is the preview's, reused rather than reimplemented
+     *     (`_planner_input` -> `generate` -> `_grade_ids`), so a plan can never be persisted in a
+     *     shape the preview would not have shown.
+     *
+     *     ## One transaction, all-or-nothing
+     *
+     *     Four steps, one `commit()` at the end, following `server/profile/routes.py::patch_profile`
+     *     (each route commits itself; `get_session` deliberately does not):
+     *
+     *     1. Stand the currently-active plan down — see `_stand_down_active_plan` for why this is
+     *        the same transaction and why it is first.
+     *     2. Resolve every `exercise_key` to an id in one statement, raising if any is missing.
+     *     3. Insert the tree, with `generator_version`, `generator_input` and `activated_at`.
+     *     4. Build the response from the in-memory objects, then commit.
+     *
+     *     A failure anywhere — the refusal, the missing key, an insert, the unique index — leaves
+     *     zero rows in all six tables, because nothing before the `commit()` is durable.
+     *
+     *     ## 409 is a legitimate answer, not a fault
+     *
+     *     A double-tap races: both requests stand the same plan down and both insert an active
+     *     one, and the second trips `uq_plan_one_active_per_user`. That is not an error state —
+     *     the user does have an active plan — so it comes back as a **409** for the client to
+     *     treat as "you already have one" and refetch.
+     */
+    post: operations['create_plan_api_plans_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/plans/active': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Active Plan
+     * @description This user's active plan with ids, or `{"plan": null}`. Always **200** — see the model.
+     *
+     *     Without this endpoint a persisted plan is invisible after a page reload and the whole
+     *     write path delivers nothing observable.
+     *
+     *     `.one_or_none()` rather than `.first()`: "at most one" is `uq_plan_one_active_per_user`'s
+     *     job, and if the index were ever dropped, a silent `LIMIT 1` would hide that while
+     *     quietly picking an arbitrary plan.
+     */
+    get: operations['active_plan_api_plans_active_get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/plans/preview': {
     parameters: {
       query?: never;
@@ -274,6 +359,44 @@ export interface paths {
      *     `planned_session` rows after a successful preview.
      */
     post: operations['preview_plan_api_plans_preview_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/plans/{plan_id}/abandon': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Abandon Plan
+     * @description Stand a plan down. **Marks, never deletes.** Idempotent, and 404 for anyone else's.
+     *
+     *     ## Why a timestamp and not a delete
+     *
+     *     `activity.planned_session_id` is the only link from a logged activity to the plan it
+     *     satisfied, so deleting an abandoned plan would cascade through the tree and destroy the
+     *     adherence record of sessions the user really did.
+     *
+     *     ## The 404 is scoped, and the scoping is the security property
+     *
+     *     The `WHERE` names both the id and `principal.user_id`, so another user's plan is
+     *     indistinguishable from one that does not exist — the same answer, the same message. A
+     *     403 here would confirm the row exists, which is the IDOR read this project treats as its
+     *     real extraction risk.
+     *
+     *     **Idempotent:** an already-abandoned plan keeps its original timestamp and nothing is
+     *     written, because when it was stood down is the fact the diary wants, not when someone
+     *     last pressed the button. `completed_at` is deliberately untouched — completing and
+     *     abandoning are different things and only one of them is in scope for #11b.
+     */
+    post: operations['abandon_plan_api_plans__plan_id__abandon_post'];
     delete?: never;
     options?: never;
     head?: never;
@@ -396,6 +519,24 @@ export type webhooks = Record<string, never>;
 export interface components {
   schemas: {
     /**
+     * ActivePlanResponse
+     * @description `{"plan": null}` when there is none — a **200**, not a 404.
+     *
+     *     "No plan yet" is the state every new account is in and the `/plan` screen has to render
+     *     it as an ordinary view with a Generate button, not as an error. A 404 would make the
+     *     normal case an error at three layers that all treat 4xx as failure: `apiFetch` throws on
+     *     it, the query retry predicate skips 4xx as unwinnable, and a route-level guard would
+     *     have `data === undefined` and swap itself for a fallback. Every one of those would then
+     *     need a special case for "the expected answer".
+     *
+     *     A wrapper object rather than a bare nullable body, so the endpoint can grow a sibling
+     *     field (a count of past plans, say) without changing shape, and so no client has to
+     *     handle a top-level `null`.
+     */
+    ActivePlanResponse: {
+      plan: components['schemas']['PlanOut'] | null;
+    };
+    /**
      * ActivityKind
      * @description What a logged activity *was*, on the `activity` supertype.
      *
@@ -453,19 +594,26 @@ export interface components {
      * BlockOut
      * @description One block of a session.
      *
-     *     `exercise_key`, not `exercise_id`: the domain is DB-free and speaks keys, the client
-     *     already holds `key` from `useLibrary()`, and it saves a `SELECT`. #11b resolves keys to
-     *     ids at persist time.
+     *     ⚠️ **`exercise_key` AND `exercise_id`, not one or the other.** The domain is DB-free and
+     *     speaks keys, so a preview has the key and no id; a persisted block holds the id, and the
+     *     key is derived from it (`_exercise_reference`). Carrying both means the client's library
+     *     lookup is written once for both paths — dropping the key on the persisted path was what
+     *     forced round 1 towards a second renderer.
      *
-     *     `rest_between_sets_seconds` has no home in the persisted plan tree — the template has it
-     *     and `session_block` does not — and is carried anyway so the preview is honest. #11b needs
-     *     a column or a redefinition.
+     *     `aspect_key` is the aspect of the exercise that actually landed here, derived on the
+     *     persisted path from `exercise.climbing_aspect_id`. ⚠️ It is **not** the same aspect as
+     *     `shortfall.aspect_key`, which names the aspect the generator *wanted* and could not
+     *     fill — that is precisely why a block's shortfall cannot be derived and has to be stored.
      */
     BlockOut: {
       /** Aspect Key */
       aspect_key: string;
+      /** Exercise Id */
+      exercise_id?: number | null;
       /** Exercise Key */
       exercise_key: string;
+      /** Id */
+      id?: number | null;
       /** Order Index */
       order_index: number;
       protocol_kind: components['schemas']['ProtocolKind'];
@@ -665,6 +813,8 @@ export interface components {
     MesocycleOut: {
       /** End Week */
       end_week: number;
+      /** Id */
+      id?: number | null;
       /** Microcycles */
       microcycles: components['schemas']['MicrocycleOut'][];
       phase: components['schemas']['Phase'];
@@ -674,8 +824,13 @@ export interface components {
     /**
      * MicrocycleOut
      * @description One week. `is_deload` is exactly `phase is Phase.DELOAD`; a taper is known by `phase`.
+     *
+     *     `phase` is carried even though `microcycle` has no phase column: it is read off the
+     *     parent mesocycle, which the serialiser is walking anyway.
      */
     MicrocycleOut: {
+      /** Id */
+      id?: number | null;
       /** Is Deload */
       is_deload: boolean;
       phase: components['schemas']['Phase'];
@@ -720,20 +875,21 @@ export interface components {
      */
     Phase: 'base' | 'strength' | 'power' | 'power_endurance' | 'performance' | 'deload' | 'taper';
     /**
-     * PlanPreviewRequest
-     * @description One field, and `extra="forbid"` so a probing or typo'd field is a 422, never silence.
-     *
-     *     `start_date` is optional: omitted means "the Monday on or after today, UTC". The server
-     *     normalises whatever it is given the same way, so the two paths cannot disagree — which
-     *     also means a Monday is returned unchanged and today counts as "on or after today".
+     * PlanAbandonResponse
+     * @description The timestamp that was set, or the one already there. Idempotent either way.
      */
-    PlanPreviewRequest: {
-      /** Start Date */
-      start_date?: string | null;
+    PlanAbandonResponse: {
+      /**
+       * Abandoned At
+       * Format: date-time
+       */
+      abandoned_at: string;
+      /** Id */
+      id: number;
     };
     /**
-     * PlanPreviewResponse
-     * @description The whole plan, plus what would be needed to reproduce it.
+     * PlanOut
+     * @description A whole plan — previewed or persisted — plus what would be needed to reproduce it.
      *
      *     `generator_input` is the canonical JSON of the `PlannerInput` actually used, plus
      *     `generator_version` and `library_digest`. That digest is load-bearing:
@@ -741,12 +897,27 @@ export interface components {
      *     the tree, and **the library is a third input** — without it the promise is false the
      *     first time content is edited, and the failure is silent.
      *
-     *     ⚠️ `target_grade_id` and `current_grade_id` are set HERE and are always `None` on the
-     *     blueprint: `PlannerInput` carries ordinals, so the domain never sees a `grade.id`. Note
-     *     `plan` has no `current_grade_id` column, so the field is a preview-only convenience the
-     *     `/plan` header uses for `compareToGoal`; #11b needs a column or has to drop it.
+     *     ⚠️ `target_grade_id` and `current_grade_id` are set by this MODULE and are always `None`
+     *     on the blueprint: `PlannerInput` carries ordinals, so the domain never sees a `grade.id`.
+     *     Both are real columns on `plan`, so both survive a reload (`0008`) — the profile's
+     *     current grade drifts as the climber improves and nothing else recovers what the plan was
+     *     built from.
+     *
+     *     `grade_gap` is derived on the persisted path rather than stored; see `_grade_gap`.
+     *
+     *     ⚠️ **The measured PERSISTED worst case** (re-measured 2026-08-26; boulder, 12-ordinal
+     *     gap, 7 sessions/week, full weekday mask, all 17 equipment, weakness `technique`): 32
+     *     weeks / 224 sessions / 672 blocks / **2,472 sets / 640.7 KiB compact raw / 33.3 KiB
+     *     gzip -6**. Raw size is the *same* as the preview's for the same tree — every filled `id`
+     *     replaces a `null`, which costs about the same four bytes — but **gzipped it is ~1.9x**
+     *     (17.6 KiB previewed), because 2,472 repeated `null`s compress away and 2,472 distinct
+     *     integers do not. So the persisted response is the one to size against. One request
+     *     rather than create-then-fetch is the point; if it ever bites, the lever is trimming sets
+     *     beyond the first N weeks, not splitting the endpoint.
      */
-    PlanPreviewResponse: {
+    PlanOut: {
+      /** Activated At */
+      activated_at?: string | null;
       /** Current Grade Id */
       current_grade_id: number | null;
       discipline: components['schemas']['Discipline'];
@@ -758,6 +929,8 @@ export interface components {
       generator_version: string;
       /** Grade Gap */
       grade_gap: number;
+      /** Id */
+      id?: number | null;
       /** Mesocycles */
       mesocycles: components['schemas']['MesocycleOut'][];
       /** Name */
@@ -775,6 +948,18 @@ export interface components {
       target_grade_id: number | null;
       /** Week Count */
       week_count: number;
+    };
+    /**
+     * PlanPreviewRequest
+     * @description One field, and `extra="forbid"` so a probing or typo'd field is a 422, never silence.
+     *
+     *     `start_date` is optional: omitted means "the Monday on or after today, UTC". The server
+     *     normalises whatever it is given the same way, so the two paths cannot disagree — which
+     *     also means a Monday is returned unchanged and today counts as "on or after today".
+     */
+    PlanPreviewRequest: {
+      /** Start Date */
+      start_date?: string | null;
     };
     /**
      * PrescriptionOut
@@ -953,6 +1138,14 @@ export interface components {
     /**
      * SessionOut
      * @description One planned session. `estimated_minutes` is `null` for a session with no blocks.
+     *
+     *     `status` is `null` on a preview and real on a persisted session: a preview has no
+     *     lifecycle, and inventing `planned` for it would make "not a row yet" and "a row nobody
+     *     has started" the same answer.
+     *
+     *     `shortfalls` here are the slots that produced **no block at all** — the terminal
+     *     injury/gear case. They are stored, not derived: nothing in the tree records a slot that
+     *     was never filled.
      */
     SessionOut: {
       activity_kind: components['schemas']['ActivityKind'];
@@ -960,6 +1153,8 @@ export interface components {
       blocks: components['schemas']['BlockOut'][];
       /** Estimated Minutes */
       estimated_minutes: number | null;
+      /** Id */
+      id?: number | null;
       /**
        * Scheduled On
        * Format: date
@@ -967,6 +1162,7 @@ export interface components {
       scheduled_on: string;
       /** Shortfalls */
       shortfalls: components['schemas']['ShortfallOut'][];
+      status?: components['schemas']['SessionStatus'] | null;
       /** Title */
       title: string;
       /** Weekday */
@@ -989,8 +1185,14 @@ export interface components {
      *     `target_load_kg` and `target_grade_id` are present and always `null` in v1.0.0, so the
      *     wire shape is stable when they are filled. Deriving a load is the one place a bodyweight
      *     figure could creep into a plan, which CLAUDE.md's weight rule forbids outright.
+     *
+     *     The id is the point of the persisted response: the session player logs a `logged_set`
+     *     against `prescribed_set.id`, so a client that had to re-fetch to learn it would need a
+     *     second round trip before the user could start.
      */
     SetOut: {
+      /** Id */
+      id?: number | null;
       /** Set Index */
       set_index: number;
       /** Target Grade Id */
@@ -1284,6 +1486,59 @@ export interface operations {
       };
     };
   };
+  create_plan_api_plans_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['PlanPreviewRequest'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['PlanOut'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  active_plan_api_plans_active_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ActivePlanResponse'];
+        };
+      };
+    };
+  };
   preview_plan_api_plans_preview_post: {
     parameters: {
       query?: never;
@@ -1303,7 +1558,38 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          'application/json': components['schemas']['PlanPreviewResponse'];
+          'application/json': components['schemas']['PlanOut'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  abandon_plan_api_plans__plan_id__abandon_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        plan_id: number;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['PlanAbandonResponse'];
         };
       };
       /** @description Validation Error */
