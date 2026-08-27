@@ -5041,6 +5041,13 @@ limit = 6
 reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
 
 [[exception]]
+path = "web/src/api/libraryCitations.test.ts"
+kind = "block"
+anchor = "plan api ts and profile api ts"
+limit = 10
+reason = "The header of the citation guard: what a construct-existence check can and cannot prove, so a green run is not mistaken for the comments having been re-read."
+
+[[exception]]
 path = "web/src/api/types.ts"
 kind = "block"
 anchor = "readable names for the generated"
@@ -6256,7 +6263,7 @@ path = "web/src/profile/api.ts"
 kind = "block"
 anchor = "the two reads and the one write"
 limit = 42
-reason = "Cites @tanstack/query-core@5.101.4 line by line. Three review rounds of bugs here all came from reasoning about those semantics instead of reading them."
+reason = "Cites the installed query-core by CONSTRUCT, each one asserted by web/src/api/libraryCitations.test.ts. Three review rounds of bugs here all came from reasoning about those semantics instead of reading them."
 
 [[exception]]
 path = "web/src/profile/api.ts"

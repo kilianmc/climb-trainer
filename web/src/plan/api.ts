@@ -21,26 +21,26 @@ import { canPreview, nextMonday, previewKeyParts } from './blueprint';
  * `invalidateQueries` anywhere — the 409 recovery is a read *inside* `mutationFn`, under the same
  * `scope` serialisation, rather than a write racing out of an `onError`.
  *
- * ## Verified against `web/node_modules/@tanstack/query-core@5.101.4`, `build/modern/`
+ * ## Every library claim below is a CONSTRUCT, not a line number
  *
- * Per CLAUDE.md's standing rule, every claim below was read there:
+ * Read in `web/node_modules/@tanstack/query-core/build/modern/`, and each construct is asserted
+ * to still be there by `api/libraryCitations.test.ts`. A line number rots on every bump.
  *
- * - `mutation.js:82` — `retry: this.options.retry ?? 0`: a mutation does not retry, so the 409
- *   reaches `mutationFn`'s `catch` once.
- * - `mutation.js:94` — `execute()` dispatches `{ type: 'pending', variables }` **synchronously**,
- *   before the retryer and `onMutate`, so the derived overlay lands on the click.
- * - `mutation.js:135-144` — `retryer.start()` -> `onSuccess` -> `onSettled` ->
- *   `dispatch('success')`: the cache is written before the mutation leaves `pending`.
- * - `mutationCache.js:60-67`/`75` + `mutation.js:194` — `canRun` is true only for the *first
- *   pending* mutation in a scope, and `runNext` continues the next. So `scope: { id: 'plan' }`
- *   serialises the REQUESTS: a create and an abandon are never on the wire at once.
- * - `queryClient.js:92-103` — `setQueryData` writes nothing when the updater yields `undefined`,
- *   which is how `useAbandonPlan` says "leave the cache alone".
- * - `queryObserver.js:331` — `isLoadingError: isError && !hasData`, the "nothing to show"
- *   question every screen here gates on instead of `isError`.
- * - `queryClient.js:141-147` + `query.js:268-270` — `cancelQueries` defaults to
- *   `{ revert: true }` and a reverted `CancelledError` restores `#revertState`, so cancelling an
- *   in-flight read **removes** a writer rather than adding one. See `cancelStaleRead`.
+ * - `mutation.js` — `retry: this.options.retry ?? 0`: no retry, so the 409 hits `catch` once.
+ * - `mutation.js` — `type: "pending",` is dispatched by `execute()` **synchronously**, before
+ *   `onMutate` and before the retryer, so the derived overlay lands on the click.
+ * - `mutation.js` — `await this.options.onSuccess?.(data,` sits between `await retryer.start()`
+ *   and the `success` dispatch: the cache is written before the mutation leaves `pending`.
+ * - `mutationCache.js` — `find((m) => m.state.status === "pending")` makes `canRun` true only for
+ *   a scope's *first pending* mutation and `this.#mutationCache.runNext(this);` continues the
+ *   next, so `scope: { id: 'plan' }` serialises the REQUESTS: create and abandon never overlap.
+ * - `queryClient.js` — `if (data === void 0) return;` in `setQueryData`: nothing is written when
+ *   the updater yields `undefined`, which is how `useAbandonPlan` says "leave the cache alone".
+ * - `queryObserver.js` — `isLoadingError: isError && !hasData`, the "nothing to show" question
+ *   every screen here gates on instead of `isError`.
+ * - `queryClient.js` — `revert: true,` is `cancelQueries`'s default and `query.js`'s
+ *   `error.revert) this.setState({` restores `#revertState`, so cancelling an in-flight read
+ *   **removes** a writer rather than adding one. See `cancelStaleRead`.
  */
 
 /** `POST /api/plans/preview`. The parts are appended per call — see `usePlanPreview`. */
@@ -78,10 +78,10 @@ const ACTIVE_PLAN_STALE_TIME_MS = 10 * 60_000;
  * read against a 0.243 s write), but a cold Neon wake lands on the read as easily as the write.
  *
  * ⚠️ **It adds no writer, so one-writer-per-cache-entry still holds**: the cancelled read writes
- * nothing at all (`queryClient.js:142`, `query.js:268-270`), leaving the mutation's
- * `setQueryData` the only writer. It is the opposite of the PR #9 bug — an extra READ fired from
- * an error handler. `await`ed because `mutation.js:135-144` awaits `onSuccess` before dispatching
- * `success`, so the button stays busy until the cache is true.
+ * nothing at all (`cancelQueries`'s `revert: true,` and `query.js`'s revert path), leaving the
+ * mutation's `setQueryData` the only writer. It is the opposite of the PR #9 bug — an extra READ
+ * fired from an error handler. `await`ed because `mutation.js` awaits `onSuccess` before
+ * dispatching `success`, so the button stays busy until the cache is true.
  */
 async function cancelStaleRead(queryClient: ReturnType<typeof useQueryClient>): Promise<void> {
   await queryClient.cancelQueries({ queryKey: ACTIVE_PLAN_KEY });
@@ -110,9 +110,9 @@ async function cancelStaleRead(queryClient: ReturnType<typeof useQueryClient>): 
  *
  * `enabled`, all three parts:
  *
- * - **`isAuthenticated`** for the measured reason in `profile/api.ts:88-100`: logging out clears
- *   the cache, a still-mounted observer refetches, that is a 401, and the refresh path answers a
- *   401 with a **Postgres write**.
+ * - **`isAuthenticated`** for the measured reason on `profile/api.ts`'s `useVocabulary`: logging
+ *   out clears the cache, a still-mounted observer refetches, that is a 401, and the refresh
+ *   path answers a 401 with a **Postgres write**.
  * - **`canPreview(profile)`** — the client holds the profile and can see a refusal before asking
  *   for one (`blueprint.ts`). The 422 stays as defence in depth.
  * - **`wanted`**, a compute decision: this is the most expensive read in the app, and a climber
@@ -186,7 +186,7 @@ export interface ActivePlanView {
    *
    * ⚠️ Not `isError`: `query.js`'s error reducer sets `status: "error"` even when data is
    * present, so a failing background refetch would otherwise blow away a plan the climber is
-   * reading. `queryObserver.js:331` derives `isLoadingError` as `isError && !hasData`.
+   * reading. `queryObserver.js` derives `isLoadingError` as `isError && !hasData`.
    */
   isLoadingError: boolean;
   /** Nothing else will retry: `refetchOnWindowFocus` is off app-wide. */
@@ -198,8 +198,8 @@ export interface ActivePlanView {
  *
  * **An abandon in flight renders as "no plan", derived from the pending mutation's own variables
  * and written nowhere.** The click is a Tier-1 write, so the UI must not wait on Postgres, and
- * `mutation.js:94` dispatches `pending` synchronously. A failure just drops the overlay — no
- * rollback, no request.
+ * `mutation.js` dispatches `type: "pending",` synchronously. A failure just drops the overlay —
+ * no rollback, no request.
  *
  * ⚠️ **A pending CREATE gets no overlay, deliberately.** The optimistic value would be a whole
  * plan tree the server has not generated yet, and inventing one is exactly what "the cache holds
@@ -302,7 +302,7 @@ export function useCreatePlan(handlers: CreatePlanHandlers = {}) {
  * **only when the cached plan is that plan**: an abandon naming some other plan (a second tab, a
  * stale screen) must not clear an entry that was never about it. Returning `current` unchanged is
  * how "leave the cache alone" is spelled, including when it is `undefined`, which
- * `queryClient.js:99` turns into no write at all.
+ * `queryClient.js`'s `if (data === void 0) return;` turns into no write at all.
  */
 export function useAbandonPlan() {
   const { request } = useAuth();
