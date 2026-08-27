@@ -21,17 +21,17 @@ import { useAuth } from '../auth/AuthProvider';
  *
  * ## Why the timing works — read from the INSTALLED source, not reasoned about
  *
- * `@tanstack/query-core@5.101.4`, `build/modern/mutation.js`:
+ * The installed `build/modern/mutation.js`, by CONSTRUCT (`api/libraryCitations.test.ts`):
  *
- * - `execute()` dispatches `{ type: 'pending', variables }` at **line 94, synchronously**,
- *   before `onMutate` and before the retryer — while the `scope` gate is `canRun()` *inside*
- *   the retryer (**line 86**). So `scope` serialises the network call, NOT `onMutate`, which is
- *   why a snapshot could ever see another write's guess. The overlay is established by the
- *   click and renders on the next tick (`useMutationState` -> `notifyManager.schedule` ->
- *   `systemSetTimeoutZero`; measured, and the same scheduler a `setQueryData` went through).
- * - Success order: `await retryer.start()` -> `await options.onSuccess` -> `onSettled` ->
- *   `dispatch({ type: 'success' })`. The cache is updated **before** the mutation leaves
- *   `pending`, so the overlay is replaced by real data and the bar cannot flicker backwards.
+ * - `execute()` dispatches `{ type: "pending", variables, isPaused }` **synchronously**, before
+ *   `onMutate` and before the retryer, whose gate it passes as
+ *   `canRun: () => this.#mutationCache.canRun(this)`. So `scope` serialises the network call, NOT
+ *   `onMutate` — which is why a snapshot could ever see another write's guess. The overlay is
+ *   established by the click and renders next tick (`useMutationState` -> `notifyManager.schedule`
+ *   -> `systemSetTimeoutZero`; measured, and the same scheduler a `setQueryData` went through).
+ * - Success order: `await retryer.start()` -> `await this.options.onSuccess?.(data,` ->
+ *   `onSettled` -> `dispatch({ type: "success" })`: the cache is updated **before** the mutation
+ *   leaves `pending`, so the overlay is replaced by real data and the bar cannot flicker back.
  * - Failure order: `onError` -> `onSettled` -> `dispatch({ type: 'error' })`. The overlay drops
  *   when the mutation stops being pending, and there is nothing to roll back.
  * - `query.js`'s `case "error"` reducer sets `status: "error"` **unconditionally**, data or no
@@ -65,7 +65,7 @@ const PROFILE_STALE_TIME_MS = 10 * 60_000;
  * query has just been removed fetches again — measured on the real nav path, **one extra
  * `GET /api/profile`**, issued after the token was dropped. In production that is a 401,
  * which `auth/refresh.ts` answers with a refresh POST, which is a **Postgres write** on a
- * path that previously did none. `queryObserver.js:445/451/461` gate every fetch decision on
+ * path that previously did none. `queryObserver.js` gates every fetch decision on
  * `resolveQueryBoolean(options.enabled, query) !== false`, so this closes it at the source.
  *
  * The `_authed` guard means an authenticated screen never renders without a session anyway;
@@ -153,7 +153,7 @@ export interface ProfileView {
    *
    * ⚠️ Not `isError`: `query.js`'s error reducer sets `status: "error"` even when data is
    * present, so `isError` cannot tell "nothing to show" from "stale but perfectly usable".
-   * `queryObserver.js:331` derives `isLoadingError` as `isError && !hasData`, which is
+   * `queryObserver.js` derives `isLoadingError` as `isError && !hasData`, which is
    * exactly this question. Gating a screen on `isError` destroyed the user's draft.
    */
   isLoadingError: boolean;

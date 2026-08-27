@@ -610,8 +610,8 @@ that enforce it. What follows is the reasoning that is not visible in the config
 - **`globPatterns` is explicit and narrower than the default**, because the manifest icons and
   `includeAssets` are added by the plugin with their own revisions; globbing them too offers
   workbox two entries for one URL. `build.sourcemap` is on and `.map` is deliberately excluded.
-  As of PR #7 the precache is **33 entries / ~426 KiB**, `remoteEntry.js` and the MF virtual
-  chunks included. ⚠️ **Those are NOT dead weight and must not be excluded**: `dist/index.html`
+  The precache covers the app shell plus `remoteEntry.js` and the MF virtual chunks; the build
+  prints the current entry count and size, so it is not repeated here. ⚠️ **Those are NOT dead weight and must not be excluded**: `dist/index.html`
   `modulepreload`s every one of them, because the MF plugin routes the *standalone* app's own React
   through the share scope. Precaching them is what makes the standalone app work offline at all.
   (An earlier note here said the standalone app never loads `remoteEntry.js`. It was wrong.)
@@ -3139,6 +3139,14 @@ weakness**, the editor became sections rather than a second wizard, and there is
   rounds of bugs here were all "I reasoned about the semantics". State the invariant, read the
   source, write the failing test and record the measured numbers, and cite what you read in
   any comment that asserts library behaviour.
+  ⚠️ **Cite the CONSTRUCT, never a line number.** Line numbers rot on every dependency bump
+  with nothing to catch it — #73's bump falsified six of nine citations in `plan/api.ts` and
+  `profile/api.ts` while the whole suite stayed green. So a citation quotes the code it refers
+  to, and `web/src/api/libraryCitations.test.ts` asserts every quoted construct is still in the
+  installed module (and, both ways, that a newly quoted one has a row). It lives in the WEB
+  suite because it reads `web/node_modules`, which CI's `server` job does not install — a
+  pytest guard there would pass locally and be vacuous in CI. What it cannot catch: a construct
+  that still exists does not prove the logic around it still behaves the same way.
 - **The "already complete" redirect reads an ENTRY SNAPSHOT, not the live profile.**
   Finishing the last step updates the cache before `navigate` runs, so a live check would
   race `/dashboard` against `<Navigate to="/profile">`. The snapshot is taken in a `useState`
