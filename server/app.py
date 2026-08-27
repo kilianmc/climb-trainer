@@ -1,13 +1,11 @@
 """FastAPI application.
 
-Routing contract, validated in spike S0 — see the repo CLAUDE.md before changing
-`vercel.json`: `/api/*` reaches this app with the ORIGINAL path, and anything
-unmatched here must return FastAPI's own JSON 404, never the SPA's HTML.
-
-**Authentication is deny-by-default and is wired here, once**, as an application-level
-dependency. Registering it per-router would fail open the first time someone forgot;
-registering it here means a new endpoint is protected unless its `(method, path)` is
-added to `PUBLIC_ROUTES` in `server/auth/deps.py`, in a diff a reviewer sees.
+Routing contract, validated in spike S0 — read CLAUDE.md before changing `vercel.json`:
+`/api/*` reaches this app with the ORIGINAL path, and anything unmatched here must return
+FastAPI's own JSON 404, never the SPA's HTML. **Authentication is deny-by-default and wired
+here, once**, as an application-level dependency: per-router registration fails open the first
+time someone forgets, whereas here a new endpoint is protected unless its `(method, path)`
+joins `PUBLIC_ROUTES` in `server/auth/deps.py`, in a diff a reviewer sees.
 """
 
 from typing import Final

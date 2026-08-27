@@ -1,16 +1,12 @@
 """Login's two rate-limit dimensions.
 
-The per-IP bucket alone is a weak control: an attacker with a hundred addresses gets a
-hundred fresh budgets. `LOGIN_ACCOUNT` keys on the attempted email instead, so the limit
-binds to the *target* of the attack. These tests cover the three properties that make
-that worth having and safe to have — it trips independently of the IP bucket, it is not
-an account-existence oracle, and it costs no extra database round trip.
+The per-IP bucket alone is weak: an attacker with a hundred addresses gets a hundred fresh
+budgets. `LOGIN_ACCOUNT` keys on the attempted email instead, so the limit binds to the
+*target*. Three properties make that worth having and safe to have — it trips independently of
+the IP bucket, it is not an account-existence oracle, and it costs no extra round trip. The
+single-statement test guards a design decision that is invisible from behaviour.
 
-Per CLAUDE.md's testing policy these sit under "core user paths — auth", and the
-single-statement test guards a design decision that is invisible from behaviour and
-would otherwise rot silently.
-
-**Skips without `DATABASE_URL`** (see `conftest.py`). CI runs them for real.
+**Skips without `DATABASE_URL`** (`conftest.py`); CI runs them for real.
 """
 
 from datetime import UTC, datetime

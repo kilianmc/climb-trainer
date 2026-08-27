@@ -1,19 +1,12 @@
 """⚠️ GUARD. Nothing the generator says to a user may suggest losing weight.
+DB-free. CLAUDE.md's hard rule binds the plan generator by name, and this is the only thing in the
+gate that can see a generated *sentence*: `tests/test_schema_no_weight_targets.py` guards
+identifiers and is structurally blind to prose, which is where a recommendation would live.
 
-DB-free.
-
-Justified by CLAUDE.md's hard rule, "⚠️ The app never recommends losing weight". That rule
-binds the plan generator by name, and this is the only thing in the gate that can see a
-generated *sentence*: `tests/test_schema_no_weight_targets.py` guards identifiers — column,
-table, index and constraint names — and is structurally blind to prose, which is where a
-recommendation would actually live.
-
-The second half is the `String(80)` widths. `plan.name` and `planned_session.title` are both
-`String(80)`, the blueprint deliberately does not check them (a column width is not a CHECK
-— see `blueprint.py`), and PR #11b inserts these strings. A string that fits the preview and
-not the column is a failure that would first appear in the bulk insert, one PR later.
-
-Shown to fail before being trusted — see `.claude/pr-11a-state.md` for the captures.
+The second half is the `String(80)` widths on `plan.name` and `planned_session.title`. The
+blueprint deliberately does not check them (a column width is not a CHECK), so a string that fits
+the preview and not the column would first appear in PR #11b's bulk insert. Shown to fail before
+being trusted; captures in `.claude/pr-11a-state.md`.
 """
 
 import re

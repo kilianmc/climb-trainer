@@ -1,16 +1,11 @@
 """Sessions onto the weekday mask, and what happens when it does not fit.
 
-DB-free: it reads `server/domain/planner/schedule.py`.
-
-Justified by CLAUDE.md's testing policy on two counts — "complex transforms" (an exhaustive
-subset search with a tie-break is exactly that) and plan generation's "volume allocation".
-
-The expected weekday sets are written down as **literals**, because the most-even subset is
-not obvious by inspection and re-deriving it here would agree with any bug in the derivation.
-Mon/Thu out of Mon-Fri is the case that motivated the algorithm: naive striding gives Mon/Wed
-and a five-day gap. The four- and five-session rows are the ones that caught the *original*
-tie-break, which maximised only the smallest gap and therefore chose Mon/Tue/Wed/Thu — every
-four-day subset ties at a minimum gap of 1, so that rule had nothing left to decide with.
+DB-free: it reads `server/domain/planner/schedule.py`. Justified as a "complex transform" (an
+exhaustive subset search with a tie-break) and as plan generation's volume allocation. The
+expected weekday sets are **literals**, because the most-even subset is not obvious by
+inspection and re-deriving it here would agree with any bug in the derivation. Mon/Thu out of
+Mon-Fri motivated the algorithm; the four- and five-session rows caught a minimum-gap-only
+tie-break, which chose Mon/Tue/Wed/Thu — every four-day subset ties at a minimum gap of 1.
 """
 
 import pytest

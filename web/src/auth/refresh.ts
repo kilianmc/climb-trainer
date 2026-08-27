@@ -5,210 +5,88 @@ import type { SessionStore } from './session';
 /**
  * Silent refresh: serialised, lazy, and capped after a failure.
  *
- * ## Why the refresh has to be serialised, and where serialising is not enough
+ * ## Three realms, and they do NOT line up
  *
- * `server/auth/refresh.py::rotate` reads its row `FOR UPDATE` and treats a second
- * presentation of an already-rotated token as **theft**, revoking the whole family — outside the
- * 10-second grace window described in point 3 below. Note what the row lock does and does not
- * do: it **serialises** two presentations of the same token, it does not deduplicate them. So
- * the loser is *guaranteed* — not merely likely — to re-read the row after the winner commits
- * and see `rotated_at` set. Before the grace window that meant the family was revoked, killing
- * the winner's brand-new token too, and both callers ended up logged out with no way to refresh.
+ * `inFlight` below is per **mount** (a closure local). A Web Lock is per **origin**. The refresh
+ * cookie is per **site**: host-only, so it is *stored* against climb.kilianmc.com alone, but
+ * `SameSite=Lax` is a site rule, so the federated mount on kilianmc.com still *sends* it. One
+ * jar entry, two origins — which is both why auth works federated and why the two can collide.
  *
- * Three realms are in play and **they do not line up**, which is the whole shape of this
- * problem. Getting them the wrong way round is how the guarantee gets overstated:
+ * ⚠️ **So the lock does NOT cover mounts, and must never be described as if it did.** Two
+ * origins get two lock managers. That arm is covered on the SERVER instead: `rotate()` answers
+ * the loser of a concurrent presentation with **409** and no write, and `rotateRefreshCookie`
+ * retries the POST **exactly once**, by which time the jar holds the winner's fresh token. One
+ * retry converges exactly **two** realms — revisit the count if a third same-site origin ever
+ * mounts this app, and note that an unusable lock makes two tabs behave as separate realms. The
+ * reasoning, the three bounds and the security trade the grace window accepts all live at the
+ * one place the decision is made: `server/auth/refresh.py`'s grace-window section.
  *
- * | Thing                | Realm                                            |
- * | -------------------- | ------------------------------------------------ |
- * | `inFlight` below     | one **mount** (a closure local)                  |
- * | a Web Lock           | one **origin** (partitioned by storage key)      |
- * | the refresh cookie   | one **site** — one jar entry, both origins       |
+ * The lock is **kept** and is not redundant: the grace window would cover same-origin tabs too,
+ * but at the cost of an extra POST — a Postgres write and another five minutes of Neon awake
+ * time — per losing tab. It is now an optimisation over a correct fallback.
  *
- * That last row needs one clarification, because "the profile" overstates it: the cookie is
- * **host-only** (no `Domain` attribute — see `server/auth/cookies.py`), so it is *stored*
- * against climb.kilianmc.com alone. But `SameSite=Lax` is a **site** rule, not an origin rule,
- * so a request from the federated mount on kilianmc.com still *sends* it. One entry in the jar,
- * reachable from both origins, which is the whole reason the two can collide.
+ * **Tokens are deliberately NOT shared between tabs.** A `BroadcastChannel` would save that
+ * write and is rejected: in the federated mount the origin is kilianmc.com, so the channel is
+ * shared with the shell and every other remote, and an access token on it would give away the
+ * property this design holds — the token is in no storage, no URL, no `postMessage`, no prop.
  *
- * So there are three mechanisms, one per realm:
+ * **Lazy, and never on a timer.** Rotation is a Postgres write and Neon bills awake time, so a
+ * periodic refresh would keep the compute up for a whole training session. Do not add a
+ * pre-emptive timer off `expires_in`.
  *
- * 1. **Within a mount** — `inFlight`, so N concurrent 401s share one attempt.
- * 2. **Across tabs of ONE origin** — the **Web Locks API**, because two tabs on
- *    climb.kilianmc.com have two independent `inFlight` closures and one shared cookie.
- * 3. **Across the two ORIGINS** — a **server-side grace window**, not anything in this file.
- *    This is what issue #27 fixed. A standalone tab plus the climb-trainer card open on the
- *    portfolio is the arm no lock can reach, so both mounts present the same pre-rotation
- *    token; `rotate()` now answers the loser with **409** and writes nothing, instead of
- *    reading the replay as theft and revoking the family. This client retries the POST
- *    **exactly once** (see `rotateRefreshCookie`), and the browser attaches the token the
- *    winner just rotated into the shared jar, so the retry is an ordinary legitimate rotation.
- *    The server sees presentations, not origins, which is why one mechanism there covers all
- *    three realms where the lock covers one. **No migration was needed** — `rotated_at` was
- *    already on the row, and nothing about the successor is handed back.
+ * ## ⚠️ TWO deadlines, and collapsing them re-creates a worse bug than the one they fix
  *
- * **⚠️ Point 3 is a strong mitigation, not a guarantee. Three bounds, none of them a reason to
- * loosen anything — the full reasoning is in `server/auth/refresh.py`'s grace-window section:**
+ * The obvious fix for a hanging `fetch` — one `AbortSignal.timeout(8_000)` on the POST — is
+ * worse than the bug. `POST /api/auth/refresh` is a **sync `def`**, so a client disconnect
+ * cannot cancel it, and it **commits the rotation before the response exists**: abort at 8 s and
+ * the server still rotates at 9 s. The successor is stored only as a sha256, so **nobody holds
+ * the live refresh token** — a retry inside `REPLAY_GRACE` gets a 409, and one after it trips
+ * reuse detection and hard-logs the user out. So:
  *
- * - **The retry is not certain to find the winner's cookie.** The winner's response is
- *   dispatched after its `commit()`, which is also what releases the row lock the loser is
- *   waiting on; the loser then pays its own commit round trip before answering. So the winner
- *   leads by roughly one database round trip — a real margin, but the two responses travel
- *   independently. If the 409 is processed first, the retry re-presents the same token, gets a
- *   second 409, and `exhausted` latches: **that mount cannot refresh for the rest of the page
- *   load.** The family survives and a reload recovers, so it degrades to "sign in again", never
- *   to a revoked session.
- * - **One retry converges exactly TWO realms.** Three same-site origins presenting at once
- *   means two losers retrying against the same fresh token, and the second loser has no retry
- *   left. Today there are two origins (`climb.kilianmc.com` and `kilianmc.com`), so the cap is
- *   right and it saves a Postgres write per attempt. **Revisit the count if a third same-site
- *   origin ever mounts this app** — and note the unusable-lock fallback can make two *tabs*
- *   behave as separate realms, so "two" is about realms, not about origins.
- * - **Issue #27 is narrowed, not eliminated.** A loser whose request takes longer than the
- *   server's 10-second window to travel from reading the cookie to reaching `rotate()` — a
- *   stalled radio, a queued cold start — still lands on reuse detection and still revokes the
- *   family. That is the original bug, on a much smaller target.
+ * | Tier | What it does | Value |
+ * | --- | --- | --- |
+ * | `UI_DEADLINE_MS` | stops **awaiting** (a `setTimeout` racing the await); aborts nothing | 8 s |
+ * | `vercel.json` `maxDuration` | the platform kills the invocation | 20 s |
+ * | `HARD_ABORT_MS` | aborts the **socket** | 30 s |
  *
- * ⚠️ **The lock itself does NOT cover mounts, and must not be described as if it did**, which
- * is the whole reason point 3 exists. The standalone app is `https://climb.kilianmc.com` and the
- * federated mount runs on `https://kilianmc.com`, so they get two *different* lock managers —
- * `climb-trainer:auth-refresh` in one excludes nothing in the other — while sharing **one**
- * refresh cookie. And that cookie sharing is not incidental: same registrable domain, therefore
- * same-*site*, therefore `SameSite=Lax` sends it, which is the entire reason auth works in the
- * federated mount (see `remote.tsx`). Exactly the same origin asymmetry that rules out
- * `BroadcastChannel` below.
+ * **The gap between the two client numbers IS the fix**: the route leaves the pending component
+ * while the POST runs on, commits, and its `Set-Cookie` reaches the jar — no orphan is created.
+ * ⚠️ **30 s is the OUTER bound only because that `maxDuration` pin exists.** Unpinned, Fluid
+ * compute's default is 300 s, which puts the abort back *inside* the server's window; deleting
+ * the block re-opens the hole with a green gate. **`inFlight` MUST survive a UI-tier give-up**,
+ * so a retry re-joins the same attempt instead of re-presenting the stale cookie.
  *
- * **The lock is kept, and it is not redundant.** The grace window would cover the same-origin
- * tabs too, but at the price of an extra POST and therefore an extra Postgres write and another
- * five minutes of Neon awake time per losing tab. Serialising avoids that. So the lock is now an
- * optimisation over a correct fallback rather than the correctness mechanism it used to be — and
- * where the lock does apply the reason it works is unchanged: both tabs only race because they
- * read the same **pre-rotation** cookie, so the waiter wakes, sends the *already-rotated* cookie
- * and rotates legitimately, needing nothing from the server.
+ * **General rule, beyond auth: a client deadline on a request with SERVER-SIDE WRITE EFFECTS
+ * must be the OUTER bound, never the inner one.** Giving up on an answer is cheap and
+ * reversible; cancelling a write you cannot cancel is neither.
  *
- * **The trade the grace window makes is real, and it is a loss.** Inside the window a replayed
- * token no longer revokes its family, so a genuine theft landing there goes undetected. The
- * replayer gains no token (the 409 carries none, and the successor is only reachable by whoever
- * already holds the shared cookie jar). Full reasoning lives at the one place the decision is
- * made: `server/auth/refresh.py`, the grace-window section.
- *
- * **Tokens are deliberately NOT shared between tabs.** A `BroadcastChannel` would be the
- * obvious way to save that write, and it is rejected: in the federated mount the origin is
- * kilianmc.com, so the channel is shared with the shell and every other remote on the
- * portfolio, and putting an access token on it would give away the property this design
- * exists to hold — the token is in no storage, no URL, no `postMessage` and no React prop.
- *
- * ## Lazy, and never on a timer
- *
- * Rotation is a Postgres write, and Neon bills awake time. A periodic refresh would keep
- * the compute up for the length of a whole training session for no benefit, which CLAUDE.md
- * records as the largest avoidable consumer of the budget. Access tokens live 3 h precisely
- * so that a 401 is rare. **Do not add a pre-emptive timer off `expires_in`.**
- *
- * ## A hang is a failure — but the CURE cannot be aborting the request (issue #28)
- *
- * A `fetch` that never settles produces no rejection, so every mechanism above it is inert:
- * `bootstrap()` is awaited in `_authed`'s `beforeLoad`, so guarded routes sat on the pending
- * component with no way out, and the Web Lock (held across the full round trip, by design) kept
- * every other tab on the origin queued behind the holder. That much needed fixing.
- *
- * **⚠️ The obvious fix — one `AbortSignal.timeout(8_000)` on the POST — is worse than the bug,
- * and this is the single most important paragraph in this file.** `POST /api/auth/refresh` is a
- * **sync `def`** (`server/auth/routes.py`), so it runs in anyio's threadpool and a client
- * disconnect **cannot cancel it**; and it **commits the rotation before the response exists**.
- * So on a slow cold path the server rotates at 9 s while the client walked away at 8 s. The
- * successor token is stored only as a sha256 and its plaintext is never repeated, so after that
- * abort **nobody on earth holds the live refresh token**: a retry inside `REPLAY_GRACE` gets a
- * second 409 and gives up, and a retry after it trips reuse detection and `revoke_family()`
- * hard-logs the user out. An 8 s abort *manufactures* that on requests that were about to
- * succeed — and 8 s is below `REPLAY_GRACE` (10 s), below the function ceiling, and only
- * ~4× the measured cold-start TTFB of a zero-SQL endpoint (2.03 s cold vs 0.28 s warm, live).
- *
- * So the deadline is **two tiers, and they must never be collapsed into one**:
- *
- * | Tier                  | What it does                          | Value             |
- * | --------------------- | ------------------------------------- | ----------------- |
- * | `UI_DEADLINE_MS`      | stops **awaiting**; aborts nothing    | 8 s               |
- * | `vercel.json` `maxDuration` | platform kills the invocation   | 20 s              |
- * | `HARD_ABORT_MS`       | aborts the **socket**                 | 30 s              |
- *
- * The UI tier is a `setTimeout` racing the *await*, not the request. The caller stops waiting so
- * the route leaves the pending component, while the POST runs to completion, the rotation
- * commits, and the `Set-Cookie` reaches the jar — **no orphan is ever created**.
- *
- * **⚠️ The hard tier is only the OUTER bound because `vercel.json` pins
- * `functions."api/index.py".maxDuration` to 20 s, and that pin is load-bearing.** Unpinned it is
- * Vercel's default, which under Fluid compute — the default for new projects since 2025 — is
- * **300 s**: 30 s would then be an *inner* bound and the orphaned-rotation mechanism above would
- * be fully intact, merely rarer. With the pin the platform kills the invocation at 20 s and the
- * client aborts at 30 s, so an abort really does mean "the server is gone" rather than "the server
- * is slow". **Deleting that block silently re-opens the hole**, with a green gate and no symptom
- * until a cold path runs long.
- *
- * **`inFlight` MUST survive a UI-tier give-up** — that is what makes the whole design pay, and
- * it is the property to protect on any future edit. The refresh keeps running, so the retry
- * affordance in `ui/status.tsx` (and any later guarded navigation) **re-joins the same attempt**
- * and succeeds the moment it lands, instead of sending the stale cookie again and walking into
- * reuse detection. `mint`'s own `session.clear()` happens *before* the POST — the "drop the token
- * before every `POST /api/auth/*`" rule, and unavoidable — and its catch-path clear cannot fire
- * on a give-up, because `mint` is still in the air. So a give-up clears nothing new.
- *
- * **General rule, worth stating beyond auth: a client deadline on a request with SERVER-SIDE
- * WRITE EFFECTS must be the OUTER bound, never the inner one.** Giving up on the answer is
- * cheap and reversible; cancelling a write you cannot cancel is neither.
- *
- * Alongside that, `unavailable()` keeps the failure distinguishable from an *answer*. A 401
- * means the visitor genuinely has no usable cookie and `/login` is where they belong; a timeout,
- * a dropped connection or a 5xx means the question was never answered, and reporting *that* as
- * "no session" hides an infrastructure fault behind a login screen. So `mint` returns `false` for
- * the first and throws `SessionUnavailableError` for the second — capped at
- * `MAX_UNANSWERED_ATTEMPTS` per **mount** — not per page load; `remote.tsx` builds a fresh
- * `createAuth()` per mount instance by design, so in the federated mount navigating away from the
- * project and back re-arms the budget with no reload — because an unanswered attempt latches
- * nothing and would otherwise start a fresh POST (one `ratelimit.enforce` upsert, one restarted
- * five-minute Neon window) on every subsequent guarded navigation.
+ * `unavailable()` keeps a failure distinguishable from an *answer*: a 401 means no usable cookie
+ * and `/login` is right, while a timeout, a dropped connection or a 5xx means the question was
+ * never answered — `mint` throws `SessionUnavailableError` rather than reporting an
+ * infrastructure fault as a logged-out session. Capped at `MAX_UNANSWERED_ATTEMPTS` per
+ * **mount**, not per page load: `remote.tsx` builds a fresh `createAuth()` per mount instance,
+ * and without a cap every guarded navigation would start a fresh POST.
  *
  * ## The lock, concretely
  *
- * - **Name-spaced `climb-trainer:auth-refresh`.** Lock names are scoped to the ORIGIN, which
- *   in the federated mount is kilianmc.com — shared with the rest of the portfolio, hence the
- *   prefix, and *not* shared with the standalone app, which is why that arm needed the server.
- * - **Held across the FULL round trip, response body included.** `Set-Cookie` is only in the
- *   jar once the response has been received, so releasing before `res.json()` resolves would
- *   let the next waiter send the pre-rotation cookie and reintroduce the exact race.
- * - **Only the refresh path takes it.** `POST /api/auth/demo` presents no cookie and cannot
- *   race, so serialising demo mints would cost latency for nothing.
- * - **Released on rejection and on tab close**, by the API's own contract: the lock is held
- *   for exactly as long as the callback's promise is pending, and a closed tab releases it.
- *   A refresh that *hangs* used to be the unbounded residual case — no rejection, so no release,
- *   so every other tab on the origin queued behind it forever. `HARD_ABORT_MS` bounds it — at
- *   **60 s, not 30 s**: `rotateRefreshCookie` builds a *fresh* `withHardAbort` for its 409 retry
- *   and both POSTs run inside one `withRefreshLock` callback, so the worst case is two full
- *   deadlines back to back.
- * - **⚠️ The UI deadline does NOT release the lock, deliberately.** It fires outside the lock
- *   callback and touches nothing, so a waiting tab still waits — which is correct: the holder's
- *   rotation may be mid-commit, and letting the next tab present the same pre-rotation cookie is
- *   exactly the collision the lock exists to prevent. The waiter's cost is latency; releasing
- *   early would cost it a 409 (or worse, on the two-origin arm). The bound is `HARD_ABORT_MS`,
- *   doubled for the 409 retry — up to 60 s — not 8 s.
- * - **⚠️ The visible cost of that, and it is a real one.** `mint` clears the store *synchronously*
- *   before it queues, so a waiting tab flips to the anonymous nav the moment it starts waiting and
- *   stays there until the holder releases. The mechanism predates the two tiers; what changed is
- *   the window, from ≤8 s to up to 60 s. Accepted against the alternative — a second presentation
- *   of a cookie that may be mid-rotation — but if this ever needs improving, the fix is a
- *   "checking your session" nav state, **not** releasing the lock early.
- * - **⚠️ Fallback where the lock is unavailable** (jsdom; an opaque or sandboxed origin, where
- *   the property exists but `request()` rejects): behave exactly as before — the per-mount
- *   `inFlight` dedupe still holds, and the same-origin cross-tab guarantee is simply not
- *   available. It degrades to the previous behaviour rather than throwing, and never to
- *   something worse. Presence alone cannot tell you the lock is *usable*, so `withRefreshLock`
- *   detects the difference by observing whether its callback ever ran.
+ * - Name-spaced `climb-trainer:auth-refresh`, because lock names are scoped to the origin and
+ *   in the federated mount that origin is shared with the rest of the portfolio.
+ * - **Held across the FULL round trip, `res.json()` included** — `Set-Cookie` only reaches the
+ *   jar on receipt, so releasing earlier lets the next waiter send the pre-rotation cookie.
+ * - Only the refresh path takes it: `POST /api/auth/demo` presents no cookie and cannot race.
+ * - ⚠️ **The UI deadline does NOT release it, deliberately** — the holder's rotation may be
+ *   mid-commit. The waiter's bound is `HARD_ABORT_MS` **doubled, up to 60 s**, because the 409
+ *   retry builds a fresh deadline inside the same callback. The visible cost is real: `mint`
+ *   clears the store synchronously before queueing, so a waiting tab shows the anonymous nav
+ *   until the holder releases. If that needs improving the fix is a "checking your session" nav
+ *   state, **not** releasing the lock early.
+ * - ⚠️ **Presence is not usability.** In an opaque or sandboxed origin the API exists and
+ *   `request()` rejects, so `withRefreshLock` tells the cases apart by whether its callback was
+ *   entered, and falls back to the per-mount dedupe — never to something worse, never a throw.
  *
- * ## Demo scope re-mints; it cannot refresh
- *
- * `POST /api/auth/demo` sets no cookie (it takes no `Response` and issues zero SQL), so a
- * demo session has nothing to rotate. Sending its 1 h token to `/api/auth/refresh` would
- * also hit the demo write-ban and 403 — a failure that looks nothing like an expiry. Demo
- * scope therefore re-mints from `/api/auth/demo`.
+ * **Demo scope re-mints; it cannot refresh.** `POST /api/auth/demo` sets no cookie, so there is
+ * nothing to rotate, and sending its token to `/api/auth/refresh` hits the demo write-ban and
+ * 403s — a failure that looks nothing like an expiry.
  */
 
 /**

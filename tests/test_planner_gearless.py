@@ -1,19 +1,12 @@
 """⚠️ GUARD. A climber with no gear gets a real plan, and every gap in it is named.
-
-DB-free.
-
-Justified by CLAUDE.md's testing policy under **critical domain rules** and **project-wide
-invariants that silently rot**. The rot is the point: every claim here is a claim about
-`server/domain/exercises.py`, which is content and is edited on its own schedule. Retiring
-one bodyweight exercise can take a phase below the three fillable aspects a session needs,
-and nothing else in the gate would notice — the generator would keep returning a plan, one
-block thinner, with a shortfall that reads as normal.
-
-**Decision recorded, Kilian 2026-08-24 (closing issue #61): the generator GENERATES and
-names the shortfall.** Never a refusal for lack of gear, never a gate. These tests are what
-make that promise mechanical rather than aspirational.
-
-Shown to fail before being trusted — see `.claude/pr-11a-state.md` for the captures.
+DB-free. Critical domain rules, and a project-wide invariant that silently rots: every claim here
+is a claim about `server/domain/exercises.py`, which is content edited on its own schedule.
+Retiring one bodyweight exercise can take a phase below the three fillable aspects a session needs,
+and nothing else in the gate would notice — the generator would keep returning a plan, one block
+thinner, with a shortfall that reads as normal. **Kilian 2026-08-24, closing issue #61: the
+generator GENERATES and names the shortfall** — never a refusal for lack of gear, never a gate.
+This is what makes that promise mechanical. Shown to fail before being trusted; captures in
+`.claude/pr-11a-state.md`.
 """
 
 from datetime import date

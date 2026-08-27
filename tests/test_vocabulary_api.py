@@ -1,14 +1,12 @@
 """`GET /api/vocabulary` against real Postgres.
 
-Under CLAUDE.md's testing policy this is a **core user path**: it is the input to every
-picker onboarding renders, so an empty or reordered list here is a step nobody can
-complete, and neither failure shows up anywhere else. Nothing in the local gate can cover
-it — the payload is five queries against seeded reference data — so these are integration
-tests and **skip without `DATABASE_URL`** (`conftest.py`); CI runs them for real.
+A **core user path**: it is the input to every picker onboarding renders, so an empty or
+reordered list is a step nobody can complete, and neither failure shows up anywhere else.
+Nothing in the local gate can cover it — five queries against seeded reference data — so these
+**skip without `DATABASE_URL`** and CI runs them for real.
 
-What is deliberately NOT tested: the display text of individual rows. That is seed content
-and `tests/test_seed.py` owns it; asserting "Hangboard" here would break on a copy edit and
-catch nothing.
+Deliberately NOT tested: the display text of individual rows. That is seed content, owned by
+`tests/test_seed.py`; asserting "Hangboard" here would break on a copy edit and catch nothing.
 """
 
 from typing import Any

@@ -2,17 +2,10 @@
 
 `web/src/plan/blueprint.ts::BLOCKER_MESSAGES` holds five of the six `REFUSAL_MESSAGES`
 verbatim, because `usePlanPreview` is `enabled` on the client already knowing the profile is
-unplannable — so the sentence has to exist before the request that would return it. That
-duplication is deliberate and unavoidable; what is avoidable is the two copies drifting.
-
-So this reads the TypeScript declaration as text and compares it to the imported mapping. It
-is the only guard available: no test on either side of the wire can see one copy reworded,
-and this file is exactly the kind of copy a reviewer signs off in the abstract and then asks
-to change on screen — which has now happened once.
-
-DB-free and Node-free, so it fails in the local gate. It is text parsing, so it carries its
-own vacuity guard: the parsed key set must be the five reasons, or a parser that quietly
-found nothing would agree with everything.
+unplannable — so the sentence must exist before the request that would return it. The
+duplication is unavoidable; the two copies drifting is not. No test on either side of the wire
+can see one copy reworded. DB-free and Node-free, and it carries a vacuity guard: the parsed
+key set must be the five reasons, or a parser that found nothing would agree with everything.
 """
 
 import re

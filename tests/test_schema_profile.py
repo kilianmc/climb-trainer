@@ -1,14 +1,12 @@
 """`user_profile.show_body_metrics` — a real state, so it gets a real test.
 
-DB-backed, so it **skips without `DATABASE_URL`** and runs in CI. It has to be: the
-default is a `server_default`, which the ORM does not apply — nothing in Python knows
-the value. A test that asserted `UserProfile().show_body_metrics is True` would pass
-against a database where the column defaulted to false.
+DB-backed, so it **skips without `DATABASE_URL`** and runs in CI. It has to be: the default is
+a `server_default`, which the ORM does not apply, so a test asserting
+`UserProfile().show_body_metrics is True` would pass against a database defaulting to false.
 
-Per the testing policy this is not "a column type the ORM already declares". Turning the
-switch off **hides the weight trend and every %BW figure and stops any weigh-in prompt**,
-so it is behaviour, and the persisted value is the input to that behaviour. The UI half
-lands with the screens that read it; this is the half the schema owns.
+Not "a column type the ORM already declares": turning the switch off hides the weight trend
+and every %BW figure and stops any weigh-in prompt, so it is behaviour, and the persisted value
+is the input to it.
 """
 
 import uuid

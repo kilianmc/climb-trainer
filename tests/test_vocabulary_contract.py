@@ -1,50 +1,21 @@
 """The closed vocabularies are written down THREE times. Here are the two guards.
 
-`server/domain/vocabulary.py` is the source of truth. It is duplicated into
-`web/src/api/schema.ts` (now GENERATED from the OpenAPI schema — see below) and into
-`migrations/versions/0004_domain_schema.py` (because a migration must not import live
-application code, or it stops describing history). Neither duplicate is checked by
-anything else: `tsc` cannot see Python, and `alembic check` cannot see inside an enum
-type. So both are checked here.
+`server/domain/vocabulary.py` is the source of truth, duplicated into `web/src/api/schema.ts`
+(generated) and into `migrations/versions/0004_domain_schema.py` (a migration must not import
+live code, or it stops describing history). Nothing else checks either copy: `tsc` cannot see
+Python and `alembic check` cannot see inside an enum type.
 
-## Part 1 — the TypeScript copy, since PR #9 the GENERATED one
-
-`web/src/api/vocabularies.ts` used to mirror these lists by hand, because OpenAPI codegen
-had no endpoints to generate from. `GET /api/vocabulary` is those endpoints, so the file
-is gone and `web/src/api/schema.ts` — written by `npm run codegen:api` — took its place.
-
-**The guarantee is unchanged and is deliberately not weakened: the Python enums still
-have to match what the client sees.** What changed is which file is read. Two things had
-to be true before the hand-written mirror could be retired, and both are:
-
-1. **Every enum has to appear in the schema.** Five of the six are not referenced by any
-   profile field, so `GET /api/vocabulary` returns them explicitly (its `enums` object) —
-   without that, retiring the mirror would have silently dropped five of these
-   assertions rather than re-pointing them.
-2. **The generated file has to be provably current AND unedited.** A stale `schema.ts`
-   agreeing with Python proves nothing about the running API, so the header carries two
-   digests and both are checked here: `openapi-sha256` (the document it was generated
-   from, recomputed from the live app) and `types-sha256` (everything below the header,
-   recomputed from the file). The first catches "I added an endpoint and forgot to
-   regenerate"; the second catches a hand-edit, which the first cannot — changing
-   `sessions_per_week: number` to `number | null` in the committed file left the digest,
-   `tsc` and the whole gate green while the client believed a nullability the API does not
-   have. Both run in the local gate, with no Node and no network.
-
-It satisfies the "project-wide invariants that silently rot" bullet in CLAUDE.md's
-testing policy, and it is the same shape as `tests/test_version.py`: a Python test
-reading a web-side file, because the invariant spans both languages and neither side can
-check it alone. The drift it catches is silent in both directions — a value missing from
-the TypeScript union is a feature the UI cannot express, and a value that exists only in
-the TypeScript is a 422 at runtime.
-
-## Part 2 — the migration's copy
-
-Below the TypeScript tests. That one is the more dangerous of the two, because it decides
-what values the database will physically accept; see the comment block above
-`_MIGRATION` for why `alembic check` cannot see it.
-
-DB-free, all of them, so they run in the local gate.
+⚠️ **Part 1 reads the GENERATED file, and needs TWO digests, because a stale `schema.ts`
+agreeing with Python proves nothing about the running API.** `openapi-sha256` is the document
+it came from, recomputed from the live app, and catches "I added an endpoint and forgot to
+regenerate"; `types-sha256` is everything below the header and catches a hand-edit, which the
+first cannot — changing `sessions_per_week: number` to `number | null` in the committed file
+left the digest, `tsc` and the whole gate green while the client believed a nullability the API
+does not have. Five of the six enums are referenced by no profile field, which is why
+`GET /api/vocabulary` returns them explicitly; without that object, retiring the old
+hand-written mirror would have silently DROPPED five of these assertions instead of
+re-pointing them. Part 2 checks the migration's copy, which is the more dangerous of the two
+because it decides what the database will physically accept. DB-free, all of them.
 """
 
 import hashlib

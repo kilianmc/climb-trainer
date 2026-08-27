@@ -1,45 +1,30 @@
 """Sessions onto weekdays, and week numbers onto dates.
 
 `datetime.date` only, and **no timezone maths at all**: the domain has no clock, so the
-timezone decision is entirely the client's choice of `start_date`. That is why
+timezone decision is entirely the client's choice of `start_date` — which is why
 `week_start_on_or_after` takes the day rather than reading one.
 
-## Which days, when there are more available than sessions
+The chosen days are the n-subset of the available days whose **circular rest gaps** (wrapping
+Sunday to Monday) are the most even, tie-broken lexicographically; exhaustive over
+`C(m, n) <= 35`. Naive striding is worse in the commonest case: Mon-Fri with two sessions
+strides to Mon/Wed and a five-day gap, where this picks Mon/Thu. Rest is what is being
+allocated, so rest is what is being spread.
 
-The n-subset of the available days whose **circular rest gaps** (wrapping Sunday to Monday)
-are the most even, tie-broken lexicographically. Exhaustive over `C(m, n) <= 35`, which is
-cheap and provably deterministic.
+⚠️ **"Most even" compares the whole ascending gap profile, not just the smallest gap, and that
+is a correction rather than a refinement.** Maximising the minimum gap is *undefined* past
+three sessions a week: with four of seven days some pair is always adjacent, so every subset
+ties at a minimum of 1 and the lexicographic tie-break picks Mon/Tue/Wed/Thu — four on, three
+off, the opposite of spreading rest. Every gap profile for a given `n` sums to 7, so
+"lexicographically largest ascending profile" *is* "most even", and it agrees with the
+minimum-gap rule wherever that rule actually decides.
 
-Naive striding was the obvious alternative and it is worse in the commonest case: Monday to
-Friday with two sessions strides to Monday/Wednesday, leaving a five-day gap, where this
-picks Monday/Thursday. Rest is the thing being allocated, so it is the thing being spread.
-
-⚠️ **"Most even" compares the whole ascending gap profile, not just the smallest gap, and
-that is a correction rather than a refinement.** Maximising the minimum gap alone is
-undefined past three sessions a week: with four sessions out of seven days *some* pair is
-always adjacent, so every subset ties at a minimum of 1 and the lexicographic tie-break
-picks Mon/Tue/Wed/Thu — four days on, three off, which is the opposite of spreading rest.
-Comparing the sorted profiles picks Mon/Tue/Thu/Sat instead. Every gap profile of a given
-`n` sums to 7, so "lexicographically largest ascending profile" is exactly "most even", and
-it agrees with the minimum-gap rule wherever that rule actually decides.
-
-## Fewer days than sessions is a note, never a silent change
-
-`UNIQUE (microcycle_id, weekday)` on `planned_session` makes two sessions on one weekday
-structurally impossible, so doubling up is not a preference this module gets to have — it is
-a schema fact. The request is honoured as far as it fits and the shortfall is stated.
-
-## An empty mask refuses
-
-Mask 0 is legal and reachable ("answered, no days") and is not the equipment dead end: the
-control expresses the answer, it stores fine, and ticking a day is the fix. So it refuses
-with its own sentence rather than generating something empty.
-
-## Session count never varies by phase
-
-Deload and taper weeks keep the same weekday set. The load difference comes entirely from
-the phase's own `prescription_template` rows, which is the most literal reading of "a deload
-is not a scaled block" — and it removes a tunable.
+Fewer days than sessions is a **note, never a silent change**: `UNIQUE (microcycle_id,
+weekday)` makes two sessions on one weekday structurally impossible, so doubling up is a
+schema fact and not a preference this module has. An empty mask **refuses**, with its own
+sentence — mask 0 is legal and reachable ("answered, no days") and is not the equipment dead
+end, because the control expresses the answer and ticking a day is the fix. Session count
+never varies by phase: deload and taper keep the same weekday set, and the load difference
+comes entirely from their own `prescription_template` rows.
 """
 
 from datetime import date, timedelta

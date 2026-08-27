@@ -1,70 +1,29 @@
 """`GET /api/library` — the seeded exercise library, whole, in one request.
 
-Four statements, no lazy loading: the exercises, their equipment requirements, their
-contraindications and their per-phase prescriptions are each selected once and stitched
-together in Python by `exercise_id`. Walking `Exercise.equipment` through relationships
-would be an N+1 over the whole library, and every extra round trip is Neon awake time
-(CLAUDE.md, "Neon bills AWAKE TIME").
+Four statements, no lazy loading: exercises, equipment requirements, contraindications and
+per-phase prescriptions are each selected once and stitched together in Python. Walking the
+relationships would be an N+1 over the whole library, and every round trip is Neon awake time.
 
-## One endpoint, not list + detail — and this is the read-shape decision
-
-A browse screen needs the aspect, the name and the requirements; a detail screen adds the
-instructions, the substitution hint and the prescriptions. That is the classic case for a
-list endpoint plus `GET /api/library/{key}`, and it is the wrong trade here:
-
-- **The whole library is ~90 KB of JSON for today's 85 exercises** (measured over the
-  authored content in the response shape). It is reference content,
-  identical for every user and changed only by a seed run, so the client fetches it once
-  and keeps it — exactly like `GET /api/vocabulary`.
-- **A detail endpoint would cost a database round trip per exercise browsed**, against a
-  free-tier Postgres whose scarce resource is awake time, to save a payload smaller than
-  one photograph on the landing page.
-- Splitting it would also mean two cache entries with two lifetimes for one seed run.
-
-If the library ever grows past a few hundred exercises (media, per-move breakdowns), the
-split becomes right; the number to watch is payload size, not the endpoint count.
-
-## Aspect grouping arrives as ORDER, not as nesting
-
-The array is ordered by `climbing_aspect.sort_order`, then by name, so a UI grouping by
-`climbing_aspect_id` walks it once and gets the aspects in the same order every picker in
-the app already uses. Same reason the lookup tables in `GET /api/vocabulary` are arrays in
-`sort_order` rather than maps: a nested `{aspect: [...]}` object would carry the grouping
-in JSON key order, which nothing guarantees.
-
-**Names come from `GET /api/vocabulary`, not from here.** Equipment, injury areas and the
-aspects themselves are sent as **ids**, and the client joins them against the vocabulary
-payload it already holds. Duplicating the display text would give the app two copies of
-every equipment name and one of them would eventually be the stale one.
-
-## Everything here is untrusted on OUTPUT
-
-`instructions`, `substitution_hint` and every name are authored content rather than user
-input, but the output rule does not depend on the source: they are **JSON, never HTML**,
-and the client renders them as React children with no `dangerouslySetInnerHTML` (CLAUDE.md,
-"Notes are untrusted on OUTPUT too"). `media_url` is sent for completeness and is NULL
-across today's library; a client must treat it as a URL to validate, not to interpolate.
+**One endpoint, not list + detail.** ~90 KB of JSON for today's 85 exercises, identical for
+every user and changed only by a seed run, against a detail endpoint that would cost a round
+trip per exercise browsed on a database whose scarce resource is awake time — and two cache
+entries with two lifetimes for one seed run. **Payload size is the number to watch**, not the
+endpoint count; a few hundred exercises makes the split right. Aspect grouping arrives as
+ORDER (`climbing_aspect.sort_order`, then name), never as nesting, because a nested object
+would carry the grouping in JSON key order, which nothing guarantees. Names come from
+`GET /api/vocabulary`: ids only here, or the app holds two copies and one goes stale.
 
 ## Caching: `public, s-maxage=31536000, immutable`, on a SHARED CDN
 
-Kilian's choice, and it is the design CLAUDE.md's compute-budget section already
-prescribed. The arithmetic behind it: Neon Free is **100 CU-hr/month = ~400 awake hours**,
-and **autosuspend is fixed at 5 minutes** — so *any* origin read costs a five-minute
-window, whatever it reads. `POST /api/auth/demo` was deliberately made zero-SQL so a
-portfolio visitor costs no Neon time at all, and an uncached library read is the first
-thing that would undo that. Served from the CDN, the whole library costs one origin read
-per deploy and then nothing.
-
-**`?v=<buildId>` is what makes a year-long `immutable` safe.** The URL changes on every
-deploy (`web/src/buildId.ts`), so a content edit ships a new URL rather than waiting out a
-cache. The parameter is accepted and **ignored**: the response must not depend on it, or
-the cache would hold as many different bodies as there have been builds.
-
-**It stays AUTHENTICATED, and that is not theatre now that the body is publicly
-cacheable.** Auth gates who can cause a **cache MISS**, and a cache miss is an origin read
-and therefore a Neon wake. An unauthenticated endpoint would let a bot wake the database at
-will — the same exposure the demo endpoint was rewritten to close. It is deliberately not
-in `PUBLIC_ROUTES`.
+Neon Free is 100 CU-hr/month = ~400 awake hours and autosuspend is fixed at 5 minutes, so
+*any* origin read costs a five-minute window. `POST /api/auth/demo` was made zero-SQL so a
+portfolio visitor costs no Neon time; an uncached library read is the first thing that would
+undo that. **`?v=<buildId>` is what makes a year-long `immutable` safe** — the URL changes per
+deploy, and the parameter is accepted and **ignored**, because a response that varied on it
+would give the cache one body per build ever made. **It stays AUTHENTICATED**: auth gates who
+can cause a cache MISS, and a miss is an origin read and therefore a Neon wake. Deliberately
+not in `PUBLIC_ROUTES`. See CLAUDE.md, "`/api/library` is USER-INDEPENDENT, permanently" —
+adding a user-scoped field here is a security change no behavioural test can catch.
 """
 
 from collections import defaultdict

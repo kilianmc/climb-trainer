@@ -1,18 +1,12 @@
 """The root `package.json` is the only version source of truth.
 
-This is not a tautology: it asserts the *wiring* — that the FastAPI app actually reads
-the root file rather than carrying its own literal. A hardcoded `version=` in
-`server/app.py` would be a fourth version string that drifts silently on the first
-`npm run version:dev`, and the OpenAPI schema would start lying about which build is
-live. Per the testing policy in CLAUDE.md this earns a test because it guards a
-project-wide invariant, not because the code is complex.
+Not a tautology: it asserts the *wiring* — that the FastAPI app reads the root file rather than
+carrying its own literal. A hardcoded `version=` in `server/app.py` would be a fourth version
+string that drifts silently on the first `npm run version:dev`, and the OpenAPI schema would
+then lie about which build is live. It guards a project-wide invariant, not complex code.
 
-**One test, deliberately.** PR #1 also asserted that no literal had crept back into the
-source and that a missing `package.json` falls back instead of raising. Both were cut
-in PR #2: the first greps the implementation rather than testing behaviour (and this
-test already fails if a stale literal is ever wrong), and the second tests a two-line
-`except` clause. Per the policy, a test that restates the implementation is maintenance
-cost with no safety value.
+**One test, deliberately**: a grep for a stale literal restates the implementation, and a
+fallback for a missing `package.json` is a two-line `except`.
 """
 
 import json

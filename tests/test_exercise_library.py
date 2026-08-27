@@ -1,51 +1,22 @@
 """The guards the exercise library exists to keep, plus its contract integrity.
 
-DB-free: it reads `server/domain/exercises.py`, so it runs in the local gate.
+DB-free: it reads `server/domain/exercises.py`, so it runs in the local gate. These are domain
+rules and silently-rotting invariants, not a mirror of the content — nothing here asserts an
+exercise's name or set count, which a copy edit would break and which would catch nothing.
 
-Under CLAUDE.md's testing policy these are **domain rules** and **project-wide invariants
-that silently rot**, not a mirror of the content. There is deliberately no test asserting
-that a particular exercise is called what it is called, or that a max hang is five sets:
-that is content, a copy edit would break it, and it would catch nothing.
+The grid: every (phase, aspect) cell is either populated or named in
+`DELIBERATELY_UNPRESCRIBED`, asserted equal in **both** directions, because an empty cell is a
+block the generator cannot fill. It uses the GENERATOR's own `candidates()` — a private copy
+would keep passing after the generator's filter changed. The finger-loading safety boundary
+prevents a pulley injury, not a broken build, and its matcher is word-boundary based with a
+positive control (the naive substring version found "door" inside "outdoor"). Every equipment
+row must be reachable, or it is a checkbox that changes nothing.
 
-The ones that earn their place loudest:
-
-1. **Coverage of the (phase, aspect) grid.** `prescription_template` is one row per
-   (exercise, phase), so an exercise with no row for the phase being generated cannot be
-   prescribed in it — which makes an empty cell a block the generator cannot fill. Every
-   cell is either populated or named in `DELIBERATELY_UNPRESCRIBED` with its reasoning, and
-   the test asserts the two sets are exactly equal in both directions.
-2. **The finger-loading safety boundary.** No hangboard, campus or no-hang exercise may
-   carry a substitution hint, and no hint may point at an improvised edge. The failure it
-   prevents is not a broken build, it is a pulley injury. The matcher is word-boundary
-   based and carries its own positive control, because the naive substring version found
-   `"door"` inside `"outdoor"` and would have gone red on an honest hint.
-3. **The coverage guard uses the GENERATOR's `candidates()`.** It describes itself as
-   "everything the generator could prescribe in one cell of the grid", and that claim is
-   only true while it *is* the generator's function — a private copy here would keep passing
-   after the generator's filter changed. `tests/test_planner_selection.py` tests that
-   function directly, positive control included, so this file's use of it cannot go vacuous.
-4. **Every equipment row is reachable.** A vocabulary row no exercise requires is a
-   checkbox that changes nothing, which is the dead end `outdoor_boulders` and
-   `outdoor_routes` were added to fix in the first place.
-
-The zero-equipment floor is **per aspect, not per phase** — see
-`CELLS_WITH_NO_GEARLESS_OPTION` in the library module for the decision and for the list of
-cells PR #11 has to handle by fallback.
-
-Each was shown to fail before being trusted (CLAUDE.md, "A guard test must be SHOWN to
-fail"): dropping `hip_mobility_flow`'s equipment-free status, adding a hint to
-`max_hangs_20mm`, giving `hollow_body_hold` an equipment requirement and emptying the two
-`foam_roller` requirements each turn the relevant test red, naming the aspect, the exercise
-or the cell.
-
-⚠️ **Deleting a row from `DELIBERATELY_UNPRESCRIBED` no longer reaches a test in this file,
-and the shape has moved twice.** `selection.py`'s `_validate_aspect_emphasis()` runs at
-import and raises first, so the coverage guard's own red is shadowed. Re-measured 2026-08-24:
-it is now not even a collection error here — `tests/conftest.py` imports `server.app`, which
-since `POST /api/plans/preview` imports the planner, so the `ValueError` aborts **conftest
-import and therefore the whole suite**. Louder, and a more accurate diagnosis (the emphasis
-table really is missing an aspect the library prescribes), but it is not this file going red;
-`_validate_aspect_emphasis`'s message points here for that reason.
+⚠️ **Deleting a row from `DELIBERATELY_UNPRESCRIBED` no longer reaches a test here.**
+`selection.py::_validate_aspect_emphasis()` raises at import, and `tests/conftest.py` imports
+`server.app`, so it aborts conftest import and therefore the whole suite. Louder and a truer
+diagnosis, but it is not this file going red; that function's message points here for that
+reason.
 """
 
 import re

@@ -1,14 +1,11 @@
 """Runtime configuration, read from the environment.
 
-Secrets live in Vercel env vars and the GitHub Actions `production` environment —
-never in this repo, which is public. Note the naming rule that bites hardest here:
-anything prefixed `VITE_` is inlined into the client bundle at build time and is
-therefore PUBLIC. Never give a secret that prefix.
-
-**This module is also where `.env` gets loaded**, exactly once, at import time — see
-`_load_local_dotenv()`. Every entrypoint reaches it (`server.app`, `server.db`,
-`server.seed`, `migrations/env.py` and `tests/conftest.py` all import from here), which
-is why the load lives here rather than being repeated per entrypoint.
+Secrets live in Vercel env vars and the GitHub Actions `production` environment, never in this
+public repo. ⚠️ Anything prefixed `VITE_` is inlined into the client bundle at build time and is
+therefore PUBLIC — never give a secret that prefix. **This module is also where `.env` is
+loaded**, exactly once, at import time (`_load_local_dotenv()`). Every entrypoint reaches it —
+`server.app`, `server.db`, `server.seed`, `migrations/env.py` and `tests/conftest.py` all
+import from here — which is why the load lives here rather than once per entrypoint.
 """
 
 import json

@@ -1,122 +1,22 @@
 """A migration's `upgrade()` must never destroy user-owned rows.
 
-Production carries real user data, and migrations are the one thing in this project that
-can delete it irreversibly: a deploy can be rolled back, a bad row can be fixed, but
-`DROP COLUMN` is gone the moment it commits. Per the testing policy in CLAUDE.md this is
-the "anything that can lose user data" bullet, and per CLAUDE.md's own guidance it is a
-"don't change this or X breaks" rule converted into a test rather than left as prose.
+`DROP COLUMN` is irreversible the moment it commits — the testing policy's "can lose user
+data" bullet. `downgrade()` bodies are ignored deliberately: they are *meant* to be
+destructive, and the protection against one reaching production is structural, not textual
+(`migrate.yml` offers no `downgrade` action). The protected set is `PROTECTED_TABLE_FLOOR`
+UNIONED with a derivation from `Base.metadata`, because derived-alone is WEAKER than the
+literal it replaced: deleting a model removes its table from the derivation in the very PR
+that drops it. Six arms, one per ordinary spelling of the same damage. No database, so this
+runs in the local gate. Every arm carries a positive control at the bottom of this file.
 
-**`downgrade()` bodies are deliberately ignored.** They are *supposed* to be destructive —
-`0003`'s downgrade drops `app_user.invite_id` and the `invite` table, correctly, and
-`0004`'s drops the whole domain schema — so a whole-file scan would fail on the existing
-repo. That asymmetry is exactly why this reads the AST and scopes itself to the `upgrade`
-function rather than grepping the file. The protection against a downgrade reaching
-production is structural instead: `migrate.yml` offers no `downgrade` action, and recovery
-is a Neon branch restore.
-
-## The protected set is a FLOOR, unioned with a derivation
-
-It used to be the single string `app_user`, which was right when accounts were the only
-irreplaceable rows. `0004` added twenty-four tables, and a climber's ascents, diary entries
-and logged sets are every bit as unrecoverable as the account they hang off.
-
-Half of the answer is a **derivation** from `Base.metadata`: `app_user`, plus every table
-that reaches it through foreign keys, transitively. That means a new table with a `user_id`
-column is protected the moment it is declared, with no edit here — which a hand-written
-list would have needed in every such PR, and would have been forgotten exactly once.
-
-⚠️ **The derivation alone is WEAKER than the hard-coded string it replaced, against the
-exact scenario this file exists for.** To drop `ascent`, a PR deletes the `Ascent` model
-*and* writes `op.drop_table("ascent")` — at which point `ascent` is no longer reachable in
-`Base.metadata`, the derived set no longer contains it, and arm 1 waves it through. Derived
-alone, this guard only fires when a migration **disagrees** with the models, which is
-precisely what `alembic check` already covers; it would have stopped covering the case
-where they agree and are both wrong. So the derivation is unioned with
-`PROTECTED_TABLE_FLOOR`, a literal list that a deleted model cannot delete.
-
-Three honest notes:
-
-- The floor is asserted to be a **subset of the derivation** today, which is what stops it
-  rotting into a list of misspelled or long-gone table names.
-- **`auth_session` is included and is not really irreplaceable** — a refresh token row is
-  re-issued on the next login. Excluding it would mean an exception list, and an exception
-  list is the thing that grows until the guard means nothing. It stays in.
-- **Reference tables are excluded, but that does not make them free to drop.**
-  `grade`, `exercise`, `equipment`, `ascent_tag` and the rest are re-seedable from
-  `server/seed.py`, so losing their rows is recoverable — which is why they are out of
-  scope *here*. Dropping one is still blocked by the foreign key graph
-  (`logged_set.exercise_id` and `session_block.exercise_id` are `NO ACTION` references into
-  `exercise`), and forcing it through with `CASCADE` would orphan user rows. That is a
-  different failure, caught by a different thing; it is not this guard saying yes.
-- ⚠️ **`invite` is in the floor, and "re-seedable" was never true of it.** The derivation
-  cannot reach it — the foreign key points *from* `app_user` *into* `invite`, so no walk
-  outward from `app_user` ever finds it — and its rows are created at runtime by an operator
-  (`python -m server.admin create-invite`), never by the seed. `invite.label` is the only
-  record of who invited whom, which is why the column exists at all and why
-  `app_user.invite_id` is `ON DELETE RESTRICT`. `op.drop_column("invite", "label")` was
-  silently permitted until 2026-08-21.
-- **`rate_limit` stays out**, genuinely: a fixed-window counter is ephemeral by
-  construction, so dropping it costs one window of protection and no history.
-
-## Six arms, because there are six ordinary ways to write the same damage
-
-1. **Alembic drop ops** — `op.drop_table("app_user")`, `op.drop_column("ascent", "notes")`,
-   **and their keyword forms** (`op.drop_column(table_name=..., column_name=...)`). An
-   earlier version read `node.args[0]` only, so the keyword spelling — which is a normal
-   way to write the op, not an exotic bypass — defeated the guard completely.
-2. **`op.alter_column(..., nullable=False)`** — the `SET NOT NULL` that CLAUDE.md names as
-   forbidden without a backfill plan. The docstring used to claim this was covered when
-   only the raw-SQL arm caught it, i.e. a named rule was unguarded while the file said
-   otherwise.
-3. **`op.drop_constraint(...)`** naming a protected table — dropping a unique constraint or
-   a foreign key is how a later bad write becomes possible.
-4. **`op.rename_table("ascent", "ascent_old")`**, followed by
-   `op.drop_table("ascent_old")` — a name no longer in the protected set. Two ordinary ops,
-   and not an exotic bypass: rename-then-drop is the usual spelling of the *contract* phase
-   in the expand -> deploy -> contract discipline this repo mandates, and if the model is
-   renamed in the same PR then `alembic check` agrees with it too. A rename of a protected
-   table is flagged outright, on the same reasoning the `NULLABILITY_OPS` note gives for
-   `new_column_name`: a rename is a breaking change whether or not it loses a row.
-5. **`with op.batch_alter_table("ascent") as b: b.drop_column(...)`** — the batch context
-   manager routes the same ops through a different object, so arms 1-4 never see them.
-6. **Raw SQL** — `op.execute("ALTER TABLE app_user DROP COLUMN email")` bypasses all of
-   the above. This arm flags a string literal that mentions a protected table together
-   with a destructive verb, **including `UPDATE ... SET col = NULL`**, which is irreversible
-   loss of user notes and was not previously matched by anything.
-
-**Arm 6 is deliberately crude, and over-flags rather than under-flags.** It is a substring
-match against a normalised copy of the string, not a SQL parser: a false positive costs a
-developer one minute reading this file, a false negative costs production rows. If a
-legitimate migration ever trips it, add the narrowest possible exemption *with a comment
-saying why* — do not loosen the pattern.
-
-⚠️ **Limits worth stating rather than implying.** Arm 6 is *presented* as covering
-irreversible note loss, so the ways it does not are worth naming rather than discovering.
-Everything below is MISSED, none of it is realistic enough in this repo to be worth the
-machinery, and all of it needs human review regardless:
-
-- **String LITERALS only, for the SQL text.** A `+` concatenation, or SQL read from a
-  variable or a constant defined elsewhere, is invisible. **This gap is NARROWER than an
-  earlier draft of this file claimed:** a literal table name inside an **f-string** *is*
-  still caught, because `ast.walk` reaches the `Constant` parts of a `JoinedStr` — only the
-  interpolated segments are opaque.
-- **Indirect dispatch.** `getattr(op, "drop_column")("ascent", "notes")` matches no
-  attribute name, so arms 1-5 never see it.
-- **`op.execute` of a SQLAlchemy construct** — `update(Ascent).values(notes=None)` — is not
-  inspected. Nothing in `migrations/` does this today.
-- **Three spellings of a null-ing UPDATE the arm-6 pattern cannot match**: `SET x = DEFAULT`;
-  a row constructor, `SET (a, b) = (NULL, NULL)`, which contains no `= NULL` anywhere; and
-  `SET notes = ''`, which destroys a note as thoroughly as NULL while reading as a tidy-up.
-- **A table name passed to an op as a variable** rather than as a literal.
-
-**No database.** This is a file inspection, so it runs in the local gate as well as CI —
-which matters, because the mistake it catches is made while writing a migration, long
-before anything is applied.
-
-Every arm carries a **positive control** at the bottom of this file, and every entry in
-`DESTRUCTIVE_SQL` has one written in an *independent* spelling: a detector nobody has seen
-fail is a detector nobody should trust, and a control assembled from the constant it tests
-would cheerfully confirm a typo to itself.
+⚠️ **Arm 6's reach, written down because the arm is presented as covering irreversible note
+loss and does not.** It is a substring match over string LITERALS, and it over-flags rather
+than under-flags on purpose: a false positive costs a minute, a false negative costs rows. It
+cannot see concatenated or variable SQL (an f-string's literal parts ARE seen),
+`getattr(op, "drop_column")(...)`, `op.execute` of a SQLAlchemy construct, a table name passed
+as a variable, or three null-ing spellings — `SET x = DEFAULT`, `SET (a, b) = (NULL, NULL)`
+and `SET notes = ''`. All of it needs human review anyway. Narrow an exemption; never loosen
+the pattern.
 """
 
 import ast

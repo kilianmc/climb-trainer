@@ -1,24 +1,15 @@
 """The `/api/library` CDN contract, with NO database — so it runs in the local gate.
-
-This file exists for one rule, and the rule is a **security** rule:
-
-> `/api/library` is user-independent, permanently. It is served from a shared CDN keyed on
-> URL alone with no `Vary: Authorization`, so any per-user field would be served from one
-> user's cache to another and **no test would catch it**. Per-user state about exercises
-> (the "I don't have this gear" flag, personal bests, anything derived from `user_*`) goes
-> on a separate endpoint that is never CDN-cached. **Adding a user-scoped field to this
-> response is a security change, not a feature change.**
-
-"No test would catch it" is the whole problem: a leak through a shared cache happens
-between two requests, in an intermediary this repo does not run, and every test here would
-pass. So the guard cannot be behavioural — it has to be a **pinned field list**, red on
-the diff that adds the field, with the reason attached where the developer will read it.
-**PR #11's equipment flag is exactly the field that would spring it.**
-
-Under CLAUDE.md's testing policy: a project-wide invariant that rots silently, and one that
-the type system cannot express. The field names below are written out as literals rather
-than derived from the model — a control assembled from the constant it tests would
-cheerfully confirm a typo to itself (`test_migrations_additive.py`'s own argument).
+One rule, and it is a **security** rule: `/api/library` is user-independent, permanently. It is
+served from a shared CDN keyed on URL alone with **no `Vary: Authorization`**, so any per-user
+field would be served out of one user's cache entry to another and **no test would catch it** — the
+leak happens between two requests, inside an intermediary this repo does not run. Per-user state
+about exercises (the "I don't have this gear" flag, personal bests, anything derived from a
+`user_*` table) goes on a separate endpoint that is never CDN-cached. **Adding a user-scoped field
+to this response is a security change, not a feature change**, and PR #11's equipment flag is
+exactly the field that would spring it.
+So the guard cannot be behavioural: it is a **pinned field list**, red on the diff that adds the
+field. The names are written out as literals rather than derived from the model — a control
+assembled from the constant it tests would cheerfully confirm a typo to itself.
 """
 
 from server.auth.deps import PUBLIC_ROUTES

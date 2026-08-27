@@ -1,54 +1,30 @@
 """`generate()` — a `PlannerInput` in, a whole `PlanBlueprint` out, and nothing else.
 
 Pure: no DB, no clock, no RNG, no I/O. Every varying quantity is a function of
-`(week_no, session_index)`, so the same input and the same library reproduce the same tree
-in any interpreter — which is the promise `server/models.py::Plan` makes and the reason
+`(week_no, session_index)`, which is the promise `server/models.py::Plan` makes and the reason
 `generator_input` folds `library_digest()` in beside the version.
 
-## The four invariants, in priority order
+Four invariants, in priority order. (1) **Nothing non-deterministic reaches the output** — no
+`random`, no `secrets`, no `hash()`, no set iteration; `server/domain/.ruff.toml` bans the
+imports and `tests/test_planner_reproducibility.py` is the check. (2) **A contraindicated
+exercise is never prescribed** — `prescribable()` never relaxes the injury filter, which is why
+(4) exists. (3) **Never an *unexplained* empty session** — an unfillable slot is displaced to
+the next aspect in `ASPECT_EMPHASIS`, carrying a `Shortfall` naming what would open the
+original. (4) The one honest exception: nothing available and every injury area open leaves no
+aspect in `power_endurance` or `performance`, so the session becomes `activity_kind=other`,
+"Recovery", with a shortfall per empty slot. Explained, therefore allowed.
 
-1. **Nothing non-deterministic reaches the output.** No `random`, no `secrets`, no `hash()`,
-   no set iteration. `server/domain/.ruff.toml` bans the imports; the rest is discipline,
-   and `tests/test_planner_reproducibility.py` is the check.
-2. **A contraindicated exercise is never prescribed.** `prescribable()` is the only way an
-   exercise enters a block and it never relaxes the injury filter. Safety outranks filling
-   a slot, which is why (4) exists at all.
-3. **Never an *unexplained* empty session.** A slot whose aspect has no prescribable
-   candidate is *displaced* to the next aspect in `ASPECT_EMPHASIS` that does, carrying a
-   `Shortfall` that names what would open the original.
-4. **The one honest exception to a full session**: with nothing available and every injury
-   area open, no aspect in `power_endurance` or `performance` survives. That session becomes
-   `activity_kind=other`, titled "Recovery", with no blocks and a shortfall per empty slot
-   naming the injuries. Explained, therefore allowed.
+⚠️ Every string built here is user facing and two hard rules bind all of them: **never suggest
+losing weight** (there is no bodyweight figure in this module, which is also why
+`target_load_kg` stays `None`) and **never suggest improvising finger loading** (a shortfall
+names equipment rows; `substitution_hint` is deliberately not read here).
+`tests/test_planner_safety.py` asserts both against every string a plan can produce.
 
-## What the generator will not say
-
-Every string built here — the plan name, a session title, a shortfall, a note — is user
-facing, and two hard rules bind all of them. **Never suggest losing weight**: there is no
-bodyweight figure anywhere in this module, which is also why `target_load_kg` stays `None`
-in v1.0.0 (deriving a load is the one place a body weight could creep into a prescription).
-**Never suggest improvising finger loading**: a shortfall names equipment rows, and
-`exercise.substitution_hint` is deliberately not read here. `tests/test_planner_safety.py`
-asserts both against every string a plan can produce.
-
-## The estimate, and why it is arithmetic rather than a guess
-
-`estimated_minutes = ceil(total prescribed seconds / 60) + WARMUP_MINUTES`. A set is its
-`work_seconds`, or `reps * SECONDS_PER_REP` when the protocol counts reps instead, plus its
-own `rest_seconds`; between sets it is `rest_between_sets_seconds`. A session with no blocks
-has no estimate (`None`) rather than a warm-up for a session that prescribes nothing.
-
-`WARMUP_MINUTES` is not a prescribed block: warming up is not optional and not something the
-climber needs told, and a block would make it skippable. `SECONDS_PER_REP` is the one soft
-number in the file, and it is only ever multiplied into an estimate — never into a
-prescription.
-
-## Fields the domain cannot fill
-
-`target_grade_id` / `current_grade_id` are `None` here. `PlannerInput` carries **ordinals**,
-because the domain speaks the ladder and not the `grade` table, so the route that read those
-rows is the only thing that knows their ids and it sets them on the response. Filling them
-here would mean handing the domain a DB id to carry around unused.
+`estimated_minutes` is arithmetic, not a guess: prescribed seconds (work or
+`reps * SECONDS_PER_REP`, plus rests) over 60, ceiled, plus `WARMUP_MINUTES` — which is not a
+prescribed block, because a block would make warming up skippable. No blocks means `None`.
+`target_grade_id`/`current_grade_id` are `None` here: `PlannerInput` carries **ordinals**, so
+only the route that read those rows knows their ids.
 """
 
 import math

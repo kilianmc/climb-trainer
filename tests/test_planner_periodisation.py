@@ -1,16 +1,11 @@
 """Periodisation and the plan's date maths — the gap table, the phase order, the spans.
 
-DB-free: it reads `server/domain/planner/`, so it runs in the local gate with no Postgres.
-
-Justified by CLAUDE.md's testing policy, "critical business logic and domain rules — ... plan
-generation (phase spans, deloads, taper, volume allocation ...), and **date and timezone
-maths**". These are the two things in this file, and nothing else is here: there is no test
-that `MIN_BLOCKS` is 2 (that is a constant table, explicitly on the SKIP list) and no
-snapshot of a generated plan.
-
-The gap table is asserted as a **literal**, not by re-deriving the formula. A test that
-recomputes `MIN_BLOCKS + max(gap, 0)` agrees with any typo in the implementation; the table
-is the decision, so the table is what is written down.
+DB-free: it reads `server/domain/planner/`, so it runs in the local gate. The testing policy's
+"plan generation (phase spans, deloads, taper, volume allocation)" and "date and timezone
+maths". Nothing else is here — no assertion that `MIN_BLOCKS` is 2 (a constant table, explicitly
+on the SKIP list) and no snapshot of a generated plan. The gap table is asserted as a
+**literal**, not by re-deriving the formula: a test that recomputes it agrees with any typo in
+the implementation. The table is the decision.
 """
 
 from datetime import date, timedelta

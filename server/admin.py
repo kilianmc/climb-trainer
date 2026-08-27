@@ -3,53 +3,21 @@
     uv run python -m server.admin create-invite --label "Bob, from the gym"
     uv run python -m server.admin set-password --email bob@example.com
 
-Invoked the same way as `python -m server.seed`, and like it, run **out of band** against
-production: neither subcommand belongs in a workflow, and nothing here is idempotent in the
-way a seed is.
+Run **out of band** against production, like `python -m server.seed`; neither subcommand
+belongs in a workflow. A CLI is the only way to do either: `password_hash` is argon2id, so
+there is no cell a plaintext can be typed into and hashing must happen with *this* repo's
+parameters; and `invite.code_hash` is sha256 of a code that exists only in the generating
+process. The reverse operations need no secret and therefore get no subcommand — revoking is
+one `UPDATE`. Passwords are read with `getpass`, never from `argv` (shell history, `ps`).
 
-## Why a CLI is the only way to do either
-
-- `app_user.password_hash` is **argon2id**. There is no plaintext column, so there is no
-  cell in the Neon console a password can be typed into, and no SQL statement that could
-  set one. Hashing has to happen in a process that has this repository's parameters
-  (`server/auth/passwords.py`) — a hash produced with anything else would verify or not
-  depending on the library's defaults.
-- `invite.code_hash` is **sha256 of a code that only exists in the generating process**.
-  Inserting a row by hand would mean inventing a code, hashing it somewhere, and having
-  the plaintext pass through that somewhere on the way.
-
-The reverse operations need no secret and therefore no command: revoking an invite is
-`UPDATE invite SET revoked_at = now() WHERE label = '...'`, and listing them is a SELECT
-that exposes nothing (the codes are hashes). Do not add subcommands for those.
-
-## What this module must never print
-
-**No connection string, ever** — not masked, not a prefix. The repository is public and
-so is the terminal scrollback that ends up pasted into an issue. The one secret this module
-*does* print is a fresh invite code, once, because that is the only moment it exists.
-
-**The one deliberate exception is the confirmation below: the target host and database
-NAME.** That is not a relaxation of the rule — it is the same redaction `server/devseed.py`
-does, through the same helper (`server/db.py::target_host_and_database`), and it exists
-because the operator cannot confirm a target they are not shown. Never widen it to the
-user, the password, the query string or the full URL.
-
-Passwords are read with `getpass` from the terminal, never from `argv`: an argument lands
-in shell history, in `ps` output, and in any script that wrapped the command.
-
-## Which database? — the guard this module used to be missing
-
-Both subcommands are documented as run **against production from a developer's terminal**,
-and `server/settings.py` loads `.env` on import. So the shell that reaches production
-reaches it by default, and a `set-password` meant for a local account silently rewrote a
-real one. `server/devseed.py` had target confirmation for exactly this reason and this
-module did not, which was the asymmetry: devseed protected the throwaway database while
-`admin.py` pointed at the real one unguarded.
-
-So both subcommands print the target and will not act until the operator types the host
-back. `--yes` skips the prompt for scripting, and is the only way to skip it — there is no
-environment variable, because a variable in `.env` becomes standing permission (the same
-reasoning that keeps `CLIMB_DEV_SEED` out of `.env.example`).
+⚠️ **No connection string is ever printed** — not masked, not a prefix; the repo is public and
+so is pasted scrollback. The one deliberate exception is the target **host and database name**,
+through `server/db.py::target_host_and_database`, because an operator cannot confirm a target
+they are not shown. Both subcommands print it and will not act until the operator types the
+host back: `.env` is loaded on import, so the shell that reaches production reaches it by
+default and a `set-password` meant for a local account silently rewrote a real one. `--yes` is
+the only way to skip the prompt — never an environment variable, which in `.env` becomes
+standing permission (the reasoning that keeps `CLIMB_DEV_SEED` out of `.env.example`).
 """
 
 import argparse
