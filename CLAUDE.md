@@ -521,8 +521,10 @@ most.
 
 Unlike the TS 7 case above this is **stale metadata, not a missing API** — verified
 2026-08-14 before forcing it: none of the ten APIs ESLint 10 removed appear anywhere in
-the plugin's source, and on ESLint 10.8.1 four of its rules still produce correct
-diagnostics. The override is scoped to that one package deliberately; `--legacy-peer-deps`
+the plugin's source. Four rules were confirmed still firing — `alt-text`,
+`anchor-is-valid`, `click-events-have-key-events`, `no-static-element-interactions` —
+re-confirmed 2026-08-27 after the 10.9.0 bump. Naming the rules rather than the ESLint
+version is deliberate: the check is reproducible, and it does not rot on a bump. The override is scoped to that one package deliberately; `--legacy-peer-deps`
 would let unrelated peer conflicts through unnoticed.
 
 **Delete the override** when jsx-a11y publishes an `^10` peer, and re-run the lint
@@ -2416,12 +2418,15 @@ it breaks on every refactor and catches nothing.
   (`tests/test_library_contract.py`), whose failure mode is invisible to every behavioural
   test *by construction*: a shared-cache leak happens between two requests in an intermediary
   this repo does not run, so a literal list going red on the diff is the only guard available.
-  **Two more of the same shape guard the PROSE**, which nothing else in the gate reads:
+  **Three more of the same shape guard the PROSE**, which nothing else in the gate reads:
   `tests/test_comment_budget.py` (no comment outgrows its tier's cap without a registered
-  reason) and `tests/test_claude_md_claims.py` (every path, script, revision, heading and env
-  var `CLAUDE.md` names still resolves, and the index resolves in both directions). Both are
-  named here because a guard nobody lists is a guard the next reader deletes — see "⚠️ Prose is
-  capped, and an executable claim must not be prose" for what neither of them can catch.
+  reason), `tests/test_claude_md_claims.py` (every path, script, revision, heading and env
+  var `CLAUDE.md` names still resolves, and the index resolves in both directions), and
+  `web/src/api/libraryCitations.test.ts` (every construct our comments quote out of the
+  installed TanStack source is still there — it lives in the WEB suite because CI's `server`
+  job installs no web dependencies, where it would pass vacuously). All three are named here
+  because a guard nobody lists is a guard the next reader deletes — see "⚠️ Prose is capped,
+  and an executable claim must not be prose" for what none of them can catch.
 
 **SKIP tests for:**
 
