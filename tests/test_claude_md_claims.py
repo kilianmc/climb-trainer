@@ -11,6 +11,8 @@ highest-value arm is index integrity, and it runs in BOTH directions.
 
 import json
 import re
+import shutil
+import subprocess
 from typing import Final
 
 import pytest
@@ -178,6 +180,24 @@ def test_the_quality_gate_chain_claims_match_the_real_scripts(lines: list[str]) 
             )
 
 
+GIT: Final = shutil.which("git")
+
+
+def _is_gitignored(path: str) -> bool:
+    """Ignored build artifacts are absent from a clean checkout and from CI, so presence on
+    disk cannot be the only oracle. A typo is neither present nor ignored, so it still fails."""
+    if GIT is None:  # pragma: no cover - git is present in CI and in any clone
+        return False
+    # noqa: S603 - fixed argv, no shell; `path` is a token parsed out of this repo's own
+    # tracked CLAUDE.md, and check-ignore only ever reads .gitignore.
+    return (
+        subprocess.run(  # noqa: S603
+            (GIT, "check-ignore", "-q", path), cwd=ROOT, check=False
+        ).returncode
+        == 0
+    )
+
+
 def test_every_repo_rooted_path_it_names_resolves(lines: list[str]) -> None:
     """86-odd backticked paths. A moved file leaves the map pointing at a hole."""
     named: set[str] = set()
@@ -196,7 +216,7 @@ def test_every_repo_rooted_path_it_names_resolves(lines: list[str]) -> None:
         if "*" in path:
             if not list(ROOT.glob(path)):
                 missing.append(path)
-        elif not (ROOT / path).exists():
+        elif not (ROOT / path).exists() and not _is_gitignored(path):
             missing.append(path)
     assert not missing, (
         f"CLAUDE.md names {len(missing)} path(s) that do not exist: {missing}. If the absence is "
