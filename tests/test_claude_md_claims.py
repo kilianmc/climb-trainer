@@ -188,13 +188,14 @@ def _is_gitignored(path: str) -> bool:
     disk cannot be the only oracle. A typo is neither present nor ignored, so it still fails."""
     if GIT is None:  # pragma: no cover - git is present in CI and in any clone
         return False
-    # noqa: S603 - fixed argv, no shell; `path` is a token parsed out of this repo's own
-    # tracked CLAUDE.md, and check-ignore only ever reads .gitignore.
-    return (
+    # Both forms: `.gitignore` uses directory-only patterns (`node_modules/`, `dist/`) and
+    # check-ignore cannot tell an ABSENT path is a directory, so the bare form misses in CI.
+    return any(
         subprocess.run(  # noqa: S603
-            (GIT, "check-ignore", "-q", path), cwd=ROOT, check=False
+            (GIT, "check-ignore", "-q", candidate), cwd=ROOT, check=False
         ).returncode
         == 0
+        for candidate in (path, path.rstrip("/") + "/")
     )
 
 
