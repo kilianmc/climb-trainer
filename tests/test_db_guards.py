@@ -1,25 +1,14 @@
 """The two "which database am I about to touch?" guards, and the credential rule.
-
-DB-free — these are pure functions — so they run in the local gate, which matters because
-the mistakes they catch are made at a terminal.
-
-## Why the traceback tests are the important ones here
-
-A guard that refuses correctly and leaks the password while doing it is worse than no
-guard, because it turns a near-miss into a disclosure. That is not hypothetical: the first
-version of the test-suite guard took the connection URL as a **parameter**, pytest renders
-every frame's arguments, and the fixture is session-scoped — so one failing run printed
-
-    url = 'postgresql://neondb_owner:<password>@ep-....neon.tech/neondb?sslmode=require'
-
-**51 times**, once per dependent test, while the guard's own docstring said "never the URL,
-which carries the password". The message was clean. The traceback was not.
-
-So both guards take a **host**, and these tests assert that no frame on the raised path
-holds the credential — locals included, since `--showlocals` is one flag away and
-`pyproject.toml` sets no `--tb` override. This is the same rule CLAUDE.md draws from
-`alembic current --verbose` leaking a Neon hostname through a flag rather than an `echo`:
-audit what a tool prints at its chosen verbosity, not just what you meant to print.
+DB-free — pure functions — so they run in the local gate, which matters because the mistakes they
+catch are made at a terminal.
+⚠️ **The traceback tests are the important ones.** A guard that refuses correctly and leaks the
+password while doing it turns a near-miss into a disclosure. The first version took the connection
+URL as a **parameter**; pytest renders every frame's arguments and the fixture is session-scoped,
+so one failing run printed the production URL **51 times** while the guard's own docstring said
+"never the URL". The message was clean; the traceback was not. So both guards take a **host**, and
+these tests assert no frame on the raised path holds the credential, locals included —
+`--showlocals` is one flag away. Same rule CLAUDE.md draws from `alembic current --verbose`: audit
+what a tool prints at its chosen verbosity.
 """
 
 import pytest

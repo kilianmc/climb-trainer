@@ -11,8 +11,8 @@
  *   openapi-sha256  the OpenAPI document it was generated from
  *   types-sha256    everything below this comment block
  *
- * openapi-sha256: 213e9326b563d84b483373aa98e0ac4ecf4b9e4e8af1debd59f7f51f2ecae7c1
- * types-sha256: 4896cd9d43cca13a5638e651f6515152cacca3be7905e1eb9bb860746c2e4012
+ * openapi-sha256: b93ef4d84b6c82e51d30afdb54a7b1f453a7e220896e22d3d59ec685f4675631
+ * types-sha256: 22f29ba2fd01d0109205aaedfdca91e97da482f9213da2d2e9ec7b3992bf49d8
  */
 
 export interface paths {
@@ -420,38 +420,19 @@ export interface paths {
      * Reset Profile
      * @description Un-answer the four onboarding steps, in one transaction, and return the profile.
      *
-     *     ## Why this exists instead of teaching `PATCH` to clear
+     *     Exists so that `PATCH` did not have to change: making `null` mean "clear" in
+     *     `ProfilePatchRequest` was **considered and rejected**, because `null` there means "not in
+     *     this request", which is what lets onboarding send one step at a time — flipping it would
+     *     turn every omission into a destructive spelling one typo away.
      *
-     *     Issue #54 needs a way back to a from-scratch wizard. The obvious alternative was to make
-     *     `null` mean "clear" in `ProfilePatchRequest` — and that was **considered and rejected**
-     *     (Kilian's call): `null` there means "not in this request" for every field, which is what
-     *     lets onboarding send one step at a time, and flipping it would turn every omission into a
-     *     destructive spelling one typo away. A named endpoint says what it does.
+     *     It clears every column the four steps own (including `primary_discipline`, derived from the
+     *     target grade and so it has to go with it) and every `user_aspect_rating` row.
+     *     ⚠️ **Open `user_injury` rows only — resolved rows are HISTORY and are not touched**:
+     *     flag -> resolve -> re-flag is what that table exists for, and a reset is not a claim about a
+     *     past injury. **Not** `display_name` or `show_body_metrics`, which belong to no step.
      *
-     *     ## What it clears, and what it deliberately does not
-     *
-     *     - **Every column the four steps own** (`_RESET_COLUMNS`), back to NULL — including
-     *       `primary_discipline`, which is derived from the target grade and has to go with it.
-     *     - **Every `user_aspect_rating` row**, because the aspect step's answer *is* those rows.
-     *     - **Open `user_injury` rows only.** ⚠️ Resolved rows are HISTORY and are not touched:
-     *       flag -> resolve -> re-flag is what that table exists for (`0005`'s partial unique
-     *       index), and a reset is not a claim about a past injury. An open flag, by contrast, is
-     *       the step's current answer and has to go or the step would not read as unanswered.
-     *     - **Not** `display_name`, `show_body_metrics`, or anything in `user_equipment` — see
-     *       `_RESET_COLUMNS`.
-     *
-     *     ## Shape
-     *
-     *     A **Tier-1 write**, like `PATCH`: deliberate, low-frequency, and the user is waiting for
-     *     it. It returns the whole profile for the same reason `PATCH` does — the caller redraws
-     *     the completion bar from the response rather than from a follow-up GET, so the bar can
-     *     never disagree with the database about what is set.
-     *
-     *     **Idempotent**, and it does not create a row: `UPDATE` touches nothing when no profile
-     *     exists, and a profile that has answered nothing is what a reset is trying to produce
-     *     anyway. A demo token never reaches here — `POST` is a mutating method, so
-     *     `server/auth/deps.py` refuses it twice over (403 at the edge, read-only transaction
-     *     underneath).
+     *     A Tier-1 write. It returns the whole profile so the caller redraws the completion bar from
+     *     the response and can never disagree with the database. **Idempotent, and it creates no row.**
      */
     post: operations['reset_profile_api_profile_reset_post'];
     delete?: never;
@@ -992,28 +973,18 @@ export interface components {
      * ProfileResponse
      * @description The whole profile, and everything the client needs to compute completion.
      *
-     *     ⚠️ **Every null here means "not answered yet", never "zero" or "none".** That is the
-     *     whole point of revision `0005`, and it binds anything that reads this — the completion
-     *     bar, and the plan generator in PR #11, which must refuse to generate rather than
-     *     substitute a default for a question the user has not been asked.
+     *     ⚠️ **Every null here means "not answered yet", never "zero" or "none"** (revision `0005`).
+     *     Anything reading this must refuse to act rather than substitute a default for a question the
+     *     user has not been asked. `injuries_reviewed_at` is how its step reports itself finished: an
+     *     empty `injuries` list means "nothing to record" or "never asked" depending only on it.
      *
-     *     `injuries_reviewed_at` is how its step reports itself finished: an empty `injuries` list
-     *     means "nothing to record" or "never asked" depending only on it. Every completion test
-     *     the client makes reads that column or a scalar, which is what keeps the progress bar
-     *     server truth.
+     *     ⚠️ **`email` is the ONE null that does not mean "not answered yet".** It is read from
+     *     `app_user`, where it is `NOT NULL`, so a null can only mean the row behind an authenticated
+     *     principal has gone. It is read-only — the client displays it and has no way to change it,
+     *     which is why it is absent from `ProfilePatchRequest`.
      *
-     *     ⚠️ **`equipment_ids` and `equipment_reviewed_at` are gone** (issue #54). The step is not
-     *     part of onboarding any more, nothing in the client read either field, and dropping them
-     *     from the response also drops a `SELECT` from every profile read — Neon bills awake time.
-     *     The table and its rows are untouched, waiting for PR #10.
-     *
-     *     ⚠️ **`email` is the ONE null here that does not mean "not answered yet".** It is read
-     *     from `app_user`, not from the profile, and it is `NOT NULL` there — so it can only be
-     *     null if the row behind an authenticated principal has gone, which is not a state this
-     *     endpoint invents a 404 for. It is read-only: the client displays it and has no way to
-     *     change it, which is why it is not in `ProfilePatchRequest`. Added because the client had
-     *     no way to learn its own account's address at all — `GET /api/auth/me` returns
-     *     `{user_id, scope}` and its docstring defers exactly this to the profile endpoint.
+     *     `equipment_ids` and `equipment_reviewed_at` are gone (issue #54): the step left onboarding,
+     *     and dropping them also drops a `SELECT` from every profile read. The table is untouched.
      */
     ProfileResponse: {
       /** Aspect Ratings */

@@ -1,21 +1,13 @@
-"""The reproducibility promise: `server/models.py::Plan` says version + input reproduces the tree.
-
-DB-free.
-
-Justified by CLAUDE.md's "project-wide invariants that silently rot" — this is a **GUARD**,
-and its failure mode is the reason it exists: same generator version, same profile, a
-different plan, and nothing anywhere says why. The missing third input is the exercise
-library, so `library_digest()` folds it into the input and a content edit reads as a
-different input rather than as a broken promise.
-
-The subprocess is not ceremony. A digest built from `hash()` or from set iteration is stable
-within one interpreter and different in the next, which is precisely the bug that would
-survive an in-process assertion — `PYTHONHASHSEED` is randomised per process by default, and
-this pins the value across two of them.
-
-The other half of the same promise is below the digest tests: `generate()` twice yields
-identical trees, and `generator_input()` is canonical and survives a JSON round trip. Those
-are what the digest is *for* — a stable digest inside an unstable tree proves nothing.
+"""The reproducibility promise: `Plan` says generator version + input reproduces the tree.
+DB-free. A GUARD whose failure mode is the reason it exists: same generator version, same profile,
+a different plan, and nothing anywhere says why. The missing third input is the exercise library,
+so `library_digest()` folds it in and a content edit reads as a different input rather than as a
+broken promise.
+The subprocess is not ceremony: a digest built from `hash()` or from set iteration is stable within
+one interpreter and different in the next, which is exactly the bug an in-process assertion would
+survive (`PYTHONHASHSEED` is randomised per process). The other half is below — `generate()` twice
+yields identical trees and `generator_input()` survives a JSON round trip. A stable digest inside
+an unstable tree proves nothing.
 """
 
 import dataclasses

@@ -1,99 +1,35 @@
 """Opaque refresh tokens, rotation, and reuse detection.
 
-## Opaque, not a JWT
+32 bytes from `secrets.token_urlsafe`, stored as a **sha256** digest — not argon2: a work
+factor buys nothing against 256 bits of CSPRNG output, and sha256 already gives the one
+property needed, that a database dump is not a set of working credentials. Every login starts
+a *family*; each refresh stamps `rotated_at` on the row it replaces, so a family is a chain
+with one live link. A token whose row is already rotated or revoked has two holders, and the
+request cannot say which, so the safe answer is to revoke the whole family. That only works if
+the two presentations are SERIALISED — hence `SELECT ... FOR UPDATE`; see the comment there.
 
-A refresh token is 32 bytes from `secrets.token_urlsafe`. It carries no claims and means
-nothing on its own — its entire meaning is the row it matches. That is what makes it
-revocable, which is precisely what the stateless access token in `tokens.py` is not.
+## The replay grace window — a deliberate NARROWING of the paragraph above
 
-## sha256, deliberately NOT argon2
+A replay inside `REPLAY_GRACE` whose row is not *revoked* writes nothing and raises
+`RefreshSupersededError`, which `routes.py` answers **409**: "your cookie is older than the
+jar; send it again". It has to live server-side because no client can cover the case — the
+in-flight dedupe covers one **mount**, a Web Lock one **origin**, the cookie the whole
+**site**, so the standalone app and the federated mount are two origins sharing one cookie and
+`FOR UPDATE` *guarantees* the loser re-reads a rotated row (issue #27). The retry is sound
+because a mount does not own a token, the shared jar does.
 
-Passwords get argon2 because they are low-entropy secrets a human chose; the whole cost
-parameter exists to make guessing them expensive. A refresh token is **256 bits of
-CSPRNG output** — there is no dictionary, no guessing, and nothing for a work factor to
-slow down. Running argon2 on every refresh would buy exactly zero security and spend
-46 MiB and tens of milliseconds of a 1-vCPU function doing it. sha256 gives the one
-property that is actually needed: a database dump is not a set of working credentials.
+Three bounds, none of them a reason to widen the window. (1) The winner leads by about one
+database round trip — a **margin, not an ordering guarantee**; a 409 processed first re-presents
+the same token, gets a second 409, and that mount stops refreshing until a reload. (2) One
+retry converges exactly TWO realms; revisit the count if a third same-site origin mounts this
+app. (3) A loser slower than `REPLAY_GRACE` still trips reuse detection and still revokes the
+family — issue #27 is narrowed, not eliminated.
 
-## Families and reuse detection — the important part of this file
-
-Every login starts a *family*. Each refresh writes a new row in the same family and
-stamps `rotated_at` on the one it replaces, so the family is a chain with exactly one
-live link.
-
-If a token is presented whose row is **already rotated or revoked**, that chain has two
-holders. Either the legitimate client replayed (it should not — rotation is atomic per
-request) or someone captured the cookie. There is no way to tell which from the request,
-so the safe response is to **revoke the entire family**: both the attacker and the real
-user are logged out, and the real user's next login starts a clean family. Silently
-issuing a new token instead would hand a thief an indefinitely renewable session.
-
-Detection only works if the two requests are **serialised**, so `rotate()` reads the row
-with `SELECT ... FOR UPDATE`. See the comment at that line: without the lock, a
-simultaneous replay is not detected at all — which is the case that matters most.
-
-## The replay grace window — a deliberate narrowing of the paragraph above
-
-A replay presented within `REPLAY_GRACE` of the rotation it lost, whose row is **not**
-revoked, does not revoke the family. `rotate()` writes nothing at all on that path and
-raises `RefreshSupersededError`, which `routes.py` turns into a **409** meaning "your
-cookie is older than the jar; send it again".
-
-**This has to live here, on the server, because no client can cover the case.** Three
-realms are in play and they do not line up: the client's in-flight dedupe covers one
-**mount**, a Web Lock covers one **origin**, and the refresh cookie covers the whole
-**site**. The standalone app (`climb.kilianmc.com`) and the federated mount inside the
-portfolio (`kilianmc.com`) are two *origins* — two independent lock managers — sharing
-**one** cookie, because they are same-site. So both mounts can present the same
-pre-rotation token, and the row lock above then guarantees the loss: `FOR UPDATE`
-*serialises* the two presentations, it does not deduplicate them, so the loser re-reads
-the row, sees `rotated_at`, and used to revoke the family — killing the winner's
-brand-new token too. Both mounts logged out, with no theft anywhere (issue #27).
-
-"Try again" is a sound answer only because the cookie is per-**site**. The loser is not
-handed the winner's token — the successor's plaintext does not exist in the row (see the
-sha256 note above) and is never recoverable — and it does not need it: a mount does not
-own a token, the shared cookie jar does. Re-reading that jar yields the winner's fresh
-token, and rotating *that* is an ordinary legitimate rotation.
-
-### What this does NOT guarantee — three bounds, all deliberate
-
-None of these is a reason to widen the window; they are the shape of the trade, and they
-must stay written down rather than be discovered later.
-
-1. **The retry is not certain to find the winner's cookie.** The winner's response is
-   dispatched after its `commit()` — which is what releases this row lock — and the loser
-   then pays its own commit round trip before answering, so the winner leads by roughly one
-   database round trip. That is a **margin, not an ordering guarantee**: the two responses
-   travel independently, and if the loser's 409 is processed first its retry re-presents the
-   same token, gets a second 409, and that mount stops refreshing for the rest of the page
-   load. The family survives and a reload recovers it.
-2. **One retry converges exactly TWO realms.** With three same-site origins presenting
-   concurrently, two lose, both retry against the same fresh token, and one of them loses
-   again with no retry left. Today there are two (the standalone origin and the shell's), so
-   the cap is correct and it saves a Postgres write. **Revisit it if a third same-site origin
-   ever mounts this app** — the client, not this module, is where the retry count lives.
-3. **A loser that arrives more than `REPLAY_GRACE` after the winner's commit is still read
-   as theft** and still revokes the family. Issue #27 is therefore **narrowed, not
-   eliminated**: a request whose journey from reading the cookie to reaching `rotate()`
-   exceeds 10 s (a stalled radio, a queued cold start) hits the original failure.
-
-**The security trade, stated plainly, because it is a loss and not a free win.** This is
-separate from the three bounds above: those are cases the fix does not reach, this is
-ground the fix gives up. Inside the window, replaying an already-rotated token no longer
-revokes the family. What a replayer gains: nothing directly. The 409 carries no token, and
-the successor is only reachable by whoever already holds the shared cookie jar — i.e. the
-browser. What is lost: a genuine theft whose replay lands inside the window goes **undetected**,
-where it would previously have burned the family. Reuse detection is therefore narrower
-than it was. Accepted, because the alternative is that the portfolio's own two-origin
-configuration logs real users out for free. Outside the window — and for a revoked row at
-any age — the revoke-the-family behaviour is exactly as it was.
-
-## Lifetime
-
-30 days. Long enough that a returning user is not asked to log in every week, short
-enough that an abandoned cookie stops working. Rotation means a token is normally in use
-for hours, not weeks — the 30 days is the *idle* horizon.
+⚠️ **The trade is a real loss, not a free win.** Inside the window a replayed token no longer
+revokes its family, so a genuine theft landing there goes **undetected**. The replayer gains
+no token (the 409 carries none, and the successor is reachable only by whoever holds the jar).
+Accepted because the alternative is that our own two-origin configuration logs real users out.
+`revoked_at` rows are never graced, at any age. Lifetime is 30 days — the *idle* horizon.
 """
 
 import hashlib
@@ -215,46 +151,14 @@ def rotate(session: Session, presented_token: str) -> IssuedRefresh:
     and means "retry with the cookie you now hold". See the module docstring.
     """
     presented_digest = digest(presented_token)
-    # `with_for_update()` is LOAD-BEARING — do not remove it to "save a lock".
-    #
-    # Without it, two requests presenting the SAME token race: both SELECT the row,
-    # both see `rotated_at IS NULL`, both pass the reuse check below, and both mint a
-    # successor. The family ends up with two live tokens and reuse is never detected —
-    # which is exactly the attacker-replays-while-the-victim-refreshes case this whole
-    # mechanism exists to catch. READ COMMITTED does not help: the second transaction
-    # re-reads the row when it UPDATEs, but the *decision* was already taken from the
-    # stale snapshot. `FOR UPDATE` serialises the two on the row, so the loser re-reads
-    # after the winner commits and sees `rotated_at` set — then either graces it or revokes
-    # the family, per the grace window below.
-    #
-    # Row locks are transaction-scoped, so this works through PgBouncer's
-    # transaction-mode pooler (unlike a session-level advisory lock, which does not).
-    #
-    # It also selects the DATABASE's clock, in the same statement and at no extra round trip.
-    # The grace comparison below spans **two serverless invocations**, so taking each side
-    # from a local `datetime.now(UTC)` would measure a 10-second window across two
-    # unsynchronised clocks: 2 s of skew is 20 % of the window, and skew in the unsafe
-    # direction turns a lost race into a family revocation. One clock, one source.
-    #
-    # `func.now()` is Postgres `transaction_timestamp()` — the start of THIS transaction, not
-    # `clock_timestamp()`, and that choice is deliberate. `ratelimit.enforce` commits before
-    # `rotate` runs, so this SELECT *opens* the transaction and the timestamp is taken when
-    # the statement is issued, BEFORE it blocks on the row lock. That dates the presenter's
-    # ARRIVAL rather than the length of its wait, which is exactly the question the grace
-    # window asks — a loser stuck behind a slow winner stays inside the window. The bias is
-    # therefore towards gracing, and it is bounded: a transaction cannot begin before it
-    # begins, so a rotation that happened well before this request started still measures
-    # old and is still rejected. ⚠️ The one way to widen that bias is to do other database
-    # work in this transaction before calling `rotate` — that would age `now()` by however
-    # long the work takes. Don't, in production.
-    #
-    # The test fixture breaks that invariant **by construction**, and the difference is worth
-    # knowing before someone "fixes" the wrong side: `tests/conftest.py` joins one long-lived
-    # transaction as a savepoint, so `now()` is frozen when that transaction begins and is
-    # already ancient by the time `rotate` runs. That is harmless there — the tests stamp
-    # `rotated_at` from the *same* frozen clock, so their arithmetic is exact (see
-    # `tests/test_auth_refresh.py::_db_now`) — and it is exactly what must never happen in a
-    # request handler, where the two sides of the comparison come from different invocations.
+    # `with_for_update()` is LOAD-BEARING. Unlocked, two presentations of one token both see
+    # `rotated_at IS NULL`, both pass the reuse check below and both mint a successor, so reuse
+    # is never detected — the exact case this mechanism exists for. READ COMMITTED does not
+    # help: the loser's UPDATE re-reads the row, but the decision was taken from the stale
+    # snapshot. Proved by `tests/test_auth_refresh.py::
+    # test_two_simultaneous_rotations_of_one_token_cannot_both_succeed`, which needs two real
+    # transactions. A row lock is transaction-scoped, so it works through PgBouncer's
+    # transaction-mode pooler — a session-level advisory lock would not.
     found = session.execute(
         select(AuthSession, func.now())
         .where(AuthSession.token_hash == presented_digest)
@@ -263,9 +167,15 @@ def rotate(session: Session, presented_token: str) -> IssuedRefresh:
     if found is None:
         raise RefreshRejectedError("unknown refresh token")
     row: AuthSession = found[0]
-    # `func.now()` is `Any` to mypy, so this annotation is where the TIMESTAMPTZ claim is
-    # made. `Base.type_annotation_map` pins every `datetime` column to `timezone=True`, and
-    # Postgres `now()` is `timestamptz`, so both sides of the comparison below are aware.
+    # The database's clock, selected in the statement above at no extra round trip, because the
+    # grace comparison spans TWO serverless invocations and 2 s of skew is 20 % of a 10 s window.
+    # `func.now()` is `transaction_timestamp()`, NOT `clock_timestamp()`: it dates the
+    # presenter's ARRIVAL rather than the length of its wait, so a loser stuck behind a slow
+    # winner stays inside the window. Guarded by `tests/test_auth_refresh.py::
+    # test_the_grace_comparison_uses_the_transaction_clock_not_the_wall_clock`. ⚠️ Doing other
+    # database work in this transaction before `rotate` ages `now()` by however long it takes;
+    # the test fixture breaks that by construction and production must not. The annotation is
+    # where the TIMESTAMPTZ claim is made — `func.now()` is `Any` to mypy.
     db_now: datetime = found[1]
 
     # The lookup above was an indexed equality match, so this comparison is redundant

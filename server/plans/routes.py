@@ -974,9 +974,9 @@ def _insert_plan_tree(
 
     ## Why the ORM graph, and not `insert().values([...])` per level
 
-    The objection to it — "an ORM flush emits one INSERT per row" — is false on this dialect.
-    Cited against the installed SQLAlchemy 2.0.52, because an uncited claim about a library's
-    behaviour is how the last three review rounds each found a bug:
+    "An ORM flush emits one INSERT per row" is false on this dialect. Cited against the installed
+    SQLAlchemy 2.0.52, because an uncited claim about a library's behaviour is how the last three
+    review rounds each found a bug:
 
     - `orm/persistence.py:1086-1146` (`_emit_insert_statements`): with no client-side primary key,
       `implicit_returning` true and more than one record in the group, it consults
@@ -991,46 +991,38 @@ def _insert_plan_tree(
       rows are **3** statements, not 2,400.
     - `orm/mapper.py:2765` (`_insert_cols_as_none`) + `orm/persistence.py:368-380`: a non-bulk
       flush adds an explicit `None` for every column with no default and no server default, so
-      every instance of a mapper has the same parameter-key set. That matters because
+      every instance of a mapper has the same parameter-key set — which matters because
       `persistence.py:1003-1015` groups records with `itertools.groupby` on that key set, and
-      `groupby` only groups *consecutive* runs — alternating shapes fragment one executemany
-      into many.
+      `groupby` only groups *consecutive* runs, so alternating shapes fragment one executemany.
 
     So the flush is ~6 statements per level, the ids come back in `RETURNING`, and the response is
-    built from the objects with no re-read. The explicit-insert shape would need `RETURNING`
-    hand-spelled or a re-`SELECT` per level, and `prescribed_set` has no natural key to re-select
-    on.
+    built from the objects with no re-read. ⚠️ **`status`, `activity_kind` and `is_deload` are
+    passed explicitly despite having server defaults**, for two reasons from those citations: a
+    `server_default` column is not in `_insert_cols_as_none`, so setting it on some rows and not
+    others is the fragmentation `groupby` punishes; and an unset server default comes back
+    expired, which the serialiser would refresh one row at a time.
 
-    ⚠️ **`status`, `activity_kind` and `is_deload` are passed explicitly despite having server
-    defaults**, for two reasons from the citations above: a `server_default` column is NOT in
-    `_insert_cols_as_none`, so setting it on some rows and not others is the fragmentation
-    `groupby` punishes; and an unset server default comes back expired, which the serialiser would
-    then refresh one row at a time.
+    ## ⚠️ THE GRAPH MUST BE ATTACHED THROUGH THE COLLECTION, NOT THE CHILD'S PARENT
 
-    ## ⚠️ The graph must be attached through the COLLECTION, not the child's parent
-
-    `Mesocycle(plan=plan, ...)` persists the plan row and **silently drops every one of its ~2,400
-    descendants** — a `201`, a committed transaction, and one `SAWarning`. It shipped in the first
-    draft and was caught by running it, not by reading it.
+    `Mesocycle(plan=plan, ...)` persists the plan row and **silently drops every one of its
+    ~2,400 descendants** — a `201`, a committed transaction, and one `SAWarning`. It shipped in
+    the first draft and was caught by running it, not by reading it.
 
     `orm/unitofwork.py::track_cascade_events` is why: its `append` listener runs the save-update
     cascade only when `prop._cascade.save_update and (key == initiator.key) and not
     sess._contains_state(item_state)`. `initiator.key` is the attribute the caller actually
-    mutated, so the backref's `append` on `plan.mesocycles` arrives with `initiator.key == "plan"`,
-    fails the gate, and cascades nothing. (That gate **is** the `cascade_backrefs` behaviour
-    SQLAlchemy 2.0 removed; the warning comes from `orm/dependency.py:840-848`.) Appending to
-    `plan.mesocycles` directly passes it, and `session.py:3512-3518` then walks
-    `mapper.cascade_iterator("save-update", ...)` recursively, picking up the whole subtree.
+    mutated, so the backref's `append` on `plan.mesocycles` arrives with `initiator.key == "plan"`
+    and cascades nothing. (That gate **is** the `cascade_backrefs` behaviour SQLAlchemy 2.0
+    removed; the warning comes from `orm/dependency.py:840-848`.) Appending to `plan.mesocycles`
+    directly passes it, and `session.py:3512-3518` then walks
+    `mapper.cascade_iterator("save-update", ...)` recursively over the whole subtree.
 
     ⚠️ **Nothing in the schema requires a plan to have a mesocycle**, so no constraint catches
     this — only a row count across all six tables does.
 
-    ## Two flushes, and the first one is not avoidable
-
-    `microcycle.plan_id` is a **denormalised** column with no relationship behind it (the
-    composite FK `(mesocycle_id, plan_id) -> mesocycle (id, plan_id)` is what makes it safe), so
-    SQLAlchemy will not populate it, and `plan.id` does not exist until the plan row is inserted.
-    Hence: add the plan, flush, build the subtree with `plan_id` set, flush that.
+    Two flushes, and the first is not avoidable: `microcycle.plan_id` is a **denormalised** column
+    with no relationship behind it (the composite FK is what makes it safe), so SQLAlchemy will
+    not populate it, and `plan.id` does not exist until the plan row is inserted.
     """
     exercise_ids = _exercise_ids(session, blueprint)
 

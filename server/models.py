@@ -1,20 +1,12 @@
 """SQLAlchemy 2 declarative models.
-
-Two things in this file are infrastructure rather than schema, and both exist to stop
-a class of future mistake:
-
-1. **An explicit constraint naming convention** on the metadata. Without it Postgres
-   invents names like `grade_grade_system_id_label_key`, Alembic autogenerate emits
-   `None` for the name, and a later `op.drop_constraint` has nothing stable to name.
-   With it, every index and constraint name is derivable from the model, so
-   autogenerate diffs are small and reviewable and `alembic check` is meaningful.
-
-2. **`type_annotation_map` pinning `datetime` to `TIMESTAMP(timezone=True)`** —
-   i.e. `TIMESTAMPTZ`, never a naive timestamp. This is repo-wide and automatic: any
-   future `Mapped[datetime]` gets it without anyone having to remember. Naive
-   timestamps are the classic thing that is fine until the first user trains in
-   another timezone or a DST boundary lands mid-session, and by then there is data to
-   migrate. Store aware, convert at the edge.
+Two things here are infrastructure rather than schema, and both stop a class of future mistake.
+**An explicit constraint naming convention** on the metadata: without it Postgres invents names
+like `grade_grade_system_id_label_key`, autogenerate emits `None` for the name, and a later
+`op.drop_constraint` has nothing stable to name. **`type_annotation_map` pinning `datetime` to
+`TIMESTAMP(timezone=True)`** — TIMESTAMPTZ, never naive — repo-wide and automatic, so any
+future `Mapped[datetime]` gets it without anyone remembering. Naive timestamps are fine until
+the first user trains in another timezone or a DST boundary lands mid-session, and by then
+there is data to migrate. Store aware, convert at the edge.
 """
 
 import uuid
@@ -615,77 +607,46 @@ class PrescriptionTemplate(Base):
 class UserProfile(Base):
     """Everything the plan generator needs about a person. One row per account.
 
-    **`user_id` is both primary key and foreign key**, which is what makes the 1:1 real
-    rather than conventional: a second profile for the same account is not merely
-    discouraged, it is impossible.
-
-    `available_weekdays` is a 7-bit mask, Monday = bit 0. A mask rather than a child
-    table because it is read on every generation and written whole — there is no query
-    that wants "everyone free on Thursdays" — and `CHECK (0..127)` plus a named
-    constant beats seven booleans nobody can loop over.
+    **`user_id` is both primary key and foreign key**, which is what makes the 1:1 real rather
+    than conventional: a second profile for the same account is impossible, not discouraged.
+    `available_weekdays` is a 7-bit mask, Monday = bit 0 — read on every generation and written
+    whole, with no query wanting "everyone free on Thursdays".
 
     ## ⚠️ THREE COLUMNS ARE NULLABLE BECAUSE UNANSWERED IS A REAL STATE (0005)
 
-    `primary_discipline`, `sessions_per_week` and `available_weekdays` were `NOT NULL`
-    until revision `0005`. Onboarding writes this row **one step at a time** — that is
-    what lets an abandoned setup resume instead of restarting — so the row exists before
-    those questions have been asked, and `NOT NULL` forced the write path to invent
-    placeholder values. Two of them were indistinguishable from real answers
-    (`sessions_per_week = 3` is a perfectly plausible reply), so a progress bar counting
-    "has a value" credited work nobody had done, and the plan generator would have read a
-    number the user never chose.
+    Onboarding writes this row **one step at a time**, so it exists before those questions have
+    been asked, and the `NOT NULL` they carried until `0005` forced the write path to invent
+    placeholders — two of which were indistinguishable from real answers
+    (`sessions_per_week = 3` is a perfectly plausible reply), so the bar credited work nobody
+    had done. **NULL means "not answered yet". It never means "zero", "none" or "default", and
+    nothing may substitute a fallback** — the generator must refuse to generate rather than
+    assume a training frequency. ⚠️ `available_weekdays = 0` is a legal *mask* meaning "answered,
+    no days", and **the API accepts and stores it** (`ge=0`); only the web client's own submit
+    gate declines to send it, and a client-side gate is not an API property.
+    `primary_discipline IS NULL` means no target grade yet, since it is derived from one.
 
-    **NULL means "not answered yet". It never means "zero", "none" or "default".**
-    Anything reading these must handle NULL as *absent input*, not substitute a fallback:
+    ## ⚠️ A step needs a `*_reviewed_at` column exactly when ZERO ROWS is a legitimate answer
 
-    - `sessions_per_week IS NULL` -> the availability step is unanswered. The plan
-      generator (planned PR #11) must refuse to generate rather than assume a frequency.
-    - `available_weekdays IS NULL` -> same question, same answer. `0` is a legal *mask*
-      meaning "answered, no days", and **the API does accept and store it** — the Pydantic
-      bound is `ge=0` and `PATCH /api/profile` writes whatever it is given. Only the web
-      client's own submit gate declines to send it, and a client-side gate is not an API
-      property. A reader must handle 0 as an answer, not as an impossibility.
-    - `primary_discipline IS NULL` -> no target grade has been chosen, because the
-      discipline is derived from it (`server/profile/routes.py`).
+    Exactly one step qualifies: `injuries_reviewed_at`, because "nothing is hurting" writes no
+    `user_injury` rows and an empty child table otherwise cannot distinguish "asked, nothing"
+    from "never asked". A timestamp rather than a boolean because "when did you last look at
+    this?" is the question a future prompt would ask. **The other three steps must NOT get one**
+    — the aspect step's answer is three scalar columns, and the grades and availability are
+    scalars whose own NULL carries it. `equipment_reviewed_at` was the second and is **retired**
+    with its step (`0006`, issue #54): nothing reads or writes it, it is absent from
+    `ProfileResponse` and from the completion maths, and the column stays only because
+    expand -> deploy -> contract says so. A profile with zero `user_equipment` rows is normal.
 
-    ## The `*_reviewed_at` columns, and the rule for when a step needs one
+    ## `show_body_metrics` defaults to TRUE
 
-    **A step needs a `*_reviewed_at` column exactly when ZERO ROWS is a legitimate
-    answer.** Two of onboarding's five steps qualify:
+    Off, **the weight trend and every %BW figure are hidden and nothing prompts for a weigh-in**
+    — a real state with real behaviour, which is why `tests/test_schema_profile.py` covers both
+    positions. On by default because %BW is the most useful strength number in climbing and a
+    default of off would make it undiscoverable; it exists because for some climbers a weight
+    number on a training screen is actively harmful, and "just don't look at it" is not a design.
 
-    - `injuries_reviewed_at` — "nothing is hurting" writes no `user_injury` rows.
-    - `equipment_reviewed_at` — "I own none of this" writes no `user_equipment` rows.
-      **For an outdoor-only climber with no gym membership and no home gear this was a hard
-      dead-end until `0005`**: every row seeded at the time was an indoor wall or a piece of
-      kit, so there was nothing they could honestly tick, the step could never be recorded
-      and 100% was unreachable. Both halves are fixed — this column, and two outdoor rows in
-      `server/domain/vocabulary.py::EQUIPMENT` — so **a profile with zero
-      `user_equipment` rows is a normal, complete profile and PR #11 must plan for it**
-      (an exercise with no `exercise_equipment` rows needs nothing and is always
-      prescribable).
-
-    Without the column, an empty child table means "asked, nothing" or "never asked" and
-    nothing can tell them apart. They are timestamps rather than booleans because "when did
-    you last look at this?" is the question a future prompt would ask.
-
-    **The other three steps must NOT get one**, and adding a third would be cargo-culting:
-    submitting the aspect step always writes eight rows, so a single rating already proves
-    it was taken, and the target grade and availability are scalar columns whose own NULL
-    carries it.
-
-    ## `show_body_metrics`, and why it defaults to TRUE
-
-    When this is off, **the weight trend and every %BW figure are hidden and nothing
-    prompts for a weigh-in.** It is a real state with real behaviour, not a cosmetic
-    preference, which is why `tests/test_schema_profile.py` covers both positions.
-
-    It defaults to on because %BW is genuinely the most useful strength number in
-    climbing, and because a default of off would make the feature undiscoverable. It
-    exists at all because for some climbers a weight number on a training screen is
-    actively harmful, and "just don't look at it" is not a design.
-
-    ⚠️ **There is no goal-weight, target-weight or BMI column here, and there must never
-    be one.** See "The app never recommends losing weight" in CLAUDE.md;
+    ⚠️ **There is no goal-weight, target-weight or BMI column here, and there must never be one.**
+    See CLAUDE.md, "The app never recommends losing weight";
     `tests/test_schema_no_weight_targets.py` enforces it across the whole metadata.
     """
 
@@ -871,66 +832,38 @@ class UserInjury(Base):
 class Plan(Base):
     """A training plan: the root of the prescription tree.
 
-    ## `generator_version` + `generator_input` from day one
+    `generator_version` + `generator_input` make a plan **reproducible**: re-running version X
+    against the same input must produce the same tree, which is what makes a generator change
+    reviewable and v2's "adapt from logged data" possible. `generator_input` is `jsonb` because
+    its shape belongs to the generator and nothing queries inside it.
 
-    Together they make a plan **reproducible**: re-running version X against the same
-    input must produce the same tree, which is what makes a generator change reviewable
-    (diff the output) and what makes v2's "adapt from logged data" possible at all.
-    `generator_input` is `jsonb` because its shape belongs to the generator and will
-    change with it — this is the one place in the schema where a schemaless column is
-    the right answer, precisely because nothing queries inside it.
-
-    ## Lifecycle is three nullable timestamps, not a status enum
-
-    `activated_at` / `abandoned_at` / `completed_at` record *when*, and a status enum
-    would record only *that* — and the diary wants the dates. "Active" is
+    Lifecycle is three nullable timestamps rather than a status enum, because the diary wants the
+    dates and an enum records only *that*. "Active" is
     `activated_at IS NOT NULL AND abandoned_at IS NULL AND completed_at IS NULL`.
 
-    **One-active-plan-per-user IS enforced here, by `uq_plan_one_active_per_user`** — a
-    partial unique index on `user_id` whose predicate is the definition of "active" above,
-    verbatim (`0008`; `uq_user_injury_open_area` in `0005` is the precedent, and Postgres
-    has no partial unique *constraint*). The objection this docstring used to record — that
-    Alembic compares partial-index predicates as text with no local Postgres to verify the
-    rendering against, so shipping one risked a false `alembic check` failure — **expired
-    with PR #57**, which brought one up. Issue **#62**.
+    **One-active-plan-per-user is enforced here too, by `uq_plan_one_active_per_user`** — a
+    partial unique index on `user_id` whose predicate is that sentence verbatim (`0008`;
+    `uq_user_injury_open_area` is the precedent, and Postgres has no partial unique *constraint*).
+    ⚠️ **Keep the predicate and the sentence above character-identical**: two definitions of
+    "active" that drift is an invariant that holds for only one of them.
+    ⚠️ **The index does not replace the endpoint's obligation, and neither is sufficient alone.**
+    `server/plans/routes.py::create_plan` stands the previous plan down in the same transaction
+    that activates the new one, because the index can only *refuse* a second active row, never
+    choose which survives. What the index buys is that a concurrent double-tap is a `409`.
 
-    ⚠️ **The index does not replace the endpoint's obligation, and neither is sufficient
-    alone.** `server/plans/routes.py::create_plan` stands the previous plan down in the same
-    transaction that activates the new one, because the index can only refuse a second
-    active plan, never choose which one survives. What the index buys is that a concurrent
-    double-tap is a `409` rather than two active plans. Keep the predicate and the sentence
-    above character-identical: two definitions of "active" that drift is an invariant that
-    holds for one of them.
+    `generator_caveats` is the third generation column and is `jsonb`: what the generator *said*
+    about the plan it built. Stored because none of it is recoverable from the tree — a block's
+    shortfall names the aspect the generator WANTED and could not fill — and because without it
+    the `/plan` screen loses every equipment-gap banner on reload. **One column, not four**: one
+    fact, written by one statement, read by one screen, queried by nothing; the alternative was
+    ~2,400 NULLs per plan on `session_block`. ⚠️ `_StoredCaveats` treats a shape it does not
+    recognise as "no caveats" rather than raising, so no change to `Shortfall` or `ScheduleNote`
+    can make an already-persisted plan unopenable.
 
-    ## `generator_caveats` is the THIRD generation column, and it is `jsonb`
-
-    What the generator *said* about the plan it built: the plan-level shortfall roll-up, the
-    schedule notes, the per-session unfilled slots and the per-block substitutions. Stored
-    because none of it is recoverable from the tree — a block's shortfall names the aspect
-    the generator WANTED and could not fill, which no row anywhere records — and because
-    without it the `/plan` screen loses every equipment-gap banner on reload. The plan is
-    complete either way (a shortfall is never a gate), but a plan that silently stops
-    explaining itself is worse than one that never explained itself.
-
-    **One column, not four, and not one per table.** It is one fact — the generator's own
-    commentary at the moment of generation — written by one statement and read by one
-    screen, and nothing queries inside it: exactly the argument that makes `generator_input`
-    `jsonb`. The alternative was a mostly-NULL `jsonb` column on `session_block` too, i.e.
-    ~2,400 NULLs per plan to record a handful of caveats. The three `generator_*` columns
-    together are the generation record.
-
-    ⚠️ **`server/plans/routes.py::_StoredCaveats` treats a shape it does not recognise as
-    "no caveats" rather than raising**, so a change to `Shortfall` or `ScheduleNote` can
-    never make an already-persisted plan unopenable. `generator_version` is what tells a
-    reader which generator wrote the row.
-
-    ## `current_grade_id` is stored, not derived
-
-    The profile's current grade drifts as the climber improves, so once they log 6b nothing
-    recovers what the plan was built from — and `generator_input` carries the *ordinal*, not
-    the id, so it is not a substitute. `NO ACTION` and deliberately unindexed, like
-    `target_grade_id`: `grade` is reference data nothing deletes, so there is no
-    referencing-side scan for an index to save.
+    `current_grade_id` is **stored, not derived**: the profile's current grade drifts as the
+    climber improves, and `generator_input` carries the *ordinal*, not the id. `NO ACTION` and
+    deliberately unindexed, like `target_grade_id` — `grade` is reference data nothing deletes,
+    so there is no referencing-side scan for an index to save.
     """
 
     __tablename__ = "plan"
@@ -1407,48 +1340,34 @@ class LoggedSession(Base):
 class LoggedSet(Base):
     """What actually happened in one set. Never a mutation of `prescribed_set`.
 
-    `prescribed_set_id` is nullable: a set done off-plan (an extra go at the end, a
-    session logged with no plan at all) is a first-class thing to record, and forcing it
-    to point at a prescription is how a log starts lying. `exercise_id` is NOT nullable,
-    because "what did I do" has to be answerable.
+    `prescribed_set_id` is nullable: a set done off-plan is a first-class thing to record, and
+    forcing it to point at a prescription is how a log starts lying. `exercise_id` is NOT
+    nullable, because "what did I do" has to be answerable.
 
-    ## The body-weight snapshot, and why it is a stored column
+    `body_weight_kg` is a **snapshot** from the most recent weigh-in within about a week, copied
+    on at write time, with `body_weight_as_of` recording which day. Not a join to the latest
+    `journal_entry`: %BW is displayed attached to a *performance*, so deriving it live would
+    silently restate every historical figure the next time somebody steps on a scale. A figure
+    that changes retroactively is worse than a missing one. **Nullable, always** — there may be
+    no recent weigh-in, and with `show_body_metrics` off nothing prompts for one;
+    `tests/test_schema_no_weight_targets.py` guards that nullability, because a NOT NULL here
+    would mean demanding a weight before recording a performance.
 
-    `body_weight_kg` is a **snapshot** taken from the most recent weigh-in within about
-    a week, copied onto the row at write time, with `body_weight_as_of` recording which
-    day that weigh-in was. It is not a join to the latest `journal_entry`, and that is
-    deliberate: %BW is displayed attached to a *performance*, so deriving it live would
-    silently restate every historical figure the next time somebody steps on a scale —
-    last spring's hang would quietly become a different percentage of bodyweight. A
-    figure that changes retroactively is worse than a missing one.
-
-    **Nullable, always.** There may be no recent weigh-in, or the user may have
-    `show_body_metrics` off, in which case nothing prompts for one and nothing is
-    written. `tests/test_schema_no_weight_targets.py` guards that nullability, because a
-    NOT NULL here would mean the app had to demand a weight before it would record a
-    performance.
-
-    `UNIQUE (logged_session_id, client_uuid)` is the outbox contract: the Tier-2 flush
-    replays with `ON CONFLICT ... DO UPDATE` and a retried flush updates rather than
-    duplicates.
+    `UNIQUE (logged_session_id, client_uuid)` is the outbox contract: the Tier-2 flush replays
+    with `ON CONFLICT ... DO UPDATE`, so a retried flush updates rather than duplicates.
 
     ## ⚠️ One invariant here is NOT structural, and that is a deliberate choice
 
-    When `prescribed_set_id` is set, `exercise_id` should equal
-    `prescribed_set -> session_block.exercise_id`. Nothing in the database enforces that:
-    **it is a write-path invariant (issue #62)**, and the endpoint that accepts a flush must
-    assert it rather than trust the client's `exercise_id`.
-
-    Making it structural was considered and rejected on cost. The composite-FK technique
-    used on `ascent`, `microcycle` and `logged_session` needs the parent to expose the
-    column, so it would mean denormalising `exercise_id` down onto `prescribed_set` (with
-    its own composite FK up to `session_block`), plus a `UNIQUE (id, exercise_id)` on both
-    — two extra columns and three extra constraints across the prescription tree, which
-    exists to hold prescriptions and not to carry data for someone else's benefit. The
-    damage from a violation is also milder than the ones that *are* enforced: a set filed
-    against the wrong exercise, not a discipline silently reclassified or a session
-    attached to a bike ride. Note that the nullable `prescribed_set_id` would make the FK
-    MATCH SIMPLE anyway, so off-plan sets would be unconstrained either way.
+    With `prescribed_set_id` set, `exercise_id` should equal
+    `prescribed_set -> session_block.exercise_id`. Nothing in the database enforces it: **it is
+    a write-path invariant (issue #62)**, and the endpoint accepting a flush must assert it
+    rather than trust the client. Making it structural was rejected on cost — the composite-FK
+    technique needs the parent to expose the column, so it would mean denormalising `exercise_id`
+    onto `prescribed_set` plus a `UNIQUE (id, exercise_id)` on both, two columns and three
+    constraints across a tree that exists to hold prescriptions. The damage is milder than the
+    ones that *are* enforced (a set filed against the wrong exercise, not a discipline
+    reclassified), and the nullable FK would be MATCH SIMPLE anyway, so off-plan sets would be
+    unconstrained either way.
     """
 
     __tablename__ = "logged_set"

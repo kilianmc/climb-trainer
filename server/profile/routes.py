@@ -1,79 +1,24 @@
 """The `/api/profile` endpoints: read the whole profile, patch any part of it, reset it.
 
-## The write endpoint takes a PARTIAL profile, and that is load-bearing
+⚠️ **`PATCH` takes a PARTIAL profile and upserts, and that is load-bearing.** Each onboarding
+step persists as it completes, so an abandoned run resumes; the row is created on step 1.
+`None` means "not in this request" for every scalar — teaching it to mean "clear" was
+considered and REJECTED (it gives every omission a destructive second meaning), which is why
+`POST /api/profile/reset` exists. The two collection fields replace the set they name, so `[]`
+is a real answer. ⚠️ `InjuryIn.note` is the one exception: omitted PRESERVES, explicit `null`
+CLEARS, told apart by `model_fields_set` because after validation both are `None`. No caller
+relies on the preserve half today; it is kept because the alternative is silent data loss the
+moment a client sends the shorter body.
 
-Onboarding is four steps and **each one persists as it completes**, so an abandoned
-onboarding resumes rather than restarting (the plan's Zeigarnik point). The row is
-therefore created on step 1, not step 4, and every later step is an update to a row that
-already exists. One endpoint does both: `PATCH` upserts, and any field left out of the
-body is left alone.
-
-**`None` means "not in this request" for every scalar field**, and **that contract is now
-load-bearing in a second way**: issue #54 needed a way to un-answer the steps, and teaching
-`null` to mean "clear" was considered and rejected precisely because it would give every
-omission a destructive second meaning. `POST /api/profile/reset` does that job instead. The
-two collection fields (`aspect_ratings`, `injuries`) are different — a list **replaces** the
-set it names, and `[]` is a real answer.
-
-⚠️ **There were five steps and an `equipment_ids` field until issue #54.** The equipment step
-is gone from onboarding and `equipment_ids` is gone from both models here; `user_equipment`
-and every `exercise_equipment` requirement are untouched, because the owned-vs-lacked
-question the issue raises is deliberately deferred to PR #10 (see `ProfilePatchRequest`).
-
-⚠️ **`InjuryIn.note` is the one exception, and it is deliberate.** Omitting it *preserves*
-the existing note; sending an explicit `null` *clears* it. `{"injuries": [{"injury_area_id":
-3}]}` is the natural "keep this flagged" body for anything driving this API by hand, and
-treating omitted as null would silently wipe the one piece of free text in the product. The
-two are told apart with Pydantic's `model_fields_set`, which is the only thing that can:
-after validation the value is `None` either way.
-
-**No caller in this repo relies on the preserve half today** — the web client renders the
-note input as part of the step, so it owns the whole field and always states the value
-(`web/src/profile/draft.ts`). The distinction is kept because it is the correct semantics
-for a partial patch and because the alternative is a silent data loss the moment any client
-sends the shorter body; `tests/test_profile_api.py` covers all three cases.
-
-## Unanswered is NULL — revision 0005, and it replaced placeholders
-
-`primary_discipline`, `sessions_per_week` and `available_weekdays` were `NOT NULL` until
-`0005`, so a row created on step 1 had to carry invented values for questions the later
-steps had not asked yet. `sessions_per_week = 3` is a perfectly plausible answer, so the
-completion bar credited work nobody had done and the plan generator would have read a
-number the user never chose. Now:
-
-- **The endpoint writes only the columns the body carried.** An empty body writes nothing
-  at all — not even a row — because there is nothing to record.
-- **`primary_discipline` is DERIVED from the target grade**, never sent by the client. The
-  grade ladder is banded per discipline (`server/domain/grades.py`), so a French 7a target
-  *is* a rope goal; accepting a separate field would let the two disagree, and the
-  disagreement would only surface in the plan generator.
-- **`injuries_reviewed_at` is stamped whenever its step is submitted**, with or without
-  rows. **A step needs a `*_reviewed_at` column exactly when zero rows is a legitimate
-  answer** — "nothing is hurting" writes no child rows, so an empty table cannot distinguish
-  "asked, nothing" from "never asked". No other step needs one: the aspect step always
-  writes eight rows, and the grades and availability are scalar columns whose NULL carries
-  it. `equipment_reviewed_at` was the second one and is **retired** with its step (`0006`);
-  the column stays until a later contract revision, and nothing reads it.
-
-## The two grade columns must agree, and one of them can be cleared for you
-
-`target_grade_id` and `current_grade_id` have to sit on the same **discipline**: the ordinal
-ladders are disjoint and `domain.grades.convert` raises rather than compare across them. An
-incoming current grade that disagrees is a 422; an incoming TARGET that disagrees with the
-STORED current grade **clears it**, because refusing would make changing your goal
-impossible. `_decide_grades` carries the full reasoning.
-
-## Every id is resolved BEFORE anything is written
-
-Not for tidiness: `_upsert_profile` runs first, so a bad aspect id rejected later would
-leave a row behind in any transaction that is not rolled back. Validation of every
-reference in the body happens up front, so a 422 means nothing was written.
-
-## Every query is scoped by the token's `user_id`
-
-Never a path parameter, never a body field. IDOR is the realistic extraction risk in this
-product (`server/auth/deps.py`), and a profile row is keyed by exactly the id an attacker
-would want to substitute.
+Unanswered is NULL (`0005`) and **nothing may substitute a fallback** — the endpoint writes
+only the columns the body carried, and `PATCH {}` writes no row at all. `primary_discipline` is
+DERIVED from the target grade, never sent. **A step needs a `*_reviewed_at` column exactly
+when zero rows is a legitimate answer**: only `injuries_reviewed_at` qualifies
+(`equipment_reviewed_at` is retired with its step by `0006` and nothing reads it). The two
+grade columns must share a DISCIPLINE — see `_decide_grades` for why an incoming *current*
+grade that disagrees is a 422 while an incoming *target* clears the stored current one. Every
+id is resolved BEFORE anything is written, so a 422 means nothing was written, and every query
+is scoped by the token's `user_id` — never a path or body field (IDOR).
 """
 
 from datetime import date, datetime
@@ -156,28 +101,18 @@ class InjuryOut(BaseModel):
 class ProfileResponse(BaseModel):
     """The whole profile, and everything the client needs to compute completion.
 
-    ⚠️ **Every null here means "not answered yet", never "zero" or "none".** That is the
-    whole point of revision `0005`, and it binds anything that reads this — the completion
-    bar, and the plan generator in PR #11, which must refuse to generate rather than
-    substitute a default for a question the user has not been asked.
+    ⚠️ **Every null here means "not answered yet", never "zero" or "none"** (revision `0005`).
+    Anything reading this must refuse to act rather than substitute a default for a question the
+    user has not been asked. `injuries_reviewed_at` is how its step reports itself finished: an
+    empty `injuries` list means "nothing to record" or "never asked" depending only on it.
 
-    `injuries_reviewed_at` is how its step reports itself finished: an empty `injuries` list
-    means "nothing to record" or "never asked" depending only on it. Every completion test
-    the client makes reads that column or a scalar, which is what keeps the progress bar
-    server truth.
+    ⚠️ **`email` is the ONE null that does not mean "not answered yet".** It is read from
+    `app_user`, where it is `NOT NULL`, so a null can only mean the row behind an authenticated
+    principal has gone. It is read-only — the client displays it and has no way to change it,
+    which is why it is absent from `ProfilePatchRequest`.
 
-    ⚠️ **`equipment_ids` and `equipment_reviewed_at` are gone** (issue #54). The step is not
-    part of onboarding any more, nothing in the client read either field, and dropping them
-    from the response also drops a `SELECT` from every profile read — Neon bills awake time.
-    The table and its rows are untouched, waiting for PR #10.
-
-    ⚠️ **`email` is the ONE null here that does not mean "not answered yet".** It is read
-    from `app_user`, not from the profile, and it is `NOT NULL` there — so it can only be
-    null if the row behind an authenticated principal has gone, which is not a state this
-    endpoint invents a 404 for. It is read-only: the client displays it and has no way to
-    change it, which is why it is not in `ProfilePatchRequest`. Added because the client had
-    no way to learn its own account's address at all — `GET /api/auth/me` returns
-    `{user_id, scope}` and its docstring defers exactly this to the profile endpoint.
+    `equipment_ids` and `equipment_reviewed_at` are gone (issue #54): the step left onboarding,
+    and dropping them also drops a `SELECT` from every profile read. The table is untouched.
     """
 
     email: str | None
@@ -772,38 +707,19 @@ _RESET_COLUMNS: Final = (
 def reset_profile(principal: CurrentUser, session: RequestSession) -> ProfileResponse:
     """Un-answer the four onboarding steps, in one transaction, and return the profile.
 
-    ## Why this exists instead of teaching `PATCH` to clear
+    Exists so that `PATCH` did not have to change: making `null` mean "clear" in
+    `ProfilePatchRequest` was **considered and rejected**, because `null` there means "not in
+    this request", which is what lets onboarding send one step at a time — flipping it would
+    turn every omission into a destructive spelling one typo away.
 
-    Issue #54 needs a way back to a from-scratch wizard. The obvious alternative was to make
-    `null` mean "clear" in `ProfilePatchRequest` — and that was **considered and rejected**
-    (Kilian's call): `null` there means "not in this request" for every field, which is what
-    lets onboarding send one step at a time, and flipping it would turn every omission into a
-    destructive spelling one typo away. A named endpoint says what it does.
+    It clears every column the four steps own (including `primary_discipline`, derived from the
+    target grade and so it has to go with it) and every `user_aspect_rating` row.
+    ⚠️ **Open `user_injury` rows only — resolved rows are HISTORY and are not touched**:
+    flag -> resolve -> re-flag is what that table exists for, and a reset is not a claim about a
+    past injury. **Not** `display_name` or `show_body_metrics`, which belong to no step.
 
-    ## What it clears, and what it deliberately does not
-
-    - **Every column the four steps own** (`_RESET_COLUMNS`), back to NULL — including
-      `primary_discipline`, which is derived from the target grade and has to go with it.
-    - **Every `user_aspect_rating` row**, because the aspect step's answer *is* those rows.
-    - **Open `user_injury` rows only.** ⚠️ Resolved rows are HISTORY and are not touched:
-      flag -> resolve -> re-flag is what that table exists for (`0005`'s partial unique
-      index), and a reset is not a claim about a past injury. An open flag, by contrast, is
-      the step's current answer and has to go or the step would not read as unanswered.
-    - **Not** `display_name`, `show_body_metrics`, or anything in `user_equipment` — see
-      `_RESET_COLUMNS`.
-
-    ## Shape
-
-    A **Tier-1 write**, like `PATCH`: deliberate, low-frequency, and the user is waiting for
-    it. It returns the whole profile for the same reason `PATCH` does — the caller redraws
-    the completion bar from the response rather than from a follow-up GET, so the bar can
-    never disagree with the database about what is set.
-
-    **Idempotent**, and it does not create a row: `UPDATE` touches nothing when no profile
-    exists, and a profile that has answered nothing is what a reset is trying to produce
-    anyway. A demo token never reaches here — `POST` is a mutating method, so
-    `server/auth/deps.py` refuses it twice over (403 at the edge, read-only transaction
-    underneath).
+    A Tier-1 write. It returns the whole profile so the caller redraws the completion bar from
+    the response and can never disagree with the database. **Idempotent, and it creates no row.**
     """
     user_id = principal.user_id
 

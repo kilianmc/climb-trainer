@@ -1,110 +1,20 @@
 """The exercise library — authored content, not derived data.
 
-Pure Python: no DB, no clock, no RNG, no I/O, like every module under `server/domain/`.
-`server/contentseed.py` upserts these specs into `exercise`, `exercise_equipment`,
-`exercise_contraindication` and `prescription_template`; `server/exercises/routes.py`
-serves what the seed wrote; the plan generator (PR #11) filters the seeded rows.
+Pure Python, like every module under `server/domain/`. `server/contentseed.py` upserts these
+specs and `key` is what it upserts on, so renaming one is a data migration; every other field
+may be reworded freely. Aspect, equipment and injury keys are checked against
+`server/domain/vocabulary.py` at import time, so a typo cannot reach the seed.
+The zero-equipment floor is per ASPECT, not per phase — `CELLS_WITH_NO_GEARLESS_OPTION` is the
+exhaustive list of where that bites, and `DELIBERATELY_UNPRESCRIBED` names the empty
+(phase, aspect) cells that are periodisation rather than oversight. Both are asserted in BOTH
+directions by `tests/test_exercise_library.py`. A thin cell is *named* as a shortfall by the
+generator; it is never a refusal for lack of gear (issue #61, Kilian 2026-08-24).
 
-## Why this is a module and not a fixture, a YAML file or a migration
-
-`server/seed.py` deliberately stops at the vocabularies and says so: `exercise` and
-`prescription_template` are **content** — names, instructions, per-phase prescriptions —
-authored rather than derived from a tuple. Authored content still belongs in the
-type-checked, reviewable half of the repo: a typo in an aspect key fails at import here,
-`mypy` sees every field, and a diff shows a reviewer the prescription that changed.
-
-## `key` is the contract; everything else is display or generator input
-
-Same split as `ReferenceSpec`. `key` is what the seed upserts on and what a future
-progression edit points at, so renaming one is a data migration. `name`, `instructions`
-and `substitution_hint` may be reworded freely — the seed rewrites them in place.
-
-Every aspect, equipment and injury key below is checked against the tuples in
-`server/domain/vocabulary.py` at import time (`__post_init__`). That is the reason this
-module does not keep its own copies of those lists: a key that is not in the vocabulary
-cannot be written down here at all, so the seed can never fail halfway through on a typo,
-and `_require` names the fix in the message.
-
-## ⚠️ The zero-equipment floor is per ASPECT, not per phase — and that is a decision
-
-**An exercise with no `exercise_equipment` rows requires nothing and is always
-prescribable.** That is the invariant which replaces the `bodyweight` equipment row that
-deliberately does not exist (CLAUDE.md, "There is deliberately no `bodyweight` equipment
-row"), and every one of the eight aspects owes at least one such exercise *somewhere* in
-the library. `tests/test_exercise_library.py` fails if an aspect loses its last one. Note
-that `outdoor_boulders` and `outdoor_routes` ARE equipment rows, so "go climbing on rock"
-does not satisfy the floor — the floor is met by the body alone.
-
-**It does NOT hold per phase, and the difference is not academic.**
-`prescription_template` is one row per (exercise, phase), so an exercise with no template
-for the phase being generated cannot be prescribed in it at all: an aspect whose only
-gearless option is prescribed in `base` hands a gearless climber an empty `power` block.
-Kilian's call, 2026-08-23, is that this is acceptable — the expected user has climbing-gym
-access, so the library spends its breadth on gear rather than on a bodyweight variant per
-cell. `CELLS_WITH_NO_GEARLESS_OPTION` at the bottom of this module is the exhaustive list of
-where that bites.
-
-**Decided, 2026-08-24 (Kilian), and this closes issue #61: the generator GENERATES, and
-names the shortfall.** A cell with no prescribable candidate is *displaced* — the slot takes
-the next aspect in `server/domain/planner/selection.py::ASPECT_EMPHASIS` that can be filled —
-and the block carries a `Shortfall` naming the equipment rows that would have opened the
-original. Never a refusal for lack of gear, never a whole-plan refusal, never a gate in front
-of the plan. An earlier reading of this docstring left refusal open as an option; it is not
-one, so do not reintroduce it as a fix for an awkward cell.
-
-## Empty cells are decisions, and the decision is written down
-
-The other half of the same contract: a (phase, aspect) pair with no exercise at all is
-either an oversight or periodisation, and the two are indistinguishable from the outside.
-`DELIBERATELY_UNPRESCRIBED` names the four that are deliberate and carries the reasoning on
-the row, and the guard test asserts the set of empty cells is *exactly* that tuple — so an
-oversight fails, and so does a stale exemption for a cell somebody has since filled.
-
-The rule underneath all four is that a quality is **maintained after its own block, not
-previewed before it**. The cycle runs base -> strength -> power -> power endurance ->
-performance, so power endurance is trained in its own block and maintained in performance,
-and never prescribed in the strength or power blocks it would blunt.
-
-## Outdoor sessions are split by discipline, like the equipment rows they need
-
-`outdoor_boulders` and `outdoor_routes` are separate equipment rows because the generator
-has to be able to prescribe outdoor route volume without prescribing outdoor bouldering
-(`server/domain/vocabulary.py`, Kilian's correction of 2026-08-21). `equipment_keys` is an
-AND set, so the split only means anything if exercises exist on both sides of it: a climber
-who ticks those two rows and nothing else would otherwise get a pool of bodyweight work and
-nothing to climb on — the dead end that vocabulary change exists to fix, reproduced one
-layer down. Those exercises carry `discipline` too, because a redpoint burn on a rope and a
-boulder project are not interchangeable.
-
-## ⚠️ SAFETY BOUNDARY — never suggest improvising finger loading
-
-`substitution_hint` exists so that "no dumbbell? a loaded backpack" lives next to the
-movement it applies to. **It must never point at an improvised edge.** No hangboard,
-campus-board or no-hang exercise carries a hint: a home-made hangboard, a door frame or a
-towel hang is the most injury-prone thing a climber can rig, and suggesting one would
-contradict the reason `exercise_contraindication` exists. Finger protocols need a real
-edge and are left out of a plan rather than improvised — the no-equipment finger option
-below is a floor, and it says in its own instructions that it is not a substitute for one.
-Improvised load is fine where the exercise merely *adds weight* (a backpack, a bottle, a
-rock). `FINGER_LOADING_EQUIPMENT_KEYS` is what the guard test reads.
-
-## Contraindications are real, not decorative
-
-`exercise_contraindication` is the only consumer of `user_injury`; without rows here the
-injury flags are decoration. Finger and campus protocols name `fingers` and `elbow`,
-deep-lock pulling names `shoulder`, hard core work names `lower_back`. An exercise with no
-plausible contraindication has none — a padded list is worse than a short one, because it
-withholds exercises a user could safely do.
-
-## Phases are prescribed, not enumerated
-
-`prescription_template` is one row per (exercise, phase) with a UNIQUE constraint on the
-pair, and there are deliberately **not** seven rows per exercise: a max hang has no place
-in a taper week's prescription list and an ARC lap has none in a power block. Only the
-phases an exercise is genuinely prescribed in appear below.
-
-`intensity_pct` has no anchor column by design — what the percentage is *of* follows from
-`protocol_kind` (see `PrescriptionTemplate` in `server/models.py`).
+⚠️ **SAFETY BOUNDARY: `substitution_hint` must never point at an improvised finger edge.** A
+home-made hangboard, a door frame or a towel hang is the most injury-prone thing a climber can
+rig, and suggesting one would contradict the reason `exercise_contraindication` exists.
+Improvised load is fine where an exercise merely ADDS weight (backpack, bottle, rock).
+`FINGER_LOADING_EQUIPMENT_KEYS` is what the guard test reads.
 """
 
 from dataclasses import dataclass

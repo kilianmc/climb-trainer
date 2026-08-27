@@ -1,42 +1,23 @@
 """The refresh cookie — the only cookie this application sets.
 
-Every attribute below is load-bearing. Each one is listed with the thing it prevents,
-because "simplify the cookie options" is a plausible-looking change that quietly
-removes a control.
+Every attribute is load-bearing, and "simplify the cookie options" is a plausible-looking
+change that quietly removes a control. **`httponly=True`** so a stored-XSS bug in the diary
+notes cannot exfiltrate a 30-day credential. **NO `domain` attribute**, which makes it
+**host-only**: `Domain=kilianmc.com` would send it to the apex, to `portfolio-shell` and to
+every future project. **`path="/api/auth"`**, so nothing else in the API ever sees it and
+nothing else can accidentally authenticate from it. **`secure`** from settings, defaulting on.
 
-- **`httponly=True`** — JavaScript cannot read it, so a stored-XSS bug in the diary
-  notes cannot exfiltrate a 30-day credential. This is also why the *access* token
-  lives in memory and never in `localStorage`: in the federated mount `localStorage`
-  belongs to kilianmc.com, shared with the whole portfolio.
+**`samesite="lax"` is the CSRF defence, and it is sufficient here.** A cross-site POST from
+`evil.example` carries no cookie under Lax. The federated mount still works because
+`climb.kilianmc.com` and `kilianmc.com` share a registrable domain: **cross-origin but
+same-site**, and SameSite is a *site* rule. (It is also why `*.vercel.app` previews cannot
+work — the Public Suffix List makes every such host its own site, so a preview is cross-site
+and falls back to demo mode. Expected, not a bug.) **No `__Host-` prefix**: it would be a free
+extra guarantee but *requires* `Path=/`, and scoping to `/api/auth` is worth more.
 
-- **NO `domain` attribute** — omitting it makes the cookie **host-only**. Setting
-  `Domain=kilianmc.com` would send it to the apex and to every other subdomain,
-  i.e. to `portfolio-shell` and any future project. CLAUDE.md is explicit about this.
-
-- **`path="/api/auth"`** — the cookie is only ever attached to the four endpoints that
-  need it. Nothing else in the API sees it, so nothing else can accidentally
-  authenticate from it.
-
-- **`secure`** from settings, defaulting to on. See `server/settings.py`.
-
-- **`samesite="lax"` — this is the CSRF defence, and it is sufficient here.**
-  A cross-site POST from `evil.example` carries no cookie under Lax, so an attacker
-  cannot drive `/api/auth/refresh` or `/api/auth/logout` from another origin. The
-  federated mount still works because `climb.kilianmc.com` and `kilianmc.com` share a
-  registrable domain: they are **cross-origin but same-site**, and SameSite is a
-  *site* rule, not an origin rule. A genuine attacker origin is cross-site and blocked.
-  (This is also why `*.vercel.app` previews cannot work — the Public Suffix List makes
-  every `*.vercel.app` host its own site, so a preview is cross-site to the apex.
-  Previews fall back to demo mode; that is expected, not a bug to fix.)
-
-- **No `__Host-` prefix.** It would be a free extra guarantee, but `__Host-` *requires*
-  `Path=/`, and scoping the cookie to `/api/auth` is worth more than the prefix: it
-  removes the cookie from every non-auth request entirely.
-
-Everything outside `/api/auth` authenticates with a Bearer access token held in memory
-and attached explicitly by the client. A header the browser never sends automatically
-has **no CSRF surface at all**, which is why there is no CSRF token anywhere in this
-codebase — there is nothing for one to protect.
+Everything outside `/api/auth` authenticates with a Bearer token held in memory and attached
+explicitly. A header the browser never sends automatically has **no CSRF surface at all**,
+which is why there is no CSRF token anywhere in this codebase.
 """
 
 from typing import Final

@@ -31,181 +31,113 @@ Actions `production` environment. `gitleaks` runs in CI on full history.
 
 ## Index — find the rule before you write the code
 
-Anchored by **heading text**, never line number. If you are about to touch one of these,
-read the named section first; every rule there records a failure that already happened.
+**Pure pointers: a trigger, then the headings to read** — anchored by heading text, never by
+line number, and read back both ways by `tests/test_claude_md_claims.py`: a quote must resolve to
+a real heading, and a section nothing points at is a section nobody finds. Two conventions:
 
-**Adding or running a migration** — "Migrations run out-of-band" (**TWO** seed modules run
-behind the one `seed` input; and when an uncommitted revision may be AMENDED rather than
-stacked) · "How to actually run one:
-`.github/workflows/migrate.yml`" · "⚠️ Three traps, all paid for on the day it first ran"
-(the ref chooses the migrations, the environment chooses the database) · "SQLite is
-disqualified for tests" · "Branch model" (migrate production **before** promoting, and
-read the applied revision back afterwards).
+- **An env var is explained in exactly ONE place; every other mention is a bare reference or a
+  command, with no explanation attached.** `CT_TEST_DATABASE_URL` → "Local Postgres for the test
+  suite"; `DATABASE_URL` and `DATABASE_URL_UNPOOLED` → "Database and compute budget"; the rest
+  → `.env.example`.
+- **If a claim can be executed, it must not be prose** → "⚠️ Prose is capped, and an executable
+  claim must not be prose".
 
-**Anything that could destroy production user rows** — "⚠️ Production data durability — real
-accounts, no undo" (additive-only on `app_user`, never downgrade, snapshot first). Read it
-before writing a migration, not after. ⚠️ It is also why a column is **retired logically
-before it is dropped**: `user_profile.equipment_reviewed_at` is dead as of `0006` and the
-column still exists, because expand -> deploy -> contract and because
-`tests/test_migrations_additive.py` refuses a `DROP COLUMN` on a table holding user rows.
+**Adding or running a migration, or anything that could destroy production user rows** —
+"Migrations run out-of-band" · "How to actually run one" · "⚠️ Three traps, all paid for on the
+day it first ran" · "⚠️ Production data durability — real accounts, no undo" · "SQLite is
+disqualified for tests" · "Branch model".
 
-**Touching auth, tokens or the route guard** — "Security rules" · "Auth implementation —
-where each piece lives" · "Auth UI — the client half of the contract" (the three realms, the
-refresh race, drop the token before every `POST /api/auth/*`, the TWO auth deadlines — 8 s stops
-awaiting, 30 s aborts — and why an unanswered refresh is not a logout) · "Registration is
+**Touching auth, tokens or the route guard** — "Security rules" · "Auth implementation — where
+each piece lives" · "Auth UI — the client half of the contract" · "Registration is
 invite-gated" · "⚠️ Minting an invite is a LOCAL command, and must never become a workflow" ·
-"Local accounts, and the two things that are NOT `server/seed.py`" ·
-"🔒 TODO — the end-to-end security verification pass".
+"Local accounts, and the two things that are NOT `server/seed.py`" · "🔒 TODO — the end-to-end
+security verification pass", whose private-file half is now issue #71.
 
 **Changing the federated mount, the router or the two entries** — "Routing: one tree, two
-histories" (lazy-leaf filenames, the committed route tree, absolute hrefs) · "Module
-Federation shared singletons — the silent one" · "In the federated mount, `localStorage` is
-the SHELL's storage" · "Never register a service worker from `remote.tsx`" · "API base:
-resolve from `import.meta.url` + guard the content-type".
+histories" · "Module Federation shared singletons — the silent one" · "In the federated mount,
+`localStorage` is the SHELL's storage" · "Never register a service worker from `remote.tsx`" ·
+"API base: resolve from `import.meta.url` + guard the content-type".
 
-**Touching `vercel.json`, rewrites, headers or the API client** — "Deployment traps"
-(all seven — note that #7, `maxDuration`, is a correctness setting, not a cost one) ·
-"Security response headers" · "API base: resolve from `import.meta.url` + guard
-the content-type" · "`.env` is loaded for you — but only outside Vercel" (the Vite dev proxy
-is not Vercel's rewrite).
+**Touching `vercel.json`, rewrites, headers or the API client** — "Deployment traps" ·
+"Security response headers" · "API base: resolve from `import.meta.url` + guard the
+content-type" · "`.env` is loaded for you — but only outside Vercel".
 
-**Writing to the database, or adding an endpoint** — "Neon bills AWAKE TIME, not writes" ·
-"Two write tiers" · "The other compute rules" · "Engine config — the omissions are the point"
-· "Injection defence and input minimisation (OWASP)" (bound parameters, allowlisted
-identifiers, closed inputs, Pydantic at the edge, no echoed request in a 422).
+**Moving a file, or adding a `server/` subpackage** — "Repo layout — do not rearrange it".
 
-**⚠️ Touching `GET /api/library`, or adding ANY field to it** — the library bullet in "The
-other compute rules" and, below it, "⚠️ `/api/library` is USER-INDEPENDENT, permanently".
-One endpoint serves the whole library from a **shared** CDN with no `Vary: Authorization`, so
-**adding a user-scoped field there is a security change, not a feature change** and no
-behavioural test can see the leak. `server/library/routes.py` carries the read-shape decision
-(one endpoint, no `/{key}` detail route, and payload size is the number to watch).
+**Writing to the database, or adding or changing an endpoint** — "Neon bills AWAKE TIME, not
+writes" · "Two write tiers" · "The other compute rules" · "Engine config — the omissions are the
+point" · "Injection defence and input minimisation (OWASP)" · "OpenAPI codegen — the generated
+types are COMMITTED" · "Validate at the edge with Pydantic".
 
-**Touching the domain schema, body metrics, or anything the plan generator says to the
-user** — "⚠️ The app never recommends losing weight" (a hard rule with a schema-level guard:
-low strength-to-weight means *get stronger*) · "The domain schema — the shapes worth knowing
-before you query it" (the `activity`/`logged_session` supertype, the three composite foreign
-keys, the index every `SET NULL` needs, why the plan tree is relational) · "⚠️ The free-text
-inventory — NINE fields, and two of them get forgotten" · "SQLite is disqualified for tests"
-(the grade ladder).
+**⚠️ Touching `GET /api/library`, or adding ANY field to it** — "⚠️ `/api/library` is
+USER-INDEPENDENT, permanently" · "The other compute rules".
 
-**Adding or changing an endpoint's request/response models** — "OpenAPI codegen — the
-generated types are COMMITTED" (regenerate, and how staleness is caught) · "Validate at the
-edge with Pydantic" · `server/fields.py`.
+**Touching the domain schema, body metrics, or anything the plan generator says to the user** —
+"⚠️ The app never recommends losing weight" · "The domain schema — the shapes worth knowing
+before you query it" · "⚠️ The free-text inventory — ELEVEN fields, and three of them get
+forgotten".
 
-**Onboarding, the profile, or the completion bar** — "Onboarding and the profile (PR #9,
-redesigned by #54)" (the partial upsert, the nullable columns, where the 20% floor comes from
-and why it is step 0, the step whose honest answer writes no rows, why gating a step on that
-was a hard dead-end, **`POST /api/profile/reset` and why `PATCH` was deliberately left
-alone**, the two grade columns that must share a discipline, and the grade floor that lives
-in the client on purpose).
+**Onboarding, the profile, the completion bar, a MUTATION or the query cache** — "Onboarding
+and the profile".
 
-**⚠️ Touching a MUTATION, the query cache, or a route-level query guard** — the three bullets
-in "Onboarding and the profile (PR #9)" beginning "THE QUERY CACHE HOLDS SERVER RESPONSES
-ONLY", "A ROUTE MAY ONLY REPLACE ITSELF WITH AN ERROR WHEN THERE IS NOTHING TO SHOW",
-"A CREDENTIAL CHANGE MUST RESET THE QUERY CACHE" and "must be VERIFIED against
-`web/node_modules/@tanstack/query-core/`". Three consecutive review
-rounds found a bug here and all three came from reasoning about TanStack Query's semantics
-instead of reading them. Read `web/src/profile/api.ts` before changing any of it.
-
-**Dependencies, versions and CI** — "Dependency policy" · "TypeScript stays on 6.x" ·
-"ESLint 10 rests on a forced jsx-a11y peer" · "`.github/dependabot.yml`" · "⚠️ Pinned actions
-Dependabot can never bump" · "Quality gate" (nine checks locally, fourteen in CI; never
-rename a job) · "Versioning".
+**Dependencies, versions and CI** — "Dependency policy" · "TypeScript stays on 6.x" · "ESLint
+10 rests on a forced jsx-a11y peer" · "`.github/dependabot.yml`" · "⚠️ Pinned actions
+Dependabot can never bump" · "Quality gate" · "Versioning".
 
 **Styling, the landing page or anything visual** — "UI design direction" · "Glassmorphism:
 considered and REJECTED" · "Accessibility is part of the design, not a later pass" · "The
-reading measure is a GRID COLUMN, not a `max-inline-size` on `.ct-app`" · "Landing imagery —
-self-hosted, generated out-of-band, and URL-resolved at runtime" · "Container queries, not
-media queries — and tokens on `.ct-app`, not `:root`" · "⚠️ The nav's thresholds are
-MEASUREMENTS, not breakpoints" · "Light and dark: the `data-theme` override, and two gaps that
-are documented rather than fixed" · "PWA — only the decisions a reader would otherwise
-reverse".
+reading measure is a GRID COLUMN" · "Landing imagery — self-hosted, generated out-of-band, and
+URL-resolved at runtime" · "Container queries, not media queries" · "⚠️ The nav's thresholds
+are MEASUREMENTS, not breakpoints" · "Light and dark: the `data-theme` override" · "PWA — only
+the decisions a reader would otherwise reverse".
 
 **Running the app locally, or a blank page that is not your code** — "Local development" ·
-"Local Postgres for the test suite" (`npm run db:up` / `db:reset`; the URL belongs in
-`CT_TEST_DATABASE_URL` and never in `.env`; and the behind-head canary is TWO lists, whose
-skip path has never actually run) · "⚠️ A dev server and the gate at the same time can blank
-every route" (a blank *landing* page is the tell; the trigger is UNCONFIRMED and the old
-`npm ci` explanation was wrong) · "`.env` is loaded for you —
-but only outside Vercel".
+"Local Postgres for the test suite" · "⚠️ A dev server and the gate at the same time can blank
+every route" · "`.env` is loaded for you — but only outside Vercel".
 
-**Writing tests** — "Testing policy". Every guard test
-here carries a positive control; a detector that cannot see its own violation is worse than
-none. ⚠️ Note the newest one: **a class name in markup with no matching CSS fails silently**,
-and `styles/markupCss.test.ts` is the only thing in the gate that can see it — `tsc`, ESLint,
-`designGuard` and `contrast` were all green while twelve classes lost their styling twice.
+**Writing a test, or prose, or a comment — or closing a PR** — "Testing policy" · "⚠️ A guard
+test must be SHOWN to fail before it is trusted" · "⚠️ A class name in markup with no CSS fails
+SILENTLY" · "⚠️ Prose is capped, and an executable claim must not be prose".
 
-**Touching the plan generator, or `POST /api/plans/preview`** — "The plan generator" (the pure
-module and its ruff-enforced import ban, the grade-gap week table, deload and taper as real
-mesocycles rather than multipliers, the weekday-spread rule and why the obvious "maximise the
-minimum gap" one is wrong, what `generator_version` + `generator_input` + `library_digest`
-promise *together*, the endpoint's `private, no-store` and its demo exemption, and the measured
-payload).
-
-**Persisting a plan, or `GET /api/plans/active`** — "Persisting a plan" (persist == activate,
-the one-active partial index and why the endpoint half is not optional, the
-stand-down-in-the-same-transaction rule, coordinate-addressed `generator_caveats`, one wire
-shape for preview and persisted, the backref-cascade trap that only a six-table row count
-catches, and the measured statements and payload).
+**The plan generator, `POST /api/plans/preview`, persisting a plan or `GET /api/plans/active`** —
+"The plan generator" · "Persisting a plan".
 
 **Building the session player** — "Session player invariants" · "Screen Wake Lock — a
 user-owned TOGGLE, and a progressive enhancement".
 
-### What lives outside this file
+### What lives outside this file — the master map
 
-- **`README.md`** — the public-facing description: what the app does, the stack, getting
-  started, and how to run the checks. Setup instructions live there, working rules live here.
-- **`server/db.py`**, **`server/auth/*.py`**, **`server/domain/grades.py`**,
-  **`web/src/styles/_layout.scss`** — each module docstring carries the reasoning for its own
-  decisions in more detail than this file does. This file is the map.
+**`CLAUDE.md` owns WHY and the rule; `README.md` owns WHAT and the outcome.** Where both would
+say the same thing this file wins and README links to it, because this is the file an agent is
+told to read before editing.
+
+- **`README.md`**, by section: *What it does* · *Stack* (the version list, and its only home) ·
+  *Design direction* (the visual pitch — bento, opaque surfaces, why not glassmorphism) · *Repo
+  layout* (a short orienting tree; the load-bearing one is here) · *Getting started* (clone to
+  running, commands only) · *Tests and quality gate* (the three commands and the codegen step) ·
+  *Signing in* · *Dual mount* · *Deployment*.
+- **Module docstrings, which carry their own reasoning in more detail than this file does** —
+  `server/db.py` (engine and session wiring), `server/auth/*.py` (one per auth concern),
+  `server/domain/grades.py` (the ordinal ladder), `web/src/styles/_layout.scss` (the reading
+  measure as a grid column). `web/src/profile/api.ts` and `server/plans/routes.py` carry the
+  library-source citations their claims rest on.
 - **Kilian's private notes** (local only, never in this repo) — the approved delivery plan and
   the unshipped schema/generator design; a per-project memory covering live infrastructure,
-  deployment history and process lessons; plus two topic notes on the signup-gating decision
-  and the landing redesign. Ask him if you need the plan for an unshipped PR; nothing in them
-  is required to work inside this repo.
-
-## Stack
-
-- **Frontend** — React 19 · TypeScript 6 (strict) · Vite 8 · SCSS · Vitest + RTL.
-- **Backend** — FastAPI on the Vercel Python runtime, Python 3.13, **sync**
-  SQLAlchemy 2 + `def` endpoints (anyio threadpool), **psycopg3**, Alembic.
-- **DB** — Neon Postgres (free tier, EU region to match the function region).
-- **Deploy** — **one** Vercel project serving both the SPA and `/api/*`, so `/api` is
-  same-origin for the standalone app. Validated in spike S0.
+  deployment history and process lessons; plus topic notes on the signup-gating decision and the
+  landing redesign. Ask him if you need the plan for an unshipped PR; nothing in them is required
+  to work inside this repo.
+- **Issue #71** — moving the security control map, the thresholds and the infra topology into a
+  private file. Anything moved was **already public**, so it must be rotated, not merely moved.
+- **Registers that are files rather than prose** — `tests/comment_budget_allowlist.toml` (every
+  over-cap comment and the reason its length buys) and `.github/pull_request_template.md` (the
+  post-PR freshness receipt). Both are explained in "⚠️ Prose is capped, and an executable claim
+  must not be prose".
 
 ## Repo layout — do not rearrange it
 
 Spike S0 verified this exact layout end-to-end on a real deployment. It is load-bearing.
-
-```text
-package.json          root — the version source of truth
-vercel.json           framework:null + buildCommand + outputDirectory + rewrites
-pyproject.toml        Python deps (requires-python = ">=3.13"). NO requirements.txt.
-uv.lock               committed
-.python-version       "3.13"
-.nvmrc                24
-alembic.ini           Alembic config. NO `sqlalchemy.url` — env.py reads the env.
-api/index.py          thin Vercel entrypoint: sys.path.insert + `from server.app import app`
-migrations/           Alembic env.py + versions/
-server/               the FastAPI application actually lives here
-  app.py              the FastAPI app
-  settings.py         env config (CORS allowlist, the two DB URLs) + loads `.env` once
-  db.py               engine + session wiring. READ ITS DOCSTRING before touching it.
-  models.py           SQLAlchemy 2 models, naming convention, TIMESTAMPTZ default
-  seed.py             reference-data seed — the same module CI and production use
-  contentseed.py      the exercise-library CONTENT seed. Also production's. Runs AFTER seed.py.
-  devseed.py          ten LOCAL test accounts. DEV ONLY; refuses to run in CI. Not seed.py.
-  admin.py            operator CLI: create-invite, set-password. No workflow runs it.
-  fields.py           bounded Pydantic field types — one per persisted CHECK
-  openapi_schema.py   the OpenAPI document + its fingerprint, for the TS codegen
-  library/            GET /api/library — the whole seeded exercise library, CDN-cached
-  profile/            GET/PATCH /api/profile
-  vocabulary/         GET /api/vocabulary — grades, lookup tables, closed enums
-  domain/             PURE Python: no DB, no clock, no RNG, no I/O
-web/                  the Vite SPA, built to web/dist
-tests/                pytest (backend). conftest.py skips DB tests without DATABASE_URL.
-```
+**The tree itself lives in [`README.md`](README.md), *Repo layout* — one copy, there.** What
+follows is only the part that is a rule rather than a description.
 
 `server/` being importable from `api/index.py` was genuinely uncertain before S0 — it
 works because `api/index.py` inserts the deployment root onto `sys.path`. Don't move
@@ -834,10 +766,20 @@ recorded it as a side effect, batch it.**
   ⚠️ `GET /api/vocabulary` deliberately keeps `private, max-age=3600`. **The two rules differ
   on purpose** — see that endpoint's own bullet under "Onboarding and the profile" for why it
   has no business in a shared cache; do not "harmonise" them.
-- **Two connection strings**: the pooled `-pooler` endpoint for the app
-  (`DATABASE_URL`), the **direct** endpoint for Alembic (`DATABASE_URL_UNPOOLED`) —
-  DDL and `CREATE TYPE` need a real session, and a migration through the pooler tends
-  to **hang rather than error**.
+- **Two connection strings, and this bullet is their one explanation** (every other mention in
+  this file is a bare reference or a command). `DATABASE_URL` is the pooled `-pooler` endpoint,
+  read by the app; `DATABASE_URL_UNPOOLED` is the **direct** endpoint, read only by Alembic
+  (`migrations/env.py`) — DDL and `CREATE TYPE` need a real session, and a migration through the
+  pooler tends to **hang rather than error**.
+  - **They are not interchangeable**: against Neon the pooled and direct endpoints are genuinely
+    *different hosts*, so one value cannot stand for both. `direct_database_url()` falls back to
+    the pooled URL when the direct one is unset, which is the documented CI and local-Postgres
+    path.
+  - ⚠️ **`DATABASE_URL_UNPOOLED` is the variable that leaked out of `.env` and pointed a stray
+    `alembic upgrade head` at production's neighbour on 2026-08-18**, which is why `check:server`
+    pins it **empty** and `scripts/local-db.sh` sets it only as a prefix on its own `alembic`
+    command. Neither belongs in `.env` on a development machine — see "Local Postgres for the
+    test suite".
 
 #### ⚠️ `/api/library` is USER-INDEPENDENT, permanently
 
@@ -860,27 +802,25 @@ pinned list is the only guard shape available when the failure is invisible to b
 
 ### Engine config — the omissions are the point
 
-`server/db.py` is the authority; its module docstring carries the full reasoning. In
-short, and superseding the earlier `pool_pre_ping` / `pool_recycle=300` / `pool_size=2`
-line that appeared in the original plan:
+**Three stack choices this config rests on. They are rules, not version numbers** — the versions
+live in `README.md`'s *Stack* section, `package.json` and `pyproject.toml`, which is why this
+file no longer carries a `## Stack` heading of its own:
 
-- **`NullPool`.** A serverless invocation is frozen between requests, so a live pool is
-  just idle connections nobody can use — and Neon's pooled endpoint already pools.
-- **No `pool_pre_ping`** (it is a `SELECT 1`, i.e. a query that restarts the 5-minute
-  awake window), **no `pool_recycle`** (a timer that can fire on its own), **no
-  keepalive or warm-up traffic of any kind**, and **no connect at import** — the engine
-  is built lazily on first use. `/api/health` deliberately does **not** touch the DB.
-- **Prepared statements stay ENABLED.** The folklore that PgBouncer transaction mode
-  breaks them is out of date: SQL-level `PREPARE`/`EXECUTE` are unsupported, but
-  **protocol-level** prepared statements — what psycopg3 actually uses — are supported
-  (PgBouncer ≥ 1.22; Neon runs `max_prepared_statements=1000`). **So there is no
-  `prepare_threshold=None`, deliberately.** Verified against
-  <https://neon.com/docs/connect/connection-pooling>, 2026-08-12. Do not "restore" it
-  from an older draft of the plan.
-- Other transaction-mode pooler limits, for later PRs: session-level `SET`/`RESET`,
-  `LISTEN`/`NOTIFY`, `WITH HOLD` cursors and session-level advisory locks do not work
-  pooled. Transaction-scoped **`SET LOCAL` does** — which is what the demo path's
-  `SET LOCAL transaction_read_only` relies on. Keep it `SET LOCAL`, never a bare `SET`.
+- **Sync SQLAlchemy 2 with `def` endpoints**, which FastAPI runs in anyio's threadpool. Never
+  `async def` here: a sync `def` cannot be cancelled by a client disconnect, which is the whole
+  mechanism behind deployment trap 7's pinned `maxDuration` and the two auth deadlines.
+- **psycopg3, never asyncpg** — the driver has to be sync for the same reason, and psycopg3's
+  *protocol-level* prepared statements are what the `prepare_threshold` bullet below relies on.
+- **Neon's region must match the function region**, and Neon's is fixed at project creation —
+  see deployment trap 5, which is the failure that wrote the rule.
+
+**`server/db.py`'s module docstring is the authority for every engine argument** — the
+`NullPool` / no-`pool_pre_ping` / no-`pool_recycle` / no-keepalive set, why prepared
+statements stay ENABLED (and must not be given a `prepare_threshold=None` from an older
+draft), and which transaction-mode pooler limits bite. It carries the Neon CU-hour
+arithmetic that makes those omissions cost decisions rather than style. Read it before
+changing an argument; do not restate it here.
+
 - **`TIMESTAMPTZ`, never naive.** `Base.type_annotation_map` pins `datetime` to
   `TIMESTAMP(timezone=True)` repo-wide, so every future `Mapped[datetime]` gets it
   without anyone remembering. Store aware, convert at the edge.
@@ -1071,14 +1011,11 @@ Also: keep the plan tree **fully relational** (a row per prescribed set). It is 
 showcase, and denormalising to `jsonb` saves nothing that matters — a 24-week plan is
 ~290 KB against 0.5 GB.
 
-And: **never store a grade as a display string alone.** `grade` is
-`(system_id, label, ordinal)` where `ordinal` is a shared integer ladder — but **one ladder
-per DISCIPLINE, in disjoint bands** (boulder 1000+, rope 2000+), so `V5` and Font `7A` are
-the same rung while French `6c+` is deliberately **not** comparable to either: `convert()`
-raises `CrossDisciplineError`. Boulder↔rope conversion has no consensus, and encoding one
-would be inventing data. Labels are matched **exactly** — `7A` is Font, `7a` is French, and
-case is the only thing separating them. `server/domain/grades.py` is the authority. This is
-the single most expensive thing to retrofit.
+And: **never store a grade as a display string alone** — a `grade` is
+`(system_id, label, ordinal)`. This is the single most expensive thing in the schema to
+retrofit, and **`server/domain/grades.py`'s module docstring is the authority** for the
+ordinal ladder, the per-discipline bands, and why labels are matched exactly. Read it before
+touching anything grade-shaped.
 
 ### The domain schema — the shapes worth knowing before you query it
 
@@ -1715,7 +1652,7 @@ five long; a count in the heading drifted every time one was added):
     one is a refetch driven by the session store's next non-null token.
   - **Deliberately NOT a default in `apiFetch`.** Weighed and turned down: a deadline there is
     inherited by every present and future caller off the back of one auth bug, and the right
-    duration is a property of the call. `api/client.test.ts` asserts the client adds **no** signal
+    duration is a property of the call. `web/src/api/client.test.ts` asserts the client adds **no** signal
     of its own, so re-adding one is a red test rather than a silent policy change. There is also
     no `AbortSignal.any` composition any more: all three call sites pass a literal
     `{ method: 'POST' }`, so an earlier revision advertised a capability it did not have. Add it
@@ -2047,26 +1984,6 @@ the type (`feat/…`, `chore/…`).
 
 ---
 
-## 🧹 TODO — comment and docs deep clean (its own PR, AFTER PR #19)
-
-**Kilian's call, 2026-08-14: verbosity is FINE during development — do not spend review
-turns trimming prose while the project is still being built.** The clean-up is a single
-deliberate pass **once the project is done**, and it needs its own review, so it is not
-folded into the 1.0.0 promotion. Two goals, in this order:
-
-1. **Trim everything to the minimum.** Source comments: delete what restates the code and
-   all historical narrative; keep one-line constraints. **Convert "don't change this or X
-   breaks" into a test or a lint rule** rather than deleting it. `CLAUDE.md` / `README`:
-   trim narrative, **keep every trap and hard rule**.
-2. **Move the important stuff into a PRIVATE file so it is protected.** Design reasoning may
-   stay public; the **security control map, thresholds and infra topology go private**.
-   ⚠️ A public repo has **no per-file access control** and git history is permanent, so
-   anything moved **was already public** and must be re-thought or rotated, not just deleted
-   — which is the reason this is a real task and not a `git mv`.
-
-- **The dev journal stays public** — design and product decisions only, never where the
-  controls live or what their limits are.
-
 ## Dependency policy (set by Kilian, 2026-08-14)
 
 **Pin every dependency to the latest stable version verified against the registry at pin
@@ -2169,15 +2086,8 @@ opt-out flag.
 
 ## Local development
 
-Two processes. The API on 8000, the SPA on 5173 with Vite proxying `/api` to it:
-
-```bash
-# terminal 1 — API, against LOCAL Postgres
-npm run dev:api
-
-# terminal 2 — SPA (Vite proxies /api -> 127.0.0.1:8000)
-npm run dev
-```
+Two processes — the API on 8000, the SPA on 5173 with Vite proxying `/api` to it.
+**The commands live in [`README.md`](README.md), *Getting started*.** The rules are here.
 
 **`dev:api` is what makes "local" mean local, and it is not optional.** `.env`'s
 `DATABASE_URL` is **dev Neon**, so a bare `uv run uvicorn server.app:app` serves *dev* data
@@ -2200,6 +2110,10 @@ URL — `DATABASE_URL="$CT_TEST_DATABASE_URL" uv run python -m server.admin crea
 --label local` — or `server/devseed.py`'s ten accounts.
 
 ### Local Postgres for the test suite
+
+**This section is `CT_TEST_DATABASE_URL`'s only explanation** — its value, its home in
+`~/.zshrc`, the never-in-`.env` rule and `conftest.py`'s refusal of a non-local host. Every
+other mention of it in this file is a command or a bare reference.
 
 Native Homebrew **`postgresql@17`** — no Docker. It is **keg-only**, so its binaries live in
 `/opt/homebrew/opt/postgresql@17/bin` and are **not on PATH**; `scripts/local-db.sh` addresses
@@ -2233,14 +2147,15 @@ the same URL string is valid in both places and there is nothing to translate. T
 created once, by hand; `db:up`/`db:reset` own everything after that.
 
 **The URL lives in `CT_TEST_DATABASE_URL` and nowhere else — never put a database URL in
-`.env`.** `.env` on this machine holds the *production* Neon URL, `server/settings.py` loads it
-for every entrypoint, and that is exactly how a stray `alembic upgrade head` reached
-production's neighbour on 2026-08-18. So `scripts/local-db.sh` sets `DATABASE_URL_UNPOOLED`
-**only** as a prefix on its own `alembic` command, with `DATABASE_URL=""` beside it to stop
-python-dotenv (which runs `override=False`) filling that one in from `.env` — the same trick,
-inverted, that `check:server` uses.
+`.env`.** `.env` on this machine holds the *production* Neon URL and `server/settings.py` loads
+it for every entrypoint, which is how a stray `alembic upgrade head` reached production's
+neighbour on 2026-08-18 (see "Two connection strings"). So `scripts/local-db.sh` sets
+`DATABASE_URL_UNPOOLED` **only** as a prefix on its own `alembic` command, with
+`DATABASE_URL=""` beside it to stop python-dotenv (`override=False`) filling that one in from
+`.env` — the same trick, inverted, that `check:server` uses.
 
-**It refuses a non-local host, with no override.** The check reuses
+**Both `scripts/local-db.sh` and `tests/conftest.py` refuse a non-local host, with no
+override.** The check reuses
 `server.db.is_local_host` so it cannot drift from `LOCAL_DB_HOSTS`, and it is handed the
 **host**, never the URL: a URL bound to an argument or left as a frame local gets rendered in
 a traceback, password included (see `server/db.py::host_of` — that cost 51 printed passwords
@@ -2380,40 +2295,25 @@ claim otherwise.
 Cost: nothing on a green run, since `npm run build` already runs `tsc -b`. On a **red** run
 every test failure now waits out a full build first, locally as well as in CI.
 
-**The local gate passes with no database, and `check:server` now ENFORCES that rather
-than hoping for it.** `tests/conftest.py` skips the DB-backed tests when `DATABASE_URL` is
-unset, but that is not the same as the gate being database-free: `.env` is loaded for every
-entrypoint, so on a machine with real Neon credentials in it the "local" gate quietly ran
-those tests **against the live dev database** — ~37 s of woken Neon compute on every run,
-and the same leak sent a stray `alembic upgrade head` at production's neighbour on
-2026-08-18. So `check:server` overrides both URLs, and they are **not** symmetrical:
+**The local gate passes with no database, and `check:server` now ENFORCES that rather than
+hoping for it.** `tests/conftest.py` skipping the DB-backed tests when `DATABASE_URL` is unset
+is not the same as the gate being database-free: `.env` is loaded for every entrypoint, so on a
+machine with real Neon credentials in it the "local" gate quietly ran the 102 DB-backed tests
+**against the live dev database** — ~37 s of woken Neon compute per run. So `check:server`
+overrides both URLs, and the two are **deliberately not symmetrical**:
 
 ```jsonc
 DATABASE_URL="${CT_TEST_DATABASE_URL:-}" DATABASE_URL_UNPOOLED=""
 ```
 
-- **Locally**: both empty, the 102 DB-backed tests skip, nothing connects. A skip is visible;
-  a silent connection to someone's real database is not.
-- **Deliberately, against the local Postgres**: export `CT_TEST_DATABASE_URL` and run
-  `npm run db:up` once (see "Local Postgres for the test suite"). That is the only way to opt
-  in, and it cannot happen by accident. The guard in `tests/conftest.py` still refuses any
-  non-local host.
-- **`DATABASE_URL_UNPOOLED` has no opt-in and is pinned EMPTY, on purpose.** It is the
-  *direct* endpoint, its only consumer is Alembic (`migrations/env.py`), and the gate never
-  runs Alembic — so there is nothing for a value to be useful for, and it is precisely the
-  variable that leaked out of `.env` and pointed a stray `alembic upgrade head` at Neon.
-  Giving it `CT_TEST_DATABASE_URL` too would also be wrong on the merits: against Neon the
-  pooled and direct endpoints are genuinely *different* hosts, so one variable cannot stand
-  for both. `direct_database_url()` falls back to the pooled URL when it is unset, which is
-  the documented CI/local-Postgres path, so nothing needs it.
-- **CI**: the `server` job runs `uv run pytest -q` directly with `DATABASE_URL` pointing at
-  its `postgres:17-alpine` service, so it never goes through this script and still runs the
-  full set. **CI is where they always run; locally they run only when `CT_TEST_DATABASE_URL`
-  is exported** — so never weaken them on the assumption that nothing runs them, and never
-  make the gate *require* a database.
-
-Never make the local gate *depend* on a database, and never substitute SQLite to avoid the
-skip. CI is where the migrations and the seed are actually executed.
+- **Locally** both are empty and nothing connects — a skip is visible, a silent connection to
+  someone's real database is not. Opting in means exporting `CT_TEST_DATABASE_URL` and running
+  `npm run db:up` once; see "Local Postgres for the test suite" for both variables' rules and
+  "Two connection strings" for why the direct URL has no opt-in.
+- **CI** runs `uv run pytest -q` directly against its `postgres:17-alpine` service, so it never
+  goes through this script and always runs the full set. **Never weaken a DB-backed test on the
+  assumption that nothing runs it, and never make the gate *require* a database** — and never
+  substitute SQLite to dodge the skip. CI is where the migrations and the seed are executed.
 
 **Batch your edits and run `npm run check` once at the end**, not once per file.
 
@@ -2461,6 +2361,34 @@ check that will never report. Add steps to a job freely; never rename a job.
 mirroring the `matchMedia` convention in `portfolio-shell/src/test/setup.ts`. The
 clock tests need fake timers plus a `performance.now` shim.
 
+### ⚠️ Prose is capped, and an executable claim must not be prose
+
+**The hierarchy, in order. Only reach the next tier when the one above cannot hold the claim:**
+
+1. **Make the wrong thing impossible** — a constraint, a type, `extra="forbid"`, a `Literal`.
+2. **Make it fail loudly** — a guard test, shown to fail before it is trusted.
+3. **Only then prose**, for *why* only, in exactly one place, at the point of use.
+
+**Five caps, enforced by `tests/test_comment_budget.py`:** module docstring **10** ·
+class/function docstring **2** · inline `#`/`//` run **2** · `/* */` block **2** ·
+wire-contract docstring **20** (FastAPI ships those to API consumers, who cannot read the code
+instead). Over-cap is allowed **only** with a row in `tests/comment_budget_allowlist.toml`
+naming what the length buys; that file is the register of exceptions and its `BASELINE_RATCHET`
+may only ever go down.
+
+**After every PR, re-check the `CLAUDE.md` section covering what you touched** — confirm it
+still holds, or update it in the same PR. `.github/pull_request_template.md` carries the
+receipt, and `tests/test_claude_md_claims.py` catches only the mechanical half (paths, scripts,
+revisions, headings, env vars), never a reason that has gone stale.
+
+**What prose is still irreplaceable for, so this does not get over-applied:** *why* a choice
+beat a plausible-looking alternative · what was tried and failed · facts about the world outside
+this repo (a library's source, a platform's behaviour, a vendor's docs). The canonical case is
+the backref-cascade trap under "Persisting a plan": nothing in the code, the schema or 581
+passing tests reveals that the nicer-reading form silently drops ~2,400 rows and returns **201**.
+**A rule with no reason attached gets simplified away by the next well-meaning change** — that is
+the premise of this whole file, and it is the boundary of the rule above, not an exception to it.
+
 ## Testing policy — deliberately not "test everything"
 
 **Kilian's standing rule across all his projects.** Coverage is not the target; a test
@@ -2488,6 +2416,12 @@ it breaks on every refactor and catches nothing.
   (`tests/test_library_contract.py`), whose failure mode is invisible to every behavioural
   test *by construction*: a shared-cache leak happens between two requests in an intermediary
   this repo does not run, so a literal list going red on the diff is the only guard available.
+  **Two more of the same shape guard the PROSE**, which nothing else in the gate reads:
+  `tests/test_comment_budget.py` (no comment outgrows its tier's cap without a registered
+  reason) and `tests/test_claude_md_claims.py` (every path, script, revision, heading and env
+  var `CLAUDE.md` names still resolves, and the index resolves in both directions). Both are
+  named here because a guard nobody lists is a guard the next reader deletes — see "⚠️ Prose is
+  capped, and an executable claim must not be prose" for what neither of them can catch.
 
 **SKIP tests for:**
 
@@ -2722,7 +2656,7 @@ branching, and unlike the `50% - 50vw` idiom it cannot produce a horizontal scro
   that cannot inherit `currentColor`. Every icon is `aria-hidden` + `focusable="false"` and has a
   text label beside it; icon-only controls are deferred to the session player, per the same
   reasoning as the update bar's "Later" button.
-- **`src/publicUrl.ts` is the image half of the `api/client.ts` bug.** A bare
+- **`src/publicUrl.ts` is the image half of the `web/src/api/client.ts` bug.** A bare
   `src="/landing/x.avif"` resolves against the DOCUMENT, which in the federated mount is
   kilianmc.com — every photograph 404s there while working perfectly standalone. So the origin
   comes from `import.meta.url`, exactly as `API_BASE` does. Vite-`import`ed assets would be
@@ -3273,7 +3207,7 @@ weakness**, the editor became sections rather than a second wizard, and there is
 - **`GET /api/vocabulary` carries an `enums` object, and its justification is the TYPE
   CONTRACT — not a runtime consumer.** Five of the six closed vocabularies are referenced by
   no profile field, so without this object they never reach the OpenAPI schema, and retiring
-  the hand-written `api/vocabularies.ts` would have silently dropped five of
+  the hand-written `web/src/api/vocabularies.ts` would have silently dropped five of
   `test_vocabulary_contract.py`'s six assertions instead of re-pointing them. **Nothing in
   `web/src` reads `.enums` today** — an earlier draft of this section and of the module
   docstring claimed the pickers did, which was false; they iterate the real arrays

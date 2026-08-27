@@ -1,17 +1,11 @@
 """`GET /api/library` against real Postgres.
 
-Under CLAUDE.md's testing policy this is a **core user path**: it is the whole input to the
-exercise browser and, once PR #11 lands, the content behind every prescribed block. Skips
-without `DATABASE_URL` (conftest); CI runs it for real against the seeded library.
-
-What is deliberately NOT tested: names, instructions or any individual prescription. That
-is content — `tests/test_exercise_library.py` owns its rules and a copy edit must not turn
-this file red. What is tested is the **contract**: the shape, the auth treatment, the
-caching header, the aspect ordering the UI groups on, the retirement filter, and the one
-product property that must survive the round trip (the zero-equipment floor).
-
-The field list and the cache-control string are pinned in `tests/test_library_contract.py`
-instead — no database, so the CDN rule is guarded in the local gate too.
+A **core user path**: the whole input to the exercise browser and the content behind every
+prescribed block. Skips without `DATABASE_URL`; CI runs it against the seeded library.
+Deliberately NOT tested: names, instructions or any individual prescription — that is content,
+owned by `tests/test_exercise_library.py`, and a copy edit must not turn this file red. What is
+tested is the **contract**: shape, auth treatment, caching header, the aspect ordering the UI
+groups on, the retirement filter, and the zero-equipment floor surviving the round trip.
 """
 
 from datetime import UTC, datetime

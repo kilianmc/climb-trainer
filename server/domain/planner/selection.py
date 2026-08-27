@@ -1,46 +1,27 @@
 """Which exercises can fill a (phase, aspect) cell — and, when none can, what would.
 
-Pure and deterministic: every function here is a filter over the authored order of
-`EXERCISES`, and nothing in it iterates a set into its result.
+Pure and deterministic: every function is a filter over the authored order of `EXERCISES`, and
+nothing iterates a set into its result. `candidates()` answers the library question (prescribed
+in this phase for this aspect — no `PrescriptionSpec` for the phase means not prescribable in
+it); `prescribable()` answers the user question, dropping a `discipline` that is set and
+differs, then anything whose `contraindication_keys` meet an open injury, then anything whose
+`equipment_keys` are not a subset of what the climber has (an AND set, so `()` always passes).
+The survivors keep the library's authored order, which is the content decision.
 
-## The filtering order, and why step 3 is not just third
+Those three clauses are one conjunction, so their order cannot change *which* exercises
+survive. ⚠️ What "safety outranks everything below it" buys is the rule for every future
+change: **the equipment clause may be relaxed to explain a gap — `unlock_options()` does
+exactly that — and the injury clause never is.** There is deliberately no parameter, flag or
+fallback anywhere in this package that widens the pool by ignoring an injury.
 
-`candidates()` answers the library question — who is prescribed in this phase for this
-aspect — and `prescribable()` answers the user question. The order is:
-
-1. the aspect matches AND the exercise carries a `PrescriptionSpec` for the phase (no
-   template for the phase means not prescribable in it, `server/domain/exercises.py`);
-2. drop a `discipline` that is set and differs (`None` is universal);
-3. drop anything whose `contraindication_keys` meet an open injury — **safety outranks
-   everything below it**;
-4. keep those whose `equipment_keys` are a subset of what the climber has (an AND set, so
-   `()` always passes);
-5. the surviving **order is the library's authored order**. The authoring is the content
-   decision, the same argument `/api/library`'s grouping rests on.
-
-Steps 2-4 are one conjunction, so their order cannot change *which* exercises survive. What
-"step 3 outranks everything below" buys is the rule for every future change: the equipment
-clause may be relaxed to explain a gap — `unlock_options()` does exactly that — and the
-injury clause never is. There is deliberately no parameter, flag or fallback anywhere in
-this package that widens the pool by ignoring an injury.
-
-## `ASPECT_EMPHASIS` is authored data, validated at import
-
-One priority order per phase, most-defining quality first. It is the generator's whole
-opinion about what a phase is for, so it is data with a reason attached rather than logic.
-
-**Validated at import, in both directions**, against `DELIBERATELY_UNPRESCRIBED`: a cell the
-library declines to prescribe may not appear here (the generator would walk to an aspect
-with no candidate in any circumstances), and every cell the library *does* prescribe must
-appear (an omission silently deletes an aspect from a phase, which is a content decision
-made by accident). `tests/test_planner_selection.py` asserts the same agreement, so the
-check is visible in a test run and not only in an import error.
-
-## Displacement is why every row lists every aspect it can
-
-A slot whose aspect has no prescribable candidate walks this order to the next one that
-does. That walk is only as good as the list, which is why a row is the phase's full
-prescribable vocabulary in priority order rather than a top three.
+`ASPECT_EMPHASIS` is authored data — one priority order per phase, most-defining quality first
+— **validated at import in BOTH directions** against `DELIBERATELY_UNPRESCRIBED`: a cell the
+library declines to prescribe may not appear (the generator would walk to an aspect with no
+candidate in any circumstances), and every cell it does prescribe must (an omission silently
+deletes an aspect from a phase, a content decision made by accident).
+`tests/test_planner_selection.py` asserts the same agreement, so it is visible in a test run
+and not only as an import error. A row lists the phase's **full** prescribable vocabulary in
+priority order rather than a top three, because displacement walks it.
 """
 
 from collections.abc import Iterable, Mapping, Sequence

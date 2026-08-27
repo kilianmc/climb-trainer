@@ -1,24 +1,12 @@
 """The invite gate on `POST /api/auth/register`.
-
-Registration is the one endpoint that creates state from an anonymous request, so it earns
-tests under two of CLAUDE.md's bullets at once: "core user paths — auth" and "project-wide
-invariants that silently rot". Four properties are asserted here and nothing else, because
-everything else about invites is either the schema (CI's `alembic check`) or a CLI a human
-runs by hand:
-
-1. **A rejection says nothing.** Unknown, expired, revoked and exhausted are one status and
-   one body. An "expired" that differed from "unknown" would confirm a code exists, which is
-   most of what a guesser wants.
-2. **`max_uses` binds**, sequentially and under real concurrency. The concurrent arm is the
-   only test that can see `with_for_update()` doing its job.
-3. **A failed registration does not burn a use**, because consuming and inserting share one
-   transaction.
-4. **The gate is not optional** — a request with no code at all is refused.
-
-Behaviour, not implementation: nothing here asserts on the SQL, the lock, or the number of
-statements. The concurrency test infers the lock from the outcome.
-
-**Skips without `DATABASE_URL`** (see `conftest.py`). CI runs them for real.
+Registration is the one endpoint that creates state from an anonymous request. Four properties,
+and nothing else, because the rest is schema (`alembic check`) or a CLI a human runs:
+a rejection says nothing (unknown, expired, revoked and exhausted are one status and one body,
+because an "expired" that differed would confirm a code exists); `max_uses` binds sequentially
+**and under real concurrency**, which is the only test that can see `with_for_update()` doing
+its job; a failed registration does not burn a use, because consuming and inserting share one
+transaction; and the gate is not optional. Behaviour, not implementation — the concurrency test
+infers the lock from the outcome. **Skips without `DATABASE_URL`**; CI runs them for real.
 """
 
 import itertools

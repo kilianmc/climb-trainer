@@ -1,76 +1,28 @@
 """Content seed — the exercise library. NOT part of `server/seed.py`, deliberately.
 
-`server/seed.py` stops at the vocabularies and says why: `exercise` and
-`prescription_template` are **content** — names, instructions, per-phase prescriptions —
-authored rather than derived from a tuple, so seeding them belongs with the authoring
-task. This is that task's other half. `server/domain/exercises.py` holds the content;
-this module writes it.
+`server/seed.py` stops at the vocabularies because `exercise` and `prescription_template` are
+authored **content**, not derived from a tuple. `server/domain/exercises.py` holds it; this
+module writes it. Run it **after** `server/seed.py` — it resolves aspect, equipment and injury
+**keys** to ids and refuses to continue if one is missing. `.github/workflows/migrate.yml`
+runs both behind the same `seed` input. Idempotent by upsert on `key`, and a re-run is a true
+no-op rather than merely harmless.
 
-Run it **after** `server/seed.py`, because it resolves `climbing_aspect`, `equipment` and
-`injury_area` **keys** to ids and refuses to continue if one is missing:
+## ⚠️ It DELETES `exercise` rows, and it is the one seed that may
 
-    uv run alembic upgrade head
-    uv run python -m server.seed
-    uv run python -m server.contentseed
+**Kilian's call: removing a key from `server/domain/exercises.py` must really delete the
+exercise**, because a library that only ever grows is a library nobody can curate. The safety
+chain is CLAUDE.md's (see the `contentseed.py` bullet under "Production data durability"):
+`session_block.exercise_id` and `logged_set.exercise_id` are `NO ACTION`, so
+`_reconcile_unauthored_exercises` asks `EXISTS` **first** and never catches the foreign-key
+error — a caught `IntegrityError` would poison the rest of this single transaction. A
+referenced exercise gets `retired_at` instead and disappears from `GET /api/library`.
 
-`.github/workflows/migrate.yml` runs both, in that order, behind the same `seed` input —
-so a production content edit ships by dispatching an `upgrade` run with `seed: true`.
-
-## Idempotent by upsert on `key`, and re-running it is a true no-op
-
-Not "harmless to re-run" — a no-op: the second run's upserts write the same values, and
-its reconciliation deletes and inserts nothing. Editing a name, an instruction, a
-substitution hint or a prescription and re-running updates in place, so content is
-shipped by editing the domain module and dispatching a seed, never by hand-editing rows.
-
-## ⚠️ It DELETES EXERCISES, and here is the whole rule
-
-**Kilian's explicit call: removing a key from `server/domain/exercises.py` must really
-delete the exercise, not merely hide it.** Hiding a row he judged weak is not deleting it,
-and a library table that only ever grows is a library nobody can curate.
-
-`server/seed.py`'s contract is that the seed **never deletes**, and what that rule protects
-is data **something else points at**: a grade or an equipment row is referenced from a
-user's profile and their training history, so pruning one would either violate a foreign
-key or cascade into somebody's log. Those rows are upserted here too and never deleted.
-
-`exercise` is the one row that can be *either*, and the database already knows which:
-`session_block.exercise_id` and `logged_set.exercise_id` are **`NO ACTION`** foreign keys,
-so Postgres refuses to delete a referenced exercise rather than cascading into a training
-diary. So the seed asks the question first and does the right one of two things — see
-`_reconcile_unauthored_exercises`. An unreferenced exercise is **deleted**, with its join
-and template rows. A referenced one gets **`retired_at`**, keeps its row, and disappears
-from `GET /api/library`: a diary that forgets what you did is worse than a library with one
-row too many.
-
-The three tables this module reconciles are a different case, and the difference is
-structural, not a judgement call:
-
-- `exercise_equipment` and `exercise_contraindication` are **pure join rows** — a
-  composite primary key and nothing else. Nothing can reference one, because there is no
-  surrogate id to reference.
-- `prescription_template` has a surrogate id, and **nothing in the schema points at it**:
-  `session_block` snapshots `protocol_kind` and `prescribed_set` carries its own values
-  precisely so that editing the library never rewrites a plan that was already generated
-  (see those models in `server/models.py`).
-
-So no user row can be orphaned by these deletes, and they are what makes the module
-honest: a content edit can *remove* a requirement — an exercise that no longer needs a
-weight belt, a contraindication that was wrong, a phase an exercise should not be
-prescribed in — and a seed that only ever inserted would leave the old row behind
-forever, silently withholding the exercise from every user with that injury flag.
-
-**Every delete is scoped two ways**: to the three tables above, and to the exercise ids
-this module authors. A row belonging to an exercise that is not in
-`server/domain/exercises.py` is never touched, so a library the seed does not know about
-cannot be pruned by running it.
-
-CLAUDE.md now rules on this case — see the `contentseed.py` bullet under "⚠️ Production data
-durability", which states the three-link safety chain as the condition on the exception. This
-docstring carries the detail; the rule lives there.
-
-All statements are SQLAlchemy constructs with bound parameters — no string-built SQL, per
-the injection rules in CLAUDE.md.
+The three reconciled child tables are a structural case, not a judgement: the two join tables
+have no surrogate id to reference, and nothing in the schema points at `prescription_template`
+because `session_block` and `prescribed_set` snapshot their own values. So a content edit can
+*remove* a requirement, which an insert-only seed never could. **Every delete is scoped twice**
+— to those tables, and to the exercise ids this module authors — so a library the seed does not
+know about cannot be pruned by running it. Vocabulary rows are upserted here and never deleted.
 """
 
 from dataclasses import dataclass

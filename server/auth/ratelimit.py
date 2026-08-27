@@ -1,104 +1,23 @@
 """Fixed-window rate limiting, counted in Postgres.
 
-## Why the database
+No Redis and no workers: a frozen serverless instance cannot hold a counter, so `rate_limit`
+is the only shared durable place. `enforce_all()` counts every one of a route's buckets in ONE
+`INSERT ... ON CONFLICT ... DO UPDATE ... RETURNING bucket` — atomic, so there is no
+read-then-write race, and one round trip however many dimensions a route has. The key is
+`"<rule>:<hmac-sha256(AUTH_SECRET, subject)>"`: no IP and no email is ever stored, and keyed
+HMAC rather than a bare hash because both spaces are small enough to enumerate offline.
+`LOGIN_ACCOUNT` keys on the attempted email, so rotating IPs does not help. Accepted trade: an
+attacker can hold a real user at 429. It self-heals within the hour and nothing here disables
+an account — a rate limit, never a lockout. The 429 is identical whichever bucket tripped and
+the email counter increments for addresses that do not exist, so it is no existence oracle.
 
-There is no Redis and there are no background workers here. A serverless function is
-frozen between invocations and may be a different instance every time, so an in-process
-counter is both per-instance and reset by every cold start — which is to say, not a rate
-limit. The `rate_limit` table is the only shared, durable place available.
-
-## One statement, no race — and one statement for ALL of a route's buckets
-
-`INSERT ... ON CONFLICT (bucket, window_start) DO UPDATE SET count = rate_limit.count + 1
-RETURNING bucket, count` — a single atomic round trip. A read-then-write would let two
-concurrent requests both see `count = limit - 1` and both proceed, which is exactly the
-window a credential-stuffing script would find. Built with SQLAlchemy constructs and
-bound parameters; no SQL is assembled from strings anywhere in this module.
-
-`enforce_all()` puts **several buckets in that same statement** as multiple VALUES rows.
-That is the point of its existence: a route can be limited along two independent
-dimensions for the cost of one round trip and one commit, so adding a control costs no
-extra latency and no extra Neon wake-up. `RETURNING bucket` is what lets each returned
-count be matched back to its own rule — row order is not guaranteed.
-
-## The bucket key never contains an IP or an email
-
-The key is `"<rule>:<hmac-sha256(AUTH_SECRET, subject)>"`, where the subject is a client
-IP for the IP-keyed rules and the **normalised email** for the account-keyed one. We do
-not need to know anyone's address — the only question ever asked is "is this bucket
-hot?" — so storing either in the clear would be collecting personal data for no purpose.
-Keyed HMAC rather than a bare hash, because the IPv4 space is small enough to enumerate
-offline in seconds and so is a list of likely email addresses.
-
-## Two dimensions on login: source AND target
-
-The per-IP bucket stops one machine. It does nothing against an attacker spread across
-many addresses, because each address starts with a fresh budget. `LOGIN_ACCOUNT` keys on
-**the email being attempted**, so the limit binds to the *target* of the attack and
-rotating IPs does not help.
-
-**The trade-off, stated plainly because it must not be quietly omitted:** a determined
-attacker can hold a real user's login at 429 by deliberately burning that user's bucket.
-That is accepted. The alternative is unlimited distributed guessing, which is worse; the
-window **self-heals within the hour** with no admin action; and this is a **rate limit,
-never an account lockout** — nothing here writes state that disables an account, which is
-exactly why OWASP moved off lockout policies in the first place.
-
-**30 per hour** is the chosen number: high enough that a real person mistyping their
-password over and over, on several devices, never reaches it, and low enough that
-distributed guessing against one account is pointless.
-
-A 429 from either bucket is identical, and **the email counter increments for every
-address attempted, existing or not** — so the response can never be used to learn
-whether an account exists.
-
-## This is an ABUSE control. It is NOT a compute-budget control.
-
-Stated plainly because the original plan claimed otherwise, and the code shows why the
-claim was wrong: `enforce()` performs the upsert **and commits** before it looks at the
-limit. A request that receives a 429 has therefore already written to Postgres, and
-Neon's five-minute autosuspend timer restarts on that write exactly as it would on a
-successful call. A script hammering `/api/auth/demo` keeps the database awake at the
-same rate whether it is being rejected or not.
-
-Do not "fix" that by checking before counting. Reading the counter and then incrementing
-it reintroduces the read-then-write race described above, which is a worse bug, and
-rejected attempts genuinely have to be counted or the limit is trivially evaded.
-
-What this module *does* buy: it stops credential stuffing against `login` and bulk
-address probing against `register`. That is worth having, and it is all it is for.
-
-**Real protection for unauthenticated endpoints sits at the edge**, where a request never
-reaches the function or the database at all — a **Vercel WAF rule on `/api/auth/*`**.
-That is the control the compute budget actually depends on, it lives outside this
-repository, and CLAUDE.md carries the warning about deleting it. This table is not a
-substitute for it.
-
-The endpoint that made this most obvious — `POST /api/auth/demo` — was the one rule
-removed outright rather than left in place looking protective. See the comment where the
-rules are defined.
-
-## Which routes
-
-`login` and `register` are the obvious credential-attack surfaces, and `login` carries
-the second, account-keyed bucket described above. `refresh` is bounded because a valid
-rotation is a write. **`demo` is not here at all** — see the comment where the rules are
-defined for why the rule was deleted rather than kept.
-
-`LOGIN_ACCOUNT` is applied to **login only**, deliberately:
-
-- Not `register` — an address can be registered exactly once, so an account-keyed limit
-  there constrains nothing an attacker would want to repeat.
-- Not `refresh` or `demo` — neither request carries an email, so there is no target to
-  key on.
-
-## Purging
-
-`purge()` deletes windows that are long over. It is called **opportunistically** from
-`enforce_all()` — throttled to roughly once an hour per warm instance, and only when a
-brand new window is opened — because there is no cron and there must not be one: a
-scheduled job that pings Neon is precisely the ~730 CU-hr/month mistake CLAUDE.md
-forbids. Slightly late cleanup of a tiny table is a much better trade than a timer.
+⚠️ **This is an ABUSE control, NOT a compute-budget control** (the original plan claimed
+otherwise). `enforce()` upserts and COMMITS before it looks at the limit, so a rejected
+request has already written and already restarted Neon's five-minute window. Do not invert it
+to check-then-count: that is the race above, and rejected attempts must be counted or the
+limit is trivially evaded. Awake-time protection sits at the EDGE, in a Vercel WAF rule on
+`/api/auth/*`, outside this repository. `purge()` is called opportunistically from
+`enforce_all()` because a cron that pings Neon is the ~730 CU-hr/month mistake.
 """
 
 import hashlib

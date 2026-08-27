@@ -7,61 +7,38 @@ import { stripComments } from '../test/sourceScan';
 
 /**
  * Closed design decisions, scanned at SOURCE level. **There is no stylelint in this repo**, so
- * this is not a lint rule restated; adding a whole toolchain to enforce three project-specific
- * decisions would cost more than it returns.
+ * this is not a lint rule restated.
  *
- * ⚠️ **This is the weaker half of two guards, and it is not a substitute for the other.** A
- * per-file source scan cannot see the invariant that actually matters — *which bundle* a
- * declaration lands in. `distContract.test.ts` asserts that on the built stylesheet the
- * federated mount loads, and it is what catches `@use 'global';` in `app.scss`. What this file
- * adds on top is reach: it sees a `backdrop-filter` sitting in a partial that nothing `@use`s
- * yet, and an inline `position: 'fixed'` in a component, neither of which appears in any CSS.
+ * ⚠️ **This is the WEAKER half of two guards and is not a substitute for the other.** A per-file
+ * scan cannot see the invariant that matters — *which bundle* a declaration lands in — which
+ * `distContract.test.ts` asserts on the built remote stylesheet and is what catches
+ * `@use 'global';` in `app.scss`. What this adds is reach: a `backdrop-filter` in a partial
+ * nothing `@use`s yet, and an inline `position: 'fixed'` in a component, which is never CSS.
  *
- * - **`backdrop-filter` / translucent glass** — evaluated and REJECTED by Kilian on 2026-08-12:
- *   a blur pass every frame on a phone that is awake mid-session, and worse legibility at arm's
- *   length with chalky hands. A future agent "helpfully improving" the look is the realistic
- *   regression, which is why the rejection is asserted and not merely written down.
- * - **`:root` outside `global.scss`** — `global.scss` is imported by `main.tsx` alone; every
- *   other stylesheet can reach the route tree, and in the federated mount that is injected into
- *   kilianmc.com's document.
- * - **`@import`** — deprecated in Dart Sass, and it re-emits a partial once per importer, so the
- *   token block would be duplicated into every consumer's output.
- * - **Viewport units in a stylesheet** — `vh`/`vw`/`dvh`/`svh`/`lvh` and their `v*`/`vmin`/`vmax`
- *   relatives. CLAUDE.md states this as a hard rule beside `position: fixed` ("no `position: fixed`
- *   and no viewport units anywhere the route tree can reach") and it had **no detector at all**
- *   until this line: both mounts share the route tree, and in the federated one a viewport unit
- *   measures kilianmc.com's window, not the space the app was given. `distContract.test.ts` greps
- *   the built remote stylesheet for `position: fixed` and, deliberately, not for these — so this
- *   is the only guard, and it is stricter on purpose: it covers partials nothing `@use`s yet.
- *   **There is no exemption**, not even for the `main.tsx`-only sheets that may use
- *   `position: fixed`, because neither of them wants one today and a dead exemption is worse than
- *   no exemption. If the update bar ever needs `100dvh`, that is the moment to add one — with a
- *   control, like the `:root` exemption has.
- *   **The `.tsx` sources are scanned too**, because an inline `style={{ blockSize: '100vh' }}`
- *   never becomes CSS and would otherwise pass the entire gate — the same blind spot that made
- *   the inline-`fixed` scan necessary. `sizes="…"` attributes are stripped first: the two
- *   `sizes="100vw"` hints on `<LandingPicture>` are resource selection, not layout (in the shell
- *   they over-estimate and may fetch one rung too many; they can never move a box).
- *   ⚠️ **The real limitation, stated correctly.** The pattern needs a digit adjacent to the
- *   unit, so anything COMPUTED slips past: `#{$h}vh` in Sass, and `` `${h}vh` ``,
- *   `'100' + 'vh'` or `String(n) + 'vh'` in a component. Chasing those means parsing Sass and
- *   evaluating JS, which this file will not do. For the Sass half `distContract.test.ts` sees
- *   the emitted CSS and would still catch a `fixed`, though not a viewport unit — it does not
- *   scan for those. **For the `.tsx` half there is NO backstop at all**: an inline style never
- *   becomes CSS, so nothing else in the gate can see it. An earlier version of this comment
- *   claimed `distContract` covered it, which was exactly false for the half added with it.
+ * - **`backdrop-filter` / translucent glass** — evaluated and REJECTED (Kilian, 2026-08-12): a
+ *   blur pass every frame on a phone awake mid-session, and worse legibility at arm's length
+ *   with chalky hands. A future agent "helpfully improving" the look is the realistic regression.
+ * - **`:root` outside `global.scss`** — every other stylesheet can reach the route tree, which
+ *   in the federated mount is injected into kilianmc.com's document.
+ * - **`@import`** — deprecated in Dart Sass, and it re-emits a partial once per importer.
+ * - **Viewport units in a stylesheet** (`vh`/`vw`/`dvh`/`svh`/`lvh`/`vmin`/`vmax`) — a hard rule
+ *   beside `position: fixed` that had **no detector at all** until this line. **No exemption**,
+ *   not even for the `main.tsx`-only sheets: neither wants one, and a dead exemption is worse
+ *   than none. The `.tsx` sources are scanned too, because an inline
+ *   `style={{ blockSize: '100vh' }}` never becomes CSS and would otherwise pass the whole gate;
+ *   `sizes="…"` is stripped first, since `<LandingPicture>`'s `100vw` is resource selection and
+ *   can never move a box. ⚠️ **The pattern needs a digit adjacent to the unit, so anything
+ *   COMPUTED slips past** — `#{$h}vh`, `` `${h}vh` ``, `'100' + 'vh'`. For the Sass half
+ *   `distContract` would still catch a `fixed` (not a unit); **for the `.tsx` half there is NO
+ *   backstop at all**, because an inline style never becomes CSS.
  * - **`window.innerHeight` / `innerWidth` / `visualViewport` in a component** — the same bug in
- *   JavaScript, and unlike a computed unit it is greppable. Measuring the window and writing
- *   the result into a style is how a "full height" screen gets built in React, and in the
- *   federated mount that window is kilianmc.com's. Not banned in a `main.tsx`-only module for
- *   the same reason `fixed` is not; there is no such module with a `.tsx` extension today, so
- *   there is no exemption to keep alive.
- * - **Inline `position: 'fixed'` in a component** — a `fixed` element in the federated mount is
- *   positioned against kilianmc.com's viewport. React style props never become CSS, so
- *   `distContract.test.ts` is structurally unable to see this one; only a source scan can.
- *   (`position: fixed` in a *stylesheet* is deliberately NOT scanned here — it is legitimate in
- *   `update-bar.scss` and illegitimate only once it reaches the remote bundle, which is a
- *   question about the bundle, not the file.)
+ *   JavaScript, and unlike a computed unit it is greppable. Measuring the window and writing it
+ *   into a style is how a "full height" screen gets built in React, and in the federated mount
+ *   that window is kilianmc.com's.
+ * - **Inline `position: 'fixed'` in a component** — positioned against kilianmc.com's viewport in
+ *   the federated mount, and structurally invisible to `distContract.test.ts`. `position: fixed`
+ *   in a *stylesheet* is deliberately NOT scanned: it is legitimate in `update-bar.scss` and
+ *   illegitimate only once it reaches the remote bundle, which is a question about the bundle.
  *
  * `process.cwd()`, not `import.meta.url`: under jsdom the latter is an `http://localhost` URL.
  */

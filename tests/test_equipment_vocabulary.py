@@ -1,24 +1,13 @@
 """The equipment vocabulary must have an honest answer for a climber with no gear.
-
-Not a restatement of the tuple — there is no key-by-key mirror here, and per CLAUDE.md's
-testing policy a constant table does not earn one. What it asserts is a **coverage
-property** that nothing else in the gate can see, and whose absence is invisible until a
-real user hits it: if `EQUIPMENT` offers only indoor facilities and hardware, an
-outdoor-only climber has nothing they can honestly tick, and the onboarding step reads as
-a form they have failed to fill in.
-
-That is not hypothetical — it shipped. Every one of the original fifteen rows was indoor
-gear or an indoor facility (`bouldering_wall` is "any wall climbed without a rope"), the
-step was gated on having ticked at least one, and Continue was therefore **permanently
-disabled** for a climber whose whole practice is real rock. The gate half is fixed in
-`web/src/profile/draft.ts` and `user_profile.equipment_reviewed_at`; this is the other
-half, and it is the half a future tidy-up of the tuple could quietly undo.
-
-**Kilian's correction, 2026-08-21, and the reason the list changed rather than only the
-gate: a climber without gear is not a climber who cannot train.** They train by climbing —
-on rock — and with their own body. "No equipment" is a training modality, not an absence.
-
-DB-free: it reads the domain tuple, so it runs in the local gate.
+Not a mirror of the tuple — a constant table earns no test. This asserts a **coverage
+property** nothing else in the gate can see and whose absence is invisible until a real user
+hits it: if `EQUIPMENT` offers only indoor facilities and hardware, an outdoor-only climber has
+nothing they can honestly tick. That shipped once, as a permanently disabled Continue button —
+see CLAUDE.md's "Gating a step because its empty answer is unrecordable was a HARD DEAD-END".
+**Kilian's correction, 2026-08-21: a climber without gear is not a climber who cannot train**
+— they train by climbing, on rock, and with their own body. "No equipment" is a training
+modality, not an absence, and this is the half a future tidy-up of the tuple could undo.
+DB-free.
 """
 
 from server.domain.grades import Discipline

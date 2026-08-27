@@ -1,44 +1,17 @@
 """Shared fixtures, and the rule for database-backed tests.
-
-**Tests that need Postgres SKIP when `DATABASE_URL` is unset.** `npm run check` must stay
-green on a clone with no database, so skipping is the default. To actually run them locally,
-export `CT_TEST_DATABASE_URL` and `npm run db:up` — native `postgresql@17`, no Docker; see
-CLAUDE.md, "Local Postgres for the test suite". CI always runs them, against a service
-container it has brought to head with `alembic upgrade head`.
-
-**SQLite is NOT an option here** and must never be introduced as a stand-in. The schema
-depends on native enums, composite foreign keys, `GENERATED ... STORED`, GIN expression
-indexes and window functions — a SQLite run would pass while proving nothing, which is
-worse than a skip because a skip is visible.
-
-⚠️ **The database host is checked STRUCTURALLY, and that is not paranoia.** Until
-2026-08-21 the only thing keeping this suite off the production Neon database was an
-env-var assignment inside a shell string in `package.json` — `npm run check:server` sets
-`DATABASE_URL="${CT_TEST_DATABASE_URL:-}"`, and running plain `uv run pytest` instead picks
-up the real `DATABASE_URL` from `.env` and connects. That was survivable only by accident:
-the revision check below happened to fail first because production was still at `0003`.
-**The moment `0004` is applied to production, that accident stops protecting anything** —
-the `seeded` fixture calls `seed_reference_data` inside `session_scope()`, which
-**commits**, so a stray `uv run pytest` would write to production and (per the seed's own
-docstring) force the demo account's `password_hash` back to NULL. `server.db.require_local_host`
-is the fix, and it is a structural one: an npm script is a convention, and this repo's rule
-is that a data-loss guard must not be a convention.
-
-⚠️ **The URL is resolved to a HOST at the boundary, and only the host is passed on.** The
-first version of this guard took the URL as a parameter, and pytest renders every frame's
-arguments — so one failing run printed the production password **51 times**, once per
-dependent test, while the guard's own docstring claimed it never would. The message was
-clean; the traceback was not. `server/db.py::host_of` carries the full story and
-`tests/test_db_guards.py` pins it.
-
-Transaction handling per test: the fixture opens a connection, begins a transaction the
-session joins as a SAVEPOINT, and rolls the whole thing back afterwards. So tests see
-the seeded reference data, can write freely, and leave nothing behind — and the seed
-runs once per session rather than once per test.
-
-`AUTH_SECRET` is injected for the whole run by an autouse fixture, so the *pure* auth
-tests (JWT shapes, the public-route table) execute in the local gate with no database
-and no local configuration.
+**Tests needing Postgres SKIP when `DATABASE_URL` is unset**, so `npm run check` stays green on
+a clone with no database; export `CT_TEST_DATABASE_URL` and `npm run db:up` to run them. CI
+always runs them. **SQLite is NOT an option and must never be introduced as a stand-in** — the
+schema needs native enums, composite FKs, `GENERATED ... STORED`, GIN expression indexes and
+window functions, so a SQLite run would pass while proving nothing, which is worse than a
+visible skip. ⚠️ **The database host is checked STRUCTURALLY** (`server.db.require_local_host`):
+an npm script setting `DATABASE_URL=""` is a convention, and a plain `uv run pytest` picks the
+real URL out of `.env` — the `seeded` fixture **commits**, so that would write to production and
+force the demo account's `password_hash` back to NULL. ⚠️ **Only the HOST is passed on, never
+the URL**: pytest renders every frame's arguments, and one failing run printed the production
+password 51 times. Per test: a connection, a transaction the session joins as a SAVEPOINT, and
+a rollback — so tests write freely and leave nothing behind. `AUTH_SECRET` is autouse, so the
+pure auth tests run in the local gate with no database and no local configuration.
 """
 
 from collections.abc import Iterator

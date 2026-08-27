@@ -3,48 +3,27 @@ import type { Profile } from '../api/types';
 /**
  * How complete a profile is, and which of the four steps are still open.
  *
- * ## The bar opens at 20%, and the number is not decoration
+ * **Endowed progress** (Nunes & Drèze 2006): a 10-stamp card with 2 pre-filled completes at
+ * roughly twice the rate of an 8-stamp card, for identical real work. The floor is **20%**
+ * (Kilian, issue #54 — the same mechanic, read as less manipulative), and the formula is
+ * `20 + 80 × steps_done / total_steps`: 20/40/60/80/100, no rounding, every step worth the same.
+ * ⚠️ **A mechanic is allowed only if the progress it signals is TRUE.** The floor stands for the
+ * account that exists, and nothing else is ever pre-credited.
  *
- * **Endowed progress** (Nunes & Drèze 2006): a 10-stamp card with 2 pre-filled is
- * completed at roughly twice the rate of an 8-stamp card, for identical real work.
- * Starting from zero is the hardest step there is.
+ * Every step's test reads server state, which is only unambiguous because `0005` made the
+ * profile able to say "not answered". **Availability needs BOTH `sessions_per_week` and
+ * `available_weekdays`** — either alone is a half-answered question. **Aspects = the current
+ * grade AND both picks**, deliberately not "at least one rating": since #54 the eight sliders
+ * are optional detail behind a disclosure, and a row written from an untouched default would
+ * credit a step nobody answered. **Injuries = `injuries_reviewed_at` is set**, never a row
+ * count — "nothing is hurting" writes ZERO rows, so ⚠️ **a step needs a `*_reviewed_at` column
+ * exactly when zero rows is a legitimate answer**, and this is the only such step.
+ * **There is no equipment step**: #54 inverted the model to what the user LACKS, flagged on the
+ * exercise that needs it, and `equipment_reviewed_at` is read by nobody here.
  *
- * The floor was 29% and is now **20%** (Kilian, issue #54): the same mechanic, read as
- * less manipulative. The formula is `20 + 80 × steps_done / total_steps`, which with four
- * steps is 20/40/60/80/100 — no rounding, and each step is worth the same.
- *
- * **The credit has to be TRUE, which is the rule that governs the whole mechanic.** The
- * floor stands for facts we actually know by the time this screen renders — the account
- * exists, and the email that identifies it is on file — and nothing else is ever
- * pre-credited.
- *
- * ## Why each step's "done" test is the one it is
- *
- * All of them read server state, and all of them are unambiguous — which is only true
- * since revision `0005` made the profile able to say "not answered":
- *
- * - **availability needs BOTH `sessions_per_week` and `available_weekdays`.** They are one
- *   step and are written together, and either alone is a half-answered question.
- * - **aspects = the current grade AND both aspect picks.** `0006` gave all three real
- *   columns, so this is server truth like the rest. It is deliberately NOT "at least one
- *   rating": since #54 the eight sliders are optional detail behind a disclosure, and a row
- *   written from an untouched default would credit a step nobody answered.
- * - **injuries = its `injuries_reviewed_at` timestamp is set**, never a row count.
- *   "Nothing is hurting" is an honest answer that writes ZERO rows, so a row count cannot
- *   tell "answered, nothing" from "never asked". ⚠️ A step needs a `*_reviewed_at` column
- *   exactly when zero rows is a legitimate answer, and this is now the only such step.
- * - **⚠️ There is no equipment step.** Issue #54 inverted the model: the user is assumed
- *   to have access to everything, and what they LACK is flagged on the exercise that needs
- *   it. `equipment_reviewed_at` is left on the server and read by nobody here.
- *
- * ## The bar reports PERSISTED state, and nothing else
- *
- * Every input comes from `GET`/`PATCH /api/profile`. The query cache holds **server
- * responses only**; an in-flight write shows up as a render-time overlay derived from the
- * pending mutation's own variables, so the bar moves on the click (CLAUDE.md's Tier-1 rule)
- * and a failure needs no rollback — the overlay simply stops applying. See `api.ts` for the
- * three bugs that got us here, and for why the final step is the one that waits.
- *
+ * Every input comes from `GET`/`PATCH /api/profile`. The query cache holds **server responses
+ * only**; an in-flight write is a render-time overlay from the pending mutation's own variables,
+ * so the bar moves on the click and a failure needs no rollback. See `api.ts`.
  */
 
 /**
