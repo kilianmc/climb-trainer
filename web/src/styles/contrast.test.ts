@@ -81,17 +81,22 @@ const CARD_SURFACES = ['bg', 'surface-1', 'surface-2', 'surface-3'] as const;
 const TEXT_PAIRS: [string, string][] = [
   ...['fg', 'fg-muted'].flatMap((fg): [string, string][] => SURFACES.map((s) => [fg, s])),
   // Accent, danger and warning are text tones (links, badges, field errors, the grade-clash
-  // helper line), never used on `hover` or `pressed`, which are neutral-button states.
-  // `warning` is `.ct-app__caption--warning`, which renders inside a card — so `surface-1`,
-  // and the other card surfaces too, because a card's own surface steps with its nesting.
-  // It is text ONLY and never a fill, so unlike the two above it has no `--fg` partner below.
-  ...['accent', 'danger', 'warning'].flatMap((fg): [string, string][] =>
+  // helper line), never used on `hover` or `pressed`, which are neutral-button states — and
+  // `success` is the fourth, a session item's border and state word. `warning` renders inside a
+  // card and `success` on `--ct-surface-1`; both get all four, because a surface steps with its
+  // nesting. Text ONLY and never a fill, so neither has a `--fg` partner below.
+  ...['accent', 'danger', 'warning', 'success'].flatMap((fg): [string, string][] =>
     CARD_SURFACES.map((s) => [fg, s]),
   ),
   // …and the reverse: the tone as a FILL, with its paired foreground on top.
   ['accent-fg', 'accent'],
   ['accent-fg', 'accent-pressed'],
   ['danger-fg', 'danger'],
+  // The player's four phase fills plus the pressed state of the `open` region. A 12rem
+  // countdown on a fill lightened to "look nicer" is exactly what this table is for.
+  ...['phase-prepare', 'phase-work', 'phase-rest', 'phase-open', 'phase-pressed'].map(
+    (bg): [string, string] => ['phase-fg', bg],
+  ),
 ];
 
 /** WCAG 1.4.11 non-text contrast: 3:1, not 4.5:1. Input and button outlines are the only

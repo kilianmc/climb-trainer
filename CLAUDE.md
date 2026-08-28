@@ -87,9 +87,9 @@ Dependabot can never bump" · "Quality gate" · "Versioning".
 **Styling, the landing page or anything visual** — "UI design direction" · "Glassmorphism:
 considered and REJECTED" · "Accessibility is part of the design, not a later pass" · "The
 reading measure is a GRID COLUMN" · "Landing imagery — self-hosted, generated out-of-band, and
-URL-resolved at runtime" · "Container queries, not media queries" · "⚠️ The nav's thresholds
-are MEASUREMENTS, not breakpoints" · "Light and dark: the `data-theme` override" · "PWA — only
-the decisions a reader would otherwise reverse".
+URL-resolved at runtime" · "Container queries, not media queries" · "The full-height chain" ·
+"⚠️ The nav's thresholds are MEASUREMENTS, not breakpoints" · "Light and dark: the `data-theme`
+override" · "PWA — only the decisions a reader would otherwise reverse".
 
 **Running the app locally, or a blank page that is not your code** — "Local development" ·
 "Local Postgres for the test suite" · "⚠️ A dev server and the gate at the same time can blank
@@ -106,8 +106,8 @@ SILENTLY" · "⚠️ Prose is capped, and an executable claim must not be prose"
 session" · "The `sets` array is a DELTA, not a replacement" · "`duration_minutes` only ever
 grows".
 
-**Building the session player** — "Session player invariants" · "Screen Wake Lock — a
-user-owned TOGGLE, and a progressive enhancement".
+**Building the session player** — "Session player invariants" · "The full-height chain" ·
+"Screen Wake Lock — a user-owned TOGGLE, and a progressive enhancement".
 
 ### What lives outside this file — the master map
 
@@ -2497,7 +2497,8 @@ Two notes for whoever touches it:
 | `_primitives.scss` | button (3 variants), input, field, error, badge, text primitives |
 | `_card.scss` | the card surface and its `@container` rules |
 | `_bento.scss` | the bento grid's named areas |
-| `_chrome.scss` | nav (the brand, the three regimes and their measured thresholds), status renders, bottom-anchored action bar |
+| `_chrome.scss` | nav (the brand, the three regimes and their measured thresholds), status renders, the action bar that GROUPS but anchors nothing |
+| `_session.scss` | the session player: the height chain's app half, the phase fills, the item list |
 | `_landing.scss` | the landing page's photographic bands, detail split and icon rules |
 | `app.scss` | the `@use` entry and the `.ct-app` root; imported from `routes/__root.tsx` |
 | `global.scss` | the document reset. `main.tsx` only, and the ONLY file allowed `:root` |
@@ -2590,11 +2591,11 @@ lighting.
   — measured, the login submit sat ~300px above the fold with no scroll at all — so the sticky and
   the `env()` floor were removed rather than left looking load-bearing. Real anchoring needs
   `position: fixed` or `100dvh`/`100svh`, and **both resolve against kilianmc.com's viewport in the
-  federated mount**, because the route tree is shared. It therefore belongs to the session player
-  (planned PR #15a), the first genuinely full-height screen, which needs a mount-aware height
-  decision anyway. `env(safe-area-inset-*)` under `max()` floors is in use on `.ct-app`'s own
-  padding and on the update bar, which may be `fixed` because `main.tsx` alone renders it.
-  `viewport-fit=cover` is already set in `index.html`.
+  federated mount**, because the route tree is shared. **PR #15a closed that deferral with
+  neither** — see "The full-height chain"; anything needing a real bottom bar becomes the last row
+  of its own full-height grid. `env(safe-area-inset-*)` under `max()` floors is in use on
+  `.ct-app`'s own padding and on the update bar, which may be `fixed` because `main.tsx` alone
+  renders it. `viewport-fit=cover` is already set in `index.html`.
 - **⚠️ No `position: fixed` and no viewport units anywhere the route tree can reach.** Both mounts
   share that tree, and in the federated mount both resolve against **kilianmc.com's viewport** — a
   `fixed` element would float over the portfolio's own chrome. Both are allowed only in the
@@ -3514,6 +3515,72 @@ Recorded here because each is a specific bug that a naive implementation ships:
   `POST /api/plans/preview` (blueprint without writing) possible, which is what makes the demo
   mount interactive — see "The plan generator".
 
+**What PR #15a settled. Each one is a decision a later change would otherwise undo:**
+
+- **State goes on `data-phase` / `data-state`, never an interpolated class name.**
+  `` `ct-app__player--${kind}` `` is `markupCss.test.ts`'s one blind spot and trips it in BOTH
+  directions at once — the truncated stem reads as a class with no rule, the four real modifiers
+  as rules with no markup — for a decision worth no allowlist row.
+- **`ct:run` IS the run record**, and which of brief/player/summary shows is read off it rather
+  than off a URL or component state. Versioned by `RUN_VERSION` (**4**) and **discarded on a bump,
+  never migrated**: a run lives for one session, so decoding a stale shape buys a day at most and
+  risks a wrong clock. Two more keys, both preferences: `ct:sound`, `ct:keepScreenOn`.
+- **Pause FREEZES the clock rather than stopping it** — `clockAt(run, now)` is
+  `run.pausedAtEpochMs ?? now`, one expression so nothing derived can forget it — and resuming
+  **shifts** `phaseStartedAtEpochMs` by the held duration. Re-stamping it to `now` silently
+  restarts the phase and hands back time already spent. ⚠️ The paused guard lives in **`tick()`
+  itself, not only in the rAF effect**: the `visibilitychange` re-anchor calls `tick()` directly,
+  which is exactly the backgrounded-while-paused case.
+- **The set-ordinal ceiling is read BEFORE unflushed sets are dropped, and never falls.**
+  `nextSetIndex` takes it over `logged + pending + quarantined`, and an ordinal this run has minted
+  is never issued twice: a dropped set is unacknowledged, not provably unwritten — a 5xx can arrive
+  after the server committed — and a reused `set_index` is a `cardinality_violation`, i.e. a 422
+  that quarantines the whole flush. ⚠️ Deriving the offset from an attempt counter was a **real
+  bug**: marking an item done by hand issues ordinals without incrementing it, so a *first* start
+  walked straight into used ones.
+- **Marking an item done by hand LOGS its prescribed sets, with null measurements** —
+  `client_uuid`, `exercise_id`, `prescribed_set_id`, `set_index`, `completed_at` and nothing else,
+  because inventing numbers nobody measured is worse than recording none. Partial completion is the
+  derived query above, so an item claimed but unlogged would score zero and contradict the climber.
+  **Skipping logs nothing at all**, which is what keeps that figure honest.
+- **The finish is not reversible SERVER-side.** "Go back" on the summary restores the local run and
+  issues **zero** requests: `planned_session.status` never moves backwards, so `finished: false`
+  would be a Neon wake bought to pretend otherwise. Re-finishing is idempotent.
+- **The summary acknowledgement is on the RECORD** (`summaryClosedAtEpochMs`), not in React state:
+  a route component unmounts on every navigation, and as a `useState` flag it resurrected the RPE
+  prompt.
+- **Focus mode**: while an item runs the others are **absent, not dimmed**, and session-level
+  actions (Finish) leave the bar with it — one decision, readable at arm's length, and no wrong
+  button within reach of a chalky hand.
+- **`--ct-success` is a TEXT-only token**, on `--ct-warning`'s pattern: no `--ct-success-fg` and no
+  reverse pair. ⚠️ Never substitute `--ct-phase-work` — it is a *fill*, and its dark value measures
+  **1.68:1** as text on `--ct-surface-1`.
+- **Two accepted gaps, recorded so they are not rediscovered as bugs**: a finished run record is
+  never discarded from `localStorage` (nothing calls `abort()` on it, deliberately — that would
+  throw away unsent sets), and backgrounding a finished-and-closed session still re-persists it to
+  stamp `hiddenAtEpochMs`.
+
+### The full-height chain — an in-flow `100%`, not `fixed` and not `100dvh`
+
+The player is the app's first screen that must fill the space it is given, and it closes
+`_chrome.scss`'s deferral with **neither** viewport mechanism, because the federated mount rules
+both out. The chain is `html { block-size: 100% }` → flexed `body` → flexed `#root` → `.ct-app`,
+anchored in **`global.scss`, which only `main.tsx` loads**. In the shell there is no anchor, the
+`100%` resolves against an indefinite ancestor and the player degrades to content height. **That
+degradation is the decision, not a fallback** — one expression, correct in both mounts, with no
+branching and nothing read off `window`. `_session.scss` gates its half behind
+`.ct-app:has(.ct-app__player)`, so no other screen moves.
+
+- ⚠️ **A plain `min-block-size: 100%` chain COLLAPSES TO ZERO**, because a percentage block-size
+  resolves to nothing against an auto-height ancestor. `body` and `#root` are **flexed** instead: a
+  flex item's resolved main size is definite for its children's percentages, and unlike a hard
+  `block-size: 100%` on `body` it does not force a permanent scrollbar once the update bar reserves
+  its strip.
+- **`_layout.scss`'s `align-content: start` became load-bearing at the same moment.** A grid's
+  default is `stretch`, so once `.ct-app` fills the document its implicit `auto` rows share out the
+  leftover space and the nav row grows to half the window on a short screen. A no-op wherever the
+  height is still the content's.
+
 ### Screen Wake Lock — a user-owned TOGGLE, and a progressive enhancement
 
 Kilian did not ask for this as an automatic behaviour and pushed back on it, so keep it
@@ -3526,7 +3593,7 @@ NEVER acquired silently.** Kilian's reasoning, worth keeping verbatim because it
 part that gets optimised away: *"as a user you like to be in control, or feel like you
 are given the choice."*
 
-Requirements for PR #15a:
+Requirements, and they held:
 
 - **A visible switch in the session player that the user owns.** Label it plainly —
   "Keep screen on". Acquisition is **conditional on that toggle**; there is no

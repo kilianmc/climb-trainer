@@ -480,14 +480,20 @@
   // ~300px above the fold in a viewport with no scroll at all. Inert, and the docs around it said
   // otherwise.
   //
-  // **Real viewport bottom-anchoring is deferred, and the reason is structural.** It needs either
-  // `position: fixed` or a full-height container (`100dvh`/`100svh`), and BOTH resolve against
-  // kilianmc.com's viewport in the federated mount, because this stylesheet lives in the route
-  // tree that both mounts share — the same class of bug, with the portfolio's chrome as the blast
-  // radius. It therefore belongs to the first genuinely full-height screen, the session player
-  // (planned PR #15a), which needs a mount-aware height decision anyway. The PWA update bar may
-  // be `fixed` only because it is rendered from `main.tsx` and its stylesheet never ships to the
-  // shell. Do not "finish" this primitive with viewport units.
+  // **The deferral is CLOSED (PR #15a), and the answer was neither `position: fixed` nor
+  // `100dvh`.** Both resolve against kilianmc.com's viewport in the federated mount, because
+  // this stylesheet lives in the route tree both mounts share, so neither was ever available.
+  // The session player instead builds an in-flow `100%` chain — `global.scss` anchors the
+  // standalone document, `_session.scss` gates the app's grid behind `.ct-app:has(.ct-app__player)`
+  // and gives the player root its own `auto minmax(0,1fr) auto` rows, whose LAST row is a
+  // genuinely bottom-anchored control bar. In the shell the `100%` resolves against an
+  // indefinite ancestor and degrades to content height, which is the decision rather than a
+  // fallback: no branching, no measurement, no `window.innerHeight`.
+  //
+  // So `&__actionbar` stays what it is — a GROUPING primitive that anchors nothing — and it is
+  // the right shape for the forms that use it. Anything that needs a real bottom bar does what
+  // the player does: become the last row of its own full-height grid. Do not "finish" this
+  // primitive with viewport units.
   &__actionbar {
     display: flex;
     flex-wrap: wrap;

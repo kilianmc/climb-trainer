@@ -46,6 +46,12 @@
 // above a 768px viewport both versions give the full-width bento tile the same 704px.
 @mixin measured-grid {
   display: grid;
+  // ⚠️ `start`, and it became load-bearing when the session player made `.ct-app` fill the
+  // document (`global.scss`, `_session.scss`). A grid's default `align-content` is `stretch`,
+  // so implicit `auto` rows share out any leftover block space — the nav row would have grown
+  // to half the window on every short screen. It is a no-op wherever the height is the
+  // content's, and the player's own `1fr` row absorbs the space before this is consulted.
+  align-content: start;
   grid-template-columns:
     [ct-bleed-start] minmax(var(--ct-gutter-start), 1fr)
     [ct-measure-start] max(
