@@ -11,6 +11,35 @@ import { VitePWA } from 'vite-plugin-pwa';
 const LIGHT_BG = '#eef0ed';
 
 /**
+ * The build id that keys `GET /api/library?v=<buildId>`.
+ *
+ * ⚠️ **If this stops changing between deploys, a year-long `immutable` cache pins a stale
+ * exercise library.** That is the whole risk this function carries, so it uses the one
+ * value that is guaranteed to differ: the **deploy commit SHA**. `VERCEL_GIT_COMMIT_SHA` is
+ * a Vercel system environment variable, present in the build environment of every
+ * git-triggered deployment. Twelve hex characters is unambiguous at this repo's scale and
+ * short enough to read in a network tab.
+ *
+ * **Locally it is `local-<base36 timestamp>`, deliberately fresh on every build and every
+ * dev-server start.** A local git SHA would be the obvious choice and is the wrong one: it
+ * does not move when the working tree does, so an uncommitted content edit would be served
+ * from a cache that believes it is immutable. Anything that is not a deploy is cheap to
+ * bust, so bust it.
+ *
+ * **The known limit, stated rather than hidden:** the id keys on the CODE, so a library
+ * changed without a commit — a `migrate.yml` seed dispatched at a different ref — is not
+ * busted by it. Content lives in `server/domain/exercises.py`, so the normal path is
+ * always a commit; if that ever stops being true, this needs a content revision instead.
+ *
+ * Injected through `define` rather than an env var so no `VITE_*` has to be configured in
+ * the Vercel project for it to work — see `src/buildId.ts` for the read side.
+ */
+function buildId(): string {
+  const sha = process.env['VERCEL_GIT_COMMIT_SHA'];
+  return sha !== undefined && sha !== '' ? sha.slice(0, 12) : `local-${Date.now().toString(36)}`;
+}
+
+/**
  * The production document headers, read out of `vercel.json` rather than copied, so
  * `vite preview` cannot drift from what the CDN sends. Throws instead of falling back:
  * a silently header-less preview is the false negative this exists to prevent.
@@ -133,6 +162,8 @@ export default defineConfig({
   // No explicit `build.target`: Vite 8's default (`baseline-widely-available`, chrome111+)
   // already supports the top-level await MF emits. ai-portfolio-project1 pins `chrome89`
   // because it predates that default; copying it here would only LOWER the baseline.
+  // Evaluated once, at config load, so every chunk in a build shares one id.
+  define: { __BUILD_ID__: JSON.stringify(buildId()) },
   build: { outDir: 'dist', emptyOutDir: true, sourcemap: true },
   server: {
     port: 5173,

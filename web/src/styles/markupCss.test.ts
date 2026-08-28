@@ -11,78 +11,35 @@ import { describe, expect, it } from 'vitest';
 import { stripComments } from '../test/sourceScan';
 
 /**
- * Markup and CSS must describe each other, in BOTH directions. Every `ct-app__*` class the
- * components use has a rule behind it, and every `ct-app__*` selector the stylesheet defines
- * is used by something.
+ * Markup and CSS must describe each other, in BOTH directions: every `ct-app__*` class the
+ * components use has a rule behind it, and every `ct-app__*` selector the stylesheet defines is
+ * used by something.
  *
- * ## The failure this exists for
+ * ⚠️ **A class name in markup with no matching rule fails SILENTLY, and this is the only thing
+ * in the gate that can see it.** It happened twice during the onboarding redesign: a scripted
+ * rewrite of `_profile.scss` swallowed unrelated rules and left twelve classes unstyled — the
+ * select chevron, the checkboxes, the slider rows, the disclosure panels, the grade warning —
+ * while `tsc`, ESLint, `designGuard`, `distContract` and `contrast` were all green, and always
+ * will be: it is a relationship between two files, not a property of either. Both directions,
+ * because the same swallowed span leaves dead selectors when the markup is the half that changed.
  *
- * **Twice** during the onboarding redesign a scripted rewrite of `_profile.scss` replaced the
- * span between two comment markers and silently swallowed unrelated rules alongside it.
- * **Twelve class names were left in the markup with no CSS behind them**: the select chevron
- * vanished, the checkboxes fell back to bare native controls, the sliders lost their row
- * layout, the disclosures lost their panel, and the grade warning lost its colour.
+ * **The stylesheet is compiled in process** by the `sass` this repo already depends on. A source
+ * scan cannot work — the partials use `&__suffix`, so the literal `ct-app__choice` appears
+ * nowhere in `_profile.scss`, and resolving it means writing a Sass compiler badly. Reading
+ * `dist/` would make the guard depend on a production build for a question that has nothing to
+ * do with bundling (which is `distContract.test.ts`'s job, correctly). `app.scss` is the entry:
+ * it is the design system and the only stylesheet the federated mount gets. ~150 ms.
  *
- * `tsc`, ESLint, `designGuard.test.ts`, `distContract.test.ts` and `contrast.test.ts` were
- * **all green throughout**, and they always will be: a class name in markup with no matching
- * rule is not a type error, not a lint error, and not a property of any single file — it is a
- * relationship between two files that nothing in the gate was comparing. The element still
- * renders, still carries the attribute, and simply has no style. **That is the whole reason
- * this file exists**, and it is why the check runs in both directions: the same swallowed span
- * leaves dead selectors behind when the markup is the half that changed.
+ * ⚠️ **One blind spot: INTERPOLATED class names.** `` `ct-app__bento--${area}` `` trips both
+ * directions at once, and `INTERPOLATED` below is the narrowest possible exemption for the one
+ * place it happens. **The pattern is deliberately NOT loosened to hide it** — matching a
+ * trailing `*` means the truncated stem is seen and has to be exempted on purpose, where a
+ * pattern that quietly dropped incomplete tokens would drop genuine typos with them. A false
+ * positive costs a minute; a false negative costs a broken screen every other check calls green.
  *
- * ## How the stylesheet is derived — SASS, in process, and why not the other two ways
- *
- * Neither existing approach works here, and both were considered:
- *
- * - **A source scan, like `designGuard.test.ts`.** Impossible for this invariant. The partials
- *   are written with Sass `&__suffix` nesting, so the literal string `ct-app__choice` appears
- *   **nowhere** in `_profile.scss` — resolving it means re-implementing `&` resolution,
- *   `@mixin`/`@include` and `@use` namespacing, i.e. writing a Sass compiler badly.
- * - **Reading built CSS from `dist/`, like `distContract.test.ts`.** That guard is right to:
- *   its invariant is about *which bundle* a declaration lands in, which only a build can
- *   answer. This one is not — and paying for a production build to answer a question that has
- *   nothing to do with bundling would make the guard skip or fail on every clean checkout.
- *
- * So `styles/app.scss` is compiled **in process, by the Sass compiler this repo already
- * depends on** (`sass` is a devDependency; `vite.config.ts` uses the same compiler for the
- * real build). That is exactly the CSS the app ships, with no build step, no `dist/`, no dev
- * server and no ordering dependency on another npm script. It costs ~150 ms.
- *
- * `app.scss` is the entry deliberately: it is the design system, and the only stylesheet the
- * federated mount gets. `global.scss` and `update-bar.scss` are separate bundles and define no
- * `ct-app__*` selector at all — so if one ever did, the class would still be reported here as
- * having no rule behind it, which is the correct answer for a route-tree component.
- *
- * `vitest.config.ts` sets `css: false`, so none of this is obtainable from a rendered
- * component; there are no computed styles under test.
- *
- * ## ⚠️ The one blind spot: INTERPOLATED class names
- *
- * A class name assembled at runtime — `` `ct-app__bento--${area}` `` — is invisible to any
- * scanner that does not evaluate JavaScript, and this file will not. It trips **both**
- * directions at once: the source contains the truncated stem `ct-app__bento--`, which no
- * selector defines, and the real selectors `ct-app__bento--plan|diary|session` are used by
- * nothing the scanner can see. `INTERPOLATED` below is the narrowest possible exemption for
- * the one place it happens.
- *
- * **The pattern is deliberately NOT loosened to hide it.** Matching `ct-app__[\w-]*` with a
- * trailing `*` means the truncated stem is *seen* and *named*, and has to be exempted on
- * purpose — the alternative is a pattern that quietly drops incomplete tokens and would drop
- * genuine typos with them. Over-flagging is the right side to err on, for the reason
- * `tests/test_migrations_additive.py` gives about its arm 6: **a false positive costs a
- * developer one minute reading this file; a false negative costs a broken screen that every
- * other check calls green.** If a second interpolation ever appears, add its two halves here
- * with a comment saying why — do not widen the pattern.
- *
- * ## The positive controls
- *
- * Every detector below is fed a synthetic violation and asserted to fire, and a synthetic
- * *compliant* input and asserted not to — because a detector nobody has seen fail is a
- * detector nobody should trust, and one that reports everything is as useless as one that
- * reports nothing. The synthetic names (`ct-app__nowhere`, `ct-app__unused`) are written out
- * as independent literals rather than derived from the sets they are tested against: a control
- * assembled from the constant it tests would cheerfully confirm a typo to itself.
+ * Every detector is fed a synthetic violation AND a synthetic compliant input. The synthetic
+ * names are independent literals, never derived from the sets they test: a control assembled
+ * from its own constant would cheerfully confirm a typo to itself.
  */
 const SRC = `${cwd()}/src`;
 

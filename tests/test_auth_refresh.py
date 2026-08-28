@@ -161,6 +161,39 @@ def test_replaying_a_rotated_token_revokes_the_entire_family(db_session: Session
         refresh.rotate(db_session, second.token)
 
 
+def test_the_grace_comparison_uses_the_transaction_clock_not_the_wall_clock(
+    db_session: Session,
+) -> None:
+    """`rotate()` must stamp from `transaction_timestamp()`, never `clock_timestamp()`.
+
+    The grace comparison spans two serverless invocations, so both sides have to come from one
+    clock — and it has to date the presenter's ARRIVAL rather than the length of its wait, or a
+    loser stuck behind a slow winner falls out of the window and its family is revoked.
+    `func.now()` is `transaction_timestamp()`; `clock_timestamp()` is statement time and would
+    measure the wait. Under `db_session` the transaction clock is frozen (see `_db_now`), so the
+    two are distinguishable. The wall-clock assertion is a vacuity guard: without it, a suite
+    fast enough that the two clocks agree would pass whichever one `rotate()` used.
+    """
+    user_id = _a_user(db_session)
+    transaction_clock = _db_now(db_session)
+    db_session.execute(select(func.pg_sleep(0.05)))
+    wall_clock: datetime | None = db_session.scalar(select(func.clock_timestamp()))
+    assert wall_clock is not None
+    assert wall_clock > transaction_clock, (
+        "the wall clock did not move past the transaction clock, so this test cannot tell the "
+        "two apart and would pass whichever one rotate() used"
+    )
+
+    issued = refresh.issue(db_session, user_id)
+    refresh.rotate(db_session, issued.token)
+
+    assert _row(db_session, issued.token).rotated_at == transaction_clock, (
+        "rotate() stamped rotated_at from a clock other than transaction_timestamp(). The grace "
+        "window then measures how long a presenter waited for the row lock instead of when it "
+        "arrived, so a loser behind a slow winner is read as a replay and loses its family."
+    )
+
+
 def test_the_grace_window_stays_small() -> None:
     """The 10 seconds IS the security trade, so it gets an absolute ceiling of its own.
 

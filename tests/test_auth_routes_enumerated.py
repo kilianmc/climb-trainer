@@ -1,23 +1,13 @@
 """Deny-by-default, proved by walking the route table rather than trusting a review.
-
-CLAUDE.md: *"Authentication is required unless a route appears on an explicitly
-enumerated public-route list. A test walks every registered route and asserts each one
-is either on that list or protected."* This is that test, plus its demo-mode twin, which
-is the named acceptance criterion for PR #3.
-
-The value of these is entirely in what they catch **later**: an endpoint added in PR #9
-that nobody remembered to protect, or a mutating route that a demo token can reach. Both
-would pass every test written about the feature itself. Per the testing policy in
-CLAUDE.md, this is the "project-wide invariant that silently rots" bullet.
-
-**No database, on purpose — and enforced, not merely hoped for.** Every assertion here
-is about a rejection that happens in a dependency, before any handler runs, so this file
-must run in the local gate whether or not `DATABASE_URL` is set. The autouse fixture
-below replaces `get_session` with one that raises, which does two things: it keeps a
-developer's real Neon database out of a test that walks *every* endpoint firing
-requests at it, and it makes "this route reached its handler" show up as a 500 rather
-than as a quiet, successful write. Server exceptions are converted to 500 responses so
-one such route cannot abort the walk before it reaches the rest.
+CLAUDE.md: authentication is required unless a route appears on an explicitly enumerated
+public-route list, and a test walks every registered route. This is that test plus its demo-mode
+twin. The value is entirely in what they catch **later** — an endpoint nobody remembered to
+protect, or a mutating route a demo token can reach, both of which pass every test written about
+the feature itself.
+**No database, and enforced rather than hoped for**: every assertion is about a rejection that
+happens in a dependency before any handler runs, so the autouse fixture replaces `get_session`
+with one that raises. That keeps a real Neon database out of a test that fires requests at
+*every* endpoint, and makes "this route reached its handler" a 500 rather than a quiet write.
 """
 
 import re

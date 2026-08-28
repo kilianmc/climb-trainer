@@ -1,48 +1,28 @@
 """The grade ladder — reference data and the ordinal maths, as pure Python.
 
-**Never store a grade as a display string alone.** This is the single most expensive
-thing to retrofit in the whole schema (see CLAUDE.md), so it is settled here, in
-PR #2, before anything can persist a grade.
+**Never store a grade as a display string alone** — the single most expensive thing to
+retrofit in the whole schema, which is why it is settled here. A `grade` is
+`(system, label, ordinal)` and the **ordinal is a shared integer ladder**: every system
+measuring the same thing places its labels on the same rungs, so `V5` and `6C` are one
+integer and `target - current` is a meaningful grade gap whichever scale the user prefers.
+Comparison, sorting, pyramids and the generator's gap maths all work on the ordinal.
 
-## How the ladder works
+⚠️ **One ladder per DISCIPLINE, in disjoint bands** — boulder in the 1000s, rope in the
+2000s — because boulder-to-rope conversion is genuinely contested and encoding an
+equivalence would be inventing data. `convert()` raises `CrossDisciplineError`; the disjoint
+bands also make a cross-discipline mistake loud (a nonsense gap of ~1000) rather than
+quietly plausible. Within a band rungs are contiguous, so arithmetic is still `+`/`-`.
 
-A `grade` is `(system, label, ordinal)`. The **ordinal is a shared integer ladder**:
-every system that measures the same thing places its labels on the *same* rungs, so
-`V5` and `6C` are the same integer and `target_ordinal - current_ordinal` is a
-meaningful "grade gap" regardless of which scale the user prefers. Comparison,
-sorting, pyramids and the plan generator's gap maths all work on the ordinal; the
-label is display only.
+**Coverage gaps are expected, not errors.** Font distinguishes `6B+` where the V-scale does
+not; YDS distinguishes `5.11c` where French does not. Such a rung has no label in that
+system and `convert()` raises `NoEquivalentGradeError` rather than rounding to a neighbour.
 
-## One ladder per discipline, in disjoint numeric bands
-
-Boulder ordinals live in the 1000-band, rope ordinals in the 2000-band. **Boulder
-and rope grades are deliberately NOT comparable**: bouldering-to-sport conversion is
-genuinely contested and route length/style dominate it, so encoding an equivalence
-would be inventing data — exactly the kind of thing that is expensive to unpick
-later. The disjoint bands make a cross-discipline mistake loud (a nonsense gap of
-~1000) instead of quietly plausible, and `convert()` refuses it outright.
-
-Within a band, rungs are contiguous, so arithmetic on ordinals is still just `+`/`-`.
-
-## Coverage gaps are real and expected
-
-Scales do not have the same number of rungs. Font distinguishes `6B+` where the
-V-scale does not; YDS distinguishes `5.11c` where French does not. Such a rung
-simply has no label in that system — it is a hole in the mapping, not an error in
-the ladder — and `convert()` raises `NoEquivalentGradeError` rather than rounding
-silently to a neighbour.
-
-## Labels are matched EXACTLY, and that is load-bearing
-
-`7A` is Font (boulder); `7a` is French (rope). Case is the only thing separating
-them, so no case-folding, no whitespace stripping, no "helpful" normalisation.
-Grades reach the API as a `grade_id` resolved against the seeded table anyway (never
-as free-typed text — see the input-minimisation rules in CLAUDE.md), so leniency
-here would buy nothing and cost the Font/French distinction.
-
-The equivalences below follow the commonly published conversion tables. They are a
-convention, not a measurement; when in doubt the *ordinal* is the source of truth
-and the cross-scale label is a convenience.
+⚠️ **Labels are matched EXACTLY, and that is load-bearing**: `7A` is Font (boulder), `7a` is
+French (rope), and case is the only thing separating them. No case-folding, no whitespace
+stripping, no "helpful" normalisation — grades reach the API as a `grade_id` resolved against
+the seeded table anyway, so leniency would buy nothing and cost that distinction. The
+equivalences below follow the commonly published tables: a convention, not a measurement, so
+when in doubt the ORDINAL is the source of truth and the cross-scale label is a convenience.
 """
 
 import enum

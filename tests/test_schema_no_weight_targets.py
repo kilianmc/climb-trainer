@@ -1,55 +1,20 @@
 """⚠️ No goal weight, no target weight, no BMI — anywhere in the schema, ever.
 
-**The rule and its reason are in CLAUDE.md, "The app never recommends losing weight".**
-Short version: climbing has a documented disordered-eating problem, this project's
-governing principle is user health first, and the app's answer to a low
-strength-to-weight ratio is *get stronger*, never *get lighter*. A schema with nowhere to
-put a goal weight is a schema in which that feature cannot be built by accident, and the
-whole point of testing it is that prose in a markdown file gets "simplified" away by a
-later change while a failing test does not.
+The rule and its reason are CLAUDE.md's, "The app never recommends losing weight": a low
+strength-to-weight ratio means *get stronger*, never *get lighter*. This exists because prose
+gets "simplified" away and a failing test does not. Two guards, plus one nullability: no name
+may pair a weight word with a goal word or contain `bmi`, and **`logged_set.body_weight_kg`
+must stay NULLABLE** — a NOT NULL there would demand a weight before recording a performance,
+the same coercion by another route. No database, so it runs in the local gate. Every guard has
+a positive control that also asserts the near-misses (`body_weight_kg`, `target_load_kg`) are
+NOT flagged, because loosening an over-eager matcher is how a guard stops guarding.
 
-Two guards, plus the nullability of the one weight column that legitimately exists:
-
-1. **No column, table, index or constraint name may pair a weight word with a goal word,
-   and none may contain `bmi`.**
-2. **`logged_set.body_weight_kg` — the %BW snapshot — must stay NULLABLE.** A NOT NULL
-   there would mean the app had to demand a weight before it would record a performance,
-   which is the same coercion by a different route. It is also genuinely absent
-   sometimes: there may be no recent weigh-in, and with `show_body_metrics` off nothing
-   ever asks for one.
-
-**No database.** This reads `Base.metadata` and the ORM mappers, so it runs in the local
-gate as well as CI — which matters, because the mistake it catches is made while writing a
-model.
-
-## ⚠️ Limits worth stating, because this file otherwise reads as complete
-
-It is a **name** matcher. It cannot know intent, and the wordlist is the whole of it — so
-the honest description is "it catches the spellings somebody thought of", and the list of
-those is right here in the file. Specifically:
-
-- **A differently-worded column walks straight through.** `aspirational_kg`,
-  `race_mass`, `where_i_want_to_be_kg` — none of these are in `GOAL_WORDS` or
-  `FORBIDDEN_PHRASES`, and adding words forever is not a strategy. The wordlist covers the
-  vocabulary CLAUDE.md's own prose uses plus the euphemisms common in the sport; treat a
-  miss as a wordlist bug and add the name to `FORBIDDEN_COLUMN_NAMES` in the same commit.
-- **`jsonb` is invisible.** `plan.generator_input` could carry `{"goal_weight_kg": 62}` and
-  nothing here would see it, because there are no column names inside a JSONB document.
-- **So is a repurposed column.** Storing a goal weight in `journal_entry.body_weight_kg`,
-  or in a `note`, is a write-path decision this file cannot reach.
-- **It is a schema guard, not a product guard.** It cannot see a coaching string, a chart
-  annotation or a generated recommendation that tells somebody to lose weight — which is
-  the *actual* rule. `tests/` has no guard for that and probably cannot have one; it is a
-  review obligation on PR #11, and the schema guard exists to make the feature hard to
-  build, not impossible.
-
-## Every guard here carries a positive control
-
-Per CLAUDE.md: a detector that cannot see its own violation is worse than none. The
-`test_detector_*` cases below build throwaway tables that DO violate the rules and assert
-the detectors flag them, and assert the near-misses (`body_weight_kg`, `target_load_kg`)
-are *not* flagged — an over-eager matcher that flagged the legitimate columns would have
-to be loosened, and loosening is how a guard quietly stops guarding.
+⚠️ **Limits, because the file otherwise reads as complete.** It is a **name** matcher, so the
+wordlist is the whole of it: `aspirational_kg` walks straight through (treat a miss as a
+wordlist bug and extend `FORBIDDEN_COLUMN_NAMES` in the same commit), `jsonb` is invisible
+(`plan.generator_input` could carry `goal_weight_kg` unseen), a repurposed column or a note is
+a write-path decision, and **it is a schema guard, not a product guard** — it cannot see a
+coaching string or a chart annotation, which is the *actual* rule and is a review obligation.
 """
 
 import re

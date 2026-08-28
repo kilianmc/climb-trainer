@@ -1,71 +1,34 @@
 """Engine and session wiring — tuned for a serverless function against Neon.
 
-Read this whole docstring before changing any engine argument below. Every one of
-them is a deliberate *omission* or an unusual choice, and each looks like something a
-well-meaning change would add or "fix".
+Read this before changing any engine argument: every one is a deliberate *omission* or an
+unusual choice, and each looks like something a well-meaning change would add.
 
-## The billing model drives the configuration
+Neon bills **CU-hours = compute size x time awake**, and stays up five minutes after the last
+query — so the cost driver is how SPREAD OUT queries are, not how many rows are written. Hence
+**`NullPool`** (a frozen invocation cannot use a pool, and Neon's pooled endpoint already
+pools); **no `pool_pre_ping`** (a `SELECT 1` restarts the five-minute window); **no
+`pool_recycle`** (a timer that fires on its own); **no keepalive or cron ping anywhere** (five
+minutes apart is ~730 CU-hr/month against a 100 CU-hr allowance — the free tier gone in four
+days, which is why `/api/health` touches no database); and a **lazy engine** that opens no
+socket at import. Sessions come from an *unbound* sessionmaker and resolve the engine on their
+first statement, because FastAPI resolves dependencies before validating a body — a bound one
+turned a malformed body into a 500 and failed the gate on a clone with no database.
 
-Neon bills **CU-hours = compute size x time awake**, and the compute stays up for five
-minutes after the *last* query. The cost driver is therefore how *spread out* queries
-are, not how many rows are written. Consequences, which are the reason for the
-omissions below:
+Sync SQLAlchemy + psycopg3, not async: latency (autosuspend wake + cold start), not
+concurrency, is the bottleneck, Alembic is sync anyway, and async engines bring event-loop and
+pool-affinity bugs in a serverless runtime.
 
-- **`NullPool`.** No pool is held. A serverless invocation is frozen between requests,
-  so a live pool would be a set of idle connections nobody can use, and Neon's pooled
-  endpoint is already doing the pooling for us.
-- **No `pool_pre_ping`.** A pre-ping is a `SELECT 1` before handing out a connection.
-  With `NullPool` there is nothing stale to check, and every ping is a query that
-  restarts the five-minute awake window.
-- **No `pool_recycle`.** A recycle timer only has meaning for pooled connections, and
-  a timer that can fire on its own is exactly the background chatter to avoid.
-- **No liveness/keepalive query anywhere.** `/api/health` deliberately does not touch
-  the database. Never add a cron ping to "keep the DB warm": a five-minute ping is
-  ~730 CU-hr/month against a 100 CU-hr allowance, i.e. the free tier gone in ~4 days.
-- **Lazy engine, no connect at import.** `get_engine()` builds the engine on first
-  use; nothing here opens a socket when the module is imported.
+⚠️ **Prepared statements are left ENABLED — there is no `prepare_threshold=None`, deliberately,
+and it must not be "restored" from an older draft of the plan.** The folklore that PgBouncer
+transaction mode breaks them is out of date: SQL-level `PREPARE`/`EXECUTE` are unsupported, but
+psycopg3 uses **protocol-level** prepares, which are supported (PgBouncer >= 1.22; Neon runs
+`max_prepared_statements=1000`). Verified against
+<https://neon.com/docs/connect/connection-pooling>, 2026-08-12. They rarely pay off here
+regardless — the cache is per connection and `NullPool` means one connection per invocation.
 
-## The request session is bound lazily, not at construction
-
-Sessions come from an *unbound* sessionmaker and resolve the engine on their first
-statement. FastAPI resolves dependencies before it validates the request body, so a
-sessionmaker that needed `DATABASE_URL` turned a malformed body into a 500 instead of a
-422 — and made `npm run check` fail on a clone with no database, which the gate promises
-it will not.
-
-## Sync SQLAlchemy + psycopg3, not async, not asyncpg
-
-Sync, with `def` endpoints running in FastAPI's anyio threadpool: latency (Neon
-autosuspend wake + Python cold start), not concurrency, is the bottleneck at this
-scale; Alembic is sync regardless; and it avoids the event-loop and pool-affinity bugs
-that async engines produce in a serverless runtime. psycopg3 rather than asyncpg for
-the same reason plus better sync ergonomics.
-
-## Prepared statements are left ENABLED — this was checked, twice
-
-Neon's pooled endpoint is PgBouncer in transaction mode, and the folklore is that this
-breaks prepared statements. That folklore is out of date, and it is the reason this
-comment is long:
-
-- **SQL-level `PREPARE` / `EXECUTE` are not supported** through the pooler.
-- **Protocol-level prepared statements ARE supported** (PgBouncer >= 1.22; Neon runs
-  its pooler with `max_prepared_statements=1000`). psycopg3 uses the extended query
-  protocol, so its prepares are protocol-level and therefore fine.
-
-So there is **no `prepare_threshold=None`** here, deliberately. Do not add one, and do
-not "restore" it from an older draft of the plan. Verified against
-<https://neon.com/docs/connect/connection-pooling> (2026-08-12).
-
-Note psycopg3's prepare cache is *per connection*, and `NullPool` means one connection
-per invocation — so prepares rarely pay off here either way. Leaving them at the
-driver default is the no-surprises choice, not an optimisation.
-
-## Other transaction-mode pooler constraints (for later PRs)
-
-Session-level `SET` / `RESET`, `LISTEN` / `NOTIFY`, `WITH HOLD` cursors and
-session-level advisory locks do not work through the pooled endpoint. Transaction-
-scoped `SET LOCAL` does — which is what the demo path's `SET LOCAL
-transaction_read_only` relies on (PR #3). Keep it `SET LOCAL`, never a bare `SET`.
+Other transaction-mode pooler limits, for later PRs: session-level `SET`/`RESET`,
+`LISTEN`/`NOTIFY`, `WITH HOLD` cursors and session-level advisory locks do not work pooled.
+Transaction-scoped **`SET LOCAL` does**, which the demo path relies on — never a bare `SET`.
 """
 
 import os

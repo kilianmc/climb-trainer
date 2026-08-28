@@ -12,12 +12,14 @@ diary.
 
 ## What it does
 
-1. **Target grade in.** Log in, set your target grade, discipline, weekly
-   availability, available equipment, and self-rated strengths and weaknesses.
+1. **Target grade in.** Log in, then answer four questions: the grade you climb now and
+   the one you are training for, one strength and one weakness, your weekly availability,
+   and anything that is currently injured.
 2. **Plan out.** A pure-Python plan generator turns the gap between your current and
    target grade into a phased plan — base → strength → power → power endurance →
    peak/taper, with a deload every fourth week — allocating volume toward your weakest
-   aspects and filtering exercises by your equipment and injury flags.
+   aspects, skipping anything an open injury contraindicates, and naming the gear that
+   would unlock a session it had to build thin.
 3. **Guided session player.** A protocol interpreter compiles any prescription (max
    hangs, repeaters, 4×4s, EMOM, min-edge, limit boulder, circuits) into one timeline
    of `prepare / work / rest / open` phases. Full-viewport colour changes and a huge
@@ -72,114 +74,78 @@ derivatives under `web/public/landing/` **are** committed, because CI and Vercel
 a clone with no photo library. Credits and licences: `web/PHOTO-CREDITS.md`.
 
 Input is deliberately **closed** wherever possible — enums, sliders, and grade pickers
-sourced from the seeded grade ladder rather than free-text fields. Diary notes are the
-only genuinely free-form input in the product, which keeps both the validation surface
-and the injection surface small.
+sourced from the seeded grade ladder rather than free-text fields. Only eleven fields in the
+whole product are genuinely free-form (notes, a route name, a plan title), which keeps both
+the validation surface and the injection surface small.
+
+The partial-by-partial ownership of `web/src/styles/`, the design tokens and the container-query
+rules are in [`CLAUDE.md`](CLAUDE.md), along with the reason behind each one.
 
 ## Repo layout
 
 ```text
-package.json        root — the version source of truth (web/ and pyproject stay 0.0.0)
-vercel.json         framework:null + build command + /api and SPA rewrites
-pyproject.toml      Python deps
-uv.lock             committed lockfile
-alembic.ini         Alembic config (URL comes from the environment, never this file)
-api/index.py        thin Vercel Python entrypoint -> server.app:app
-migrations/         Alembic env.py + versions/
-server/
-  app.py            the FastAPI application
-  settings.py       env-driven config (CORS allowlist, the two Neon URLs)
-  db.py             engine + session wiring, tuned for serverless + Neon billing
-  models.py         SQLAlchemy 2 models, constraint naming convention, TIMESTAMPTZ
-  seed.py           reference-data seed
-  devseed.py        ten local test accounts — DEV ONLY
-  admin.py          operator CLI: create-invite, set-password
-  fields.py         bounded Pydantic field types, one per persisted CHECK
-  openapi_schema.py the OpenAPI document, for the TypeScript codegen
-  profile/          GET/PATCH /api/profile
-  vocabulary/       GET /api/vocabulary — grades, lookup tables, closed enums
-  domain/
-    grades.py       the grade ordinal ladder — pure Python, no DB
-tests/              backend tests (pytest; DB tests skip without DATABASE_URL)
-web/
-  index.html
-  vite.config.ts    dev server + /api proxy to :8000
-  vitest.config.ts
+package.json  vercel.json  pyproject.toml  uv.lock  alembic.ini  .nvmrc  .python-version
+api/index.py            thin Vercel Python entrypoint
+migrations/             Alembic env.py + versions/
+server/                 the FastAPI application
+  app.py  settings.py  db.py  models.py  fields.py  openapi_schema.py  security_headers.py
+  seed.py  contentseed.py  devseed.py  admin.py
+  auth/  domain/  library/  plans/  profile/  vocabulary/
+tests/                  backend tests (pytest)
+web/                    the Vite SPA, built to web/dist
   src/
-    main.tsx        standalone entry (browser history)
-    remote.tsx      federated entry (memory history)
-    api/client.ts   API client: base from import.meta.url + content-type guard
-    api/schema.ts   GENERATED from the OpenAPI schema — never edit; see below
-    profile/        onboarding + profile editor: one set of fields, two entry points
-    publicUrl.ts    public/ asset URLs, resolved from import.meta.url (same trap)
-    ui/             components; landingImages.ts is the image ladder, icons.tsx the SVGs
-    styles/         SCSS
-  public/landing/   committed responsive derivatives
-  PHOTO-CREDITS.md  photograph provenance: title, creator, licence, source
-  scripts/          authoring tools
+    main.tsx  remote.tsx  router.tsx  routeTree.gen.ts  theme.ts
+    api/  auth/  library/  plan/  profile/  pwa/  routes/  styles/  ui/
+  public/               static assets, including the committed landing derivatives
+  scripts/              authoring tools
 ```
 
-The layout is load-bearing in several places — see [`CLAUDE.md`](CLAUDE.md) before
-rearranging any of it.
+This layout is **load-bearing** — the `api/index.py` entrypoint, the `[tool.setuptools]`
+package list and where the FastAPI app may live were all settled by a deployment spike. Read
+[`CLAUDE.md`](CLAUDE.md)'s *Repo layout* section for the rules before moving any of it.
 
 ## Getting started
 
-Requires Node per `.nvmrc` (24) and [`uv`](https://docs.astral.sh/uv/) for Python 3.13.
+Requires Node per `.nvmrc` (24), [`uv`](https://docs.astral.sh/uv/) for Python 3.13, and
+Postgres 17 for the database-backed tests.
 
 ```bash
 # once
 npm --prefix web ci
 uv sync --all-groups
-cp .env.example .env      # then fill in the Neon URLs and AUTH_SECRET
+cp .env.example .env      # every variable is documented inline in the file
+npm run db:up             # local Postgres: create the database and migrate it to head
 ```
 
-`.env` is **loaded automatically** by `server/settings.py`, so the API, `alembic`,
-`pytest` and `python -m server.seed` all pick it up with no `--env-file` flag. An
-exported environment variable always overrides the file, and the load is skipped
-entirely on Vercel. Quote any value containing `&` (Neon appends
-`&channel_binding=require`) if you also shell-source the file.
+Generate the `AUTH_SECRET` signing key with
+`python -c "import secrets; print(secrets.token_urlsafe(48))"`. `.env` is loaded automatically
+by `server/settings.py`, so no `--env-file` flag is needed anywhere; it also has to be set in
+Vercel, for every scope you deploy to.
 
-The variables, all documented inline in `.env.example`:
-
-| Variable                | What it is                                                            |
-| ----------------------- | --------------------------------------------------------------------- |
-| `CORS_ORIGINS`          | Comma-separated allowlist. A `*` fails at startup.                    |
-| `DATABASE_URL`          | Neon **pooled** endpoint (host contains `-pooler`) — the app.         |
-| `DATABASE_URL_UNPOOLED` | Neon **direct** endpoint — Alembic only.                              |
-| `AUTH_SECRET`           | HS256 signing key for access tokens. **≥32 chars**, generate it.      |
-| `COOKIE_SECURE`         | Optional. Defaults to `true`; set `false` only for http on localhost. |
-
-Generate a signing key with
-`python -c "import secrets; print(secrets.token_urlsafe(48))"`. It has to be set in
-Vercel too, for every scope you deploy to — `.env` is not read inside a deployment.
-Nothing secret may ever carry a `VITE_` prefix: that prefix is inlined into the public
-client bundle.
-
-Database migrations are **not** run from a laptop against production. Use the manual
-**Migrate** workflow (Actions → Migrate); see `CLAUDE.md`.
-
-Then run both halves — the API on `:8000`, the SPA on `:5173` with Vite proxying
-`/api` across so the two share an origin exactly as they do in production:
+Then run both halves — the API on `:8000`, the SPA on `:5173` with Vite proxying `/api` across
+so the two share an origin exactly as they do in production:
 
 ```bash
 # terminal 1
-uv run uvicorn server.app:app --port 8000 --reload
+npm run dev:api           # uvicorn, against LOCAL Postgres
 
 # terminal 2
-npm --prefix web run dev          # http://localhost:5173
+npm --prefix web run dev  # http://localhost:5173
 ```
 
-> The Vite dev proxy is **not** Vercel's rewrite — it is a different mechanism that
-> happens to look the same. Any change to routing, `vercel.json`, or the API base has
-> to be re-verified on a real deploy. See `CLAUDE.md`.
-
-The PWA icons in `web/public/` are generated and committed, not built, and the generator is
-deliberately not a dependency (see `CLAUDE.md`). Regenerate them only after editing
-`web/public/mark.svg`, and commit the result:
+Regenerate the PWA icons after editing `web/public/mark.svg`, and commit the result:
 
 ```bash
 npm --prefix web run generate:icons
 ```
+
+> Several things here have a trap attached and are written up in
+> [`CLAUDE.md`](CLAUDE.md): why `dev:api` rather than a bare `uvicorn`, exactly what `.env`
+> loading does and does not do, why a local database means local accounts only (registration is
+> invite-gated — mint one with `python -m server.admin create-invite`), why the Vite dev proxy
+> proves nothing about Vercel's rewrite, and why the icon generator is deliberately not a
+> dependency. Migrations are never run from a laptop against production: use the manual
+> **Migrate** workflow (Actions → Migrate).
 
 ## Tests and quality gate
 
@@ -205,14 +171,11 @@ themselves — and `tests/test_vocabulary_contract.py` checks both, so the file 
 fall behind the server nor be edited by hand. A FastAPI or Pydantic upgrade also lands
 there, and only a regeneration fixes it.
 
-The local gate needs **no database** — the Postgres-backed tests skip cleanly. CI runs
-them for real against a pinned `postgres:17-alpine` service container after
-`alembic upgrade head`, so **CI is what proves the migrations**, and adds `alembic check`
-and a gitleaks scan over full history. See [`CLAUDE.md`](CLAUDE.md) for what CI adds on
-top of `npm run check`, and for the testing policy: tests are written where they buy
-confidence — domain rules, core user paths, complex transforms, regressions — and
-presentational UI, pass-through wrappers and anything the type system already guarantees
-are deliberately left untested.
+The local gate needs **no database** — the Postgres-backed tests skip cleanly. CI runs them
+for real against a pinned `postgres:17-alpine` service container after `alembic upgrade head`,
+so **CI is what proves the migrations**, and adds `alembic check` and a gitleaks scan over full
+history. The testing policy, the comment and prose budget, and what each CI job adds on top of
+`npm run check` are all in [`CLAUDE.md`](CLAUDE.md).
 
 ## Signing in
 

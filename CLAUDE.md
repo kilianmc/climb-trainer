@@ -31,159 +31,123 @@ Actions `production` environment. `gitleaks` runs in CI on full history.
 
 ## Index — find the rule before you write the code
 
-Anchored by **heading text**, never line number. If you are about to touch one of these,
-read the named section first; every rule there records a failure that already happened.
+**Pure pointers: a trigger, then the headings to read** — anchored by heading text, never by
+line number, and read back both ways by `tests/test_claude_md_claims.py`: a quote must resolve to
+a real heading, and a section nothing points at is a section nobody finds. Two conventions:
 
-**Adding or running a migration** — "Migrations run out-of-band" · "How to actually run one:
-`.github/workflows/migrate.yml`" · "⚠️ Three traps, all paid for on the day it first ran"
-(the ref chooses the migrations, the environment chooses the database) · "SQLite is
-disqualified for tests" · "Branch model" (migrate production **before** promoting, and
-read the applied revision back afterwards).
+- **An env var is explained in exactly ONE place; every other mention is a bare reference or a
+  command, with no explanation attached.** `CT_TEST_DATABASE_URL` → "Local Postgres for the test
+  suite"; `DATABASE_URL` and `DATABASE_URL_UNPOOLED` → "Database and compute budget"; the rest
+  → `.env.example`.
+- **If a claim can be executed, it must not be prose** → "⚠️ Prose is capped, and an executable
+  claim must not be prose".
 
-**Anything that could destroy production user rows** — "⚠️ Production data durability — real
-accounts, no undo" (additive-only on `app_user`, never downgrade, snapshot first). Read it
-before writing a migration, not after. ⚠️ It is also why a column is **retired logically
-before it is dropped**: `user_profile.equipment_reviewed_at` is dead as of `0006` and the
-column still exists, because expand -> deploy -> contract and because
-`tests/test_migrations_additive.py` refuses a `DROP COLUMN` on a table holding user rows.
+**Adding or running a migration, or anything that could destroy production user rows** —
+"Migrations run out-of-band" · "How to actually run one" · "⚠️ Three traps, all paid for on the
+day it first ran" · "⚠️ Production data durability — real accounts, no undo" · "SQLite is
+disqualified for tests" · "Branch model".
 
-**Touching auth, tokens or the route guard** — "Security rules" · "Auth implementation —
-where each piece lives" · "Auth UI — the client half of the contract" (the three realms, the
-refresh race, drop the token before every `POST /api/auth/*`, the TWO auth deadlines — 8 s stops
-awaiting, 30 s aborts — and why an unanswered refresh is not a logout) · "Registration is
+**Touching auth, tokens or the route guard** — "Security rules" · "Auth implementation — where
+each piece lives" · "Auth UI — the client half of the contract" · "Registration is
 invite-gated" · "⚠️ Minting an invite is a LOCAL command, and must never become a workflow" ·
-"Local accounts, and the two things that are NOT `server/seed.py`" ·
-"🔒 TODO — the end-to-end security verification pass".
+"Local accounts, and the two things that are NOT `server/seed.py`" · "🔒 TODO — the end-to-end
+security verification pass", whose private-file half is now issue #71.
 
 **Changing the federated mount, the router or the two entries** — "Routing: one tree, two
-histories" (lazy-leaf filenames, the committed route tree, absolute hrefs) · "Module
-Federation shared singletons — the silent one" · "In the federated mount, `localStorage` is
-the SHELL's storage" · "Never register a service worker from `remote.tsx`" · "API base:
-resolve from `import.meta.url` + guard the content-type".
+histories" · "Module Federation shared singletons — the silent one" · "In the federated mount,
+`localStorage` is the SHELL's storage" · "Never register a service worker from `remote.tsx`" ·
+"API base: resolve from `import.meta.url` + guard the content-type".
 
-**Touching `vercel.json`, rewrites, headers or the API client** — "Deployment traps"
-(all seven — note that #7, `maxDuration`, is a correctness setting, not a cost one) ·
-"Security response headers" · "API base: resolve from `import.meta.url` + guard
-the content-type" · "`.env` is loaded for you — but only outside Vercel" (the Vite dev proxy
-is not Vercel's rewrite).
+**Touching `vercel.json`, rewrites, headers or the API client** — "Deployment traps" ·
+"Security response headers" · "API base: resolve from `import.meta.url` + guard the
+content-type" · "`.env` is loaded for you — but only outside Vercel".
 
-**Writing to the database, or adding an endpoint** — "Neon bills AWAKE TIME, not writes" ·
-"Two write tiers" · "The other compute rules" · "Engine config — the omissions are the point"
-· "Injection defence and input minimisation (OWASP)" (bound parameters, allowlisted
-identifiers, closed inputs, Pydantic at the edge, no echoed request in a 422).
+**Moving a file, or adding a `server/` subpackage** — "Repo layout — do not rearrange it".
 
-**Touching the domain schema, body metrics, or anything the plan generator says to the
-user** — "⚠️ The app never recommends losing weight" (a hard rule with a schema-level guard:
-low strength-to-weight means *get stronger*) · "The domain schema — the shapes worth knowing
-before you query it" (the `activity`/`logged_session` supertype, the three composite foreign
-keys, the index every `SET NULL` needs, why the plan tree is relational) · "⚠️ The free-text
-inventory — NINE fields, and two of them get forgotten" · "SQLite is disqualified for tests"
-(the grade ladder).
+**Writing to the database, or adding or changing an endpoint** — "Neon bills AWAKE TIME, not
+writes" · "Two write tiers" · "The other compute rules" · "Engine config — the omissions are the
+point" · "Injection defence and input minimisation (OWASP)" · "OpenAPI codegen — the generated
+types are COMMITTED" · "Validate at the edge with Pydantic".
 
-**Adding or changing an endpoint's request/response models** — "OpenAPI codegen — the
-generated types are COMMITTED" (regenerate, and how staleness is caught) · "Validate at the
-edge with Pydantic" · `server/fields.py`.
+**⚠️ Touching `GET /api/library`, or adding ANY field to it** — "⚠️ `/api/library` is
+USER-INDEPENDENT, permanently" · "The other compute rules".
 
-**Onboarding, the profile, or the completion bar** — "Onboarding and the profile (PR #9,
-redesigned by #54)" (the partial upsert, the nullable columns, where the 20% floor comes from
-and why it is step 0, the step whose honest answer writes no rows, why gating a step on that
-was a hard dead-end, **`POST /api/profile/reset` and why `PATCH` was deliberately left
-alone**, the two grade columns that must share a discipline, and the grade floor that lives
-in the client on purpose).
+**Touching the domain schema, body metrics, or anything the plan generator says to the user** —
+"⚠️ The app never recommends losing weight" · "The domain schema — the shapes worth knowing
+before you query it" · "⚠️ The free-text inventory — ELEVEN fields, and three of them get
+forgotten".
 
-**⚠️ Touching a MUTATION, the query cache, or a route-level query guard** — the three bullets
-in "Onboarding and the profile (PR #9)" beginning "THE QUERY CACHE HOLDS SERVER RESPONSES
-ONLY", "A ROUTE MAY ONLY REPLACE ITSELF WITH AN ERROR WHEN THERE IS NOTHING TO SHOW",
-"A CREDENTIAL CHANGE MUST RESET THE QUERY CACHE" and "must be VERIFIED against
-`web/node_modules/@tanstack/query-core/`". Three consecutive review
-rounds found a bug here and all three came from reasoning about TanStack Query's semantics
-instead of reading them. Read `web/src/profile/api.ts` before changing any of it.
+**Onboarding, the profile, the completion bar, a MUTATION or the query cache** — "Onboarding
+and the profile".
 
-**Dependencies, versions and CI** — "Dependency policy" · "TypeScript stays on 6.x" ·
-"ESLint 10 rests on a forced jsx-a11y peer" · "`.github/dependabot.yml`" · "⚠️ Pinned actions
-Dependabot can never bump" · "Quality gate" (nine checks locally, fourteen in CI; never
-rename a job) · "Versioning".
+**Dependencies, versions and CI** — "Dependency policy" · "TypeScript stays on 6.x" · "ESLint
+10 rests on a forced jsx-a11y peer" · "`.github/dependabot.yml`" · "⚠️ Pinned actions
+Dependabot can never bump" · "Quality gate" · "Versioning".
 
 **Styling, the landing page or anything visual** — "UI design direction" · "Glassmorphism:
 considered and REJECTED" · "Accessibility is part of the design, not a later pass" · "The
-reading measure is a GRID COLUMN, not a `max-inline-size` on `.ct-app`" · "Landing imagery —
-self-hosted, generated out-of-band, and URL-resolved at runtime" · "Container queries, not
-media queries — and tokens on `.ct-app`, not `:root`" · "⚠️ The nav's thresholds are
-MEASUREMENTS, not breakpoints" · "Light and dark: the `data-theme` override, and two gaps that
-are documented rather than fixed" · "PWA — only the decisions a reader would otherwise
-reverse".
+reading measure is a GRID COLUMN" · "Landing imagery — self-hosted, generated out-of-band, and
+URL-resolved at runtime" · "Container queries, not media queries" · "⚠️ The nav's thresholds
+are MEASUREMENTS, not breakpoints" · "Light and dark: the `data-theme` override" · "PWA — only
+the decisions a reader would otherwise reverse".
 
 **Running the app locally, or a blank page that is not your code** — "Local development" ·
-"Local Postgres for the test suite" (`npm run db:up` / `db:reset`; the URL belongs in
-`CT_TEST_DATABASE_URL` and never in `.env`) · "⚠️ `npm run check` breaks a RUNNING dev server,
-and every route goes blank" (a blank *landing* page is the tell) · "`.env` is loaded for you —
-but only outside Vercel".
+"Local Postgres for the test suite" · "⚠️ A dev server and the gate at the same time can blank
+every route" · "`.env` is loaded for you — but only outside Vercel".
 
-**Writing tests** — "Testing policy". Every guard test
-here carries a positive control; a detector that cannot see its own violation is worse than
-none. ⚠️ Note the newest one: **a class name in markup with no matching CSS fails silently**,
-and `styles/markupCss.test.ts` is the only thing in the gate that can see it — `tsc`, ESLint,
-`designGuard` and `contrast` were all green while twelve classes lost their styling twice.
+**Writing a test, or prose, or a comment — or closing a PR** — "Testing policy" · "⚠️ A guard
+test must be SHOWN to fail before it is trusted" · "⚠️ A class name in markup with no CSS fails
+SILENTLY" · "⚠️ Prose is capped, and an executable claim must not be prose".
+
+**The plan generator, `POST /api/plans/preview`, persisting a plan or `GET /api/plans/active`** —
+"The plan generator" · "Persisting a plan".
 
 **Building the session player** — "Session player invariants" · "Screen Wake Lock — a
 user-owned TOGGLE, and a progressive enhancement".
 
-### What lives outside this file
+### What lives outside this file — the master map
 
-- **`README.md`** — the public-facing description: what the app does, the stack, getting
-  started, and how to run the checks. Setup instructions live there, working rules live here.
-- **`server/db.py`**, **`server/auth/*.py`**, **`server/domain/grades.py`**,
-  **`web/src/styles/_layout.scss`** — each module docstring carries the reasoning for its own
-  decisions in more detail than this file does. This file is the map.
+**`CLAUDE.md` owns WHY and the rule; `README.md` owns WHAT and the outcome.** Where both would
+say the same thing this file wins and README links to it, because this is the file an agent is
+told to read before editing.
+
+- **`README.md`**, by section: *What it does* · *Stack* (the version list, and its only home) ·
+  *Design direction* (the visual pitch — bento, opaque surfaces, why not glassmorphism) · *Repo
+  layout* (a short orienting tree; the load-bearing one is here) · *Getting started* (clone to
+  running, commands only) · *Tests and quality gate* (the three commands and the codegen step) ·
+  *Signing in* · *Dual mount* · *Deployment*.
+- **Module docstrings, which carry their own reasoning in more detail than this file does** —
+  `server/db.py` (engine and session wiring), `server/auth/*.py` (one per auth concern),
+  `server/domain/grades.py` (the ordinal ladder), `web/src/styles/_layout.scss` (the reading
+  measure as a grid column). `web/src/profile/api.ts` and `server/plans/routes.py` carry the
+  library-source citations their claims rest on.
 - **Kilian's private notes** (local only, never in this repo) — the approved delivery plan and
   the unshipped schema/generator design; a per-project memory covering live infrastructure,
-  deployment history and process lessons; plus two topic notes on the signup-gating decision
-  and the landing redesign. Ask him if you need the plan for an unshipped PR; nothing in them
-  is required to work inside this repo.
-
-## Stack
-
-- **Frontend** — React 19 · TypeScript 6 (strict) · Vite 8 · SCSS · Vitest + RTL.
-- **Backend** — FastAPI on the Vercel Python runtime, Python 3.13, **sync**
-  SQLAlchemy 2 + `def` endpoints (anyio threadpool), **psycopg3**, Alembic.
-- **DB** — Neon Postgres (free tier, EU region to match the function region).
-- **Deploy** — **one** Vercel project serving both the SPA and `/api/*`, so `/api` is
-  same-origin for the standalone app. Validated in spike S0.
+  deployment history and process lessons; plus topic notes on the signup-gating decision and the
+  landing redesign. Ask him if you need the plan for an unshipped PR; nothing in them is required
+  to work inside this repo.
+- **Issue #71** — moving the security control map, the thresholds and the infra topology into a
+  private file. Anything moved was **already public**, so it must be rotated, not merely moved.
+- **Registers that are files rather than prose** — `tests/comment_budget_allowlist.toml` (every
+  over-cap comment and the reason its length buys) and `.github/pull_request_template.md` (the
+  post-PR freshness receipt). Both are explained in "⚠️ Prose is capped, and an executable claim
+  must not be prose".
 
 ## Repo layout — do not rearrange it
 
 Spike S0 verified this exact layout end-to-end on a real deployment. It is load-bearing.
-
-```text
-package.json          root — the version source of truth
-vercel.json           framework:null + buildCommand + outputDirectory + rewrites
-pyproject.toml        Python deps (requires-python = ">=3.13"). NO requirements.txt.
-uv.lock               committed
-.python-version       "3.13"
-.nvmrc                24
-alembic.ini           Alembic config. NO `sqlalchemy.url` — env.py reads the env.
-api/index.py          thin Vercel entrypoint: sys.path.insert + `from server.app import app`
-migrations/           Alembic env.py + versions/
-server/               the FastAPI application actually lives here
-  app.py              the FastAPI app
-  settings.py         env config (CORS allowlist, the two DB URLs) + loads `.env` once
-  db.py               engine + session wiring. READ ITS DOCSTRING before touching it.
-  models.py           SQLAlchemy 2 models, naming convention, TIMESTAMPTZ default
-  seed.py             reference-data seed — the same module CI and production use
-  devseed.py          ten LOCAL test accounts. DEV ONLY; refuses to run in CI. Not seed.py.
-  admin.py            operator CLI: create-invite, set-password. No workflow runs it.
-  fields.py           bounded Pydantic field types — one per persisted CHECK
-  openapi_schema.py   the OpenAPI document + its fingerprint, for the TS codegen
-  profile/            GET/PATCH /api/profile
-  vocabulary/         GET /api/vocabulary — grades, lookup tables, closed enums
-  domain/             PURE Python: no DB, no clock, no RNG, no I/O
-web/                  the Vite SPA, built to web/dist
-tests/                pytest (backend). conftest.py skips DB tests without DATABASE_URL.
-```
+**The tree itself lives in [`README.md`](README.md), *Repo layout* — one copy, there.** What
+follows is only the part that is a rule rather than a description.
 
 `server/` being importable from `api/index.py` was genuinely uncertain before S0 — it
 works because `api/index.py` inserts the deployment root onto `sys.path`. Don't move
 the app into `api/`; don't delete that `sys.path` line.
+
+⚠️ **A new `server/` subpackage must be added to `[tool.setuptools] packages` in
+`pyproject.toml` in the same commit.** That list is written out — there is no autodiscovery
+and no `[build-system]` table to supply one — so an omitted subpackage is absent from the
+installed distribution while still importing perfectly from the repo root. `server/library/`
+is the newest entry.
 
 ---
 
@@ -250,6 +214,17 @@ Anything named `VITE_*` is **inlined into the client bundle at build time**. It 
 to every visitor as plain text in a JS file. **Never give a secret that prefix**, and
 remember this repo is public on GitHub, so there is no second line of defence. Server
 secrets are read in `server/settings.py` from unprefixed env vars.
+
+⚠️ **The one build-time value this repo injects is deliberately NOT a `VITE_*` var.**
+`__BUILD_ID__` — the `define` in `web/vite.config.ts`, read through `web/src/buildId.ts` —
+keys `GET /api/library?v=…`. It goes through `define` precisely so that **nothing has to be
+configured in the Vercel project** for a deploy to bust that cache: a build id that depends on
+somebody remembering to set an env var is a build id that eventually stops changing, and a
+year-long `immutable` then pins a stale exercise library. The value is a public deploy
+identifier **by design** — it ships to every visitor and that is fine, which is why the
+`VITE_*` rule above does not apply to it. **Locally it is a fresh timestamp, not the git SHA**:
+a SHA does not move when the working tree does, so an uncommitted content edit would be served
+out of a cache that believes it is immutable — the one case that actually bites in development.
 
 ### 5. Function region and Neon region must match
 
@@ -546,8 +521,10 @@ most.
 
 Unlike the TS 7 case above this is **stale metadata, not a missing API** — verified
 2026-08-14 before forcing it: none of the ten APIs ESLint 10 removed appear anywhere in
-the plugin's source, and on ESLint 10.8.1 four of its rules still produce correct
-diagnostics. The override is scoped to that one package deliberately; `--legacy-peer-deps`
+the plugin's source. Four rules were confirmed still firing — `alt-text`,
+`anchor-is-valid`, `click-events-have-key-events`, `no-static-element-interactions` —
+re-confirmed 2026-08-27 after the 10.9.0 bump. Naming the rules rather than the ESLint
+version is deliberate: the check is reproducible, and it does not rot on a bump. The override is scoped to that one package deliberately; `--legacy-peer-deps`
 would let unrelated peer conflicts through unnoticed.
 
 **Delete the override** when jsx-a11y publishes an `^10` peer, and re-run the lint
@@ -635,8 +612,8 @@ that enforce it. What follows is the reasoning that is not visible in the config
 - **`globPatterns` is explicit and narrower than the default**, because the manifest icons and
   `includeAssets` are added by the plugin with their own revisions; globbing them too offers
   workbox two entries for one URL. `build.sourcemap` is on and `.map` is deliberately excluded.
-  As of PR #7 the precache is **33 entries / ~426 KiB**, `remoteEntry.js` and the MF virtual
-  chunks included. ⚠️ **Those are NOT dead weight and must not be excluded**: `dist/index.html`
+  The precache covers the app shell plus `remoteEntry.js` and the MF virtual chunks; the build
+  prints the current entry count and size, so it is not repeated here. ⚠️ **Those are NOT dead weight and must not be excluded**: `dist/index.html`
   `modulepreload`s every one of them, because the MF plugin routes the *standalone* app's own React
   through the share scope. Precaching them is what makes the standalone app work offline at all.
   (An earlier note here said the standalone app never loads `remoteEntry.js`. It was wrong.)
@@ -778,37 +755,74 @@ recorded it as a side effect, batch it.**
     overwrite the header afterwards (`x-vercel-forwarded-for` is the documented escape
     hatch, and there is no such proxy), and **locally** under bare `uvicorn` the header
     is whatever the client sends, so the limiter is trivially bypassable in development.
-- `GET /api/library?v=<buildId>` is user-independent and immutable per deploy — serve
-  `public, s-maxage=31536000, immutable` with `staleTime: Infinity`. Zero DB time and
-  zero invocations after the first request per deploy.
-- **Two connection strings**: the pooled `-pooler` endpoint for the app
-  (`DATABASE_URL`), the **direct** endpoint for Alembic (`DATABASE_URL_UNPOOLED`) —
-  DDL and `CREATE TYPE` need a real session, and a migration through the pooler tends
-  to **hang rather than error**.
+- **`GET /api/library?v=<buildId>` — implemented as prescribed** (`server/library/routes.py`):
+  `public, s-maxage=31536000, immutable` with `staleTime: Infinity`, so the whole library
+  costs one origin read per deploy and then no DB time and no invocations at all. `?v=` is the
+  deploy id from `web/src/buildId.ts`, and the parameter is **accepted and ignored** — a
+  response that varied on it would give the cache one body per build ever made. Its only job
+  is that a content edit ships a *new URL* rather than waiting out a year of `immutable`.
+  **It stays AUTHENTICATED, and that is not theatre now that the body is publicly cacheable.**
+  Auth gates who can cause a cache **MISS**, and a miss is an origin read and therefore a Neon
+  wake — so an unauthenticated library endpoint would hand a bot exactly the wake that
+  `POST /api/auth/demo` was rewritten to remove. It is deliberately not in `PUBLIC_ROUTES`.
+  ⚠️ `GET /api/vocabulary` deliberately keeps `private, max-age=3600`. **The two rules differ
+  on purpose** — see that endpoint's own bullet under "Onboarding and the profile" for why it
+  has no business in a shared cache; do not "harmonise" them.
+- **Two connection strings, and this bullet is their one explanation** (every other mention in
+  this file is a bare reference or a command). `DATABASE_URL` is the pooled `-pooler` endpoint,
+  read by the app; `DATABASE_URL_UNPOOLED` is the **direct** endpoint, read only by Alembic
+  (`migrations/env.py`) — DDL and `CREATE TYPE` need a real session, and a migration through the
+  pooler tends to **hang rather than error**.
+  - **They are not interchangeable**: against Neon the pooled and direct endpoints are genuinely
+    *different hosts*, so one value cannot stand for both. `direct_database_url()` falls back to
+    the pooled URL when the direct one is unset, which is the documented CI and local-Postgres
+    path.
+  - ⚠️ **`DATABASE_URL_UNPOOLED` is the variable that leaked out of `.env` and pointed a stray
+    `alembic upgrade head` at production's neighbour on 2026-08-18**, which is why `check:server`
+    pins it **empty** and `scripts/local-db.sh` sets it only as a prefix on its own `alembic`
+    command. Neither belongs in `.env` on a development machine — see "Local Postgres for the
+    test suite".
+
+#### ⚠️ `/api/library` is USER-INDEPENDENT, permanently
+
+`/api/library` is served from a **shared** CDN, keyed on the URL alone, with **no
+`Vary: Authorization`**. So a per-user field on that response is handed out of one user's
+cache entry to a different user, and **no behavioural test can catch it**: the leak happens
+between two requests, inside an intermediary this repository does not run, with every test in
+the suite green. **Adding a user-scoped field to this response is a SECURITY change, not a
+feature change.**
+
+Per-user state *about* exercises — the "I don't have this gear" flag, personal bests, anything
+derived from a `user_*` table — goes on a **separate endpoint that is never CDN-cached**. This
+is concrete rather than hypothetical: **PR #11's "I don't have this gear" flag is exactly the
+field that would spring it**, and it is the obvious thing to bolt onto a payload that already
+lists every exercise's equipment requirements.
+
+`tests/test_library_contract.py` pins the field list and the cache header. It needs no
+database, so it runs in the local gate, and it goes red on the diff that adds the field — a
+pinned list is the only guard shape available when the failure is invisible to behaviour.
 
 ### Engine config — the omissions are the point
 
-`server/db.py` is the authority; its module docstring carries the full reasoning. In
-short, and superseding the earlier `pool_pre_ping` / `pool_recycle=300` / `pool_size=2`
-line that appeared in the original plan:
+**Three stack choices this config rests on. They are rules, not version numbers** — the versions
+live in `README.md`'s *Stack* section, `package.json` and `pyproject.toml`, which is why this
+file no longer carries a `## Stack` heading of its own:
 
-- **`NullPool`.** A serverless invocation is frozen between requests, so a live pool is
-  just idle connections nobody can use — and Neon's pooled endpoint already pools.
-- **No `pool_pre_ping`** (it is a `SELECT 1`, i.e. a query that restarts the 5-minute
-  awake window), **no `pool_recycle`** (a timer that can fire on its own), **no
-  keepalive or warm-up traffic of any kind**, and **no connect at import** — the engine
-  is built lazily on first use. `/api/health` deliberately does **not** touch the DB.
-- **Prepared statements stay ENABLED.** The folklore that PgBouncer transaction mode
-  breaks them is out of date: SQL-level `PREPARE`/`EXECUTE` are unsupported, but
-  **protocol-level** prepared statements — what psycopg3 actually uses — are supported
-  (PgBouncer ≥ 1.22; Neon runs `max_prepared_statements=1000`). **So there is no
-  `prepare_threshold=None`, deliberately.** Verified against
-  <https://neon.com/docs/connect/connection-pooling>, 2026-08-12. Do not "restore" it
-  from an older draft of the plan.
-- Other transaction-mode pooler limits, for later PRs: session-level `SET`/`RESET`,
-  `LISTEN`/`NOTIFY`, `WITH HOLD` cursors and session-level advisory locks do not work
-  pooled. Transaction-scoped **`SET LOCAL` does** — which is what the demo path's
-  `SET LOCAL transaction_read_only` relies on. Keep it `SET LOCAL`, never a bare `SET`.
+- **Sync SQLAlchemy 2 with `def` endpoints**, which FastAPI runs in anyio's threadpool. Never
+  `async def` here: a sync `def` cannot be cancelled by a client disconnect, which is the whole
+  mechanism behind deployment trap 7's pinned `maxDuration` and the two auth deadlines.
+- **psycopg3, never asyncpg** — the driver has to be sync for the same reason, and psycopg3's
+  *protocol-level* prepared statements are what the `prepare_threshold` bullet below relies on.
+- **Neon's region must match the function region**, and Neon's is fixed at project creation —
+  see deployment trap 5, which is the failure that wrote the rule.
+
+**`server/db.py`'s module docstring is the authority for every engine argument** — the
+`NullPool` / no-`pool_pre_ping` / no-`pool_recycle` / no-keepalive set, why prepared
+statements stay ENABLED (and must not be given a `prepare_threshold=None` from an older
+draft), and which transaction-mode pooler limits bite. It carries the Neon CU-hour
+arithmetic that makes those omissions cost decisions rather than style. Read it before
+changing an argument; do not restate it here.
+
 - **`TIMESTAMPTZ`, never naive.** `Base.type_annotation_map` pins `datetime` to
   `TIMESTAMP(timezone=True)` repo-wide, so every future `Mapped[datetime]` gets it
   without anyone remembering. Store aware, convert at the edge.
@@ -824,13 +838,32 @@ line that appeared in the original plan:
   nothing in `server/` reads `alembic_version`, so a schema/code mismatch is not detected
   or warned about at boot. If one is ever added it must only **READ** and **warn**, never
   migrate; weigh it against the Neon wake it would cost on every cold start.
-- Seeding reference data is `uv run python -m server.seed`, run **after** a migration.
-  `server/seed.py` is the **single** seed module — CI, local work and production all
-  call it, because a test fixture with hand-written rows tests a table production never
-  has. It **upserts and never deletes**: user rows reference `grade.id`, so retiring a
-  grade is a deliberate migration, not a side effect of editing a tuple. It also seeds
-  the **demo account** (`demo@climb-trainer.example`, `password_hash = NULL`), which is
+- Seeding is **TWO modules, in this order**, both run **after** a migration:
+  `uv run python -m server.seed`, then `uv run python -m server.contentseed`. CI, local work
+  and production all call both, because a test fixture with hand-written rows tests a table
+  production never has. The split is **derived vocabulary versus authored content**:
+  `server/seed.py` holds what comes from a tuple, `server/contentseed.py` holds the exercise
+  library, and the second resolves aspect, equipment and injury **keys** to ids — so it cannot
+  run first, and it fails loudly rather than quietly if the vocabularies are missing.
+  `server/seed.py` **upserts and never deletes**: user rows reference `grade.id`, so retiring
+  a grade is a deliberate migration, not a side effect of editing a tuple. **`contentseed.py`
+  is the documented exception to that** — see the durability section below. `seed.py` also
+  seeds the **demo account** (`demo@climb-trainer.example`, `password_hash = NULL`), which is
   deployment fixture data, not user data.
+- **Shipping a content edit to production is `action=upgrade` + `seed=true`.** There is no
+  seed-only action and both seed steps hang off that one `seed` input, so a library change
+  rides an upgrade run even when the revision it needs is already applied. ⚠️ **And it needs
+  the ref**: the job definition *and* the content both come from the ref you select, so a
+  dispatch without `--ref dev` runs `main`'s workflow file and seeds `main`'s library — which,
+  before a promotion, is the library you were trying to replace. See trap 2 below.
+- **An UNCOMMITTED, UNDEPLOYED revision may be AMENDED rather than stacked**, and the check is
+  two-part: `git log --all -- migrations/versions/<file>` returns nothing, **and** both
+  environments' applied revision is read back. Both, because either alone is a guess — history
+  says nobody else can be holding it, the readback says no database has run it. Amending one
+  that has run anywhere is how two databases end up with the same revision id over different
+  schemas. `0007` qualified on both counts: never committed, and production run
+  `32654384094` and dev run `32653834390` each read back `0006 (head)`. Once a revision exists
+  on any branch or is applied anywhere it is frozen, and the fix is a new revision.
 - **`DEMO_USER_ID` is pinned at 1 and is part of the data contract** — demo tokens carry
   it as `sub` so `POST /api/auth/demo` needs no lookup. Changing it is a migration. The
   seed inserts that id explicitly and therefore **repairs `app_user_id_seq`** afterwards
@@ -871,6 +904,23 @@ rules, not preferences.
   deletes**, so re-seeding production cannot remove an account; and `app_user.invite_id` is
   **`ON DELETE RESTRICT`**, so a spent invite cannot be deleted out from under the record of
   who used it.
+- **⚠️ `server/contentseed.py` DOES delete `exercise` rows, and it is the one seed that may.**
+  Kilian's call: dropping a key from `server/domain/exercises.py` must *really* delete the
+  exercise, because a library that only ever grows is a library nobody can curate. What makes
+  that safe against a real training diary is a chain of three, and **all three links are
+  load-bearing**:
+  1. `session_block.exercise_id` and `logged_set.exercise_id` are **`NO ACTION`**, so Postgres
+     refuses to delete a referenced exercise rather than cascading into somebody's history.
+  2. The seed asks **`EXISTS` first and never catches the foreign-key error.** A failed
+     statement aborts the whole Postgres transaction and this module runs inside one
+     `session_scope()`, so a caught `IntegrityError` would poison every statement after it and
+     the run would report success having written nothing.
+  3. A referenced exercise gets **`retired_at`** instead: the row stays, and it disappears from
+     `GET /api/library`. A diary that forgets what you did is worse than a library carrying one
+     row too many.
+  Deletes are scoped twice over — to the exercise ids the module authors, and to child rows
+  nothing in the schema can reference — so no user row can be orphaned by one. Vocabulary rows
+  are upserted here too and are never deleted.
 
 #### How to actually run one: `.github/workflows/migrate.yml`
 
@@ -963,14 +1013,11 @@ Also: keep the plan tree **fully relational** (a row per prescribed set). It is 
 showcase, and denormalising to `jsonb` saves nothing that matters — a 24-week plan is
 ~290 KB against 0.5 GB.
 
-And: **never store a grade as a display string alone.** `grade` is
-`(system_id, label, ordinal)` where `ordinal` is a shared integer ladder — but **one ladder
-per DISCIPLINE, in disjoint bands** (boulder 1000+, rope 2000+), so `V5` and Font `7A` are
-the same rung while French `6c+` is deliberately **not** comparable to either: `convert()`
-raises `CrossDisciplineError`. Boulder↔rope conversion has no consensus, and encoding one
-would be inventing data. Labels are matched **exactly** — `7A` is Font, `7a` is French, and
-case is the only thing separating them. `server/domain/grades.py` is the authority. This is
-the single most expensive thing to retrofit.
+And: **never store a grade as a display string alone** — a `grade` is
+`(system_id, label, ordinal)`. This is the single most expensive thing in the schema to
+retrofit, and **`server/domain/grades.py`'s module docstring is the authority** for the
+ordinal ladder, the per-discipline bands, and why labels are matched exactly. Read it before
+touching anything grade-shaped.
 
 ### The domain schema — the shapes worth knowing before you query it
 
@@ -1007,7 +1054,8 @@ reader would otherwise try to undo:
   hygiene, they are FK targets. **The technique is the house pattern for a denormalisation:
   if you copy a column down, tie it back.** One place deliberately does not
   (`logged_set.exercise_id` vs its prescription's) — see that model's docstring for the cost
-  argument and the PR #10 write-path obligation it creates instead.
+  argument and the write-path obligation it creates instead — **issue #62**, not PR #10,
+  which shipped a read-only library and no write path at all.
 
 - **`ascent.tags` is gone.** Tags were `text[]` + a GIN index; they are now the seeded
   `ascent_tag` lookup plus the `ascent_tag_link` join (Kilian, 2026-08-21 — reasoning in
@@ -1033,9 +1081,19 @@ reader would otherwise try to undo:
     constraint *looks* like coverage.
   - ⚠️ **Every remaining foreign key is `NO ACTION`/`RESTRICT` and is deliberately
     unindexed** — a different argument, not an oversight. Those parents are reference rows
-    the seed never deletes (`grade`, `exercise`, `equipment`, `climbing_aspect`,
-    `injury_area`, `ascent_tag`) or, for `app_user.invite_id`, a row RESTRICT exists to make
-    undeletable. No delete means no referencing-side scan and nothing for an index to save.
+    nothing deletes (`grade`, `equipment`, `climbing_aspect`, `injury_area`, `ascent_tag`)
+    or, for `app_user.invite_id`, a row RESTRICT exists to make undeletable. No delete means
+    no referencing-side scan and nothing for an index to save.
+    ⚠️ **`exercise` is no longer one of those, and the decision is unchanged.**
+    `server/contentseed.py` deletes unauthored exercises, so the `EXISTS` that decides
+    delete-versus-retire really does seq-scan `session_block`. **Still no index**, on a
+    different argument: that scan runs only on a **seed dispatch** — a rare, manual,
+    out-of-band admin operation — and only for keys the content has *dropped*, so on virtually
+    every run there are none and the query is skipped outright; and `session_block` is small
+    (~30 blocks per generated plan). An index would buy write amplification and storage on
+    every plan generated, forever, to save milliseconds on an operation nobody performs in the
+    request path. (`logged_set.exercise_id` is already indexed for unrelated reasons, so that
+    half is free.)
     **Do not "complete the set"** — that is a dozen indexes bought with write cost and
     storage against a 0.5 GB budget, for a lookup nothing performs.
 - **`activity.srpe_load` casts: `rpe::integer * duration_minutes`.** Both operands are
@@ -1596,7 +1654,7 @@ five long; a count in the heading drifted every time one was added):
     one is a refetch driven by the session store's next non-null token.
   - **Deliberately NOT a default in `apiFetch`.** Weighed and turned down: a deadline there is
     inherited by every present and future caller off the back of one auth bug, and the right
-    duration is a property of the call. `api/client.test.ts` asserts the client adds **no** signal
+    duration is a property of the call. `web/src/api/client.test.ts` asserts the client adds **no** signal
     of its own, so re-adding one is a red test rather than a silent policy change. There is also
     no `AbortSignal.any` composition any more: all three call sites pass a literal
     `{ method: 'POST' }`, so an earlier revision advertised a capability it did not have. Add it
@@ -1928,26 +1986,6 @@ the type (`feat/…`, `chore/…`).
 
 ---
 
-## 🧹 TODO — comment and docs deep clean (its own PR, AFTER PR #19)
-
-**Kilian's call, 2026-08-14: verbosity is FINE during development — do not spend review
-turns trimming prose while the project is still being built.** The clean-up is a single
-deliberate pass **once the project is done**, and it needs its own review, so it is not
-folded into the 1.0.0 promotion. Two goals, in this order:
-
-1. **Trim everything to the minimum.** Source comments: delete what restates the code and
-   all historical narrative; keep one-line constraints. **Convert "don't change this or X
-   breaks" into a test or a lint rule** rather than deleting it. `CLAUDE.md` / `README`:
-   trim narrative, **keep every trap and hard rule**.
-2. **Move the important stuff into a PRIVATE file so it is protected.** Design reasoning may
-   stay public; the **security control map, thresholds and infra topology go private**.
-   ⚠️ A public repo has **no per-file access control** and git history is permanent, so
-   anything moved **was already public** and must be re-thought or rotated, not just deleted
-   — which is the reason this is a real task and not a `git mv`.
-
-- **The dev journal stays public** — design and product decisions only, never where the
-  controls live or what their limits are.
-
 ## Dependency policy (set by Kilian, 2026-08-14)
 
 **Pin every dependency to the latest stable version verified against the registry at pin
@@ -2050,17 +2088,34 @@ opt-out flag.
 
 ## Local development
 
-Two processes. The API on 8000, the SPA on 5173 with Vite proxying `/api` to it:
+Two processes — the API on 8000, the SPA on 5173 with Vite proxying `/api` to it.
+**The commands live in [`README.md`](README.md), *Getting started*.** The rules are here.
 
-```bash
-# terminal 1 — API
-uv run uvicorn server.app:app --port 8000 --reload
+**`dev:api` is what makes "local" mean local, and it is not optional.** `.env`'s
+`DATABASE_URL` is **dev Neon**, so a bare `uv run uvicorn server.app:app` serves *dev* data
+out of a local process — which is backwards (Kilian's rule: local runs against local, dev
+against dev, production against production). The script therefore prefixes uvicorn with
+`DATABASE_URL="${CT_TEST_DATABASE_URL:-}" DATABASE_URL_UNPOOLED=""`, exactly the trick
+`check:server` already uses for pytest. Run the bare uvicorn command only when you *mean* to
+target dev — and remember a seed added in a feature branch does not exist on dev until the
+branch merges and a seed is dispatched, which is why #11a's demo mount showed a refusal at
+sign-off while local Postgres had the row and every test was green.
 
-# terminal 2 — SPA (Vite proxies /api -> 127.0.0.1:8000)
-npm --prefix web run dev
-```
+Three facts make the prefix work, all in `server/settings.py::_load_local_dotenv()`: **only
+`.env` is read** — `.env.local` is a Vite convention and the API never looks at it — **an
+exported variable beats the file** (`override=False`), and the port must be **8000** because
+`web/vite.config.ts` hardcodes the proxy target.
+
+⚠️ **A local database means LOCAL ACCOUNTS ONLY.** Your dev-Neon account does not exist there
+and registration is invite-gated, so a first login needs an invite minted against the local
+URL — `DATABASE_URL="$CT_TEST_DATABASE_URL" uv run python -m server.admin create-invite
+--label local` — or `server/devseed.py`'s ten accounts.
 
 ### Local Postgres for the test suite
+
+**This section is `CT_TEST_DATABASE_URL`'s only explanation** — its value, its home in
+`~/.zshrc`, the never-in-`.env` rule and `conftest.py`'s refusal of a non-local host. Every
+other mention of it in this file is a command or a bare reference.
 
 Native Homebrew **`postgresql@17`** — no Docker. It is **keg-only**, so its binaries live in
 `/opt/homebrew/opt/postgresql@17/bin` and are **not on PATH**; `scripts/local-db.sh` addresses
@@ -2075,34 +2130,77 @@ npm run db:reset   # dropdb --force, createdb, upgrade to head
 npm run check:server   # now RUNS the DB-backed tests instead of skipping them
 ```
 
+⚠️ **The dev database and the test database are the SAME database**, because `npm run dev:api`
+reads `CT_TEST_DATABASE_URL` too. So an account you register to click the app through leaves rows
+behind, and the ~15 tests that assert a **global** row count then fail naming *profile
+validation* — a red that points at the code rather than at the database. `tests/conftest.py`'s
+`_refuse_a_polluted_database` now fails first with the real reason; the fix is `npm run db:reset`
+plus `uv run alembic upgrade head`. CI never sees this: its Postgres is per-run and empty.
+
+⚠️ **That export lives in `~/.zshrc`, which a NON-INTERACTIVE shell does not read.** Run the
+gate from a script, a tool call or an agent's shell and the variable is unset, the Postgres
+suite **silently skips**, and the gate is green for the wrong reason. Prefix it —
+`eval "$(grep -h '^export CT_TEST_DATABASE_URL=' ~/.zshrc)"; export CT_TEST_DATABASE_URL` —
+and then **confirm the skip count is 0**, because a bare "N passed" does not distinguish the
+two outcomes.
+
 The `postgres` role and database name deliberately match CI's `postgres:17-alpine` service, so
 the same URL string is valid in both places and there is nothing to translate. The role is
 created once, by hand; `db:up`/`db:reset` own everything after that.
 
 **The URL lives in `CT_TEST_DATABASE_URL` and nowhere else — never put a database URL in
-`.env`.** `.env` on this machine holds the *production* Neon URL, `server/settings.py` loads it
-for every entrypoint, and that is exactly how a stray `alembic upgrade head` reached
-production's neighbour on 2026-08-18. So `scripts/local-db.sh` sets `DATABASE_URL_UNPOOLED`
-**only** as a prefix on its own `alembic` command, with `DATABASE_URL=""` beside it to stop
-python-dotenv (which runs `override=False`) filling that one in from `.env` — the same trick,
-inverted, that `check:server` uses.
+`.env`.** `.env` on this machine holds the *production* Neon URL and `server/settings.py` loads
+it for every entrypoint, which is how a stray `alembic upgrade head` reached production's
+neighbour on 2026-08-18 (see "Two connection strings"). So `scripts/local-db.sh` sets
+`DATABASE_URL_UNPOOLED` **only** as a prefix on its own `alembic` command, with
+`DATABASE_URL=""` beside it to stop python-dotenv (`override=False`) filling that one in from
+`.env` — the same trick, inverted, that `check:server` uses.
 
-**It refuses a non-local host, with no override.** The check reuses
+**Both `scripts/local-db.sh` and `tests/conftest.py` refuse a non-local host, with no
+override.** The check reuses
 `server.db.is_local_host` so it cannot drift from `LOCAL_DB_HOSTS`, and it is handed the
 **host**, never the URL: a URL bound to an argument or left as a frame local gets rendered in
 a traceback, password included (see `server/db.py::host_of` — that cost 51 printed passwords
 once). `require_migration_host` is **satisfied**, not bypassed — the host is genuinely local,
 and `CT_ALLOW_REMOTE_MIGRATION` is never set outside `.github/workflows/migrate.yml`.
 
+**The behind-head canary in `tests/conftest.py` is TWO lists, and a column-only revision needs
+an entry.** It *skips* rather than fails when the database is reachable but behind head, because
+migrations here are out-of-band behind an approval gate — being told to upgrade is useful, a
+wall of red is not. `_REQUIRED_TABLES` cannot see a revision that adds no table: `0007` adds two
+`exercise` columns and nothing else, the session-scoped `seeded` fixture writes one of them, so
+against a database still at `0006` the table check passed and every DB-backed test **errored out
+of a session-scoped fixture** instead of skipping. `_REQUIRED_COLUMNS` is the fix, on the same
+discipline as the table list: **one canary per revision that adds only columns, and only for a
+column a FIXTURE or a shared helper writes.** A column a single test reads stays out — that test
+fails on its own and reads clearly.
+⚠️ **Recorded honestly: this skip path has never executed in either environment.** It needs a
+reachable database sitting at an older revision, and neither place can produce one — the local
+gate pins `DATABASE_URL` empty so nothing connects at all, and CI runs `alembic upgrade head`
+before pytest and then *fails the build* on any skip. The branch is reasoned, not observed;
+treat a change to it as untested code and construct the state by hand if you need to trust it.
+
 **Three Postgres majors move as one: local `postgresql@17` = CI's `postgres:17-alpine` =
 Neon's major.** Bump one, bump all three in the same PR. A local pass on a different major
 proves nothing about CI, and CI proves nothing about Neon.
 
-### ⚠️ `npm run check` breaks a RUNNING dev server, and every route goes blank
+### ⚠️ A dev server and the gate at the same time can blank every route — trigger UNCONFIRMED
 
-`npm run check` → `npm run build` → **`npm --prefix web ci`**, which reinstalls
-`web/node_modules` underneath a dev server that is still holding its pre-baked optimized deps.
-The next page load dies in `node_modules/.vite/deps/…?v=<hash>` with
+**The symptom, the tells and the fix below are real and were hit on 2026-08-20. The mechanism
+this section used to give is not.** It claimed `npm run check` → `npm run build` →
+`npm --prefix web ci`, reinstalling `web/node_modules` under a running dev server. That chain
+does not exist: `check` → `check:web` + `check:server`, and `check:web`'s `build` step is the
+**web** package's own `tsc -b && vite build`. **Nothing in `check` runs `npm ci`.** Only the
+**root** `build` script is `npm --prefix web ci && npm --prefix web run build`, and `check`
+never calls it. Verified against both `package.json` files, 2026-08-26.
+
+So what actually invalidated the dev server's optimized deps is **not established**. The two
+candidates, neither confirmed: a `vite build` sharing `web/node_modules/.vite` with a running
+dev server, or a separate `npm ci`/`npm install` (the root `build`, or a Vercel-style build run
+by hand) around the same time. **Do not substitute a fresh guess for the old one** — if you
+reproduce it, record what you actually ran.
+
+The symptom: the next page load dies in `node_modules/.vite/deps/…?v=<hash>` with
 `TypeError: Cannot read properties of undefined (reading 'd')` at `createRoot`, and **every**
 route renders blank — including unguarded ones — while the HTML still serves **200** with
 `#root` present.
@@ -2118,9 +2216,9 @@ you just wrote.** Two tells, both cheap:
   branch.** Then nothing about your changes can explain it, and the stack frame pointing into
   `.vite/deps` with a `?v=` hash is the confirmation.
 
-Hit on 2026-08-20. It is a property of running the gate and the dev server at the same time, so
-it will happen again — the gate is deliberately a single command and `npm ci` is deliberately
-clean-install.
+Hit on 2026-08-20, once. Treat "the gate and a dev server running together" as the risk
+surface and stop the dev server before a full gate — that costs nothing and needs no confirmed
+mechanism.
 
 ### `.env` is loaded for you — but only outside Vercel
 
@@ -2199,40 +2297,25 @@ claim otherwise.
 Cost: nothing on a green run, since `npm run build` already runs `tsc -b`. On a **red** run
 every test failure now waits out a full build first, locally as well as in CI.
 
-**The local gate passes with no database, and `check:server` now ENFORCES that rather
-than hoping for it.** `tests/conftest.py` skips the DB-backed tests when `DATABASE_URL` is
-unset, but that is not the same as the gate being database-free: `.env` is loaded for every
-entrypoint, so on a machine with real Neon credentials in it the "local" gate quietly ran
-those tests **against the live dev database** — ~37 s of woken Neon compute on every run,
-and the same leak sent a stray `alembic upgrade head` at production's neighbour on
-2026-08-18. So `check:server` overrides both URLs, and they are **not** symmetrical:
+**The local gate passes with no database, and `check:server` now ENFORCES that rather than
+hoping for it.** `tests/conftest.py` skipping the DB-backed tests when `DATABASE_URL` is unset
+is not the same as the gate being database-free: `.env` is loaded for every entrypoint, so on a
+machine with real Neon credentials in it the "local" gate quietly ran the 102 DB-backed tests
+**against the live dev database** — ~37 s of woken Neon compute per run. So `check:server`
+overrides both URLs, and the two are **deliberately not symmetrical**:
 
 ```jsonc
 DATABASE_URL="${CT_TEST_DATABASE_URL:-}" DATABASE_URL_UNPOOLED=""
 ```
 
-- **Locally**: both empty, the 86 DB-backed tests skip, nothing connects. A skip is visible;
-  a silent connection to someone's real database is not.
-- **Deliberately, against the local Postgres**: export `CT_TEST_DATABASE_URL` and run
-  `npm run db:up` once (see "Local Postgres for the test suite"). That is the only way to opt
-  in, and it cannot happen by accident. The guard in `tests/conftest.py` still refuses any
-  non-local host.
-- **`DATABASE_URL_UNPOOLED` has no opt-in and is pinned EMPTY, on purpose.** It is the
-  *direct* endpoint, its only consumer is Alembic (`migrations/env.py`), and the gate never
-  runs Alembic — so there is nothing for a value to be useful for, and it is precisely the
-  variable that leaked out of `.env` and pointed a stray `alembic upgrade head` at Neon.
-  Giving it `CT_TEST_DATABASE_URL` too would also be wrong on the merits: against Neon the
-  pooled and direct endpoints are genuinely *different* hosts, so one variable cannot stand
-  for both. `direct_database_url()` falls back to the pooled URL when it is unset, which is
-  the documented CI/local-Postgres path, so nothing needs it.
-- **CI**: the `server` job runs `uv run pytest -q` directly with `DATABASE_URL` pointing at
-  its `postgres:17-alpine` service, so it never goes through this script and still runs the
-  full set. **CI is where they always run; locally they run only when `CT_TEST_DATABASE_URL`
-  is exported** — so never weaken them on the assumption that nothing runs them, and never
-  make the gate *require* a database.
-
-Never make the local gate *depend* on a database, and never substitute SQLite to avoid the
-skip. CI is where the migrations and the seed are actually executed.
+- **Locally** both are empty and nothing connects — a skip is visible, a silent connection to
+  someone's real database is not. Opting in means exporting `CT_TEST_DATABASE_URL` and running
+  `npm run db:up` once; see "Local Postgres for the test suite" for both variables' rules and
+  "Two connection strings" for why the direct URL has no opt-in.
+- **CI** runs `uv run pytest -q` directly against its `postgres:17-alpine` service, so it never
+  goes through this script and always runs the full set. **Never weaken a DB-backed test on the
+  assumption that nothing runs it, and never make the gate *require* a database** — and never
+  substitute SQLite to dodge the skip. CI is where the migrations and the seed are executed.
 
 **Batch your edits and run `npm run check` once at the end**, not once per file.
 
@@ -2280,6 +2363,34 @@ check that will never report. Add steps to a job freely; never rename a job.
 mirroring the `matchMedia` convention in `portfolio-shell/src/test/setup.ts`. The
 clock tests need fake timers plus a `performance.now` shim.
 
+### ⚠️ Prose is capped, and an executable claim must not be prose
+
+**The hierarchy, in order. Only reach the next tier when the one above cannot hold the claim:**
+
+1. **Make the wrong thing impossible** — a constraint, a type, `extra="forbid"`, a `Literal`.
+2. **Make it fail loudly** — a guard test, shown to fail before it is trusted.
+3. **Only then prose**, for *why* only, in exactly one place, at the point of use.
+
+**Five caps, enforced by `tests/test_comment_budget.py`:** module docstring **10** ·
+class/function docstring **2** · inline `#`/`//` run **2** · `/* */` block **2** ·
+wire-contract docstring **20** (FastAPI ships those to API consumers, who cannot read the code
+instead). Over-cap is allowed **only** with a row in `tests/comment_budget_allowlist.toml`
+naming what the length buys; that file is the register of exceptions and its `BASELINE_RATCHET`
+may only ever go down.
+
+**After every PR, re-check the `CLAUDE.md` section covering what you touched** — confirm it
+still holds, or update it in the same PR. `.github/pull_request_template.md` carries the
+receipt, and `tests/test_claude_md_claims.py` catches only the mechanical half (paths, scripts,
+revisions, headings, env vars), never a reason that has gone stale.
+
+**What prose is still irreplaceable for, so this does not get over-applied:** *why* a choice
+beat a plausible-looking alternative · what was tried and failed · facts about the world outside
+this repo (a library's source, a platform's behaviour, a vendor's docs). The canonical case is
+the backref-cascade trap under "Persisting a plan": nothing in the code, the schema or 581
+passing tests reveals that the nicer-reading form silently drops ~2,400 rows and returns **201**.
+**A rule with no reason attached gets simplified away by the next well-meaning change** — that is
+the premise of this whole file, and it is the boundary of the rule above, not an exception to it.
+
 ## Testing policy — deliberately not "test everything"
 
 **Kilian's standing rule across all his projects.** Coverage is not the target; a test
@@ -2303,7 +2414,19 @@ it breaks on every refactor and catches nothing.
   before it is written.
 - Project-wide invariants that silently rot — the routing contract
   (`tests/test_routing.py`), the version wiring (`tests/test_version.py`), the
-  route-enumeration auth and demo-mode tests.
+  route-enumeration auth and demo-mode tests, and **`/api/library`'s pinned field list**
+  (`tests/test_library_contract.py`), whose failure mode is invisible to every behavioural
+  test *by construction*: a shared-cache leak happens between two requests in an intermediary
+  this repo does not run, so a literal list going red on the diff is the only guard available.
+  **Three more of the same shape guard the PROSE**, which nothing else in the gate reads:
+  `tests/test_comment_budget.py` (no comment outgrows its tier's cap without a registered
+  reason), `tests/test_claude_md_claims.py` (every path, script, revision, heading and env
+  var `CLAUDE.md` names still resolves, and the index resolves in both directions), and
+  `web/src/api/libraryCitations.test.ts` (every construct our comments quote out of the
+  installed TanStack source is still there — it lives in the WEB suite because CI's `server`
+  job installs no web dependencies, where it would pass vacuously). All three are named here
+  because a guard nobody lists is a guard the next reader deletes — see "⚠️ Prose is capped,
+  and an executable claim must not be prose" for what none of them can catch.
 
 **SKIP tests for:**
 
@@ -2538,7 +2661,7 @@ branching, and unlike the `50% - 50vw` idiom it cannot produce a horizontal scro
   that cannot inherit `currentColor`. Every icon is `aria-hidden` + `focusable="false"` and has a
   text label beside it; icon-only controls are deferred to the session player, per the same
   reasoning as the update bar's "Later" button.
-- **`src/publicUrl.ts` is the image half of the `api/client.ts` bug.** A bare
+- **`src/publicUrl.ts` is the image half of the `web/src/api/client.ts` bug.** A bare
   `src="/landing/x.avif"` resolves against the DOCUMENT, which in the federated mount is
   kilianmc.com — every photograph 404s there while working perfectly standalone. So the origin
   comes from `import.meta.url`, exactly as `API_BASE` does. Vite-`import`ed assets would be
@@ -2776,10 +2899,25 @@ weakness**, the editor became sections rather than a second wizard, and there is
   **What this PR did and did not do:** the step is out of onboarding, `equipment_ids` is out of
   both request and response models, and `equipment_reviewed_at` is retired. **`user_equipment`,
   every `exercise_equipment` requirement and the whole vocabulary are untouched.** Whether
-  `user_equipment` becomes a record of what is LACKED, or a second concept beside it, is
-  **PR #10's decision** — the issue says so explicitly, because the alternatives lookup is what
-  gives the flag its meaning, and choosing now would be choosing without the thing that
-  decides it. Re-adding a write path is that PR's job, with the decision attached.
+  `user_equipment` becomes a record of what is LACKED, or a second concept beside it, was
+  open until #11a and is **now decided — see the next paragraph**. **PR #10 decided only where
+  it CANNOT live: not on `GET /api/library`.** That response is cached for every user at once
+  in a shared CDN, so a "this user lacks it" field there is a cross-account leak by
+  construction — see "⚠️ `/api/library` is USER-INDEPENDENT, permanently". Whatever shape the
+  storage takes, the read path is a separate endpoint that is never CDN-cached. Re-adding a
+  write path is a later PR's job, with the decision attached.
+  **⚠️ DECIDED (Kilian, 2026-08-24): the "I don't have access to this" flag is UNIFORM across
+  all 17 equipment rows, outdoor ones included — only the wording differs.** His words: *"a
+  user with no 'outdoor' access can also uncheck it, the same as a user with no hangboard can
+  uncheck an exercise. The only difference is the text we show, I would suggest using 'I don't
+  have access to this' or something similar."* So `user_equipment` becomes a record of what is
+  LACKED: one flag, one storage shape, one read path, no outdoor special case — and still
+  **never on `GET /api/library`**, which is the one part of this that was already settled.
+  **PR #11a assumes the full 17-row vocabulary for every user**, because every real user has
+  zero `user_equipment` rows since #54 deleted the step, so reading that table would thin every
+  plan to its bodyweight options. It is behind one named constant —
+  **`_ASSUMED_EQUIPMENT_KEYS` in `server/plans/routes.py`** — so the day the flag lands there is
+  one line to change.
   The three bullets that follow are the history of the step that was, and every one of them is
   still worth reading before designing its replacement.
 - **The equipment vocabulary covers FACILITIES, GEAR AND ROCK — it is not a gear inventory**
@@ -2796,13 +2934,37 @@ weakness**, the editor became sections rather than a second wizard, and there is
 - **⚠️ There is deliberately no `bodyweight` equipment row, and two obligations replace it.**
   A checkbox for having a body is noise, and a user who forgot to tick it would be back in
   the "empty set means nothing" hole. Instead: **an exercise with no `exercise_equipment`
-  rows requires nothing and is always prescribable**, which makes two things owed —
-  **PR #10** must seed enough such exercises (bodyweight strength, core, mobility, prehab)
-  that a profile with zero equipment still gets a real plan, and must carry any per-exercise
-  substitution hints ("no dumbbell? a loaded backpack") on the exercise row next to the
-  movement they apply to, not in a vocabulary; **PR #11** must never refuse to generate for
-  lack of equipment. `tests/test_equipment_vocabulary.py` guards the no-`bodyweight`-row half
-  and the outdoor-coverage half.
+  rows requires nothing and is always prescribable**, which made two things owed. Both are now
+  settled, and neither landed as written.
+  **PR #10 paid the first, NARROWED** (Kilian, 2026-08-23). Every *aspect* has a gearless
+  option, but coverage is not per cell: a modern climbing gym has the full equipment set and
+  gym access is the expected case, so the library spends its breadth on gear rather than on a
+  bodyweight variant of every (phase, aspect) pair. **17 cells have no gearless candidate**,
+  enumerated in `CELLS_WITH_NO_GEARLESS_OPTION` (`server/domain/exercises.py`) behind a guard
+  that fails in **both** directions — so the list can rot into neither an oversight nor a
+  stale exemption for a cell somebody has since filled. Substitution hints ("no dumbbell? a
+  loaded backpack") did land where required: `exercise.substitution_hint`, next to the
+  movement, not in a vocabulary.
+  **The second is SUPERSEDED, and #11a has now answered it.** "PR #11 must never refuse to
+  generate for lack of equipment" was withdrawn (Kilian, 2026-08-23): the generator **may**
+  refuse, but it must **say so and name the missing equipment**. **#11a took the
+  generate-and-name-the-shortfall branch and never refuses for equipment** — every session is
+  built from what the climber has, and each thin or empty slot carries a `Shortfall` naming the
+  gear that would fill it (`selection.unlock_options` / `shortfall_message`). **Equipment
+  refusal is therefore not a thing to "restore"**: none of the six `RefusalReason` members is
+  about gear. **Issue #61 is half-shipped** — the naming exists, the refusing deliberately does
+  not. The constraint still stands: **it must not become the deleted onboarding equipment step
+  behind a gate** — re-read the hard dead-end bullet above before designing it.
+  ⚠️ **The invariant that decision rests on is MEASURED, and two phases have ZERO margin.**
+  Every phase has at least `BLOCKS_PER_SESSION` (3) aspects a gearless climber can train — but
+  `power_endurance` and `performance` have **exactly 3**. One content edit retiring a gearless
+  exercise in either phase silently takes those sessions to two blocks, which is why
+  `tests/test_planner_gearless.py` is parametrised per phase. And read the claim the right way:
+  **"gearless, injury-free" means the CLIMBER has no open injuries, not that the exercise
+  carries no contraindication.** Under the second reading the claim is *false* — 0 fillable
+  aspects in those same two phases — and somebody will eventually read it that way.
+  `tests/test_equipment_vocabulary.py` still guards the no-`bodyweight`-row half and the
+  outdoor-coverage half.
 - **⚠️ The improvised-load copy on that step has a SAFETY boundary that is not optional.**
   It says most exercises that add weight work with whatever is to hand — a loaded backpack,
   water bottles, a rock — and then says finger-strength protocols need a real edge and are
@@ -2982,6 +3144,14 @@ weakness**, the editor became sections rather than a second wizard, and there is
   rounds of bugs here were all "I reasoned about the semantics". State the invariant, read the
   source, write the failing test and record the measured numbers, and cite what you read in
   any comment that asserts library behaviour.
+  ⚠️ **Cite the CONSTRUCT, never a line number.** Line numbers rot on every dependency bump
+  with nothing to catch it — #73's bump falsified six of nine citations in `plan/api.ts` and
+  `profile/api.ts` while the whole suite stayed green. So a citation quotes the code it refers
+  to, and `web/src/api/libraryCitations.test.ts` asserts every quoted construct is still in the
+  installed module (and, both ways, that a newly quoted one has a row). It lives in the WEB
+  suite because it reads `web/node_modules`, which CI's `server` job does not install — a
+  pytest guard there would pass locally and be vacuous in CI. What it cannot catch: a construct
+  that still exists does not prove the logic around it still behaves the same way.
 - **The "already complete" redirect reads an ENTRY SNAPSHOT, not the live profile.**
   Finishing the last step updates the cache before `navigate` runs, so a live check would
   race `/dashboard` against `<Navigate to="/profile">`. The snapshot is taken in a `useState`
@@ -3050,7 +3220,7 @@ weakness**, the editor became sections rather than a second wizard, and there is
 - **`GET /api/vocabulary` carries an `enums` object, and its justification is the TYPE
   CONTRACT — not a runtime consumer.** Five of the six closed vocabularies are referenced by
   no profile field, so without this object they never reach the OpenAPI schema, and retiring
-  the hand-written `api/vocabularies.ts` would have silently dropped five of
+  the hand-written `web/src/api/vocabularies.ts` would have silently dropped five of
   `test_vocabulary_contract.py`'s six assertions instead of re-pointing them. **Nothing in
   `web/src` reads `.enums` today** — an earlier draft of this section and of the module
   docstring claimed the pickers did, which was false; they iterate the real arrays
@@ -3073,6 +3243,146 @@ weakness**, the editor became sections rather than a second wizard, and there is
   screen, in its own Account section, because #54 asked for it — but it belongs to no step
   either, so the editor composes it separately and it can never move the completion bar.)
 
+## The plan generator (PR #11a — preview only)
+
+`server/domain/planner/` turns a profile into a whole plan tree and `POST /api/plans/preview`
+returns it. **#11a writes no row** — persistence is #11b. Module docstrings carry the detail;
+this is the map and the traps.
+
+- **Module layout.** `contract.py` (`GENERATOR_VERSION`, `PlannerInput`, `RefusalReason`,
+  `CannotPlanError`, `REFUSAL_MESSAGES`) · `periodisation.py` (gap → weeks, phase order,
+  mesocycle spans) · `schedule.py` (weekday mask, date maths) · `selection.py` (`candidates`,
+  `prescribable`, `ASPECT_EMPHASIS`, the shortfall machinery) · `generate.py` (`generate`) ·
+  `blueprint.py` (the frozen output tree) · `fingerprint.py` (`library_digest`,
+  `generator_input`) · `__init__.py`, **a re-export facade that defines nothing** — the
+  definitions live in `contract.py` because `schedule.py` has to raise a refusal, and a
+  definition in the facade the facade re-exports is a cycle. Purity is enforced by
+  `server/domain/.ruff.toml`; see the purity bullet under "Session player invariants".
+- **`week_count` comes from the grade-gap ORDINAL, and the table is literal.** A block is
+  `LOADING_WEEKS 3 + UNLOAD_WEEKS 1`, so weeks are `4 × blocks`:
+
+  | gap | ≤0 | 1 | 2 | 3 | 4 | 5 | ≥6 |
+  | --- | --- | --- | --- | --- | --- | --- | --- |
+  | blocks | 2 | 3 | 4 | 5 | 6 | 7 | 8 |
+  | weeks | 8 | 12 | 16 | 20 | 24 | 28 | 32 |
+
+  ⚠️ The "your target is more than one plan away" note fires at **`gap > 6`, not `>=`**
+  (Kilian, 2026-08-24): at exactly 6 the formula asks for `MAX_BLOCKS` and gets it, so nothing
+  was truncated and telling the user their plan was capped is untrue. **The approved plan
+  document says `>= 6` and is wrong on this point** — do not restore it to match.
+- **Phases are BLOCKS, and deload and taper are real mesocycles.** Each block is its phase's
+  loading weeks plus one `deload` week, and the plan ends on a `taper`. Both read **their own
+  `prescription_template` rows** and are **never a multiplier** over the previous phase's
+  numbers — a deload is a different session, not a quieter one. `is_deload` is exactly
+  `phase is Phase.DELOAD`; the taper is identified by its phase, never by that flag.
+- **⚠️ The weekday spread maximises the ASCENDING-SORTED GAP PROFILE, lexicographically — and
+  the obvious rule is wrong.** "The n-subset maximising the **minimum circular gap**,
+  tie-broken lexicographically" is *undefined past 3 sessions a week*: with 4 of 7 days some
+  pair is always adjacent, so every subset ties at a minimum gap of 1 and the lexicographic
+  tie-break returns **Mon/Tue/Wed/Thu** — four on, three off, the exact opposite of the "it
+  spreads rest" invariant the rule exists for. Every gap profile for a given `n` sums to 7, so
+  "most even profile" *is* "most even", it agrees with the minimum-gap rule everywhere that
+  rule actually decides (Mon–Fri/2 → Mon/Thu, full week/3 → Mon/Wed/Fri) and it decides where
+  that rule does not (full week/4 → Mon/Tue/Thu/Sat). Pinned as literals in
+  `tests/test_planner_schedule.py`. The chosen set is the **same every week**; only the
+  aspect-emphasis rotation varies week to week.
+- **Determinism rests on THREE inputs, and the third is the one nobody would guess.**
+  `server/models.py:874-882` promises that the same `generator_version` + `generator_input`
+  reproduce the same tree. That is false with two inputs, because **the exercise library is an
+  input too**. So `generator_input` carries **`library_digest`**: a sha256 over `EXERCISES`
+  canonicalised through `dataclasses.fields()`, so a new spec field joins it automatically and
+  a *reorder* moves it (authored order is content `selection` reads). **Without the digest that
+  promise breaks the first time a content edit ships, silently.** Deliberately not cached —
+  `functools.cache` would stop a guard test substituting a library.
+- **`POST /api/plans/preview` is `private, no-store`, and that is a security decision, not a
+  cache-tuning one.** The body is per-user and **names the user's open injuries**, so it must
+  never reach the shared CDN-cached path `/api/library` uses — see "⚠️ `/api/library` is
+  USER-INDEPENDENT, permanently" for what a shared cache does with a user-scoped body. It is
+  also the one endpoint where a query-cache persister would be a real data leak rather than a
+  policy breach.
+- **It is the second entry in `DEMO_WRITE_EXEMPT_ROUTES`, and all three demo mechanisms still
+  hold.** It is a `POST` only because the request carries a body: it issues **no `INSERT` and
+  no `UPDATE`** (asserted by a row-count test), the deny-by-default middleware exempts exactly
+  this route and nothing else, and `SET LOCAL transaction_read_only` is still on for a demo
+  principal — so the database would refuse a write even if the code attempted one. Without the
+  entry the demo mount cannot see a plan at all.
+- **The measured payload**, recorded the way `server/library/routes.py:20-27` records the
+  library's, because payload size is the number to watch on both:
+
+  | case | weeks | sessions | prescribed sets | raw | gzip -6 |
+  | --- | --- | --- | --- | --- | --- |
+  | worst (gap ≥7, 7 sessions/wk, full mask, all 17 equipment) | 32 | 224 | 2,421 | 583.2 KiB | 17.5 KiB |
+  | the demo profile (6a→6b, 3/wk) | 16 | 48 | 507 | 124.6 KiB | 4.9 KiB |
+
+  ⚠️ **Even the demo's 16-week plan is larger raw than the entire 85-exercise library** (~90
+  KB); the worst case is ~6.5× it. The plan document's estimate (~1,150 sets, 170–250 KB) was
+  low by 2–3×. What reaches the wire is the compressed figure — Vercel gzips by default — so
+  the transfer is small and the real cost is `JSON.parse` and the client object graph.
+  ⚠️ **Two profiles that look extreme are not the worst case**: zero equipment is *smaller*
+  (fewer prescribable candidates → fewer sets), and a bigger gap is capped at 32 weeks. If it
+  ever bites, the lever is trimming sets beyond the first N weeks, not splitting the endpoint.
+
+## Persisting a plan (PR #11b — persist == activate)
+
+`POST /api/plans` regenerates the tree from the profile and inserts it **already activated**,
+standing the previous plan down in the same transaction. `GET /api/plans/active` reads it back;
+`POST /api/plans/{id}/abandon` stands one down. Module docstrings carry the detail.
+
+- **There is no "activate" endpoint and there will not be one.** A plan is created activated,
+  so `activated_at` is never `NULL` on a persisted row and no state machine exists to get
+  wrong. Abandon marks; it never deletes — `activity.planned_session_id` is the only link from
+  a logged activity to the plan it satisfied.
+- **One active plan per user is enforced TWICE, and neither half is optional.**
+  `uq_plan_one_active_per_user` (partial unique index, `0008`) can only *refuse* a second
+  active row — it cannot choose which one survives — so `create_plan` stands the old plan down
+  in the **same transaction**, and **before** the insert, because the index is not deferrable
+  and is checked per statement. What the index buys is that a concurrent double-tap is a
+  **409** instead of two active plans, and 409 is a legitimate answer the client recovers from
+  by reading. ⚠️ `_ACTIVE_STATE` in `server/plans/routes.py` is the app's one definition of
+  "active" and is kept character-identical to the index predicate;
+  `test_the_ACTIVE_CRITERION_and_the_INDEX_PREDICATE_cannot_drift` reads the predicate back out
+  of `pg_indexes` and compares them.
+- **`generator_caveats` is COORDINATE-ADDRESSED, not positional, and it DEGRADES rather than
+  500ing.** The generator's commentary is not recoverable from the tree (a block's shortfall
+  names the aspect it *wanted*), so it is stored — keyed by `(week_no, weekday, order_index)`
+  rather than by list position, because a later generator emitting a different number of
+  sessions would otherwise silently reattach caveats to the wrong ones. A shape
+  `_StoredCaveats` does not recognise reads as "no caveats", so no schema change can make an
+  already-persisted plan unopenable.
+- **A preview and a persisted plan are ONE response shape**, so the client needs one renderer;
+  a second renderer is where the two drift. `PlanOut` serves all four routes and the only
+  difference is that a preview is not a row, so every `id` — plus `exercise_id`, `status` and
+  `activated_at` — is `null`. ⚠️ `aspect_key` is the one field read **live** from the exercise
+  rather than snapshotted, so it can drift; an accepted asymmetry, recorded on
+  `models.py::SessionBlock`.
+- **⚠️ THE BACKREF-CASCADE TRAP, and only a six-table row count catches it.** Round 1
+  committed the `plan` row and silently dropped all ~2,400 descendants: HTTP **201**, one
+  `SAWarning`, and nothing in the schema objected — **nothing requires a plan to have a
+  mesocycle.** Appending through `plan.mesocycles` is what makes the unit-of-work cascade the
+  whole tree; building children with a bare `mesocycle_id` does not. So the tests count rows in
+  all six tables *and* count the rows **reachable from the plan by its foreign keys**, which is
+  the assertion a wrongly-parented row fails.
+- **Neither statement count is per-row.** The read is six `SELECT`s (one per level via
+  `selectinload`) and the write is ~6 statements per level, because Postgres has
+  `use_insertmanyvalues` with a 1000-row page. `server/plans/routes.py::_insert_plan_tree` cites
+  the SQLAlchemy 2.0.52 source line by line — the ORM-graph-versus-explicit-insert decision
+  rests on it.
+- **⚠️ An `IntegrityError` is never re-raised.** `str(IntegrityError)` carries the statement
+  *and its bound parameters*, which on the `plan` INSERT is `generator_input` — the climber's
+  open-injury keys — in the function log. The handler logs the constraint name plus plan-level
+  metadata and raises a 500 with `from None`. Input minimisation applies to the **log**, not
+  only to the response.
+- **⚠️ Size against the PERSISTED payload, not the preview.** Raw size is identical for the same
+  tree (a filled `id` costs about what a `null` did) but **compressed size nearly doubles**,
+  because thousands of repeated `null`s compress away and distinct integers do not. Figures and
+  the sweep behind them are in PR #11b's notes; note they **do not reproduce #11a's 2,421 sets /
+  583.2 KiB** worst case, which is stale.
+- **`cache-control` is set by the routes AND defaulted by the middleware.** All three are
+  `private, no-store` — the bodies name the climber's open injuries — and FastAPI discards a
+  route's injected header whenever an `HTTPException` propagates, so `SecurityHeadersMiddleware`
+  fills it in **only when absent**. ⚠️ Absent-means-uncacheable, never a blanket: overwriting
+  `GET /api/library`'s `public, s-maxage=31536000, immutable` would be a real regression.
+
 ## Session player invariants (PR #15a onward)
 
 Recorded here because each is a specific bug that a naive implementation ships:
@@ -3091,10 +3401,17 @@ Recorded here because each is a specific bug that a naive implementation ships:
   on `visibilitychange`. The **iOS hardware silent switch mutes Web Audio with no
   workaround**, hence a "Test sound" button before the session starts.
 - The plan generator (`server/domain/planner/`) is a **pure module with no DB
-  access** — no clock, no RNG, no I/O; dates are passed in. To be enforced by a ruff
-  banned-import rule, which lands with the planner itself. That purity is what makes
-  `POST /api/plans/preview` (blueprint without writing) possible, which is what makes the
-  demo mount interactive.
+  access** — no clock, no RNG, no I/O; dates are passed in. **Enforced** by the `TID251`
+  banned-import rule in **`server/domain/.ruff.toml`** (`sqlalchemy`, `server.db`,
+  `server.models`, `random`, `secrets`, `time`, `datetime.datetime.now`,
+  `datetime.date.today` — the last two as *attribute accesses*, so importing `date`
+  legitimately and then calling `.today()` is still caught). ⚠️ **Ruff has no per-directory
+  rule section**, so the scoping is hierarchical config discovery: a nested `.ruff.toml` that
+  `extend`s the root, picked up by a plain `ruff check .` with no `--config`. A global ban plus
+  `per-file-ignores` was **rejected** — it inverts a guard into a lint that fires on legitimate
+  code in every other package and gets "fixed" by widening a list. That purity is what makes
+  `POST /api/plans/preview` (blueprint without writing) possible, which is what makes the demo
+  mount interactive — see "The plan generator".
 
 ### Screen Wake Lock — a user-owned TOGGLE, and a progressive enhancement
 

@@ -1,20 +1,12 @@
 """`server/devseed.py` must never run where its output, or its rows, would not belong.
-
-The module prints ten working passwords to stdout and writes ten name-derived accounts to
-whatever `DATABASE_URL` points at. Both are "must never happen" invariants that no feature
-test would ever exercise, which is CLAUDE.md's "project-wide invariant that silently rots"
-bullet.
-
-**Every case here passes an explicit mapping** rather than monkeypatching the real
-environment, with one exception that only *sets* a variable. That is deliberate: an earlier
-version of this file built its negative control by deleting `CI`, `GITHUB_ACTIONS`, `VERCEL`
-and `VERCEL_ENV` — harmless while it only called the predicate, and a live grenade the moment
-someone extended it to call `main()` inside a CI process, which would then print ten passwords
-into a public Actions log. A test must not disarm the guard it is testing.
-
-**No database here.** The guards have to fire before anything connects, and asserting that
-under a fixture that needs Postgres would mean it only ran in CI — the one place the guard is
-meant to stop the module dead.
+The module prints ten working passwords to stdout and writes ten name-derived accounts to whatever
+`DATABASE_URL` points at. Both are "must never happen" invariants no feature test would exercise.
+⚠️ **Every case passes an explicit mapping** rather than monkeypatching the real environment (one
+exception only *sets* a variable). An earlier version built its negative control by deleting `CI`,
+`GITHUB_ACTIONS`, `VERCEL` and `VERCEL_ENV` — a live grenade the moment someone extended it to call
+`main()` inside CI, printing ten passwords into a public Actions log. **A test must not disarm the
+guard it is testing.** No database: the guards fire before anything connects, and a Postgres
+fixture would confine this to CI, the one place it must stop the module dead.
 """
 
 from typing import cast

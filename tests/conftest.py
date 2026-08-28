@@ -1,55 +1,29 @@
 """Shared fixtures, and the rule for database-backed tests.
-
-**Tests that need Postgres SKIP when `DATABASE_URL` is unset.** `npm run check` must stay
-green on a clone with no database, so skipping is the default. To actually run them locally,
-export `CT_TEST_DATABASE_URL` and `npm run db:up` — native `postgresql@17`, no Docker; see
-CLAUDE.md, "Local Postgres for the test suite". CI always runs them, against a service
-container it has brought to head with `alembic upgrade head`.
-
-**SQLite is NOT an option here** and must never be introduced as a stand-in. The schema
-depends on native enums, composite foreign keys, `GENERATED ... STORED`, GIN expression
-indexes and window functions — a SQLite run would pass while proving nothing, which is
-worse than a skip because a skip is visible.
-
-⚠️ **The database host is checked STRUCTURALLY, and that is not paranoia.** Until
-2026-08-21 the only thing keeping this suite off the production Neon database was an
-env-var assignment inside a shell string in `package.json` — `npm run check:server` sets
-`DATABASE_URL="${CT_TEST_DATABASE_URL:-}"`, and running plain `uv run pytest` instead picks
-up the real `DATABASE_URL` from `.env` and connects. That was survivable only by accident:
-the revision check below happened to fail first because production was still at `0003`.
-**The moment `0004` is applied to production, that accident stops protecting anything** —
-the `seeded` fixture calls `seed_reference_data` inside `session_scope()`, which
-**commits**, so a stray `uv run pytest` would write to production and (per the seed's own
-docstring) force the demo account's `password_hash` back to NULL. `server.db.require_local_host`
-is the fix, and it is a structural one: an npm script is a convention, and this repo's rule
-is that a data-loss guard must not be a convention.
-
-⚠️ **The URL is resolved to a HOST at the boundary, and only the host is passed on.** The
-first version of this guard took the URL as a parameter, and pytest renders every frame's
-arguments — so one failing run printed the production password **51 times**, once per
-dependent test, while the guard's own docstring claimed it never would. The message was
-clean; the traceback was not. `server/db.py::host_of` carries the full story and
-`tests/test_db_guards.py` pins it.
-
-Transaction handling per test: the fixture opens a connection, begins a transaction the
-session joins as a SAVEPOINT, and rolls the whole thing back afterwards. So tests see
-the seeded reference data, can write freely, and leave nothing behind — and the seed
-runs once per session rather than once per test.
-
-`AUTH_SECRET` is injected for the whole run by an autouse fixture, so the *pure* auth
-tests (JWT shapes, the public-route table) execute in the local gate with no database
-and no local configuration.
+**Tests needing Postgres SKIP when `DATABASE_URL` is unset**, so `npm run check` stays green on
+a clone with no database; export `CT_TEST_DATABASE_URL` and `npm run db:up` to run them. CI
+always runs them. **SQLite is NOT an option and must never be introduced as a stand-in** — the
+schema needs native enums, composite FKs, `GENERATED ... STORED`, GIN expression indexes and
+window functions, so a SQLite run would pass while proving nothing, which is worse than a
+visible skip. ⚠️ **The database host is checked STRUCTURALLY** (`server.db.require_local_host`):
+an npm script setting `DATABASE_URL=""` is a convention, and a plain `uv run pytest` picks the
+real URL out of `.env` — the `seeded` fixture **commits**, so that would write to production and
+force the demo account's `password_hash` back to NULL. ⚠️ **Only the HOST is passed on, never
+the URL**: pytest renders every frame's arguments, and one failing run printed the production
+password 51 times. Per test: a connection, a transaction the session joins as a SAVEPOINT, and
+a rollback — so tests write freely and leave nothing behind. `AUTH_SECRET` is autouse, so the
+pure auth tests run in the local gate with no database and no local configuration.
 """
 
 from collections.abc import Iterator
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import Engine, inspect
+from sqlalchemy import Engine, func, inspect, select
 from sqlalchemy.orm import Session
 
 from server.app import app
 from server.auth import invites
+from server.contentseed import seed_exercise_library
 from server.db import (
     get_engine,
     get_session,
@@ -58,6 +32,7 @@ from server.db import (
     require_local_host,
     session_scope,
 )
+from server.models import AppUser
 from server.seed import seed_reference_data
 from server.settings import AUTH_SECRET_ENV, POOLED_URL_ENV, pooled_database_url
 
@@ -104,6 +79,32 @@ _REQUIRED_TABLES = {
     "journal_entry": "0004",
 }
 
+# ⚠️ **Column granularity, because the list above cannot see a revision that adds no
+# table.** `0007` adds two columns to `exercise` and nothing else, and the session-scoped
+# `seeded` fixture writes one of them — so against a database still at `0006` the
+# table check passed, the fixture raised `UndefinedColumn`, and every DB-backed test
+# ERRORED out of a session-scoped fixture instead of skipping. That is precisely the
+# failure the skip exists to prevent: migrations here run out-of-band behind an approval
+# gate, so a developer whose `CT_TEST_DATABASE_URL` points at an un-upgraded database
+# should be told to upgrade, not handed a wall of red.
+#
+# Same discipline as the table list: **one canary per revision that adds only columns**,
+# not an inventory of every column the suite touches. Add an entry when a revision adds a
+# column that a FIXTURE or a widely-used helper writes — a column only one test reads can
+# stay out, because that test fails on its own and reads clearly.
+_REQUIRED_COLUMNS: dict[tuple[str, str], str] = {
+    # Both written by `seed_exercise_library` on every run of the `seeded` fixture.
+    ("exercise", "substitution_hint"): "0007",
+    ("exercise", "retired_at"): "0007",
+    # ⚠️ Written by no fixture — a judgement call against the rule above, and the reason is
+    # blast radius rather than reach. `POST /api/plans` writes both columns on every call,
+    # and #11b's test suite exercises that endpoint from a dozen tests plus a shared
+    # persist helper; against a database still at `0007` each one would raise
+    # `UndefinedColumn` from inside the handler, which is the wall of red this skip exists
+    # to replace. One canary per revision, so `plan` stands in for `session_block` too.
+    ("plan", "current_grade_id"): "0008",
+}
+
 # Long enough to clear the 32-character floor, and constructed by repetition so it has
 # almost no entropy — gitleaks scans this repo's full history and a random-looking
 # string next to the word "secret" is exactly what its generic rule looks for.
@@ -145,24 +146,67 @@ def engine() -> Engine:
     )
 
     db_engine = get_engine()
-    tables = set(inspect(db_engine).get_table_names())
-    missing = sorted(set(_REQUIRED_TABLES) - tables)
+    inspector = inspect(db_engine)
+    tables = set(inspector.get_table_names())
+    missing = {
+        table: revision for table, revision in _REQUIRED_TABLES.items() if table not in tables
+    }
+    if not missing:
+        # Only worth asking once the tables are all there: `get_columns` on a table that
+        # does not exist raises rather than returning nothing, and the table-level answer
+        # is the more useful message anyway.
+        present = {
+            table: {column["name"] for column in inspector.get_columns(table)}
+            for table in {table for table, _ in _REQUIRED_COLUMNS}
+        }
+        missing = {
+            f"{table}.{column}": revision
+            for (table, column), revision in _REQUIRED_COLUMNS.items()
+            if column not in present[table]
+        }
     if missing:
-        revisions = sorted({_REQUIRED_TABLES[table] for table in missing})
         pytest.skip(
-            f"database is reachable but not migrated to head: missing {missing}, which "
-            f"revision(s) {revisions} create. Run `uv run alembic upgrade head` locally, "
-            f"or dispatch `migrate.yml` — migrations here are out-of-band behind an "
-            f"approval gate, so this is a skip rather than a failure."
+            f"database is reachable but not migrated to head: missing "
+            f"{sorted(missing)}, which revision(s) {sorted(set(missing.values()))} create. "
+            f"Run `uv run alembic upgrade head` locally, or dispatch `migrate.yml` — "
+            f"migrations here are out-of-band behind an approval gate, so this is a skip "
+            f"rather than a failure."
         )
     return db_engine
 
 
+def _refuse_a_polluted_database(session: Session) -> None:
+    """Fail loudly when the database carries accounts no test created.
+
+    `npm run dev:api` reads `CT_TEST_DATABASE_URL`, so the database you click the app
+    against IS the one the suite runs on. One hand-made account leaves rows behind, and the
+    tests that assert a GLOBAL row count then fail naming *profile validation* — a red
+    pointing at the code instead of at the database. CI is unaffected; its Postgres is
+    per-run and empty.
+    """
+    stray = session.scalar(select(func.count()).select_from(AppUser).where(~AppUser.is_demo))
+    if stray:
+        raise RuntimeError(
+            f"{stray} non-demo app_user row(s) present before seeding. This database has "
+            f"accounts the suite did not create — most likely from clicking through "
+            f"`npm run dev:api`. Tests asserting global row counts would fail for the wrong "
+            f"reason. Run `npm run db:reset` then `uv run alembic upgrade head`."
+        )
+
+
 @pytest.fixture(scope="session")
 def seeded(engine: Engine) -> Engine:
-    """Reference data, seeded once per test session from the production seed module."""
+    """Reference data AND the exercise library, from the two production seed modules.
+
+    Both, in production's order: `server/contentseed.py` resolves aspect, equipment and
+    injury *keys* to ids, so it needs the vocabularies to exist first. Same argument as the
+    fixture itself — a test fixture that hand-wrote its own exercises would be testing a
+    library production never has.
+    """
     with session_scope() as session:
+        _refuse_a_polluted_database(session)
         seed_reference_data(session)
+        seed_exercise_library(session)
     return engine
 
 

@@ -1,0 +1,67 @@
+// The exercise-library browse screen. Four small classes, no new tokens, no new colours.
+//
+// It is a content sanity-check surface rather than a designed one: a plain list grouped by
+// climbing aspect, one `&__card` per exercise, legible on a phone and boring on purpose. Every
+// value below is an existing spacing/type token and every colour is `--ct-fg`/`--ct-fg-muted`
+// on `--ct-surface-1`, a pair `contrast.test.ts` already covers — so its table is unchanged.
+//
+// No `@container` and no `@media`: nothing here has a width-dependent right answer. A long
+// reference list wants one column at every size, in both mounts.
+@mixin styles {
+  // A vertical run of cards with no bullets. It carries the gap BELOW the group as well as the
+  // one between the cards, which is why the `<section>` wrapping each aspect needs no class.
+  &__stack {
+    display: flex;
+    flex-direction: column;
+    gap: var(--ct-space-3);
+    margin: 0 0 var(--ct-space-6);
+    padding: 0;
+    list-style: none;
+  }
+
+  // The badge row under an exercise name: protocol kind, plus the discipline when the exercise
+  // has one. Tighter than `&__actions`, which is sized for tappable buttons.
+  &__tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--ct-space-2);
+  }
+
+  // Label/value pairs — equipment, contraindications, substitution. One column: the values are
+  // comma-joined name lists that wrap, and a fixed label column would squeeze them on a phone.
+  &__facts {
+    display: grid;
+    gap: 0;
+    margin: 0;
+    font-size: var(--ct-text-sm);
+
+    dt {
+      color: var(--ct-fg-muted);
+    }
+
+    dd {
+      margin: 0 0 var(--ct-space-2);
+    }
+
+    > :last-child {
+      margin-block-end: 0;
+    }
+  }
+
+  // One line per phase prescription. `strong` is the phase; the terms after it are the
+  // dot-separated run `library/browse.ts` assembles, with the null terms already dropped.
+  &__terms {
+    display: flex;
+    flex-direction: column;
+    gap: var(--ct-space-1);
+    margin: 0;
+    padding: 0;
+    color: var(--ct-fg-muted);
+    font-size: var(--ct-text-sm);
+    list-style: none;
+
+    strong {
+      color: var(--ct-fg);
+    }
+  }
+}

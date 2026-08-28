@@ -1,0 +1,26 @@
+# The purity rule for `server/domain/`, and it lives HERE rather than in `pyproject.toml`
+# because it CANNOT live there: `[tool.ruff.lint.flake8-tidy-imports]` is global and ruff
+# has no per-directory rule section. The scoped mechanism is hierarchical config discovery
+# — `ruff check .` with no `--config` and no `--isolated` resolves the nearest config to
+# each file, so these bans apply to this subtree and to nothing else. `extend` inherits the
+# root's `select`, `target-version` and `line-length`, so this file adds a rule rather than
+# replacing a ruleset.
+#
+# ⚠️ Do NOT "simplify" this into `pyproject.toml` with `per-file-ignores` for the rest of
+# the tree. That inverts the guard: the rule would fire on legitimate code in
+# `server/library/`, `server/profile/` and every other package, and the natural fix for a
+# false positive is to widen an ignore list until the guard is gone.
+extend = "../../pyproject.toml"
+
+[lint]
+extend-select = ["TID251"]
+
+[lint.flake8-tidy-imports.banned-api]
+"server.db" = { msg = "server/domain/ is pure: no DB access. Take the data as a parameter and let the caller in server/<package>/routes.py do the SELECT." }
+"server.models" = { msg = "server/domain/ speaks keys and ordinals, not ORM rows. Map rows to plain values at the route boundary." }
+"sqlalchemy" = { msg = "server/domain/ is pure: no ORM, no Core. If you need a query, you are in the wrong package." }
+"random" = { msg = "The generator must be deterministic — server/models.py's Plan promises the same version + input reproduces the tree. Rotate on (week_no, session_index) instead." }
+"secrets" = { msg = "server/domain/ has no need for entropy, and a generator that used it would be irreproducible." }
+"time" = { msg = "server/domain/ has no clock. Dates are passed in — see PlannerInput.start_date." }
+"datetime.datetime.now" = { msg = "server/domain/ has no clock. Pass the date in; the caller owns the timezone decision." }
+"datetime.date.today" = { msg = "server/domain/ has no clock. Pass the date in; the caller owns the timezone decision." }

@@ -1,25 +1,14 @@
-"""`.gitleaks.toml` must EXTEND the default ruleset, never replace it.
-
-One line — `useDefault = true` under `[extend]` — is the difference between "adds one
-allowlist" and "deletes every secret-detection rule gitleaks has". Both look identical from
-the outside: the `secrets` job goes green either way. That is the fail-open shape CLAUDE.md
-keeps warning about, and it is why this is a test rather than a comment.
-
-Per the testing policy this is not "a plain config object": nothing here restates the
-allowlist or its regex. It asserts the two properties whose absence is silent — the ruleset is
+""".gitleaks.toml must EXTEND the default ruleset, never replace it.
+One line — `useDefault = true` under `[extend]` — is the difference between "adds one allowlist"
+and "deletes every secret-detection rule gitleaks has", and the `secrets` job goes green either
+way. That fail-open shape is why this is a test and not a comment. Nothing here restates the
+allowlist or its regex; it asserts the two properties whose absence is silent — the ruleset is
 extended, and the allowlist is scoped by line CONTENT rather than by path.
-
-**Why the path scoping matters, and why it is asserted from the opposite direction.**
-`gitleaks-action@v3` runs gitleaks **8.24.3**, whose TOML allowlist struct is
-`{ Commits, Paths, RegexTarget, Regexes, StopWords }` — no condition field — so its criteria
-are OR'd and there is no way to require "this path AND this line". A `paths` entry would
-therefore allowlist the whole of `web/src/api/schema.ts` for every rule, and that file is
-machine-generated: a real credential committed into it would be reported by nothing and read
-by nobody. So `paths` must stay ABSENT until the action ships a gitleaks that parses
-`condition`.
-
-DB-free, so it runs in the local gate. The scanner itself is not a project dependency and CI
-is where it actually runs; what can be checked here is the config it will read.
+⚠️ **`paths` must stay ABSENT.** `gitleaks-action@v3` runs gitleaks 8.24.3, whose allowlist struct
+has no condition field and therefore ORs its criteria — so a `paths` entry would allowlist the
+whole of the machine-generated `web/src/api/schema.ts` for every rule, and a real credential
+committed there would be reported by nothing. DB-free; the scanner is not a project dependency, so
+what can be checked here is the config it will read.
 """
 
 import re

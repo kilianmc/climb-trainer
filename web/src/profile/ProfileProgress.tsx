@@ -3,41 +3,24 @@ import { useId } from 'react';
 /**
  * The completion bar, its numbered rail, and the single polite live region that goes with it.
  *
- * The accessibility contract here is fixed by the plan and every clause of it is a real
- * failure mode:
+ * The accessibility contract is fixed, and every clause is a real failure mode.
+ * **`role="progressbar"` with an accessible NAME** — a nameless progressbar announces "42
+ * percent" of nothing; the name comes from `aria-labelledby` pointing at the visible label, so
+ * the two cannot drift. **Never colour alone** — the percentage is TEXT, which
+ * `contrast.test.ts` already proves at 4.5:1 in both schemes, and the fill carries a hairline.
+ * **One live region, announcing at step boundaries only**, rendered ALWAYS and empty when there
+ * is nothing to say: a region added to the DOM at the same moment as its text is frequently not
+ * announced. **The fill transition sits under `prefers-reduced-motion` while the number updates
+ * instantly**, because reduced motion is not reduced information.
  *
- * - **`role="progressbar"` with an accessible NAME.** A nameless progressbar is the most
- *   common failure of this component — the value is announced with nothing to attach it
- *   to ("42 percent" of what?). The name comes from `aria-labelledby` pointing at the
- *   visible label, so the sighted and announced names cannot drift apart.
- * - **Never colour alone.** The percentage is TEXT, in `--ct-fg` on `--ct-surface-1`,
- *   which `contrast.test.ts` already proves at 4.5:1 in both schemes. The fill is
- *   decoration; it carries a hairline so it is still visible without relying on hue.
- * - **One live region, announcing at step boundaries only.** Per-percent announcements
- *   flood a screen reader and convey nothing. The region is rendered ALWAYS, empty when
- *   there is nothing to say — a live region added to the DOM at the same moment as its
- *   text is frequently not announced at all.
- * - **The fill transition sits under `prefers-reduced-motion`** (`_profile.scss`) while
- *   the number updates instantly, because reduced motion is not reduced information.
+ * ⚠️ **The rail IS the bar here, not a second opinion about it.** The spine carries the
+ * `progressbar` role and the fill, the numbered nodes sit on that spine, and the percentage
+ * stays as text in the head. A numbered rail *beside* a filled track says the same thing twice
+ * in two units, which is how a stepper starts disagreeing with a progress bar.
  *
- * ## The rail, and why it does not double up on the bar
- *
- * ⚠️ **The rail IS the bar on the profile screens, not a second opinion about it** (round 8).
- * The spine carries `role="progressbar"` and the fill; the numbered nodes sit on that spine. One
- * object, one progress reading, and the percentage stays as text in the head where it is the
- * honest number. Adding a numbered rail *beside* a filled track would be the exact failure
- * CLAUDE.md warns about — "saying the same thing twice in two units is how a stepper starts
- * disagreeing with a progress bar".
- *
- * The separate step list this replaced carried both a tick per step and a number. The numbers
- * moved onto the rail because a number in a labelled `<ol>` repeats what the list already
- * encodes, while a number on a rail *is* a position — and once the rail carried position, the
- * list was saying nothing the rail and the section headings did not.
- *
- * ⚠️ **The nodes are siblings of the progressbar, never children of it.** A `role="progressbar"`
- * element's contents are presentational, so focusable children inside it are invalid ARIA — and
- * these are real buttons with real names. Callers that pass no nodes (the dashboard) get the
- * plain bar exactly as before.
+ * ⚠️ **The nodes are SIBLINGS of the progressbar, never children.** A `progressbar` element's
+ * contents are presentational, so focusable children there are invalid ARIA — and these are
+ * real buttons with real names. Callers that pass no nodes (the dashboard) get the plain bar.
  *
  * No `position: fixed` and no viewport units: both mounts share this route tree, and in the
  * federated mount both resolve against kilianmc.com's viewport.

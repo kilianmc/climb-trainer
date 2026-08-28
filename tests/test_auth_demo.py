@@ -1,15 +1,12 @@
 """`POST /api/auth/demo`, and the seed contract it depends on.
 
-The headline property is that this endpoint issues **zero SQL**. That is not a
-micro-optimisation: Neon Free allows 400 awake-hours a month and autosuspend is fixed at
-5 minutes, so a bot trickling one request a minute at a DB-touching public endpoint keeps
-the compute awake permanently and exhausts the allowance on its own. The old Postgres
-rate limit could not stop that, because enforcing it was itself a write.
-
-The first test proves zero-SQL the only way that is genuinely convincing — **with no
-database configured at all** — and it runs in the local gate. The rest cover the two
-things pinning `DEMO_USER_ID` could break: the id sequence, and the demo row landing
-somewhere other than the pinned id.
+The headline property is that this endpoint issues **zero SQL**, and it is not a
+micro-optimisation: Neon Free allows ~400 awake-hours a month and autosuspend is fixed at five
+minutes, so a bot trickling one request a minute at a DB-touching public endpoint keeps the
+compute awake permanently — and a Postgres rate limit cannot stop that, because enforcing one
+is itself a write. The first test proves zero-SQL the only convincing way, **with no database
+configured at all**, and runs in the local gate. The rest cover what pinning `DEMO_USER_ID`
+could break: the id sequence, and the demo row landing anywhere other than the pinned id.
 """
 
 from typing import Never

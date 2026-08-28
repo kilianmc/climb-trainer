@@ -11,8 +11,8 @@
  *   openapi-sha256  the OpenAPI document it was generated from
  *   types-sha256    everything below this comment block
  *
- * openapi-sha256: 54db6adb61c74fd35c7f1561c12bc8965d1323634ff4919145e026053cc98035
- * types-sha256: 9cb08830b8efd7f70dd814103c6dc622139ba40bc0a90677885033d9161cd63c
+ * openapi-sha256: b93ef4d84b6c82e51d30afdb54a7b1f453a7e220896e22d3d59ec685f4675631
+ * types-sha256: 22f29ba2fd01d0109205aaedfdca91e97da482f9213da2d2e9ec7b3992bf49d8
  */
 
 export interface paths {
@@ -225,6 +225,153 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/library': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Read Library
+     * @description The library, ordered by aspect. Authenticated like every other route.
+     *
+     *     User-independent: nothing here is scoped by `user_id` because nothing here belongs to
+     *     a user, and per the rule at `_CACHE_CONTROL` nothing here ever will. Read-only — the
+     *     library is written by `server/contentseed.py`, out of band.
+     *
+     *     `v` is **declared and deliberately unused**. It exists so the client can put a build id
+     *     in the URL and so the schema documents it; reading it here — even to log it — is the
+     *     one change that would make the CDN's single cache entry wrong.
+     */
+    get: operations['read_library_api_library_get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/plans': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Create Plan
+     * @description Generate this user's plan, persist it activated, and return it with ids. **201.**
+     *
+     *     A **Tier-1 write**: one request, one transaction, one Neon wake.
+     *
+     *     **The server regenerates; it never accepts a tree.** The body is `PlanPreviewRequest` —
+     *     `start_date` and nothing else, `extra="forbid"`. A client-supplied tree would let any caller
+     *     fabricate an arbitrary plan, prescriptions against exercises their injuries contraindicate
+     *     included, and it would be a ~600 KiB request body. `user_id` comes from `principal.user_id`
+     *     and from nowhere else. The generation path is the preview's, reused rather than reimplemented,
+     *     so a plan can never be persisted in a shape the preview would not have shown.
+     *
+     *     **One transaction, all-or-nothing.** Four steps, one `commit()` at the end (each route commits
+     *     itself; `get_session` deliberately does not): stand the active plan down, resolve every
+     *     `exercise_key`, insert the tree, serialise. A failure anywhere leaves zero rows in all six
+     *     tables, because nothing before the `commit()` is durable.
+     *
+     *     **409 is a legitimate answer, not a fault.** A double-tap races: both requests stand the same
+     *     plan down and both insert, and the second trips `uq_plan_one_active_per_user`. The user does
+     *     have an active plan, so the client treats it as "you already have one" and refetches.
+     */
+    post: operations['create_plan_api_plans_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/plans/active': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Active Plan
+     * @description This user's active plan with ids, or `{"plan": null}`. Always **200** — see the model.
+     *
+     *     `.one_or_none()` rather than `.first()`: "at most one" is `uq_plan_one_active_per_user`'s job,
+     *     and if the index were ever dropped a silent `LIMIT 1` would hide that while quietly picking an
+     *     arbitrary plan.
+     */
+    get: operations['active_plan_api_plans_active_get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/plans/preview': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Preview Plan
+     * @description Build the plan this user's profile implies, and return it. **Writes nothing.**
+     *
+     *     Enforced three ways rather than asserted: the generator is pure (ruff `TID251` in
+     *     `server/domain/.ruff.toml`), this handler issues only `SELECT`s, and for a demo principal
+     *     `SET LOCAL transaction_read_only` is already on, so Postgres itself would refuse.
+     *     `tests/test_plans_api.py` counts rows after a successful preview.
+     */
+    post: operations['preview_plan_api_plans_preview_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/plans/{plan_id}/abandon': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Abandon Plan
+     * @description Stand a plan down. **Marks, never deletes.** Idempotent, and 404 for anyone else's.
+     *
+     *     **A timestamp and not a delete**, because `activity.planned_session_id` is the only link from a
+     *     logged activity to the plan it satisfied: deleting would cascade through the tree and destroy
+     *     the adherence record of sessions the user really did.
+     *
+     *     **The 404 is scoped, and the scoping is the security property.** The `WHERE` names both the id
+     *     and `principal.user_id`, so another user's plan is indistinguishable from one that never
+     *     existed. A 403 would confirm the row exists — the IDOR read this project treats as its real
+     *     extraction risk.
+     *
+     *     **Idempotent:** an already-abandoned plan keeps its original timestamp, because *when* it was
+     *     stood down is the fact the diary wants. `completed_at` is deliberately untouched.
+     */
+    post: operations['abandon_plan_api_plans__plan_id__abandon_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/profile': {
     parameters: {
       query?: never;
@@ -273,38 +420,19 @@ export interface paths {
      * Reset Profile
      * @description Un-answer the four onboarding steps, in one transaction, and return the profile.
      *
-     *     ## Why this exists instead of teaching `PATCH` to clear
+     *     Exists so that `PATCH` did not have to change: making `null` mean "clear" in
+     *     `ProfilePatchRequest` was **considered and rejected**, because `null` there means "not in
+     *     this request", which is what lets onboarding send one step at a time — flipping it would
+     *     turn every omission into a destructive spelling one typo away.
      *
-     *     Issue #54 needs a way back to a from-scratch wizard. The obvious alternative was to make
-     *     `null` mean "clear" in `ProfilePatchRequest` — and that was **considered and rejected**
-     *     (Kilian's call): `null` there means "not in this request" for every field, which is what
-     *     lets onboarding send one step at a time, and flipping it would turn every omission into a
-     *     destructive spelling one typo away. A named endpoint says what it does.
+     *     It clears every column the four steps own (including `primary_discipline`, derived from the
+     *     target grade and so it has to go with it) and every `user_aspect_rating` row.
+     *     ⚠️ **Open `user_injury` rows only — resolved rows are HISTORY and are not touched**:
+     *     flag -> resolve -> re-flag is what that table exists for, and a reset is not a claim about a
+     *     past injury. **Not** `display_name` or `show_body_metrics`, which belong to no step.
      *
-     *     ## What it clears, and what it deliberately does not
-     *
-     *     - **Every column the four steps own** (`_RESET_COLUMNS`), back to NULL — including
-     *       `primary_discipline`, which is derived from the target grade and has to go with it.
-     *     - **Every `user_aspect_rating` row**, because the aspect step's answer *is* those rows.
-     *     - **Open `user_injury` rows only.** ⚠️ Resolved rows are HISTORY and are not touched:
-     *       flag -> resolve -> re-flag is what that table exists for (`0005`'s partial unique
-     *       index), and a reset is not a claim about a past injury. An open flag, by contrast, is
-     *       the step's current answer and has to go or the step would not read as unanswered.
-     *     - **Not** `display_name`, `show_body_metrics`, or anything in `user_equipment` — see
-     *       `_RESET_COLUMNS`.
-     *
-     *     ## Shape
-     *
-     *     A **Tier-1 write**, like `PATCH`: deliberate, low-frequency, and the user is waiting for
-     *     it. It returns the whole profile for the same reason `PATCH` does — the caller redraws
-     *     the completion bar from the response rather than from a follow-up GET, so the bar can
-     *     never disagree with the database about what is set.
-     *
-     *     **Idempotent**, and it does not create a row: `UPDATE` touches nothing when no profile
-     *     exists, and a profile that has answered nothing is what a reset is trying to produce
-     *     anyway. A demo token never reaches here — `POST` is a mutating method, so
-     *     `server/auth/deps.py` refuses it twice over (403 at the edge, read-only transaction
-     *     underneath).
+     *     A Tier-1 write. It returns the whole profile so the caller redraws the completion bar from
+     *     the response and can never disagree with the database. **Idempotent, and it creates no row.**
      */
     post: operations['reset_profile_api_profile_reset_post'];
     delete?: never;
@@ -340,6 +468,22 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
   schemas: {
+    /**
+     * ActivePlanResponse
+     * @description `{"plan": null}` when there is none — a **200**, not a 404.
+     *
+     *     "No plan yet" is the state every new account is in, and the `/plan` screen renders it as an
+     *     ordinary view with a Generate button. A 404 would make the normal case an error at three
+     *     layers that all treat 4xx as failure: `apiFetch` throws, the query retry predicate skips 4xx
+     *     as unwinnable, and a route-level guard would see `data === undefined` and swap itself for a
+     *     fallback.
+     *
+     *     A wrapper object rather than a bare nullable body, so the endpoint can grow a sibling field
+     *     without changing shape and no client has to handle a top-level `null`.
+     */
+    ActivePlanResponse: {
+      plan: components['schemas']['PlanOut'] | null;
+    };
     /**
      * ActivityKind
      * @description What a logged activity *was*, on the `activity` supertype.
@@ -395,6 +539,40 @@ export interface components {
       score: number;
     };
     /**
+     * BlockOut
+     * @description One block of a session.
+     *
+     *     ⚠️ **`exercise_key` AND `exercise_id`, not one or the other.** The domain is DB-free and
+     *     speaks keys, so a preview has the key and no id; a persisted block holds the id and the key is
+     *     derived from it (`_exercise_reference`). Carrying both means the client's library lookup is
+     *     written once for both paths.
+     *
+     *     ⚠️ `aspect_key` is read LIVE off `exercise.climbing_aspect_id` and can therefore drift, unlike
+     *     the snapshotted `protocol_kind` — an accepted asymmetry, recorded on `models.py::SessionBlock`.
+     *     It is also **not** `shortfall.aspect_key`, which names the aspect the generator *wanted* and
+     *     could not fill — precisely why a block's shortfall has to be stored rather than derived.
+     */
+    BlockOut: {
+      /** Aspect Key */
+      aspect_key: string;
+      /** Exercise Id */
+      exercise_id?: number | null;
+      /** Exercise Key */
+      exercise_key: string;
+      /** Id */
+      id?: number | null;
+      /** Order Index */
+      order_index: number;
+      protocol_kind: components['schemas']['ProtocolKind'];
+      /** Rest After Seconds */
+      rest_after_seconds: number | null;
+      /** Rest Between Sets Seconds */
+      rest_between_sets_seconds: number | null;
+      /** Sets */
+      sets: components['schemas']['SetOut'][];
+      shortfall: components['schemas']['ShortfallOut'] | null;
+    };
+    /**
      * ClosedVocabulariesOut
      * @description The native Postgres enums, as their persisted **values** (never member names).
      *
@@ -424,6 +602,56 @@ export interface components {
      * @enum {string}
      */
     Discipline: 'boulder' | 'sport';
+    /**
+     * ExerciseLibraryResponse
+     * @description The whole library. An object rather than a bare array, so the payload can grow a
+     *     sibling field (a content revision, say) without breaking every client.
+     */
+    ExerciseLibraryResponse: {
+      /** Exercises */
+      exercises: components['schemas']['ExerciseOut'][];
+    };
+    /**
+     * ExerciseOut
+     * @description One library exercise, with everything a browse + detail UI needs.
+     *
+     *     `key` is the data contract and the rest is display or generator input, the same split
+     *     as `ReferenceSpec`. `equipment_ids` is an **AND set**: every id is a requirement, so
+     *     an empty list means the exercise needs nothing and is always prescribable — which is
+     *     what replaces the `bodyweight` equipment row that deliberately does not exist.
+     *
+     *     `discipline` is NULL for most of the library (a hangboard protocol serves boulderers
+     *     and rope climbers alike). `substitution_hint` is NULL for every finger-loading
+     *     protocol on purpose — see `server/domain/exercises.py` for the safety boundary.
+     */
+    ExerciseOut: {
+      /** Climbing Aspect Id */
+      climbing_aspect_id: number;
+      /** Contraindicated Injury Area Ids */
+      contraindicated_injury_area_ids: number[];
+      discipline: components['schemas']['Discipline'] | null;
+      /** Equipment Ids */
+      equipment_ids: number[];
+      /** Id */
+      id: number;
+      /** Instructions */
+      instructions: string;
+      /** Key */
+      key: string;
+      /** Media Url */
+      media_url: string | null;
+      /** Name */
+      name: string;
+      /** Prescriptions */
+      prescriptions: components['schemas']['PrescriptionOut'][];
+      /** Progression Of Id */
+      progression_of_id: number | null;
+      protocol_kind: components['schemas']['ProtocolKind'];
+      /** Regression Of Id */
+      regression_of_id: number | null;
+      /** Substitution Hint */
+      substitution_hint: string | null;
+    };
     /**
      * GradeOut
      * @description One rung of one scale.
@@ -522,6 +750,65 @@ export interface components {
       user_id: number;
     };
     /**
+     * MesocycleOut
+     * @description One phase block, `start_week`..`end_week` inclusive and 1-based.
+     *
+     *     Flattening the tree here would drop the phase spans the `/plan` timeline draws.
+     */
+    MesocycleOut: {
+      /** End Week */
+      end_week: number;
+      /** Id */
+      id?: number | null;
+      /** Microcycles */
+      microcycles: components['schemas']['MicrocycleOut'][];
+      phase: components['schemas']['Phase'];
+      /** Start Week */
+      start_week: number;
+    };
+    /**
+     * MicrocycleOut
+     * @description One week. `is_deload` is exactly `phase is Phase.DELOAD`; a taper is known by `phase`.
+     *
+     *     `phase` is carried even though `microcycle` has no phase column: it is read off the
+     *     parent mesocycle, which the serialiser is walking anyway.
+     */
+    MicrocycleOut: {
+      /** Id */
+      id?: number | null;
+      /** Is Deload */
+      is_deload: boolean;
+      phase: components['schemas']['Phase'];
+      /** Sessions */
+      sessions: components['schemas']['SessionOut'][];
+      /**
+       * Start Date
+       * Format: date
+       */
+      start_date: string;
+      /** Week No */
+      week_no: number;
+    };
+    /**
+     * NoteKind
+     * @description Why a plan carries a note. Closed, so the client can style or order them.
+     *
+     *     A note is **never a gate**: the plan is complete and nothing is disabled. It exists so
+     *     that a plan which is not quite what was asked for says so, in the plan, instead of
+     *     leaving the user to notice.
+     * @enum {string}
+     */
+    NoteKind: 'fewer_sessions_than_requested' | 'target_beyond_one_plan';
+    /**
+     * NoteOut
+     * @description One honest caveat about the plan as a whole. `kind` is the contract, `message` is copy.
+     */
+    NoteOut: {
+      kind: components['schemas']['NoteKind'];
+      /** Message */
+      message: string;
+    };
+    /**
      * Phase
      * @description A mesocycle's training emphasis.
      *
@@ -532,6 +819,113 @@ export interface components {
      * @enum {string}
      */
     Phase: 'base' | 'strength' | 'power' | 'power_endurance' | 'performance' | 'deload' | 'taper';
+    /**
+     * PlanAbandonResponse
+     * @description The timestamp that was set, or the one already there. Idempotent either way.
+     */
+    PlanAbandonResponse: {
+      /**
+       * Abandoned At
+       * Format: date-time
+       */
+      abandoned_at: string;
+      /** Id */
+      id: number;
+    };
+    /**
+     * PlanOut
+     * @description A whole plan — previewed or persisted — plus what would be needed to reproduce it.
+     *
+     *     `generator_input` is the canonical JSON of the `PlannerInput` actually used, plus
+     *     `generator_version` and `library_digest`. That digest is load-bearing:
+     *     `server/models.py::Plan` promises that re-running a version on the same input reproduces the
+     *     tree, and **the library is a third input** — without it the promise is silently false the
+     *     first time content is edited.
+     *
+     *     ⚠️ `target_grade_id` and `current_grade_id` are set by this MODULE and are always `None` on
+     *     the blueprint, because `PlannerInput` carries ordinals and the domain never sees a `grade.id`.
+     *     Both are real `plan` columns (`0008`), so both survive a reload — the profile's current grade
+     *     drifts as the climber improves and nothing else recovers what the plan was built from.
+     *
+     *     `grade_gap` is derived on the persisted path rather than stored; see `_grade_gap`.
+     *
+     *     ⚠️ **Size against the PERSISTED response, not the preview** (figures in PR #11b): the raw
+     *     bytes are identical for the same tree, but gzipped the persisted body is ~1.9x, because
+     *     thousands of repeated `null` ids compress away and distinct integers do not. If it ever bites,
+     *     the lever is trimming sets beyond the first N weeks, not splitting the endpoint.
+     */
+    PlanOut: {
+      /** Activated At */
+      activated_at?: string | null;
+      /** Current Grade Id */
+      current_grade_id: number | null;
+      discipline: components['schemas']['Discipline'];
+      /** Generator Input */
+      generator_input: {
+        [key: string]: unknown;
+      };
+      /** Generator Version */
+      generator_version: string;
+      /** Grade Gap */
+      grade_gap: number;
+      /** Id */
+      id?: number | null;
+      /** Mesocycles */
+      mesocycles: components['schemas']['MesocycleOut'][];
+      /** Name */
+      name: string;
+      /** Notes */
+      notes: components['schemas']['NoteOut'][];
+      /** Shortfalls */
+      shortfalls: components['schemas']['ShortfallOut'][];
+      /**
+       * Start Date
+       * Format: date
+       */
+      start_date: string;
+      /** Target Grade Id */
+      target_grade_id: number | null;
+      /** Week Count */
+      week_count: number;
+    };
+    /**
+     * PlanPreviewRequest
+     * @description One field, and `extra="forbid"` so a probing or typo'd field is a 422, never silence.
+     *
+     *     `start_date` is optional: omitted means "the Monday on or after today, UTC". The server
+     *     normalises whatever it is given the same way, so the two paths cannot disagree — which
+     *     also means a Monday is returned unchanged and today counts as "on or after today".
+     */
+    PlanPreviewRequest: {
+      /** Start Date */
+      start_date?: string | null;
+    };
+    /**
+     * PrescriptionOut
+     * @description The default prescription for one exercise in one phase.
+     *
+     *     `reps` and `work_seconds` are independent and both nullable — a repeater has seconds
+     *     and no reps, a pull-up set has reps and no seconds, and a circuit legitimately has
+     *     neither. `intensity_pct` has no anchor field: what the percentage is *of* follows from
+     *     the exercise's `protocol_kind` (see `PrescriptionTemplate` in `server/models.py`).
+     */
+    PrescriptionOut: {
+      /** Intensity Pct */
+      intensity_pct: number | null;
+      phase: components['schemas']['Phase'];
+      /** Reps */
+      reps: number | null;
+      /** Rest Between Sets Seconds */
+      rest_between_sets_seconds: number | null;
+      /** Rest Seconds */
+      rest_seconds: number | null;
+      /** Sets */
+      sets: number;
+      /** Target Rpe */
+      target_rpe: number | null;
+      /** Work Seconds */
+      work_seconds: number | null;
+    };
     /**
      * ProfilePatchRequest
      * @description Any subset of the profile. Everything omitted is left as it is.
@@ -579,28 +973,18 @@ export interface components {
      * ProfileResponse
      * @description The whole profile, and everything the client needs to compute completion.
      *
-     *     ⚠️ **Every null here means "not answered yet", never "zero" or "none".** That is the
-     *     whole point of revision `0005`, and it binds anything that reads this — the completion
-     *     bar, and the plan generator in PR #11, which must refuse to generate rather than
-     *     substitute a default for a question the user has not been asked.
+     *     ⚠️ **Every null here means "not answered yet", never "zero" or "none"** (revision `0005`).
+     *     Anything reading this must refuse to act rather than substitute a default for a question the
+     *     user has not been asked. `injuries_reviewed_at` is how its step reports itself finished: an
+     *     empty `injuries` list means "nothing to record" or "never asked" depending only on it.
      *
-     *     `injuries_reviewed_at` is how its step reports itself finished: an empty `injuries` list
-     *     means "nothing to record" or "never asked" depending only on it. Every completion test
-     *     the client makes reads that column or a scalar, which is what keeps the progress bar
-     *     server truth.
+     *     ⚠️ **`email` is the ONE null that does not mean "not answered yet".** It is read from
+     *     `app_user`, where it is `NOT NULL`, so a null can only mean the row behind an authenticated
+     *     principal has gone. It is read-only — the client displays it and has no way to change it,
+     *     which is why it is absent from `ProfilePatchRequest`.
      *
-     *     ⚠️ **`equipment_ids` and `equipment_reviewed_at` are gone** (issue #54). The step is not
-     *     part of onboarding any more, nothing in the client read either field, and dropping them
-     *     from the response also drops a `SELECT` from every profile read — Neon bills awake time.
-     *     The table and its rows are untouched, waiting for PR #10.
-     *
-     *     ⚠️ **`email` is the ONE null here that does not mean "not answered yet".** It is read
-     *     from `app_user`, not from the profile, and it is `NOT NULL` there — so it can only be
-     *     null if the row behind an authenticated principal has gone, which is not a state this
-     *     endpoint invents a 404 for. It is read-only: the client displays it and has no way to
-     *     change it, which is why it is not in `ProfilePatchRequest`. Added because the client had
-     *     no way to learn its own account's address at all — `GET /api/auth/me` returns
-     *     `{user_id, scope}` and its docstring defers exactly this to the profile endpoint.
+     *     `equipment_ids` and `equipment_reviewed_at` are gone (issue #54): the step left onboarding,
+     *     and dropping them also drops a `SELECT` from every profile read. The table is untouched.
      */
     ProfileResponse: {
       /** Aspect Ratings */
@@ -681,6 +1065,37 @@ export interface components {
       password: string;
     };
     /**
+     * SessionOut
+     * @description One planned session. `estimated_minutes` is `null` for a session with no blocks.
+     *
+     *     `status` is `null` on a preview: a preview has no lifecycle, and inventing `planned` would
+     *     make "not a row yet" and "a row nobody has started" the same answer.
+     *
+     *     `shortfalls` here are the slots that produced **no block at all**. Stored, not derived —
+     *     nothing in the tree records a slot that was never filled.
+     */
+    SessionOut: {
+      activity_kind: components['schemas']['ActivityKind'];
+      /** Blocks */
+      blocks: components['schemas']['BlockOut'][];
+      /** Estimated Minutes */
+      estimated_minutes: number | null;
+      /** Id */
+      id?: number | null;
+      /**
+       * Scheduled On
+       * Format: date
+       */
+      scheduled_on: string;
+      /** Shortfalls */
+      shortfalls: components['schemas']['ShortfallOut'][];
+      status?: components['schemas']['SessionStatus'] | null;
+      /** Title */
+      title: string;
+      /** Weekday */
+      weekday: number;
+    };
+    /**
      * SessionStatus
      * @description Where a *planned* session got to. Never used on a logged one.
      *
@@ -690,6 +1105,54 @@ export interface components {
      * @enum {string}
      */
     SessionStatus: 'planned' | 'in_progress' | 'completed' | 'skipped' | 'rescheduled';
+    /**
+     * SetOut
+     * @description One prescribed set, straight off the `(exercise, phase)` prescription template.
+     *
+     *     `target_load_kg` and `target_grade_id` are present and always `null` in v1.0.0, so the wire
+     *     shape is stable when they are filled. Deriving a load is the one place a bodyweight figure
+     *     could creep into a plan, which CLAUDE.md's weight rule forbids outright.
+     *
+     *     The id is the point of the persisted response: the session player logs a `logged_set` against
+     *     `prescribed_set.id`, so re-fetching to learn it would cost a round trip before the user could
+     *     start.
+     */
+    SetOut: {
+      /** Id */
+      id?: number | null;
+      /** Set Index */
+      set_index: number;
+      /** Target Grade Id */
+      target_grade_id: number | null;
+      /** Target Intensity Pct */
+      target_intensity_pct: number | null;
+      /** Target Load Kg */
+      target_load_kg: string | null;
+      /** Target Reps */
+      target_reps: number | null;
+      /** Target Rest Seconds */
+      target_rest_seconds: number | null;
+      /** Target Rpe */
+      target_rpe: number | null;
+      /** Target Work Seconds */
+      target_work_seconds: number | null;
+    };
+    /**
+     * ShortfallOut
+     * @description An aspect this phase cannot train with the gear assumed, and what would unlock it.
+     *
+     *     `options` is an OR of AND sets: each inner list is a combination that would fill the
+     *     cell. Never a gate — the plan is complete and nothing is disabled.
+     */
+    ShortfallOut: {
+      /** Aspect Key */
+      aspect_key: string;
+      /** Message */
+      message: string;
+      /** Options */
+      options: string[][];
+      phase: components['schemas']['Phase'];
+    };
     /**
      * TokenResponse
      * @description The access token, for the client to hold **in memory only**.
@@ -915,6 +1378,154 @@ export interface operations {
           'application/json': {
             [key: string]: string;
           };
+        };
+      };
+    };
+  };
+  read_library_api_library_get: {
+    parameters: {
+      query?: {
+        v?: string | null;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ExerciseLibraryResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  create_plan_api_plans_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['PlanPreviewRequest'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['PlanOut'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  active_plan_api_plans_active_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ActivePlanResponse'];
+        };
+      };
+    };
+  };
+  preview_plan_api_plans_preview_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['PlanPreviewRequest'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['PlanOut'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  abandon_plan_api_plans__plan_id__abandon_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        plan_id: number;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['PlanAbandonResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
         };
       };
     };

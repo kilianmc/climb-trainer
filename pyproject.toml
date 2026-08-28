@@ -24,7 +24,7 @@ dependencies = [
     "pyjwt==2.13.0",
     # A runtime dep, not a dev one, on purpose: server/settings.py imports it, and a
     # dev-only dep would make production depend on the Vercel guard never regressing.
-    "python-dotenv==1.2.2",
+    "python-dotenv==1.2.3",
     "sqlalchemy==2.0.52",
 ]
 
@@ -34,14 +34,23 @@ dependencies = [
 [dependency-groups]
 dev = [
     "httpx==0.28.1",
-    "mypy==2.3.0",
+    "mypy==2.3.1",
     "pytest==9.1.1",
-    "ruff==0.16.3",
-    "uvicorn==0.52.3",
+    "ruff==0.16.4",
+    "uvicorn==0.52.4",
 ]
 
 [tool.setuptools]
-packages = ["server", "server.auth", "server.domain", "server.profile", "server.vocabulary"]
+packages = [
+    "server",
+    "server.auth",
+    "server.domain",
+    "server.domain.planner",
+    "server.library",
+    "server.plans",
+    "server.profile",
+    "server.vocabulary",
+]
 
 [tool.ruff]
 target-version = "py313"

@@ -233,7 +233,13 @@ describe('the _authed guard', () => {
 
     expect(screen.getByRole('heading', { name: 'Plan' })).toBeInTheDocument();
     expect(auth.session.get().token).toBe('landed-late');
-    expect(calls).toHaveBeenCalledTimes(1);
+    // ⚠️ Counted by PATH, not as a bare `calls` total, which is the same idiom as the
+    // "no second refresh" assertion above. `/plan` is a real screen since PR #11a and issues
+    // three reads of its own the moment it renders, so a total would now be 4 and would say
+    // nothing about the claim in the docstring — one refresh POST for the whole episode.
+    expect(
+      calls.mock.calls.filter(([url]) => urlOf(url).includes('/api/auth/refresh')),
+    ).toHaveLength(1);
   });
 
   it('never follows an off-site ?redirect=, and drops it from the validated search', async () => {
@@ -307,10 +313,17 @@ describe('the _authed guard', () => {
   });
 
   it('leaves a guarded route on logout instead of stranding the visitor there', async () => {
-    vi.mocked(fetch).mockResolvedValue(
-      new Response(JSON.stringify({ status: 'ok' }), {
-        headers: { 'content-type': 'application/json' },
-      }),
+    // ⚠️ A fresh `Response` per call, not one `mockResolvedValue` body. A `Response` body may be
+    // read once, and since PR #11a `/plan` is a real screen that issues three reads of its own —
+    // so a shared body is consumed before `logout` gets to it and `res.json()` throws
+    // `Body is unusable` from inside `apiFetch`, which vitest reports as an unhandled error
+    // while every assertion still passes.
+    vi.mocked(fetch).mockImplementation(() =>
+      Promise.resolve(
+        new Response(JSON.stringify({ status: 'ok' }), {
+          headers: { 'content-type': 'application/json' },
+        }),
+      ),
     );
     const router = mount('/plan', signedIn());
     await screen.findByRole('heading', { name: 'Plan' });

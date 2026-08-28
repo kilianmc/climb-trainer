@@ -26,7 +26,7 @@ import { describe, expect, it } from 'vitest';
  *
  * ## How the remote's stylesheet is identified
  *
- * `@module-federation/vite@1.20.7` emits **no** `mf-manifest.json` (checked: `dist/` contains no
+ * The MF Vite plugin emits **no** `mf-manifest.json` (checked on the installed one: `dist/` has no
  * `.json` at all), so there is nothing authoritative to read and globbing `assets/*.css` would
  * guess. It is derived from the import graph instead, which is exactly what the browser does:
  *

@@ -535,8 +535,8 @@ it('installs the newest committed profile and keeps it', async () => {
  * paying for; this is the test that fails.
  *
  * It asserts the bar WHILE the PATCH is still in flight, which is the only window in which
- * the overlay is the thing on screen. Note the flush: the `pending` dispatch is synchronous
- * (`mutation.js:94`) but `useMutationState` delivers through
+ * the overlay is the thing on screen. Note the flush: `mutation.js` dispatches
+ * `type: "pending",` synchronously, but `useMutationState` delivers through
  * `notifyManager.schedule` -> `systemSetTimeoutZero`, so the render lands on the next tick,
  * not in the click handler.
  */

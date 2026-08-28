@@ -1,8 +1,10 @@
 """Pure domain logic — no DB access, no clock, no RNG, no I/O.
 
-Everything in this package must stay importable without a database, because the
-plan generator (PR #11) lives here and `POST /api/plans/preview` runs it without
-writing anything. A ruff banned-import rule will enforce that once the planner
-lands; until then the rule is: **nothing in `server/domain/` may import
-`server.db`, `server.models`, or `sqlalchemy`.**
+Everything here must stay importable without a database, because the plan generator lives here
+and `POST /api/plans/preview` runs it without writing anything.
+
+**Enforced, not asked for**: `server/domain/.ruff.toml` bans `server.db`, `server.models`,
+`sqlalchemy`, `random`, `secrets`, `time`, `datetime.datetime.now` and `datetime.date.today`
+under `TID251`. A scoped config rather than a global rule with exemptions, because a global one
+would fire on every other package and get "fixed" by widening an ignore list.
 """

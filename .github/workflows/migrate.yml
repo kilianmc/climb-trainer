@@ -146,3 +146,14 @@ jobs:
       - name: Seed reference data
         if: ${{ inputs.action == 'upgrade' && inputs.seed }}
         run: uv run python -m server.seed
+
+      # The exercise library. A SECOND module because it is authored *content* rather than
+      # derived vocabulary — `server/seed.py`'s own docstring draws that line — and it runs
+      # under the same `seed` input, always AFTER `server.seed`: it resolves climbing
+      # aspect, equipment and injury KEYS to ids and fails loudly if the vocabularies are
+      # not there yet. Idempotent by upsert on `key`; the only rows it ever removes are
+      # library join rows the content no longer authors (see its module docstring for why
+      # that does not weaken "the seed never deletes").
+      - name: Seed the exercise library
+        if: ${{ inputs.action == 'upgrade' && inputs.seed }}
+        run: uv run python -m server.contentseed

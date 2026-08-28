@@ -9,68 +9,41 @@ import { useAuth } from '../auth/AuthProvider';
  * ## ⚠️ THE RULE THIS FILE IS BUILT ON: the query cache holds SERVER RESPONSES ONLY
  *
  * Nothing here writes a guess into the cache. The optimistic view is derived at render time
- * from the variables of the mutations that are still pending (`useProfileView`), so an
- * in-flight write is an *overlay* on server truth rather than an edit to it.
+ * from the variables of still-pending mutations (`useProfileView`), so an in-flight write is an
+ * *overlay* on server truth rather than an edit to it. **No `onMutate`, no snapshot, and nothing
+ * at all on the error path** — a failed write issues no request, which is also one less Neon
+ * wake. Three review rounds found three bugs here and all three came from two writers for one
+ * cache entry: a snapshot restored a fabrication once a second `mutate()` was in flight
+ * (measured **71% against a truth of 57%** for the full ten-minute `staleTime`); replacing it
+ * with `invalidateQueries` on error resolved second and overwrote a newer `onSuccess` (**71 at
+ * +5 ms, then 57**); and when that refetch itself failed — the ordinary case — the route swapped
+ * the wizard for a load-error paragraph and the user's unsaved draft went with it.
  *
- * Three rounds of review found three bugs in this layer and every one of them came from
- * having two writers for one cache entry. In order:
+ * ## Why the timing works — read from the INSTALLED source, not reasoned about
  *
- * 1. A snapshot taken in `onMutate` and restored in `onError` is only correct while exactly
- *    one write is in flight. `mutation.js:94` dispatches `pending` and runs `onMutate`
- *    **before** `retryer.start()`, while the `scope` gate is `canRun()` **inside** the
- *    retryer (`mutation.js:86`) — so `scope` serialises the network call and not
- *    `onMutate`. A second `mutate()` snapshotted a cache that already held the first one's
- *    guess, and restoring it restored a fabrication: measured at **71% against a truth of
- *    57%**, for the full ten-minute `staleTime`, while the alert said the answer had not
- *    been counted.
- * 2. Replacing the snapshot with `invalidateQueries` moved the bug rather than removing it.
- *    The refetch was issued from the failing mutation's `onError`, before the next write
- *    committed, so it resolved second and overwrote a newer `onSuccess` — measured **71 at
- *    +5 ms, then 57** once the read landed, i.e. a write that really did persist reading as
- *    unanswered.
- * 3. And when that refetch itself failed — the ordinary case, since whatever kills the PATCH
- *    usually kills the GET — `query.js`'s `case "error"` reducer sets `status: "error"`
- *    **unconditionally**, data or no data ("flag existing data as invalidated if we get a
- *    background error"). `isError` flipped, the route swapped the wizard for a load-error
- *    paragraph, and the user's unsaved draft went with it.
+ * The installed `build/modern/mutation.js`, by CONSTRUCT (`api/libraryCitations.test.ts`):
  *
- * Deriving the overlay instead removes all three by construction: there is no snapshot, the
- * error path issues **no request at all**, and the cache can only ever hold something the
- * server said. It is also cheaper — a failed write no longer wakes Neon for a GET nobody
- * asked for.
- *
- * ## Why the timing works, from the installed source
- *
- * Read in `@tanstack/query-core@5.101.4`, `build/modern/mutation.js`:
- *
- * - `execute()` dispatches `{ type: 'pending', variables }` at line 94, **synchronously**,
- *   before `onMutate` and before the retryer. So the overlay is established by the click and
- *   renders **on the next tick** — `useMutationState` delivers through
- *   `notifyManager.schedule` -> `systemSetTimeoutZero`, so the bar still reads the old number
- *   in the click handler itself and the new one after the macrotask flush. Measured; and it
- *   is the same scheduler an `onMutate` + `setQueryData` went through, so nothing regressed.
- *   The Tier-1 "the UI never waits on the database" rule is satisfied with no cache write.
- * - On success the order is `await retryer.start()` -> `await options.onSuccess` ->
- *   `await options.onSettled` -> `dispatch({ type: 'success' })`. The cache is therefore
- *   updated **before** the mutation leaves `pending`, so the overlay is replaced by real
- *   data with no frame in between and the bar cannot flicker backwards.
- * - On failure the order is `await options.onError` -> `await options.onSettled` ->
- *   `dispatch({ type: 'error' })`. The overlay drops when the mutation stops being pending,
- *   and there is nothing to roll back.
+ * - `execute()` dispatches `{ type: "pending", variables, isPaused }` **synchronously**, before
+ *   `onMutate` and before the retryer, whose gate it passes as
+ *   `canRun: () => this.#mutationCache.canRun(this)`. So `scope` serialises the network call, NOT
+ *   `onMutate` — which is why a snapshot could ever see another write's guess. The overlay is
+ *   established by the click and renders next tick (`useMutationState` -> `notifyManager.schedule`
+ *   -> `systemSetTimeoutZero`; measured, and the same scheduler a `setQueryData` went through).
+ * - Success order: `await retryer.start()` -> `await this.options.onSuccess?.(data,` ->
+ *   `onSettled` -> `dispatch({ type: "success" })`: the cache is updated **before** the mutation
+ *   leaves `pending`, so the overlay is replaced by real data and the bar cannot flicker back.
+ * - Failure order: `onError` -> `onSettled` -> `dispatch({ type: 'error' })`. The overlay drops
+ *   when the mutation stops being pending, and there is nothing to roll back.
+ * - `query.js`'s `case "error"` reducer sets `status: "error"` **unconditionally**, data or no
+ *   data — which is why a route must gate on `data === undefined` and never on `isError`.
  * - `scope: { id }` still earns its keep: `canRun` gates the retryer and `runNext` runs in
- *   `execute()`'s `finally`, so requests are serialised and `onSuccess` therefore fires in
- *   commit order. Without it a slow earlier response could install itself over a later one.
+ *   `execute()`'s `finally`, so `onSuccess` fires in commit order.
  *
- * ## Staleness
- *
- * The vocabulary is reference data only a deploy can change, so refetching it is pure Neon
- * awake time: `Infinity`. The profile is written by this client and replaced by every PATCH
- * response, so ten minutes bounds it without making the dashboard — where every
- * authenticated session lands, and which used to issue no SQL at all — refetch on every
- * visit. ⚠️ A second TAB is stale for up to those ten minutes and focusing it will not
- * refresh it (`router.tsx` sets `refetchOnWindowFocus: false`, because a gym phone flaps
- * between focused and blurred constantly). Benign: the tab that did the writing is correct,
- * and the number is a progress bar.
+ * **Staleness.** The vocabulary is reference data only a deploy can change, so refetching it is
+ * pure Neon awake time: `Infinity`. The profile is replaced by every PATCH response, so ten
+ * minutes bounds it without making the dashboard refetch on every visit. ⚠️ A second TAB is
+ * stale for up to those ten minutes and focusing it will not refresh it
+ * (`refetchOnWindowFocus: false`, because a gym phone flaps between focused and blurred).
  */
 
 export const PROFILE_KEY = ['profile'] as const;
@@ -92,7 +65,7 @@ const PROFILE_STALE_TIME_MS = 10 * 60_000;
  * query has just been removed fetches again — measured on the real nav path, **one extra
  * `GET /api/profile`**, issued after the token was dropped. In production that is a 401,
  * which `auth/refresh.ts` answers with a refresh POST, which is a **Postgres write** on a
- * path that previously did none. `queryObserver.js:445/451/461` gate every fetch decision on
+ * path that previously did none. `queryObserver.js` gates every fetch decision on
  * `resolveQueryBoolean(options.enabled, query) !== false`, so this closes it at the source.
  *
  * The `_authed` guard means an authenticated screen never renders without a session anyway;
@@ -180,7 +153,7 @@ export interface ProfileView {
    *
    * ⚠️ Not `isError`: `query.js`'s error reducer sets `status: "error"` even when data is
    * present, so `isError` cannot tell "nothing to show" from "stale but perfectly usable".
-   * `queryObserver.js:331` derives `isLoadingError` as `isError && !hasData`, which is
+   * `queryObserver.js` derives `isLoadingError` as `isError && !hasData`, which is
    * exactly this question. Gating a screen on `isError` destroyed the user's draft.
    */
   isLoadingError: boolean;

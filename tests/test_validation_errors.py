@@ -1,19 +1,12 @@
 """A 422 must not hand the request back, because the request contains a password.
-
-FastAPI's default `RequestValidationError` handler serialises `input` for every error. On
-`POST /api/auth/register` that is a credential leak two ways round:
-
-- a password below `MIN_PASSWORD_LENGTH` is returned as the `input` of its own error;
-- a **missing** field — no `invite_code`, which is exactly what an out-of-date client sends —
-  has `input` set to the *whole body*, so the password comes back even though nothing was
-  wrong with it.
-
-`server/app.py::validation_error_handler` keeps `type`/`loc`/`msg` and drops everything else.
-This file is the guard on that, under CLAUDE.md's "any bug just fixed" bullet.
-
-**No database, deliberately.** Validation fails before the handler runs, so nothing connects —
-which means this executes in the local gate rather than only in CI, where a credential-leak
-regression would be found by whoever it leaked to.
+FastAPI's default `RequestValidationError` handler serialises `input` for every error. On `POST
+/api/auth/register` that leaks two ways round: a password below `MIN_PASSWORD_LENGTH` comes back as
+the `input` of its own error, and a **missing** field — no `invite_code`, exactly what an
+out-of-date client sends — has `input` set to the *whole body*, so the password returns even though
+nothing was wrong with it. `server/app.py::validation_error_handler` keeps `type`/`loc`/`msg` and
+drops everything else.
+**No database, deliberately**: validation fails before the handler runs, so this executes in
+the local gate rather than only in CI, where a leak regression would be found by its victim.
 """
 
 import pytest

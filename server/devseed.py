@@ -1,50 +1,25 @@
 """Ten local test accounts. **DEVELOPMENT ONLY — no workflow invokes this module.**
 
-## Why this is not in `server/seed.py`
+Not in `server/seed.py` because that module is the *single* seed CI, local development **and
+production** all call, so ten accounts whose passwords start with the account's own first name
+would land on climb.kilianmc.com.
 
-`server/seed.py` is the *single* seed module on purpose: CI, local development **and
-production** all call it, and `.github/workflows/migrate.yml` runs `python -m server.seed`
-whenever its `seed` input is on. Ten accounts whose passwords start with the account's own
-first name would therefore land on climb.kilianmc.com. So they live here instead, in a
-module nothing automated runs, and `server/seed.py` must stay free of them.
+Three guards, because they answer three different questions. (1) *Am I in CI or a deployment?*
+— `CI`, `GITHUB_ACTIONS`, `VERCEL`, `VERCEL_ENV` checked for **presence**, not truthiness
+(`CI=` is still CI), because this repo's Actions logs are public and `main()` prints ten
+working passwords. (2) *Did anyone ask?* — `CLIMB_DEV_SEED` must be set; guard 1 cannot answer
+it, and the gap was real, since `.env` is loaded on import and `server/admin.py` is *designed*
+to run against production from a developer's terminal. (3) *Which database?* — `main()` prints
+the target **host** (never the URL, user or password) and will not write until it is typed
+back. Guards 1 and 2 sit on `seed_dev_users()` too: a public function is one `python -c` away.
+**`CLIMB_DEV_SEED` is deliberately NOT in `.env.example`** — in `.env` it is standing
+permission. Redirection is the one thing no guard can stop; don't.
 
-## Three guards, because they answer three different questions
-
-1. **"Am I in CI or a deployment?"** — `CI`, `GITHUB_ACTIONS`, `VERCEL` and `VERCEL_ENV` are
-   checked for **presence**, not truthiness: `CI=` is still CI. This repository is public and
-   **so are its Actions logs**; `main()` prints ten working passwords to stdout, so anything
-   that captures stdout publishes them.
-2. **"Did anyone actually ask for this?"** — `CLIMB_DEV_SEED` must be set. Guard 1 cannot
-   answer this one, and that gap was real: `server/settings.py` loads `.env` on import and
-   `server/admin.py` is *designed* to be run against production from a developer's terminal,
-   so this module in that same shell would have seeded ten name-derived accounts into
-   production and passed every check.
-3. **"Which database?"** — `main()` prints the target **host** (never the URL, the user or
-   the password) and will not write until the operator types it back.
-
-Guards 1 and 2 sit on `seed_dev_users()` as well as on `main()`, because a public function is
-one `python -c` away from being called directly.
-
-**`CLIMB_DEV_SEED` deliberately is NOT in `.env.example`.** Put it in `.env` and it is set for
-every future shell, which is exactly the standing permission guard 2 exists to withhold. Pass
-it inline: `CLIMB_DEV_SEED=1 uv run python -m server.devseed`.
-
-Redirection is the one thing none of them can stop — `python -m server.devseed > out.txt`
-writes the passwords to a file, and no check inside this process can prevent that. Don't.
-
-## The passwords are `<name>` + digits + one special character, and never shorter than 12
-
-`MIN_PASSWORD_LENGTH` is 12 in `server/auth/routes.py`, and that constant is imported here
-rather than restated. A seeded password below the floor would create an account the app's
-own policy could never recreate: `POST /api/auth/register` would 422 on it, the browser
-form's `minLength` would refuse it, and a future password reset would too. The account
-would work only for as long as nobody tried to change it.
-
-Digits and the special character come from `secrets`, not `random`, and are re-drawn on
-every run — so re-running this module rotates all ten passwords rather than printing the
-same ones again. `password_hash` is argon2id, so the plaintext exists only in the process
-that generated it: the print is the only copy, and
-`python -m server.admin set-password` is how to choose a specific one later.
+Passwords are `<name>` + digits + one special character, never shorter than
+`MIN_PASSWORD_LENGTH`, which is **imported** from `server/auth/routes.py` rather than restated:
+a seeded password below the floor makes an account `register` and every future reset would
+refuse. Digits come from `secrets` and are re-drawn per run, so a re-run rotates all ten. The
+print is the only copy of the plaintext — `server/admin.py set-password` chooses a specific one.
 """
 
 import os
