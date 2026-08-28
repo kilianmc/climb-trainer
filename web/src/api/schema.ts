@@ -11,8 +11,8 @@
  *   openapi-sha256  the OpenAPI document it was generated from
  *   types-sha256    everything below this comment block
  *
- * openapi-sha256: b93ef4d84b6c82e51d30afdb54a7b1f453a7e220896e22d3d59ec685f4675631
- * types-sha256: 22f29ba2fd01d0109205aaedfdca91e97da482f9213da2d2e9ec7b3992bf49d8
+ * openapi-sha256: cd3b35b7e831b51385568acd11bf27a26732b9b0cf6d37cfd6d5eb8237a6c8e7
+ * types-sha256: 5c99fd272c836a61081873d4b647165643f40b9935f8afc158353f7b5ae4237c
  */
 
 export interface paths {
@@ -441,6 +441,42 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/sessions/{client_uuid}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    /**
+     * Log Session
+     * @description Create or locate this climber's session by the uuid their client minted, and merge. 200.
+     *
+     *     A **Tier-1 write**: one request, one transaction, one Neon wake, and **at most five
+     *     statements whatever the set count**. Called at start (`sets: []`), at every mid-run moment
+     *     that piggybacks the outbox, and at Finish (`finished: true`).
+     *
+     *     **`sets` merges, it never replaces.** A set is replaced whole by its `client_uuid`; a set
+     *     already stored and absent from this payload is untouched, because a piggyback carries only
+     *     the unsent tail. **`duration_minutes` only ever grows** — the client must send elapsed
+     *     minutes so far, never an estimate, and issue #12's "edit a logged session" cannot reuse
+     *     this route because it cannot shorten one.
+     *
+     *     A `planned_session_id` or `prescribed_set_id` outside the caller's own plan tree is a 404
+     *     identical to the missing case. A set whose `exercise_id` disagrees with its prescription is
+     *     a 422 that rejects the **whole flush**, because the rest of that block is then suspect.
+     *     `planned_session.status` advances to `in_progress`, or `completed` when finished, and never
+     *     regresses. Ascents are not loggable here.
+     */
+    put: operations['log_session_api_sessions__client_uuid__put'];
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/vocabulary': {
     parameters: {
       query?: never;
@@ -719,6 +755,59 @@ export interface components {
        * Format: date
        */
       started_on: string;
+    };
+    /**
+     * LoggedSetAck
+     * @description The server's id for one set, so the client can retire it from the outbox.
+     *
+     *     Nothing the user typed is echoed back; see `SessionLogResponse`.
+     */
+    LoggedSetAck: {
+      /**
+       * Client Uuid
+       * Format: uuid
+       */
+      client_uuid: string;
+      /** Id */
+      id: number;
+      /** Set Index */
+      set_index: number;
+    };
+    /**
+     * LoggedSetIn
+     * @description One set that happened, replaced whole by its `client_uuid`.
+     *
+     *     There is no omitted-versus-null distinction per set: a `logged_set` is minted complete when
+     *     the set finishes, and a multi-row `VALUES` requires identical keys in every row anyway.
+     */
+    LoggedSetIn: {
+      /** Actual Load Kg */
+      actual_load_kg?: number | string | null;
+      /** Actual Reps */
+      actual_reps?: number | null;
+      /** Actual Work Seconds */
+      actual_work_seconds?: number | null;
+      /** Body Weight As Of */
+      body_weight_as_of?: string | null;
+      /** Body Weight Kg */
+      body_weight_kg?: number | string | null;
+      /**
+       * Client Uuid
+       * Format: uuid
+       */
+      client_uuid: string;
+      /** Completed At */
+      completed_at?: string | null;
+      /** Exercise Id */
+      exercise_id: number;
+      /** Note */
+      note?: string | null;
+      /** Prescribed Set Id */
+      prescribed_set_id?: number | null;
+      /** Rpe */
+      rpe?: number | null;
+      /** Set Index */
+      set_index: number;
     };
     /** LoginRequest */
     LoginRequest: {
@@ -1063,6 +1152,83 @@ export interface components {
       invite_code: string;
       /** Password */
       password: string;
+    };
+    /**
+     * SessionLogRequest
+     * @description The activity/logged_session envelope plus the delta of sets. `extra="forbid"`.
+     *
+     *     An **omitted** envelope field means "no change"; an explicit **`null`** means "clear", read
+     *     through `model_fields_set` — the idiom at `server/profile/routes.py::InjuryIn`.
+     *
+     *     `finished` is a request field and **not a column**: the only server behaviour that depends
+     *     on finish-ness is the `planned_session.status` transition, which is why this endpoint needed
+     *     no Alembic revision. `duration_minutes` must be **elapsed minutes so far**, floored at 1,
+     *     never the plan's `estimated_minutes` — see the handler's `GREATEST` rule.
+     */
+    SessionLogRequest: {
+      discipline: components['schemas']['Discipline'];
+      /** Duration Minutes */
+      duration_minutes: number;
+      /**
+       * Finished
+       * @default false
+       */
+      finished: boolean;
+      /** Location */
+      location?: string | null;
+      /** Notes */
+      notes?: string | null;
+      /**
+       * Occurred On
+       * Format: date
+       */
+      occurred_on: string;
+      /** Planned Session Id */
+      planned_session_id?: number | null;
+      /** Rpe */
+      rpe?: number | null;
+      /**
+       * Sets
+       * @default []
+       */
+      sets: components['schemas']['LoggedSetIn'][];
+      /** Started At */
+      started_at?: string | null;
+    };
+    /**
+     * SessionLogResponse
+     * @description What the server now holds for this session. **Always 200**, never a conditional 201.
+     *
+     *     A replayed PUT must not change the status code, because the outbox does not branch on it.
+     *     `duration_minutes` is the post-`GREATEST` value, so a client can see that a stale retry did
+     *     not shorten the session.
+     *
+     *     **No user free text is echoed** — `notes`, `location` and each set's `note` are all absent.
+     *     So nothing in this body needs escaping downstream, and a mid-run piggyback response stays
+     *     small even when it acknowledges a hundred sets.
+     */
+    SessionLogResponse: {
+      /**
+       * Client Uuid
+       * Format: uuid
+       */
+      client_uuid: string;
+      /** Duration Minutes */
+      duration_minutes: number;
+      /** Id */
+      id: number;
+      /**
+       * Occurred On
+       * Format: date
+       */
+      occurred_on: string;
+      /** Planned Session Id */
+      planned_session_id: number | null;
+      planned_session_status: components['schemas']['SessionStatus'] | null;
+      /** Rpe */
+      rpe: number | null;
+      /** Sets */
+      sets: components['schemas']['LoggedSetAck'][];
     };
     /**
      * SessionOut
@@ -1599,6 +1765,41 @@ export interface operations {
         };
         content: {
           'application/json': components['schemas']['ProfileResponse'];
+        };
+      };
+    };
+  };
+  log_session_api_sessions__client_uuid__put: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        client_uuid: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['SessionLogRequest'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['SessionLogResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
         };
       };
     };
