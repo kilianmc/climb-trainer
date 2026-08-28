@@ -8105,3 +8105,479 @@ kind = "docstring"
 anchor = "tests.test_sessions_log"
 limit = 56
 reason = "CLAUDE.md requires a guard test to be SHOWN to fail: this carries the eleven sabotages and the exact red output of each, including the three that revealed a guard was weaker than it looked (the replay arm survives replace semantics, the planned-session 404 has a second layer, and the cardio 409 is the same status either way)."
+
+[[exception]]
+path = "web/src/session/api.test.ts"
+kind = "block"
+anchor = "the two decisions in api ts that"
+limit = 12
+reason = "House-style test docstring naming the two pure decisions that can destroy data or spend Neon compute: classifyFailure and writesEnabled."
+
+[[exception]]
+path = "web/src/session/api.ts"
+kind = "block"
+anchor = "the one call site for put api sessions"
+limit = 19
+reason = "The query-cache rule this file is built on, plus the NO-debounce/NO-item-count reasoning that CLAUDE.md asks for beside the flush by name."
+
+[[exception]]
+path = "web/src/session/api.ts"
+kind = "block"
+anchor = "4xx is permanent 5xx is retryable"
+limit = 12
+reason = "Why 4xx is permanent, 5xx is retryable and 401 requeues anyway. Getting the split wrong either loses a session or retries forever."
+
+[[exception]]
+path = "web/src/session/clock.test.ts"
+kind = "block"
+anchor = "the clock is what a backgrounded"
+limit = 13
+reason = "House-style test docstring naming the defects guarded: advance-while-overdue, the skipped count, the no-rewind rule and the duration clamp."
+
+[[exception]]
+path = "web/src/session/clock.ts"
+kind = "block"
+anchor = "elapsed minutes so far floored"
+limit = 9
+reason = "The GREATEST/estimated_minutes trap: srpe_load is a generated column, so a wrong duration_minutes is permanent and issue #12's editor cannot repair it."
+
+[[exception]]
+path = "web/src/session/outbox.test.ts"
+kind = "block"
+anchor = "the outbox is the only thing standing"
+limit = 14
+reason = "House-style test docstring naming the data-loss paths guarded: quarantine versus requeue, ack-by-uuid and the mint refusal."
+
+[[exception]]
+path = "web/src/session/outbox.ts"
+kind = "block"
+anchor = "the tier 2 outbox mint a set hold"
+limit = 14
+reason = "Why sets is a DELTA and why a set stays in pending until an outcome. Both are data-loss paths that read as harmless refactors otherwise."
+
+[[exception]]
+path = "web/src/session/outbox.ts"
+kind = "block"
+anchor = "a 4xx refused this batch move it"
+limit = 8
+reason = "Why a 4xx is quarantined permanently: a 422 rejects the whole flush by design, so retrying is the payload that can never succeed."
+
+[[exception]]
+path = "web/src/session/outbox.ts"
+kind = "block"
+anchor = "the body of one put api sessions"
+limit = 12
+reason = "Every request carries the full envelope, and rpe is omitted until picked because an explicit null means clear on this route."
+
+[[exception]]
+path = "web/src/session/protocol.test.ts"
+kind = "block"
+anchor = "the compiler is the one place a"
+limit = 14
+reason = "House-style test docstring naming the defects guarded: the three rests, session-wide set_index, the exhaustive switch and completesSet."
+
+[[exception]]
+path = "web/src/session/protocol.ts"
+kind = "block"
+anchor = "the protocol compiler a planned"
+limit = 17
+reason = "The three rests that must not absorb one another, and why set_index is session-wide 1..N. Both are server 422s or wrong workouts, and neither is visible in the code."
+
+[[exception]]
+path = "web/src/session/runStore.test.ts"
+kind = "block"
+anchor = "the persisted run is the only copy"
+limit = 10
+reason = "House-style test docstring naming the defects guarded: every corrupt-record path, a throwing localStorage and the no-token rule."
+
+[[exception]]
+path = "web/src/session/runStore.ts"
+kind = "block"
+anchor = "the persisted run under ct run"
+limit = 14
+reason = "Why the timeline is frozen into the record and why nothing sensitive may be written: in the federated mount localStorage belongs to the shell."
+
+[[exception]]
+path = "web/src/session/today.test.ts"
+kind = "block"
+anchor = "date handling and the rest day"
+limit = 10
+reason = "House-style test docstring naming the defects guarded: the local-date trap behind occurred_on and the previewed-plan unloggable case."
+
+[[exception]]
+path = "web/src/session/today.ts"
+kind = "block"
+anchor = "today in the browser s own timezone"
+limit = 9
+reason = "Why toISOString().slice(0,10) is wrong for occurred_on. The failure is silent and timezone-dependent, so the reason cannot live in a name."
+
+[[exception]]
+path = "web/src/session/writePath.test.ts"
+kind = "block"
+anchor = "one whole run driven by hand asserting"
+limit = 15
+reason = "House-style test docstring for the whole-run contract test: the four PUT bodies and every clause of the envelope they must carry."
+
+[[exception]]
+path = "web/src/session/cues.test.ts"
+kind = "block"
+anchor = "the cue bus and the four ways it"
+limit = 9
+reason = "House-style test docstring naming the defects guarded: a context built outside the Start gesture, a second context per session, and every no-op path."
+
+[[exception]]
+path = "web/src/session/cues.ts"
+kind = "block"
+anchor = "the cue bus synthesized tones and"
+limit = 19
+reason = "Why audio is never load-bearing, why the AudioContext must be built inside the Start click, and that the iOS silent switch has no workaround."
+
+[[exception]]
+path = "web/src/session/cues.ts"
+kind = "block"
+anchor = "three cues and deliberately only"
+limit = 10
+reason = "The cue vocabulary itself and why it is only three tones. No doc specifies it, so the reasoning has nowhere else to live."
+
+[[exception]]
+path = "web/src/session/cues.ts"
+kind = "block"
+anchor = "one bus per player holds at most"
+limit = 7
+reason = "Why nothing in the bus throws: a cue that does not sound is not a failure worth taking the phase change down with it."
+
+[[exception]]
+path = "web/src/session/useSessionRun.test.ts"
+kind = "block"
+anchor = "the machine driven by a clock the"
+limit = 21
+reason = "House-style test docstring naming the four clock bugs guarded, plus the note that `start` no longer starts a timer - which is why every clock test now enters an item first."
+
+[[exception]]
+path = "web/src/session/useSessionRun.ts"
+kind = "block"
+anchor = "the session machine one hook everything"
+limit = 33
+reason = "The five invariants the machine exists to hold: rAF not setInterval, performance.now for maths, the ref-written countdown, one cue per tick, and that starting the SESSION starts no timer."
+
+[[exception]]
+path = "web/src/session/useSessionRun.ts"
+kind = "block"
+anchor = "a timed set that ran to its boundary"
+limit = 26
+reason = "The five invariants the machine exists to hold: rAF not setInterval, performance.now for maths, the ref-written countdown, one cue per tick, and that starting the SESSION starts no timer."
+
+[[exception]]
+path = "web/src/session/useSessionRun.ts"
+kind = "block"
+anchor = "one flush whatever triggered it"
+limit = 26
+reason = "The five invariants the machine exists to hold: rAF not setInterval, performance.now for maths, the ref-written countdown, one cue per tick, and that starting the SESSION starts no timer."
+
+[[exception]]
+path = "web/src/session/useSessionRun.ts"
+kind = "block"
+anchor = "restart this phase re stamp the"
+limit = 26
+reason = "The five invariants the machine exists to hold: rAF not setInterval, performance.now for maths, the ref-written countdown, one cue per tick, and that starting the SESSION starts no timer."
+
+[[exception]]
+path = "web/src/session/wakeLock.test.ts"
+kind = "block"
+anchor = "the wake lock and the two rules"
+limit = 10
+reason = "House-style test docstring: availability decides whether the control exists at all, and held is read from the sentinel rather than from the click."
+
+[[exception]]
+path = "web/src/session/wakeLock.ts"
+kind = "block"
+anchor = "screen wake lock as a user owned"
+limit = 20
+reason = "Every clause of CLAUDE.md's wake-lock rule that a naive implementation drops: hide when unavailable, reflect the sentinel, never load-bearing."
+
+[[exception]]
+path = "web/src/session/wakeLock.ts"
+kind = "block"
+anchor = "ask for a lock rejection is a normal"
+limit = 11
+reason = "Rejection and a hidden tab are normal outcomes, and the new paragraph is load-bearing: this is safe to call when the preference is already on, which is what makes a press do something after the OS drops the lock."
+
+[[exception]]
+path = "web/src/session/wakeLock.ts"
+kind = "block"
+anchor = "hold a screen wake lock for as"
+limit = 11
+reason = "Rejection and a hidden tab are normal outcomes, and the new paragraph is load-bearing: this is safe to call when the preference is already on, which is what makes a press do something after the OS drops the lock."
+
+[[exception]]
+path = "web/src/test/setup.ts"
+kind = "block"
+anchor = "every stub below is installed configurable"
+limit = 7
+reason = "Why every device stub is configurable: the unavailable branch is the one that ships to Firefox on Android and to an iOS PWA below 18.4."
+
+[[exception]]
+path = "web/src/routes/_authed/session.lazy.tsx"
+kind = "block"
+anchor = "session follow today s session"
+limit = 25
+reason = "Why three screens share one route with no search param, why start is called straight out of the click, and why the finished record is NOT discarded - it is what tells the brief the session is done."
+
+[[exception]]
+path = "web/src/session/KeepScreenOn.tsx"
+kind = "block"
+anchor = "the keep screen on control icon"
+limit = 18
+reason = "Three rules that are each a shipped bug: render NOTHING when the API is missing, render from the sentinel and never from intent, and the ThemeSwitch a11y contract this icon-only two-state button copies (label = what pressing does, state in a separate live region)."
+
+[[exception]]
+path = "web/src/session/SessionPlayer.tsx"
+kind = "block"
+anchor = "the run itself one thing at a time"
+limit = 22
+reason = "Four decisions a rework would undo: the coloured face appears only while an ITEM is running, FOCUS MODE makes the other items absent rather than dimmed (five wrong buttons within reach of a climber mid-hang), the countdown is written through a ref and not state, and the phase is a data attribute rather than an interpolated class name markupCss.test.ts cannot see."
+
+[[exception]]
+path = "web/src/session/SessionSummary.tsx"
+kind = "block"
+anchor = "the last screen of every run and"
+limit = 10
+reason = "Peak-end: why the run always ends here and never on the last set, and why the save state is a sentence rather than a spinner."
+
+[[exception]]
+path = "web/src/sessionPlayer.test.tsx"
+kind = "block"
+anchor = "the session player s write path"
+limit = 21
+reason = "House-style test docstring naming the five defects guarded: the permanent duration_minutes, the zero-request run, the set delta, the 500-versus-422 split and demo scope writing nothing."
+
+[[exception]]
+path = "web/src/sessionResume.test.tsx"
+kind = "block"
+anchor = "coming back to a run that was already"
+limit = 24
+reason = "House-style test docstring naming the four resume defects guarded, including the two halves of the toggle bug Kilian saw and how each was watched to fail."
+
+[[exception]]
+path = "web/src/session/SessionPlayer.tsx"
+kind = "block"
+anchor = "the session as the list of things"
+limit = 9
+reason = "Why no item control is ever disabled: completed and skipped are states the climber moves between freely, and issue #65 refuses a greyed-out control in demo scope."
+
+[[exception]]
+path = "web/src/session/SessionSummary.tsx"
+kind = "block"
+anchor = "its own put rather than part of"
+limit = 8
+reason = "Why the RPE is its own PUT, and why it is a real select on the shared ct-app__select primitive rather than the ten buttons it replaced."
+
+[[exception]]
+path = "web/src/session/outbox.ts"
+kind = "block"
+anchor = "the lowest set index no row in"
+limit = 9
+reason = "logged_set rows cannot be deleted (#81), so a re-run may not reuse an ordinal the server already has a row for; counting quarantined sets too is the deliberate half."
+
+[[exception]]
+path = "web/src/session/protocol.ts"
+kind = "block"
+anchor = "the timeline cut back into the"
+limit = 8
+reason = "Why the block ranges are derived rather than stored, and why the half-open shape matters: slicing the timeline to `end` is how the clock is stopped at an item boundary without teaching clock.ts about blocks."
+
+[[exception]]
+path = "web/src/session/runStore.ts"
+kind = "block"
+anchor = "where one item one block of the"
+limit = 8
+reason = "The timer is per ITEM, not per session, and completed/skipped are reachable without ever running one. Both are Kilian's decisions and both read as bugs without the reason."
+
+[[exception]]
+path = "web/src/session/runStore.ts"
+kind = "block"
+anchor = "added to every setindex this attempt"
+limit = 9
+reason = "Why a restart carries a set-index offset: logged_set rows cannot be deleted (#81) and set_index is unique per session, so reusing an ordinal is a cardinality_violation that quarantines the whole flush."
+
+[[exception]]
+path = "web/src/session/useSessionRun.ts"
+kind = "block"
+anchor = "the phases of the item that is"
+limit = 7
+reason = "Why the item bound is a SLICE (indices unchanged, clock.ts learns nothing about blocks) and why the result is cached on identity: tick() reads it on every animation frame."
+
+[[exception]]
+path = "web/src/session/useSessionRun.ts"
+kind = "block"
+anchor = "forget the sets this attempt minted"
+limit = 9
+reason = "The honest half of a restart: unflushed sets go, acked ones stay, because logged_set rows cannot be deleted and dropping the local copy would make the summary describe a run the diary does not have."
+
+[[exception]]
+path = "web/src/session/useSessionRun.ts"
+kind = "block"
+anchor = "enter an item the deliberate press"
+limit = 9
+reason = "A restart APPENDS and never rewrites, and the set-index offset is what keeps it from colliding with the rows the server already holds."
+
+[[exception]]
+path = "web/src/session/useSessionRun.ts"
+kind = "slash_run"
+anchor = "the ceiling is read before the"
+limit = 4
+reason = "The ceiling is read before the drop, because a dropped set is unacknowledged rather than provably unwritten - a 5xx can arrive after the server committed."
+
+[[exception]]
+path = "web/src/session/useSessionRun.ts"
+kind = "slash_run"
+anchor = "the display loop nothing counts"
+limit = 5
+reason = "Records that the display loop runs only while an ITEM is running, which is the whole difference between starting a session and starting a block."
+
+[[exception]]
+path = "web/src/session/useSessionRun.ts"
+kind = "slash_run"
+anchor = "the intent is read off what is"
+limit = 3
+reason = "The fix for the toggle that looked broken: the intent is read off what is on screen, because `held` and the stored preference are allowed to disagree and a press that only flipped the preference did nothing visible."
+
+[[exception]]
+path = "web/src/session/wakeLock.ts"
+kind = "block"
+anchor = "the cancellation flag for an acquire"
+limit = 9
+reason = "The cancellation flag for an in-flight acquire, and the exact bug it fixes - a resolved sentinel published over a preference nobody set, which the effect could then never release."
+
+[[exception]]
+path = "web/src/sessionResume.test.tsx"
+kind = "slash_run"
+anchor = "the preference is still true and"
+limit = 3
+reason = "Names the state the OS leaves behind on every backgrounding, which is the precondition the regression needs and is invisible from the assertions alone."
+
+[[exception]]
+path = "web/src/ui/icons.tsx"
+kind = "block"
+anchor = "keep the screen on let it sleep"
+limit = 8
+reason = "Why this is not IconMoon: the bare crescent already means dark theme two screens away, and one glyph meaning two things is a collision nobody notices until both are on screen."
+
+[[exception]]
+path = "web/src/session/SessionPlayer.tsx"
+kind = "block"
+anchor = "the two corners neither is a primary"
+limit = 4
+reason = "CLAUDE.md forbids a primary action in a top corner; this records why these two are not one, and why each corner is its own wrapper - a control that renders nothing (no navigator.wakeLock on Firefox for Android) must leave its corner empty rather than pull the other across the screen."
+
+
+[[exception]]
+path = "web/src/session/ItemRow.tsx"
+kind = "block"
+anchor = "no attempt count a climber restarting"
+limit = 3
+reason = "Kilian removed the attempt counter deliberately; without the reason the next reader restores it from RunItem.runs, which still exists because the set-index offset needs it."
+
+
+[[exception]]
+path = "web/src/session/SessionPlayer.tsx"
+kind = "block"
+anchor = "one icon only control ui themeswitch"
+limit = 5
+reason = "The icon-only contract every control on this screen owes - name says what pressing does, matching title, the 44px tap floor - stated once at the component that enforces it instead of six times at the call sites."
+
+
+[[exception]]
+path = "web/src/session/SessionPlayer.tsx"
+kind = "block"
+anchor = "an item s controls icon only and"
+limit = 12
+reason = "Why one component serves the list and focus mode, why every label names its own item (as many rows as blocks, so three buttons reading 'Completed' would be three identical accessible names), and why next-set is hidden on the last set and on a single-set item."
+
+
+[[exception]]
+path = "web/src/session/SoundToggle.tsx"
+kind = "block"
+anchor = "the cue mute icon only in the player"
+limit = 17
+reason = "Why this replaced the 'Test sound' button rather than sitting beside it - the iOS silent switch is unreportable, so unmuting plays the cue and the test becomes the press - plus the render-nothing rule and the ThemeSwitch a11y contract, both of which read as optional without it."
+
+
+[[exception]]
+path = "web/src/session/cues.ts"
+kind = "block"
+anchor = "the mute preference ct namespaced"
+limit = 11
+reason = "Why the toggle gates BOTH channels rather than only audio (a phone buzzing through a muted session is the same complaint), why the key is ct:-namespaced, and why absent means ON."
+
+
+[[exception]]
+path = "web/src/session/runStore.ts"
+kind = "block"
+anchor = "the wall clock instant the running"
+limit = 13
+reason = "Why the pause is stored as an INSTANT rather than a remaining-time number - the second form is a disagreeing source of truth the moment a reload lands between the two - and that persisting it is what carries a pause through a reload and a backgrounding."
+
+
+[[exception]]
+path = "web/src/session/useSessionRun.ts"
+kind = "block"
+anchor = "the index of the first phase of"
+limit = 12
+reason = "A between-sets rest carries no setOfBlock, so the set in play has to be read BACKWARDS from the cursor. Read forwards, 'next set' from the rest after set 1 lands on set 3 - the exact bug, and invisible from the code."
+
+
+[[exception]]
+path = "web/src/session/useSessionRun.ts"
+kind = "block"
+anchor = "call this straight out of the click"
+limit = 3
+reason = "Unmuting plays a cue, so the toggle needs an AudioContext, so it can only be called inside a gesture. The same iOS rule as `start`, restated where the second caller is."
+
+
+[[exception]]
+path = "web/src/session/useSessionRun.ts"
+kind = "block"
+anchor = "pause the running item or resume it sometimes"
+limit = 9
+reason = "Why resuming SHIFTS phaseStartedAtEpochMs rather than re-stamping it to now: re-stamping silently restarts the phase and hands back time the climber already spent. Kilian's own words for the feature are quoted because they are the requirement."
+
+
+[[exception]]
+path = "web/src/session/useSessionRun.ts"
+kind = "block"
+anchor = "i did the first set but i have"
+limit = 9
+reason = "Why the sets a next-set jump crosses are LOGGED rather than dropped - the usual case is a climber cutting the rest short after a hang they really did - and why nothing is double-minted."
+
+
+[[exception]]
+path = "web/src/session/useSessionRun.ts"
+kind = "slash_run"
+anchor = "paused repaint the frozen number"
+limit = 3
+reason = "The pause guard is in tick() rather than only in the effect that owns the loop, because the visibilitychange re-anchor calls tick() directly - which is exactly the ten-minute backgrounding case."
+
+
+[[exception]]
+path = "web/src/session/useSessionRun.ts"
+kind = "slash_run"
+anchor = "measured at the frozen instant"
+limit = 3
+reason = "An open phase's actual_work_seconds must be measured at the frozen instant: a climber who paused mid-circuit and tapped Done ten minutes later did not hang for ten minutes."
+
+
+[[exception]]
+path = "web/src/ui/icons.tsx"
+kind = "block"
+anchor = "the session player s control set"
+limit = 11
+reason = "This is the place the file's own 'icon-only controls are deferred to the session player' note was pointing at, so it names the price of admission and records that the seven glyphs were chosen for SILHOUETTE - they sit in a label-less row read at arm's length."
+
+
+[[exception]]
+path = "web/src/ui/icons.tsx"
+kind = "block"
+anchor = "restart a ring with an arrowhead"
+limit = 7
+reason = "Why restart is not a second play triangle: a running item offers Resume and Restart side by side, and two triangles there means 'carry on' and 'throw that away' look identical."

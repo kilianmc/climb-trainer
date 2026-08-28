@@ -1,0 +1,324 @@
+@use 'mixins';
+
+// The session player: the one screen in this app that has to fill the space it is given, and
+// the one that had no way to say so until now.
+//
+// ## The height chain, with no viewport unit and no measurement
+//
+// `position: fixed` and `100dvh`/`100svh` both resolve against **kilianmc.com's** viewport in
+// the federated mount, because this stylesheet lives in the route tree both mounts share — see
+// `_chrome.scss`'s `&__actionbar`, whose deferral this file closes. So the height is an in-flow
+// `100%` chain instead: `global.scss` makes the standalone document definite, the gate below
+// turns `.ct-app` into a two-row grid, and the player root's own rows produce a genuinely
+// bottom-anchored control bar as the LAST row of its own grid.
+//
+// It is gated behind `:has(&__player)` so no other screen moves, and in the shell the `100%`
+// resolves against an indefinite ancestor and degrades to content height. **That degradation is
+// the decision, not a fallback** — one expression, correct in both mounts, with no branching and
+// nothing read off `window`.
+//
+// ## `data-phase`, and why it is not a modifier class
+//
+// The obvious form is `` `ct-app__player--${phase}` ``, and it is precisely `markupCss.test.ts`'s
+// one blind spot: an interpolation trips BOTH directions at once (the truncated stem
+// `ct-app__player--` looks like a class with no rule, and all four real modifiers look like
+// rules with no markup) and would need two allowlist rows for a decision worth none. An
+// attribute selector is invisible to that guard by construction and reads better in devtools.
+//
+// Transitions, never `@keyframes`: a keyframe's `from`/`to` are selector lists that cannot start
+// with `.ct-app`, and `distContract.test.ts` rejects every selector that does not.
+@mixin styles {
+  // Two rows: the nav, then everything else. `minmax(0, 1fr)` rather than `1fr` so a long
+  // timeline scrolls inside the row instead of blowing it out.
+  &:has(&__player) {
+    min-block-size: 100%;
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+
+  // `<main>` re-establishes the measured grid for its own children, so it needs the row too —
+  // a grid does not reach through a child. Flat, not nested: under a complex parent Sass would
+  // append the suffix to the LAST compound and emit `.ct-app__player__main`.
+  &:has(&__player) > &__main {
+    grid-template-rows: minmax(0, 1fr);
+  }
+
+  // `__bleed` already spans the gutters; `block-size: 100%` takes the row.
+  &__player {
+    container: ct-player / inline-size;
+
+    display: grid;
+    // Four rows: the corner controls, the resync slot, the scrolling body, the control bar.
+    // The resync slot is an empty element when no banner is owed, so the body never changes
+    // row and the countdown never jumps up the screen when the banner is dismissed.
+    grid-template-rows: auto auto minmax(0, 1fr) auto;
+    block-size: 100%;
+    background-color: var(--ct-phase-rest);
+    color: var(--ct-phase-fg);
+    transition: background-color var(--ct-fast) ease;
+  }
+
+  &__player[data-phase='prepare'] {
+    background-color: var(--ct-phase-prepare);
+  }
+
+  &__player[data-phase='work'] {
+    background-color: var(--ct-phase-work);
+  }
+
+  &__player[data-phase='rest'] {
+    background-color: var(--ct-phase-rest);
+  }
+
+  &__player[data-phase='open'] {
+    background-color: var(--ct-phase-open);
+  }
+
+  // The session is started and no item is running. It drops back to the app's own surface
+  // rather than earning a fifth phase fill: nothing is being asked of the climber, and a
+  // full-bleed colour behind a list of choices reads as a timer that is running.
+  &__player[data-phase='idle'] {
+    background-color: var(--ct-bg);
+    color: var(--ct-fg);
+  }
+
+  // The two top corners. Sound on one side, "Keep screen on" on the other, and a wrapper each
+  // so a control that renders nothing — Firefox on Android has no `navigator.wakeLock` — leaves
+  // its corner empty rather than pulling the other one across the screen.
+  //
+  // ⚠️ These are the ONLY controls allowed up here. CLAUDE.md's rule is that primary actions are
+  // never in a top corner; both of these are settings the climber owns, and Finish stays in the
+  // bottom bar where a thumb reaches it.
+  &__player-top {
+    display: flex;
+    align-items: start;
+    justify-content: space-between;
+    gap: var(--ct-space-2);
+    padding-block-start: var(--ct-space-2);
+    padding-inline: var(--ct-gutter-start) var(--ct-gutter-end);
+  }
+
+  &__player-corner {
+    display: flex;
+    gap: var(--ct-space-2);
+  }
+
+  // Focus mode's control row: the running item's buttons, with the gutters the list would
+  // otherwise have supplied. Centred, because with the other items gone there is no column to
+  // align to and the row sits under a centred countdown.
+  &__player-controls {
+    display: flex;
+    justify-content: center;
+    padding-inline: var(--ct-gutter-start) var(--ct-gutter-end);
+  }
+
+  // The resync banner is row TWO — above the countdown, in flow, never over it. A phone that
+  // was in a pocket for four minutes comes back to a number that has moved, and covering the
+  // number to explain why it moved is the wrong trade.
+  &__player-banner {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--ct-space-3);
+    margin: var(--ct-space-3);
+    padding: var(--ct-space-3);
+    border: 1px solid var(--ct-border-strong);
+    border-radius: var(--ct-radius-2);
+    background: var(--ct-surface-1);
+    color: var(--ct-fg);
+  }
+
+  // The scrolling middle row. `minmax(0, …)` on the row plus `min-block-size: 0` here is what
+  // lets a long list scroll INSIDE the player instead of pushing the control bar off the end.
+  &__player-body {
+    display: grid;
+    align-content: start;
+    gap: var(--ct-space-4);
+    min-block-size: 0;
+    padding-block: var(--ct-space-3);
+    overflow-y: auto;
+  }
+
+  &__player-face {
+    display: grid;
+    align-content: center;
+    justify-items: center;
+    gap: var(--ct-space-2);
+    padding: var(--ct-space-4);
+    text-align: center;
+  }
+
+  // An `open` phase's region IS the button — a circuit ends when the climber falls off, so the
+  // whole coloured area is the target rather than a control they have to aim at with chalk on
+  // their hands. `press` flashes near-black over whichever fill is showing, which is why
+  // `--ct-phase-pressed` is one token and not four.
+  &__player-tap {
+    @include mixins.tap;
+    @include mixins.press(var(--ct-phase-pressed));
+    @include mixins.focus-ring(-4px);
+
+    border: 0;
+    background-color: transparent;
+    color: inherit;
+    font: inherit;
+    text-align: center;
+    cursor: pointer;
+  }
+
+  // `cqi` against the player's own container, so it answers "how much room did this screen
+  // get", never "how wide is the window" — the question that is unanswerable in the shell.
+  // `designGuard`'s viewport-unit pattern needs a digit adjacent to the unit and `cqi` is not
+  // one of them; it is legal here on purpose.
+  &__player-count {
+    font-size: clamp(4rem, 38cqi, 12rem);
+    font-variant-numeric: tabular-nums;
+    font-weight: 600;
+    line-height: 1;
+    letter-spacing: -0.02em;
+  }
+
+  &__player-phase {
+    font-size: var(--ct-text-xl);
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
+  &__player-label {
+    font-size: var(--ct-text-lg);
+  }
+
+  &__player-step {
+    font-size: var(--ct-text-base);
+  }
+
+  // The last row, and therefore the bottom of the screen wherever the chain resolved. The
+  // safe-area floor is what keeps it clear of a home indicator in landscape on a mat.
+  &__player-bar {
+    @include mixins.safe-inset-block-end(var(--ct-space-4));
+
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--ct-space-3);
+    padding-block-start: var(--ct-space-4);
+    padding-inline: var(--ct-gutter-start) var(--ct-gutter-end);
+
+    > * {
+      flex: 1 1 10rem;
+    }
+  }
+
+  // The session, as the list of items it is. `list-style: none` because the state word carries
+  // the position far better than an ordinal would once one has been skipped.
+  &__items {
+    display: grid;
+    gap: var(--ct-space-3);
+    margin: 0;
+    padding-inline: var(--ct-gutter-start) var(--ct-gutter-end);
+    list-style: none;
+  }
+
+  // The finished card lists the same rows, so it reuses `&__items` rather than growing a second
+  // visual language — but a card supplies its own padding and the player's gutters would inset
+  // the list a second time inside it.
+  &__card &__items {
+    padding-inline: 0;
+  }
+
+  &__item {
+    display: grid;
+    gap: var(--ct-space-2);
+    padding: var(--ct-space-3);
+    border: 1px solid var(--ct-border-2);
+    border-radius: var(--ct-radius-2);
+    background: var(--ct-surface-1);
+    color: var(--ct-fg);
+  }
+
+  // ## `data-state`, and why the colour is a SECOND channel rather than the only one
+  //
+  // Off the attribute, exactly as the phase fills are off `data-phase` and for the same reason:
+  // `` `ct-app__item--${status}` `` trips `markupCss.test.ts` in both directions at once.
+  //
+  // ⚠️ The state WORD stays, at body contrast, and it is what makes this safe — the hue is
+  // added beside it, never in place of it. The tones are decidable because the row's own
+  // surface is `--ct-surface-1` and never a phase fill: the list is rendered only while nothing
+  // is running. `contrast.test.ts` proves both against all four card surfaces, in both schemes.
+  //
+  // Running keeps the accent hairline it already owned — not a fill, because the page behind it
+  // may be any of four phase colours and a second fill would fight all of them — and it
+  // deliberately does NOT tint its word. That is what keeps it apart from `completed`, whose
+  // green is the same family: an outcome is coloured twice, the focused item once.
+  &__item[data-state='running'] {
+    border-color: var(--ct-accent);
+  }
+
+  &__item[data-state='completed'] {
+    border-color: var(--ct-success);
+  }
+
+  &__item[data-state='skipped'] {
+    border-color: var(--ct-danger);
+  }
+
+  // Flat rather than nested, and they beat `&__item-state` below on specificity rather than on
+  // source order — under a complex parent Sass would emit `.ct-app__item…__item-state`.
+  &__item[data-state='completed'] &__item-state {
+    color: var(--ct-success);
+  }
+
+  &__item[data-state='skipped'] &__item-state {
+    color: var(--ct-danger);
+  }
+
+  // The whole session card takes the item rows' completed tone once the session is finished.
+  // No skipped twin: a session is never skipped as a whole, so that rule would have no user.
+  &__card[data-state='completed'] {
+    border-color: var(--ct-success);
+  }
+
+  &__item-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: var(--ct-space-2);
+  }
+
+  &__item-name {
+    font-size: var(--ct-text-lg);
+    font-weight: 600;
+  }
+
+  // Never colour alone: the state is a word, at body contrast, exactly as the profile rail's
+  // "Done" is. `pending` and `running` keep this neutral tone; the two outcomes tint it above.
+  &__item-state {
+    color: var(--ct-fg-muted);
+    font-size: var(--ct-text-sm);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+  }
+
+  &__item-meta {
+    margin: 0;
+    color: var(--ct-fg-muted);
+    font-size: var(--ct-text-sm);
+  }
+
+  // Every control here is an icon button, so nothing stretches: `&__button--icon` already
+  // squares them on the 44px `--ct-tap` floor, and a stretched square is a wide rectangle with
+  // a glyph adrift in the middle of it.
+  &__item-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--ct-space-2);
+  }
+
+  // ⚠️ Reduced motion drops the TRANSITIONS and nothing else. The fill and the countdown still
+  // change — instantly. Reduced motion is not reduced information, and on this screen the
+  // colour IS the information.
+  @media (prefers-reduced-motion: reduce) {
+    &__player {
+      transition: none;
+    }
+  }
+}

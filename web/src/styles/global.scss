@@ -18,8 +18,41 @@
 body {
   @include tokens.declare;
 
+  display: flex;
+  flex-direction: column;
+  min-block-size: 100%;
   margin: 0;
   background: var(--ct-bg);
+}
+
+// THE STANDALONE HEIGHT ANCHOR, and this file is the only legal place for it.
+//
+// The session player is the app's first genuinely full-height screen and it is built out of an
+// in-flow `100%` chain (`_session.scss`), because `position: fixed` and `100dvh` both resolve
+// against kilianmc.com's viewport in the federated mount. A percentage block-size resolves to
+// nothing against an auto-height ancestor, so something above `.ct-app` has to be definite —
+// and `html`, `body` and `#root` are exactly the three elements that exist only in the
+// standalone document. Nothing here can reach the shell.
+//
+// `flex`, not `block-size: 100%` down the chain: a flexed item's resolved main size IS definite
+// for its children's percentages, so the app can still grow past the window without the
+// always-on scrollbar that a hard `100%` on `body` produces once the update bar reserves its
+// strip below it.
+html {
+  block-size: 100%;
+}
+
+#root {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+}
+
+// `flex-shrink: 0`: under the player gate `.ct-app` swaps its automatic content-based minimum
+// for `min-block-size: 100%`, and without this a screen taller than the window would be
+// squeezed into it instead of scrolling.
+#root > .ct-app {
+  flex: 1 0 auto;
 }
 
 // The manual theme override, for the CANVAS — and this is the one place it can be done.

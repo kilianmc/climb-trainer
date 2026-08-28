@@ -92,3 +92,12 @@ export type PlanNote = Schemas['NoteOut'];
 export type Phase = Schemas['Phase'];
 export type ActivityKind = Schemas['ActivityKind'];
 export type ProtocolKind = Schemas['ProtocolKind'];
+
+/** `PUT /api/sessions/{client_uuid}`. ⚠️ `sets` is a DELTA and `duration_minutes` is required
+ * on every request — CLAUDE.md's "Logging a session" carries both rules. */
+export type SessionLogRequest = Schemas['SessionLogRequest'];
+export type SessionLogResponse = Schemas['SessionLogResponse'];
+/** One set that happened. Replaced whole by its `client_uuid`; the client mints that uuid. */
+export type LoggedSetInput = Schemas['LoggedSetIn'];
+/** The server's id for one set, so the outbox can retire it. No user free text is echoed. */
+export type LoggedSetAck = Schemas['LoggedSetAck'];

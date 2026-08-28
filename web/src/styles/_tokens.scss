@@ -45,6 +45,14 @@
   // `accent` and `danger` — text only, so there is no `--ct-warning-fg` and no reverse pair.
   --ct-warning: #8f5000;
 
+  // A SUCCESS, on the same shape as the warning above: text only, so no `--ct-success-fg` and
+  // no reverse pair. It marks a finished session item — the row's border and its state word —
+  // and that row's surface is `--ct-surface-1`. Measured as text on this scheme's four card
+  // surfaces: bg 5.83:1, surface-1 6.22:1, surface-2 6.45:1, surface-3 6.68:1.
+  // ⚠️ NOT `--ct-phase-work`, which is a FILL carrying white text at 12rem: its dark value
+  // #11492f reads 1.68:1 as text on `--ct-surface-1`, i.e. invisible.
+  --ct-success: #0f6a3a;
+
   // A hairline per surface: one border tone reads as a smudge against white and as
   // nothing at all against the page background.
   --ct-border-bg: #d3d7d0;
@@ -54,6 +62,22 @@
   // Control outlines — inputs and resting buttons — carry real 3:1 non-text contrast
   // (WCAG 1.4.11) rather than the decorative hairlines above.
   --ct-border-strong: #6f7570;
+
+  // THE FOUR PHASE FILLS, and they are the session player's PRIMARY cue channel: a muted phone
+  // across the room still has to work, so the colour says which phase it is before the tone
+  // does. Deliberately not the accent/danger pair — a full-bleed red would read as "something
+  // is wrong" on the one screen where nothing is.
+  //
+  // `--ct-phase-pressed` is the tap acknowledgement on an `open` phase, whose whole region is
+  // the button: near-black reads as "pressed" over all four fills, so it is one token rather
+  // than four. Every one of them carries `--ct-phase-fg` as TEXT at 12rem, which is why all six
+  // pairs are in `contrast.test.ts::TEXT_PAIRS`.
+  --ct-phase-prepare: #8a5000;
+  --ct-phase-work: #16603f;
+  --ct-phase-rest: #1d5a86;
+  --ct-phase-open: #5b3a8e;
+  --ct-phase-pressed: #101418;
+  --ct-phase-fg: #ffffff;
 }
 
 @mixin dark-values {
@@ -77,11 +101,25 @@
   // "same keys in both schemes" assertion true.
   --ct-warning: #e8b25e;
 
+  // Success, inverted for dark: bg 10.14:1, surface-1 9.24:1, surface-2 8.35:1, surface-3
+  // 7.33:1. Declared in both schemes, which is what the "same keys" assertion needs.
+  --ct-success: #63d197;
+
   --ct-border-bg: #22262c;
   --ct-border-1: #2a2f37;
   --ct-border-2: #333944;
   --ct-border-3: #3d444f;
   --ct-border-strong: #858e9c;
+
+  // The same four hues, taken down for a dark room: this fill is the biggest lit area on the
+  // phone during a 45-90 minute session, so the light scheme's values would be a torch. The
+  // foreground stays white in both schemes — it is text on a saturated fill, not on a surface.
+  --ct-phase-prepare: #6b3e00;
+  --ct-phase-work: #11492f;
+  --ct-phase-rest: #164463;
+  --ct-phase-open: #43296b;
+  --ct-phase-pressed: #05070a;
+  --ct-phase-fg: #ffffff;
 }
 
 /**
