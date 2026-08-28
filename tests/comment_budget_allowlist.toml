@@ -8098,3 +8098,10 @@ kind = "block"
 anchor = "reset is what tanstack hands an"
 limit = 18
 reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
+
+[[exception]]
+path = "tests/test_sessions_log.py"
+kind = "docstring"
+anchor = "tests.test_sessions_log"
+limit = 56
+reason = "CLAUDE.md requires a guard test to be SHOWN to fail: this carries the eleven sabotages and the exact red output of each, including the three that revealed a guard was weaker than it looked (the replay arm survives replace semantics, the planned-session 404 has a second layer, and the cardio 409 is the same status either way)."

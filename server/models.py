@@ -103,9 +103,9 @@ session_status_enum = Enum(
 # The `func.` forms compile to `true()` and `false()`, which are not Postgres functions —
 # the DDL would fail outright. Nothing notices today because this repo never calls
 # `create_all()` and `compare_server_default` is off in `migrations/env.py`, so the only
-# reader of these is Alembic's renderer. That makes it a trap rather than a bug: adding a
-# `create_all()` test fixture is a *tempting* move on a machine with no local Postgres,
-# and it would fail on three columns for a reason that looks nothing like the cause.
+# reader of these is Alembic's renderer. That makes it a trap rather than a bug: a
+# `create_all()` fixture is a *tempting* shortcut past `alembic upgrade head`, and it would
+# fail on three columns for a reason that looks nothing like the cause.
 TRUE = text("true")
 FALSE = text("false")
 
@@ -120,6 +120,9 @@ KILOGRAMS = Numeric(5, 2)
 # 2000-character column is a 500, not a 422.
 NOTES_MAX = 2000
 SET_NOTE_MAX = 500
+# `logged_session.location`. The same 120 `ascent.name` uses: a gym or crag name is a short
+# label, and `server/fields.py::SessionLocation` mirrors this number rather than repeating it.
+LOCATION_MAX = 120
 ASCENT_NOTES_MAX = 1000
 JOURNAL_BODY_MAX = 4000
 # `user_profile.display_name`. 64 rather than 120: it is a name on a screen, not a route
@@ -1305,7 +1308,7 @@ class LoggedSession(Base):
         activity_kind_enum, server_default=text("'climbing'")
     )
     discipline: Mapped[Discipline] = mapped_column(discipline_enum)
-    location: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    location: Mapped[str | None] = mapped_column(String(LOCATION_MAX), nullable=True)
     notes: Mapped[str | None] = mapped_column(String(NOTES_MAX), nullable=True)
 
     activity: Mapped[Activity] = relationship(back_populates="climbing_session")
@@ -1360,8 +1363,8 @@ class LoggedSet(Base):
 
     With `prescribed_set_id` set, `exercise_id` should equal
     `prescribed_set -> session_block.exercise_id`. Nothing in the database enforces it: **it is
-    a write-path invariant (issue #62)**, and the endpoint accepting a flush must assert it
-    rather than trust the client. Making it structural was rejected on cost — the composite-FK
+    a write-path invariant (issue #62), asserted with a 422 by `server/sessions/routes.py`**,
+    which refuses the whole flush. Making it structural was rejected on cost — the composite-FK
     technique needs the parent to expose the column, so it would mean denormalising `exercise_id`
     onto `prescribed_set` plus a `UNIQUE (id, exercise_id)` on both, two columns and three
     constraints across a tree that exists to hold prescriptions. The damage is milder than the

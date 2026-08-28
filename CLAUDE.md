@@ -102,6 +102,10 @@ SILENTLY" · "⚠️ Prose is capped, and an executable claim must not be prose"
 **The plan generator, `POST /api/plans/preview`, persisting a plan or `GET /api/plans/active`** —
 "The plan generator" · "Persisting a plan".
 
+**Logging a session, an outbox flush or `PUT /api/sessions/{client_uuid}`** — "Logging a
+session" · "The `sets` array is a DELTA, not a replacement" · "`duration_minutes` only ever
+grows".
+
 **Building the session player** — "Session player invariants" · "Screen Wake Lock — a
 user-owned TOGGLE, and a progressive enhancement".
 
@@ -1054,7 +1058,8 @@ reader would otherwise try to undo:
   hygiene, they are FK targets. **The technique is the house pattern for a denormalisation:
   if you copy a column down, tie it back.** One place deliberately does not
   (`logged_set.exercise_id` vs its prescription's) — see that model's docstring for the cost
-  argument and the write-path obligation it creates instead — **issue #62**, not PR #10,
+  argument and the write-path obligation it creates instead — **issue #62**, whose owner is
+  now `server/sessions/routes.py` (PR #15b, a 422 that rejects the whole flush). Not PR #10,
   which shipped a read-only library and no write path at all.
 
 - **`ascent.tags` is gone.** Tags were `text[]` + a GIN index; they are now the seeded
@@ -3382,6 +3387,102 @@ standing the previous plan down in the same transaction. `GET /api/plans/active`
   route's injected header whenever an `HTTPException` propagates, so `SecurityHeadersMiddleware`
   fills it in **only when absent**. ⚠️ Absent-means-uncacheable, never a blanket: overwriting
   `GET /api/library`'s `public, s-maxage=31536000, immutable` would be a real regression.
+
+## Logging a session (PR #15b — one idempotent PUT)
+
+`PUT /api/sessions/{client_uuid}` is the whole write path: `server/sessions/routes.py` is the
+router, the models and the SQL, and nothing else is in the package. `tests/test_sessions_log.py`
+proves it against real Postgres, with every guard sabotaged and recorded;
+`tests/test_sessions_validation.py` owns the DB-free bounds and runs in the local gate.
+
+- **ONE route, called at start, at every mid-run flush and at Finish.** The client mints the
+  `client_uuid` and addresses the same URL every time, so create-or-locate is the only shape
+  available. That is what makes "Two write tiers"' piggyback rule **structural** rather than a
+  convention: a Tier-1 mid-run action carries whatever the outbox holds in the same request, and
+  with one contract there is no second request to forget to attach the outbox to.
+- **The idempotency key IS the authorisation scope.** The activity upsert's conflict target is
+  `(user_id, client_uuid)` with `user_id` bound from the token, so the same uuid from two
+  accounts is two sessions and there is no path on which a client-supplied id selects the row.
+  A `planned_session_id` or `prescribed_set_id` outside the caller's own plan tree is a **404
+  whose status and detail are byte-identical to the nonexistent case** — not-yours and
+  not-there are the same answer — and it is checked **before** any 422, so no message can
+  confirm that a stranger's row exists.
+- **Invariant A (issue #62) is a 422 that rejects the WHOLE flush.** A set naming a different
+  exercise than its prescription's block is refused with **zero** rows written: the transaction
+  is atomic anyway, a broken prescription mapping makes the rest of that block suspect, and
+  accepting the others writes a plausible-looking lie. Dropping just the bad set would lose
+  data invisibly, which is the failure the issue exists to prevent.
+- **⚠️ 4xx here is PERMANENT — quarantine the flush, never retry it. 5xx is retryable.** Without
+  that rule a 422 becomes the payload that "retries forever and can never succeed" which
+  `server/fields.py`'s own docstring warns about. Every `HTTPException` detail in the module is
+  a fixed string with no interpolation, so nothing bypasses `server/app.py`'s 422 allowlist.
+- **At most five statements, whatever the set count** — measured 5 for a plan-linked flush of
+  1..120 sets, 3 off-plan, 2 for a bare start. Ownership, activity upsert, subtype upsert, one
+  batch set upsert, one `planned_session` status update: **one request, one transaction, one
+  Neon wake.** Collapsing them into a single data-modifying CTE is expressible and was
+  **rejected** — the cost driver is how spread out queries are, not how many (see "Neon bills
+  AWAKE TIME, not writes"), so it buys milliseconds and pays permanently in readability and in
+  one unmappable `IntegrityError`.
+  `test_the_STATEMENT_COUNT_is_INDEPENDENT_OF_THE_SET_COUNT` pins it, and was shown red against
+  a per-set loop.
+- **`finished` is a request field, NOT a column, and no Alembic revision was added.** The only
+  server behaviour that depends on finish-ness is the `planned_session.status` transition —
+  unfinished → `in_progress`, finishing → `completed`, and **never backwards**, which is what
+  keeps a finishing replay's response byte-identical. `skipped` and `rescheduled` are
+  deliberately not terminal: actually doing the session is stronger evidence than a plan-screen
+  tap that said it would not happen.
+- **Partial completion is a DERIVED QUERY, not a column.** `status = 'completed'` means "the
+  user pressed Finish", not "everything got done"; "I did 2 of 3 parts" is a join from
+  `logged_set.prescribed_set_id` to `session_block`, counting blocks with at least one logged
+  set. No column, because the adherence rule will be tuned — the same argument
+  `PlannedSession`'s own docstring already makes. Displaying the percentage belongs to #64/#12.
+- **Ascents are OUT.** An ascent is "the emotional payload of the whole app" and it is **not
+  loggable here**; #15a must not be built assuming this endpoint covers it.
+
+### The `sets` array is a DELTA, not a replacement
+
+`PUT` implies replace, and that reading is **deliberately overridden for the array**: the PUT
+replaces the *identity* of the addressed session and *merges* field values. Four reasons, in
+descending force:
+
+1. The route carries whatever the outbox holds — by definition the unsent tail — so replace
+   semantics would make a mid-run piggyback **delete every set already persisted**.
+2. Replace is not idempotent under an at-least-once outbox: request A can land after request B,
+   so delete-what's-absent turns a late retry into data loss. Upsert-by-`client_uuid` is
+   order-insensitive for disjoint flushes and last-write-wins for the same uuid.
+3. Absence is not a signal the client can produce — it would have to send the whole run on
+   every flush, contradicting the Tier-2 batching rule.
+4. Deleting a set is a distinct user action needing its own idempotency story, and no
+   affordance for it exists yet.
+
+The merge rule: an **omitted** envelope field means "no change", an explicit **`null`** means
+"clear", read through `model_fields_set` — the idiom at `server/profile/routes.py`. **A set is
+replaced WHOLE, by its `client_uuid`**, with no omitted-versus-null per set, because a
+`logged_set` is minted complete when the set finishes and a multi-row `VALUES` needs identical
+keys in every row anyway. A duplicate `client_uuid` or `set_index` inside one payload is a
+**422**, because two rows with one conflict key is a Postgres `cardinality_violation` — i.e. a
+500 with the whole flush in the log. Refused rather than de-duplicated: a repeated uuid means
+the client's minting is broken, and silently keeping one of the pair loses a set.
+
+⚠️ **`set_index` is the chronological 1..N ordinal of the WHOLE session**, not per block; which
+part a set belonged to is carried by `prescribed_set_id`. If that is ever revisited in favour of
+per-block indexes, the duplicate-`set_index` 422 **must be dropped in the same change**, or it
+will refuse real data.
+
+### `duration_minutes` only ever grows
+
+The column is `NOT NULL` with no default, so every PUT carries it — including the start PUT,
+which does not yet know the answer. So `DO UPDATE` sets
+`duration_minutes = GREATEST(activity.duration_minutes, EXCLUDED.duration_minutes)`, and a
+stale late retry cannot shorten a session. This is not cosmetic: `activity.srpe_load` is
+`GENERATED … STORED` from it, so a shortened duration silently corrupts training load.
+
+Two obligations follow:
+
+- **The client sends elapsed-minutes-so-far, floored at 1 — never the plan's
+  `estimated_minutes`.** Under `GREATEST`, sending 90 at minute zero pins the session at 90 for
+  good.
+- **⚠️ #12's "edit a logged session" must NOT reuse this route**, because it cannot shorten one.
 
 ## Session player invariants (PR #15a onward)
 

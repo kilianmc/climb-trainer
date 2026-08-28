@@ -49,6 +49,7 @@ packages = [
     "server.library",
     "server.plans",
     "server.profile",
+    "server.sessions",
     "server.vocabulary",
 ]
 
