@@ -35,6 +35,7 @@ from server.domain.vocabulary import INJURY_AREAS, ActivityKind, Phase
 
 _MONDAY = date(2026, 8, 24)
 _ALL_INJURIES = tuple(sorted(spec.key for spec in INJURY_AREAS))
+_CLIMBING_SHORTFALL_OPENER = "Climbing is the core of this plan"
 
 
 def _gearless_input(**overrides: object) -> PlannerInput:
@@ -133,31 +134,39 @@ def test_each_gearless_gap_yields_a_shortfall_naming_real_equipment(
 
 
 def test_a_gearless_plan_is_complete_and_every_thin_slot_is_explained() -> None:
-    """The whole decision, end to end: three blocks a session, and no unexplained gap."""
+    """The whole decision, end to end: three blocks a session, and no unexplained gap.
+
+    ⚠️ Since the climbing floor landed (issue #84) a gearless session also carries exactly
+    ONE session-level shortfall — nowhere to climb — and that is the naming half of #61, not
+    a thin plan: the three blocks are still there.
+    """
     plan = generate(_gearless_input())
     sessions = _every_session(plan)
     assert sessions
     for phase, session in sessions:
-        assert len(session.blocks) == BLOCKS_PER_SESSION, (
+        assert len(session.blocks) >= BLOCKS_PER_SESSION, (
             f"a {phase.value} session came back with {len(session.blocks)} block(s) for a "
             f"climber with no gear."
         )
         # Every displaced block explains itself; nothing is left unaccounted for.
         assert all(block.aspect_key for block in session.blocks)
-        assert session.shortfalls == ()
+        assert len(session.shortfalls) == 1
+        assert session.shortfalls[0].options, (
+            f"a {phase.value} session with no wall time names no equipment that would give it any."
+        )
     assert plan.shortfalls, "a zero-equipment plan that names no shortfall at all is a lie."
 
 
 def test_the_terminal_all_injuries_case_is_a_named_slot_not_an_empty_one() -> None:
     """⚠️ The one honest exception, and the invariant it does *not* break.
 
-    Zero equipment plus all eleven injury areas open leaves `power_endurance` and
-    `performance` with no surviving candidate in any aspect — safety outranks filling a slot,
-    so there is nothing to prescribe. The session therefore becomes an `other`-kind slot
-    titled "Recovery" with no blocks and a shortfall per empty slot naming the injuries.
+    Zero equipment plus all eleven injury areas open leaves `power_endurance` and `performance`
+    with no surviving candidate in any aspect — safety outranks filling a slot. So the session
+    becomes an `other`-kind slot titled "Recovery", no blocks, a shortfall per empty slot naming
+    the injuries, and the one climbing shortfall every wall-less session now carries (issue #84),
+    which names equipment where a wall survives every flag and the injuries where none does.
 
-    The invariant is precisely **never an *unexplained* empty session**, so this asserts the
-    explanation, not the absence of the case.
+    The invariant is **never an *unexplained* empty session**, so this asserts the explanation.
     """
     plan = generate(_gearless_input(open_injury_keys=_ALL_INJURIES))
     empty = [(phase, session) for phase, session in _every_session(plan) if not session.blocks]
@@ -171,7 +180,11 @@ def test_the_terminal_all_injuries_case_is_a_named_slot_not_an_empty_one() -> No
         assert session.activity_kind is ActivityKind.OTHER
         assert session.estimated_minutes is None
         assert session.shortfalls
+        climbing = [one for one in session.shortfalls if _CLIMBING_SHORTFALL_OPENER in one.message]
+        assert len(climbing) == 1, "a session with no wall time says so exactly once."
         for shortfall in session.shortfalls:
+            if _CLIMBING_SHORTFALL_OPENER in shortfall.message:
+                continue
             assert shortfall.options == ()
             assert "injured" in shortfall.message
 

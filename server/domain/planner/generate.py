@@ -4,15 +4,17 @@ Pure: no DB, no clock, no RNG, no I/O. Every varying quantity is a function of
 `(week_no, session_index)`, which is the promise `server/models.py::Plan` makes and the reason
 `generator_input` folds `library_digest()` in beside the version.
 
-Four invariants, in priority order. (1) **Nothing non-deterministic reaches the output** — no
+Five invariants, in priority order. (1) **Nothing non-deterministic reaches the output** — no
 `random`, no `secrets`, no `hash()`, no set iteration; `server/domain/.ruff.toml` bans the
 imports and `tests/test_planner_reproducibility.py` is the check. (2) **A contraindicated
 exercise is never prescribed** — `prescribable()` never relaxes the injury filter, which is why
-(4) exists. (3) **Never an *unexplained* empty session** — an unfillable slot is displaced to
-the next aspect in `ASPECT_EMPHASIS`, carrying a `Shortfall` naming what would open the
-original. (4) The one honest exception: nothing available and every injury area open leaves no
-aspect in `power_endurance` or `performance`, so the session becomes `activity_kind=other`,
-"Recovery", with a shortfall per empty slot. Explained, therefore allowed.
+(5) exists. (3) **Climbing is allocated before anything else** — wall blocks in a first pass over
+the week, supplementary work in a second and only while the week still meets its level's climbing
+floor, so accessory work cannot crowd it out (issue #84). (4) **Never an *unexplained* empty
+session** — an unfillable slot is displaced to the next aspect in `ASPECT_EMPHASIS`, carrying a
+`Shortfall` naming what would open the original. (5) The one honest exception: nothing available
+and every injury area open leaves no aspect in `power_endurance` or `performance`, so the session
+becomes `activity_kind=other`, "Recovery", with a shortfall per empty slot. Explained, allowed.
 
 ⚠️ Every string built here is user facing and two hard rules bind all of them: **never suggest
 losing weight** (there is no bodyweight figure in this module, which is also why
@@ -20,15 +22,14 @@ losing weight** (there is no bodyweight figure in this module, which is also why
 names equipment rows; `substitution_hint` is deliberately not read here).
 `tests/test_planner_safety.py` asserts both against every string a plan can produce.
 
-`estimated_minutes` is arithmetic, not a guess: prescribed seconds (work or
-`reps * SECONDS_PER_REP`, plus rests) over 60, ceiled, plus `WARMUP_MINUTES` — which is not a
-prescribed block, because a block would make warming up skippable. No blocks means `None`.
-`target_grade_id`/`current_grade_id` are `None` here: `PlannerInput` carries **ordinals**, so
-only the route that read those rows knows their ids.
+`estimated_minutes` is arithmetic, not a guess: prescribed seconds over 60, ceiled, plus
+`WARMUP_MINUTES` — not a block, because a block would make warming up skippable.
 """
 
 import math
-from typing import Final
+from dataclasses import dataclass, field, replace
+from datetime import date
+from typing import Final, Literal
 
 from server.domain.exercises import ExerciseSpec, PrescriptionSpec
 from server.domain.planner.blueprint import (
@@ -41,6 +42,21 @@ from server.domain.planner.blueprint import (
     SetBlueprint,
     Shortfall,
 )
+from server.domain.planner.climbing import (
+    FINGER_ASPECT,
+    FINGER_PROTOCOLS,
+    MAX_EXPANSION_FACTOR,
+    UNLOADING_PHASES,
+    climbing_block_budget,
+    climbing_floor_pct,
+    climbing_target_band,
+    finger_sessions_for,
+    is_expandable,
+    is_priority,
+    meets_floor,
+    requires_wall,
+    session_window,
+)
 from server.domain.planner.contract import PlannerInput
 from server.domain.planner.periodisation import (
     beyond_one_plan_note,
@@ -49,6 +65,7 @@ from server.domain.planner.periodisation import (
     week_count_for,
 )
 from server.domain.planner.schedule import (
+    DAYS_PER_WEEK,
     choose_weekdays,
     fewer_sessions_note,
     microcycle_start,
@@ -60,16 +77,54 @@ from server.domain.planner.selection import (
     BLOCKS_PER_SESSION,
     SUPPORT_ASPECTS,
     candidates,
+    no_climbing_message,
+    off_the_wall,
+    on_the_wall,
     prescribable,
     shortfall_message,
     unlock_options,
+    wall_led_aspects,
+    wall_unlock_options,
+    with_protocols,
 )
-from server.domain.vocabulary import ActivityKind, Phase
+from server.domain.vocabulary import ActivityKind, Phase, ProtocolKind
+
+# A session is three blocks, and may carry two more ONLY to reach its type's window floor —
+# never as extra prescription, which is what `MAX_EXPANSION_FACTOR` and the windows exist to stop.
+MAX_BLOCKS_PER_SESSION: Final = BLOCKS_PER_SESSION + 2
 
 WARMUP_MINUTES: Final = 15
 SECONDS_PER_REP: Final = 4
 
 _RECOVERY_TITLE: Final = "Recovery"
+
+# How much more climbing a week can take, in the order it wants a slot's candidates offered.
+WallPref = Literal["never", "last", "first"]
+
+
+@dataclass(slots=True)
+class _Draft:
+    """One session mid-allocation. Mutable, week-local, and never leaves this module."""
+
+    weekday: int
+    session_index: int
+    blocks: list[BlockBlueprint] = field(default_factory=list)
+    used: list[str] = field(default_factory=list)
+    shortfalls: list[Shortfall] = field(default_factory=list)
+    wall_seconds: int = 0
+    climbing_blocks: int = 0
+    supplementary: int = 0
+    supplementary_used: list[str] = field(default_factory=list)
+
+    @property
+    def seconds(self) -> int:
+        """Prescribed seconds in the session so far, warm-up excluded — it is not a block."""
+        return sum(_block_seconds(block) for block in self.blocks)
+
+    @property
+    def other_seconds(self) -> int:
+        """Prescribed seconds that are not climbing — the half the band reserves."""
+        return self.seconds - self.wall_seconds
 
 
 def generate(planner_input: PlannerInput) -> PlanBlueprint:
@@ -117,70 +172,529 @@ def _notes(planner_input: PlannerInput, *, scheduled: int, gap: int) -> tuple[Sc
 def _microcycle(
     planner_input: PlannerInput, phase: Phase, week_no: int, weekdays: tuple[int, ...]
 ) -> MicrocycleBlueprint:
-    """One week. The weekday set is the plan's, every week — only the rotation moves."""
+    """One week, climbing-first and to the band's TARGET rather than to exhaustion, so the
+    remainder is genuinely left for the supplementary work the band reserves it for."""
     week_start = microcycle_start(planner_input.start_date, week_no)
+    drafts = [
+        _Draft(weekday=weekday, session_index=index) for index, weekday in enumerate(weekdays)
+    ]
+    # A one-session week is climbing and nothing else, so it aims at 100% (issue #84).
+    solo = len(drafts) == 1
+    # Both edges of the band do work: climbing fills to the TOP and supplementary is allowed
+    # back down to the BOTTOM. At one target the two constraints meet exactly and rounding loses.
+    low_pct, high_pct = (
+        (100, 100)
+        if solo
+        else climbing_target_band(planner_input.discipline, planner_input.current_ordinal)
+    )
+    budget = (
+        BLOCKS_PER_SESSION
+        if solo
+        else climbing_block_budget(planner_input.discipline, planner_input.current_ordinal)
+    )
+    for draft in drafts:
+        _fill_climbing(
+            draft,
+            planner_input,
+            phase,
+            week_no,
+            fill_pct=high_pct,
+            floor_pct=low_pct,
+            budget=budget,
+        )
+    if not solo:
+        _fill_finger_strength(drafts, planner_input, phase, week_no)
+    _fill_supplementary(drafts, planner_input, phase, week_no, band=(low_pct, high_pct))
     return MicrocycleBlueprint(
         week_no=week_no,
         start_date=week_start,
         is_deload=phase is Phase.DELOAD,
         phase=phase,
-        sessions=tuple(
-            _session(planner_input, phase, week_no, session_index, weekday)
-            for session_index, weekday in enumerate(weekdays)
-        ),
+        sessions=tuple(_session(draft, week_start) for draft in drafts),
     )
 
 
-def _session(
+def _fill_climbing(
+    draft: _Draft,
     planner_input: PlannerInput,
     phase: Phase,
     week_no: int,
-    session_index: int,
-    weekday: int,
-) -> SessionBlueprint:
-    """Three slots, filled in order, each displaced rather than dropped where it can be."""
+    *,
+    fill_pct: int,
+    floor_pct: int,
+    budget: int,
+) -> None:
+    """Wall blocks up to the band's share of the session type's window floor and no further — to
+    a TARGET, never to exhaustion, so the remainder is reserved for supplementary work."""
+    offset = week_no - 1 + draft.session_index
+    spread = _spread(week_no, draft.session_index)
+    unloading = phase in UNLOADING_PHASES
+    for spec in _wall_picks(planner_input, phase, offset, spread):
+        if len(draft.blocks) >= BLOCKS_PER_SESSION:
+            break
+        spent = (
+            draft.seconds >= _share_of_window_floor(draft, None, fill_pct)
+            or len(draft.blocks) >= budget
+        )
+        if (
+            draft.blocks
+            and spent
+            and (unloading or draft.seconds >= _share_of_window_floor(draft, None, floor_pct))
+        ):
+            break
+        # Both thresholds are read off the session this block WOULD make, never off the first
+        # block placed: a priority block landing second moves the whole session's window.
+        target_seconds = 0 if unloading else _share_of_window_floor(draft, spec, fill_pct)
+        needed_seconds = 0 if unloading else _share_of_window_floor(draft, spec, floor_pct)
+        if draft.blocks and (
+            not _fits(draft, spec, phase)
+            or not (
+                draft.seconds < needed_seconds
+                or _nearer_target(draft, spec, phase, target_seconds=target_seconds)
+            )
+        ):
+            continue
+        _place(draft, spec, phase=phase, target_seconds=target_seconds, climbing=True)
+    if not draft.blocks:
+        draft.shortfalls.append(_no_climbing_shortfall(planner_input, phase))
+
+
+def _wall_picks(
+    planner_input: PlannerInput, phase: Phase, offset: int, spread: int
+) -> tuple[ExerciseSpec, ...]:
+    """This session's wall exercises, best first: one per aspect, rotated, then round again.
+
+    Rounding again is what lets a `strength` block reach a real bouldering session — that phase
+    has only two wall-led aspects, so one block each stopped ten minutes short of the window
+    (measured). Deduped by exercise key, and no set is iterated, so the order is reproducible.
+    """
+    pools = [
+        (aspect_key, ordered)
+        for aspect_key in _rotated_pool(wall_led_aspects(phase), offset)
+        if (
+            ordered := prescribable(
+                on_the_wall(candidates(phase, aspect_key)),
+                discipline=planner_input.discipline,
+                equipment_keys=planner_input.equipment_keys,
+                open_injury_keys=planner_input.open_injury_keys,
+            )
+        )
+    ]
+    picked: list[ExerciseSpec] = []
+    seen: list[str] = []
+    for depth in range(BLOCKS_PER_SESSION):
+        for _aspect_key, ordered in pools:
+            spec = ordered[(spread + depth) % len(ordered)]
+            if spec.key not in seen:
+                seen.append(spec.key)
+                picked.append(spec)
+    return tuple(picked)
+
+
+def _fill_finger_strength(
+    drafts: list[_Draft], planner_input: PlannerInput, phase: Phase, week_no: int
+) -> None:
+    """The band's hangboard floor. Finger strength is the strongest single predictor of climbing
+    performance and matters MORE as level rises, so it is prescribed, not left to a spare slot."""
+    wanted = finger_sessions_for(planner_input.discipline, planner_input.current_ordinal, phase)
+    ordered = prescribable(
+        with_protocols(candidates(phase, FINGER_ASPECT), FINGER_PROTOCOLS),
+        discipline=planner_input.discipline,
+        equipment_keys=planner_input.equipment_keys,
+        open_injury_keys=planner_input.open_injury_keys,
+    )
+    if wanted <= 0 or not ordered:
+        return
+    floor_pct = climbing_floor_pct(planner_input.discipline, planner_input.current_ordinal)
+    wall_seconds = sum(draft.wall_seconds for draft in drafts)
+    other_seconds = sum(draft.other_seconds for draft in drafts)
+    placed = 0
+    for step in range(len(drafts)):
+        if placed >= wanted:
+            return
+        draft = drafts[(week_no - 1 + step) % len(drafts)]
+        if len(draft.blocks) >= BLOCKS_PER_SESSION or FINGER_ASPECT in draft.used:
+            continue
+        # Every authored protocol is tried, because a hang has to fit inside its OWN window: a
+        # long endurance day cannot become a hangboard session, which is the point, not a gap.
+        for turn in range(len(ordered)):
+            spec = ordered[(week_no - 1 + placed + turn) % len(ordered)]
+            added = _spec_seconds(spec, phase)
+            if not _fits(draft, spec, phase) or not meets_floor(
+                wall_seconds=wall_seconds, other_seconds=other_seconds + added, floor_pct=floor_pct
+            ):
+                continue
+            _place(draft, spec, phase=phase, target_seconds=0, climbing=False)
+            draft.supplementary_used.append(spec.aspect_key)
+            other_seconds += added
+            placed += 1
+            break
+
+
+def _kinds(draft: _Draft, spec: ExerciseSpec | None = None) -> list[ProtocolKind]:
+    """The protocol kinds this session would carry, in placement order."""
+    kinds = [block.protocol_kind for block in draft.blocks]
+    return kinds if spec is None else [*kinds, spec.protocol_kind]
+
+
+def _leading_kind(kinds: list[ProtocolKind]) -> ProtocolKind:
+    """The kind of the block that will LEAD once the session is ordered, so the window a
+    session is held to is the window of the quality work in it, not of whatever landed first."""
+    for kind in kinds:
+        if is_priority(kind):
+            return kind
+    return kinds[0]
+
+
+def _fits(draft: _Draft, spec: ExerciseSpec, phase: Phase) -> bool:
+    """Whether this block fits under the ceiling of the session type it would produce."""
+    ceiling = session_window(_leading_kind(_kinds(draft, spec)))[1] * 60
+    return draft.seconds + _spec_seconds(spec, phase) <= ceiling
+
+
+def _session_floor(draft: _Draft) -> int:
+    """The seconds a session of this type owes in a loading phase. Zero before it has a type."""
+    if not draft.blocks:
+        return 0
+    return session_window(_leading_kind(_kinds(draft)))[0] * 60
+
+
+def _short_of_its_window(draft: _Draft, phase: Phase) -> bool:
+    """Whether this session is still under the floor of its own type's window, which only a
+    loading phase pursues — a deload has its own prescriptions rather than a scaled length."""
+    return phase not in UNLOADING_PHASES and draft.seconds < _session_floor(draft)
+
+
+def _block_ceiling(
+    draft: _Draft, phase: Phase, *, band: tuple[int, int], week: tuple[int, int]
+) -> int:
+    """Three blocks, and more only where the week needs them: to reach a session type's own
+    window floor, or to bring a week back inside the top edge of its band. Both are properties
+    of the week rather than of the session, which is why a fixed budget could not express them —
+    three chunky wall blocks leave a limit-bouldering session ten minutes short of its floor,
+    and with two sessions a week there is nowhere else to put the supplementary work."""
+    if _short_of_its_window(draft, phase) or meets_floor(
+        wall_seconds=week[0], other_seconds=week[1], floor_pct=band[1]
+    ):
+        return MAX_BLOCKS_PER_SESSION
+    return BLOCKS_PER_SESSION
+
+
+def _ordered_blocks(blocks: list[BlockBlueprint]) -> tuple[BlockBlueprint, ...]:
+    """Quality first: a fixed-volume protocol never sits behind volume work, because quality of
+    effort decides the adaptation and 35 minutes of climbing spends it before the hang starts."""
+
+    def rank(index: int) -> tuple[int, int]:
+        return (0 if is_priority(blocks[index].protocol_kind) else 1, index)
+
+    order = sorted(range(len(blocks)), key=rank)
+    return tuple(replace(blocks[old], order_index=new) for new, old in enumerate(order, start=1))
+
+
+def _fill_supplementary(
+    drafts: list[_Draft],
+    planner_input: PlannerInput,
+    phase: Phase,
+    week_no: int,
+    *,
+    band: tuple[int, int],
+) -> None:
+    """Supplementary blocks, breadth-first across the week, gated by the hard climbing floor and
+    by the band's target share. A one-session week is climbing only, so it never gets here."""
+    if len(drafts) == 1 and drafts[0].blocks:
+        return
+    floor_pct = climbing_floor_pct(planner_input.discipline, planner_input.current_ordinal)
+    # LENGTH FIRST. The hard floor caps a week's supplementary minutes, so a discretionary block
+    # placed early spends what a session under its type's window floor needs.
+    for short_only in (True, False):
+        for _round in range(MAX_BLOCKS_PER_SESSION):
+            for draft in drafts:
+                week = (
+                    sum(other.wall_seconds for other in drafts),
+                    sum(other.other_seconds for other in drafts),
+                )
+                if short_only and not _short_of_its_window(draft, phase):
+                    continue
+                if len(draft.blocks) >= _block_ceiling(draft, phase, band=band, week=week):
+                    continue
+                _try_supplementary(
+                    draft,
+                    planner_input,
+                    phase,
+                    week_no,
+                    band=band,
+                    floor_pct=floor_pct,
+                    wall_seconds=week[0],
+                    other_seconds=week[1],
+                )
+
+
+def _try_supplementary(
+    draft: _Draft,
+    planner_input: PlannerInput,
+    phase: Phase,
+    week_no: int,
+    *,
+    band: tuple[int, int],
+    floor_pct: int,
+    wall_seconds: int,
+    other_seconds: int,
+) -> None:
+    """Add one supplementary block if the window and the floor allow. A floor rejection is a
+    decision, not a limitation, so it carries no shortfall; only an unfillable slot does.
+
+    ⚠️ The ledger it reads is `supplementary_used`, NOT every aspect in the session: an aspect
+    the climbing pass took on a wall may still host one off-the-wall block, because a wall
+    exercise and a gym exercise for the same quality are different training. Reading `used`
+    here made every off-the-wall `power`, `endurance` and `power_endurance` exercise in the
+    library structurally unreachable — six exercises no plan could prescribe.
+    """
     emphasis = ASPECT_EMPHASIS[phase]
-    used: list[str] = []
-    blocks: list[BlockBlueprint] = []
-    unfilled: list[Shortfall] = []
+    slot = draft.supplementary + (1 if draft.climbing_blocks else 0)
+    intended = _intended_aspect(
+        slot,
+        emphasis,
+        planner_input,
+        week_no=week_no,
+        session_index=draft.session_index,
+        used=draft.supplementary_used,
+    )
+    if intended is None:
+        return
+    draft.supplementary += 1
+    filled = _fill_slot(
+        intended,
+        emphasis,
+        planner_input,
+        phase=phase,
+        week_no=week_no,
+        session_index=draft.session_index,
+        used=draft.supplementary_used,
+        spread=_spread(week_no, draft.session_index),
+        wall_pref=_wall_pref(
+            draft,
+            phase,
+            band=band,
+            wall_seconds=wall_seconds,
+            other_seconds=other_seconds,
+        ),
+        need=max(_session_floor(draft) - draft.seconds, 0)
+        if _short_of_its_window(draft, phase)
+        else 0,
+        room=session_window(_leading_kind(_kinds(draft)))[1] * 60 - draft.seconds
+        if draft.blocks
+        else 0,
+    )
+    shortfall = (
+        None
+        if filled is not None and filled[0] == intended
+        else _shortfall(planner_input, phase, intended)
+    )
+    if filled is None:
+        # A slot attempted only to top a session up to its window floor is not a promise the
+        # plan made, so an unfillable one is length the session lacks and not a shortfall.
+        if len(draft.blocks) < BLOCKS_PER_SESSION:
+            draft.shortfalls.append(_require(shortfall))
+        return
+    _aspect_key, spec = filled
+    added = _spec_seconds(spec, phase)
+    on_wall = requires_wall(spec.equipment_keys)
+    if draft.blocks and not _fits(draft, spec, phase):
+        return
+    if not _share_allows(
+        draft,
+        phase,
+        added=added,
+        on_wall=on_wall,
+        band=band,
+        week=(wall_seconds, other_seconds),
+    ):
+        return
+    if (
+        wall_seconds
+        and not on_wall
+        and not meets_floor(
+            wall_seconds=wall_seconds, other_seconds=other_seconds + added, floor_pct=floor_pct
+        )
+    ):
+        return
+    _place(draft, spec, phase=phase, target_seconds=0, climbing=on_wall, shortfall=shortfall)
+    draft.supplementary_used.append(spec.aspect_key)
 
-    for slot in range(BLOCKS_PER_SESSION):
-        intended = _intended_aspect(
-            slot, emphasis, planner_input, week_no=week_no, session_index=session_index, used=used
-        )
-        if intended is None:
-            continue
-        filled = _fill_slot(
-            intended,
-            emphasis,
-            planner_input,
-            phase=phase,
-            week_no=week_no,
-            session_index=session_index,
-            used=used,
-        )
-        shortfall = (
-            None
-            if filled is not None and filled[0] == intended
-            else _shortfall(planner_input, phase, intended)
-        )
-        if filled is None:
-            unfilled.append(_require(shortfall))
-            continue
-        aspect_key, spec = filled
-        used.append(aspect_key)
-        blocks.append(_block(len(blocks) + 1, spec, phase=phase, shortfall=shortfall))
 
+def _place(
+    draft: _Draft,
+    spec: ExerciseSpec,
+    *,
+    phase: Phase,
+    target_seconds: int,
+    climbing: bool,
+    shortfall: Shortfall | None = None,
+) -> None:
+    """Append one block, expanding its sets only where extra volume is real training."""
+    prescription = _prescription_for(spec, phase)
+    sets = prescription.sets
+    if is_expandable(spec.aspect_key, spec.protocol_kind, phase):
+        sets = _expanded_sets(
+            prescription,
+            target_seconds=target_seconds - draft.seconds,
+            cap_seconds=session_window(_leading_kind(_kinds(draft, spec)))[1] * 60 - draft.seconds,
+        )
+    draft.blocks.append(
+        _block(len(draft.blocks) + 1, spec, phase=phase, shortfall=shortfall, sets=sets)
+    )
+    draft.used.append(spec.aspect_key)
+    draft.climbing_blocks += 1 if climbing else 0
+    draft.wall_seconds += _block_seconds(draft.blocks[-1]) if climbing else 0
+
+
+def _expanded_sets(prescription: PrescriptionSpec, *, target_seconds: int, cap_seconds: int) -> int:
+    """Sets of an expandable protocol: enough to be a real session, never past the window."""
+    sets = prescription.sets
+    ceiling = prescription.sets * MAX_EXPANSION_FACTOR
+    while (
+        sets < ceiling
+        and _prescribed_seconds(prescription, sets) < target_seconds
+        and _prescribed_seconds(prescription, sets + 1) <= cap_seconds
+    ):
+        sets += 1
+    return sets
+
+
+def _spec_seconds(spec: ExerciseSpec, phase: Phase) -> int:
+    """What this exercise costs in time in this phase, at its authored set count."""
+    prescription = _prescription_for(spec, phase)
+    return _prescribed_seconds(prescription, prescription.sets)
+
+
+def _nearer_target(draft: _Draft, spec: ExerciseSpec, phase: Phase, *, target_seconds: int) -> bool:
+    """Whether one more wall block lands the session CLOSER to its target than stopping does.
+    Rounding down broke monotonicity; free overshoot put the advanced band at 71% against 62."""
+    return _spec_seconds(spec, phase) < 2 * (target_seconds - draft.seconds)
+
+
+def _share_of_window_floor(draft: _Draft, spec: ExerciseSpec | None, pct: int) -> int:
+    """A percentage of the window floor of the session type these blocks make: the band's top
+    share is what climbing fills to, its bottom share is what the session's length needs."""
+    kinds = _kinds(draft, spec)
+    return session_window(_leading_kind(kinds))[0] * 60 * pct // 100 if kinds else 0
+
+
+def _share_allows(
+    draft: _Draft,
+    phase: Phase,
+    *,
+    added: int,
+    on_wall: bool,
+    band: tuple[int, int],
+    week: tuple[int, int],
+) -> bool:
+    """Whether one more supplementary block keeps this session near its band's target share.
+
+    Four reasons to say yes regardless, and each one is a measured failure of saying no. An
+    unloading phase has no window floor to reserve against, and deriving an allowance from a
+    deload's own small prescriptions produced a three-minute session. A session with no climbing
+    at all has no share to reserve, and refusing there emptied every gearless session. A session
+    still short of its type's window floor is topped up: length belongs to the type. And a WEEK
+    already above the band's top edge wants supplementary work by definition — that arm is what
+    closes the last three points, because the per-session allowance cannot see the aggregate the
+    band is actually stated over.
+    """
+    low_pct, top_pct = band
+    wall_seconds, other_seconds = week
+    if phase in UNLOADING_PHASES or on_wall or not draft.wall_seconds:
+        return True
+    if draft.seconds < _session_floor(draft):
+        return True
+    if meets_floor(wall_seconds=wall_seconds, other_seconds=other_seconds, floor_pct=top_pct):
+        return True
+    allowance = draft.wall_seconds * (100 - low_pct) // max(low_pct, 1)
+    return draft.other_seconds + added <= allowance
+
+
+def _wall_pref(
+    draft: _Draft,
+    phase: Phase,
+    *,
+    band: tuple[int, int],
+    wall_seconds: int,
+    other_seconds: int,
+) -> WallPref:
+    """How much more climbing this WEEK can take, which is what orders a slot's candidate pool.
+
+    `never` when the week is already at its band's top edge — more climbing is the one thing it
+    does not need. `first` when a session is short of its own window floor and the seconds that
+    would close it cannot come off the wall without breaching the band's HARD floor: without
+    this the preferred off-the-wall pick was chosen, rejected by that floor, and the slot spent
+    for nothing, leaving a 37-minute limit-bouldering session against a 40-minute floor
+    (measured, advanced boulder, week 18). `last` otherwise: prefer supplementary work, but
+    never let the preference become the filter that made six exercises unreachable.
+    """
+    if meets_floor(wall_seconds=wall_seconds, other_seconds=other_seconds, floor_pct=band[1]):
+        return "never"
+    if _short_of_its_window(draft, phase):
+        return "first"
+    return "last"
+
+
+def _prescribed_seconds(prescription: PrescriptionSpec, sets: int) -> int:
+    """What `sets` sets of this prescription cost in time. The same arithmetic as a block's."""
+    per_set = (prescription.work_seconds or (prescription.reps or 0) * SECONDS_PER_REP) + (
+        prescription.rest_seconds or 0
+    )
+    return sets * per_set + max(sets - 1, 0) * (prescription.rest_between_sets_seconds or 0)
+
+
+def _spread(week_no: int, session_index: int) -> int:
+    """This session's ordinal in the plan's WEEKDAY grid, which is what indexes a CANDIDATE pool.
+
+    Deliberately not `week_no - 1 + session_index`, which is what the ASPECT rotations use: a
+    sum takes only ~5 distinct values inside a three-week phase, so every candidate pool longer
+    than that lost its tail and one plan drew on 58 of 85 exercises where `dev` drew on 68.
+    ⚠️ The stride is `DAYS_PER_WEEK` and **must not be the week's actual session count**: with
+    that, adding a session re-keys every existing session's pool, and the measured cost was the
+    monotonicity invariant — going from 5 sessions to 6 dropped week 2 from 159 to 152 climbing
+    minutes. A fixed stride leaves sessions 0..n-1 on the offsets they already had.
+    """
+    return (week_no - 1) * DAYS_PER_WEEK + session_index
+
+
+def _rotated_pool(pool: tuple[str, ...], offset: int) -> tuple[str, ...]:
+    """The pool starting at a deterministic offset, so which quality leads moves week to week."""
+    if not pool:
+        return ()
+    start = offset % len(pool)
+    return pool[start:] + pool[:start]
+
+
+def _no_climbing_shortfall(planner_input: PlannerInput, phase: Phase) -> Shortfall:
+    """A session with no wall time names what climbing would need — #61's naming half. Never a
+    gate: the plan is complete and this tells the climber something, not demands an inventory."""
+    options = wall_unlock_options(
+        phase, discipline=planner_input.discipline, open_injury_keys=planner_input.open_injury_keys
+    )
+    led = wall_led_aspects(phase)
+    return Shortfall(
+        phase=phase,
+        aspect_key=led[0] if led else ASPECT_EMPHASIS[phase][0],
+        options=options,
+        message=no_climbing_message(options),
+    )
+
+
+def _session(draft: _Draft, week_start: date) -> SessionBlueprint:
+    """One draft, ordered quality-first and frozen into the output tree."""
+    blocks = _ordered_blocks(draft.blocks)
     return SessionBlueprint(
-        weekday=weekday,
-        scheduled_on=session_date(microcycle_start(planner_input.start_date, week_no), weekday),
+        weekday=draft.weekday,
+        scheduled_on=session_date(week_start, draft.weekday),
         # A slot-less session is the terminal all-injuries case. `other`, so adherence does
         # not read it as a climbing session nobody did.
-        activity_kind=ActivityKind.CLIMBING if blocks else ActivityKind.OTHER,
+        activity_kind=ActivityKind.CLIMBING if draft.blocks else ActivityKind.OTHER,
         title=_title(blocks),
         estimated_minutes=_estimated_minutes(blocks) if blocks else None,
-        blocks=tuple(blocks),
-        shortfalls=tuple(unfilled),
+        blocks=blocks,
+        shortfalls=tuple(draft.shortfalls),
     )
 
 
@@ -195,12 +709,12 @@ def _intended_aspect(
 ) -> str | None:
     """What this slot is *for*, before the climber's gear and injuries are consulted.
 
-    Slot 0 is the phase's defining quality — a quality leads its own block. Slot 1 is the
-    **weakness bias**, and it is one printable sentence: your weakness appears in every
-    session of every phase where it can be trained. "Where it can be trained" is the
-    library's judgement (the phase prescribes that aspect at all), deliberately not the
-    climber's gear — a weakness that needs a hangboard should surface as "here is what you
-    would need", not vanish. Slot 2 rotates the support aspects.
+    Slot 0 is the phase's defining quality — a quality leads its own block, and where a
+    climbing core exists the core IS that block, so the supplementary pass starts at slot 1.
+    Slot 1 is the **weakness bias**: your weakness appears in every session of every phase
+    where it can be trained. "Where it can be trained" is the library's judgement (the phase
+    prescribes that aspect at all), deliberately not the climber's gear — a weakness that needs
+    a hangboard should surface as "here is what you would need", not vanish. Slot 2 on rotate.
 
     `UserAspectRating`'s eight scores are never read: since issue #54 they sit behind a
     disclosure and may be untouched defaults, while `weakness_aspect_id` is the answer to a
@@ -215,7 +729,7 @@ def _intended_aspect(
         return _rotated(_secondary_pool(emphasis, planner_input, used), week_no - 1 + session_index)
     return _rotated(
         tuple(key for key in SUPPORT_ASPECTS if key not in used) or SUPPORT_ASPECTS,
-        week_no + session_index,
+        week_no + session_index + slot,
     )
 
 
@@ -251,13 +765,25 @@ def _fill_slot(
     week_no: int,
     session_index: int,
     used: list[str],
+    spread: int,
+    wall_pref: WallPref,
+    need: int,
+    room: int,
 ) -> tuple[str, ExerciseSpec] | None:
     """Try `intended`, then walk the emphasis order for the next aspect that can be filled.
 
     The walk starts at `intended`'s own position and wraps, so displacement moves *down* the
     phase's priority order first — the nearest thing to what the slot was for.
+
+    ⚠️ **ELIGIBILITY is `prescribable()`; on-the-wall versus off-the-wall is a PREFERENCE.**
+    Round 2 made the off-the-wall pool a *filter*, so anything between it and the climbing
+    pass's on-the-wall filter was unreachable by any profile — three wall `core_tension` drills,
+    75 minutes a plan before and 0 after. The pool is off-the-wall first, on-the-wall behind it,
+    and only `wall_pref` withholds the wall half: a week at its band's TOP edge cannot
+    afford more climbing, the same arithmetic `_share_allows` applies to the other half.
     """
     start = emphasis.index(intended) if intended in emphasis else 0
+    fallback: tuple[str, ExerciseSpec] | None = None
     for step in range(len(emphasis)):
         aspect_key = emphasis[(start + step) % len(emphasis)]
         if aspect_key in used:
@@ -268,9 +794,36 @@ def _fill_slot(
             equipment_keys=planner_input.equipment_keys,
             open_injury_keys=planner_input.open_injury_keys,
         )
-        if ordered:
-            return aspect_key, ordered[(week_no - 1 + session_index) % len(ordered)]
-    return None
+        if not ordered:
+            continue
+        off, on = off_the_wall(ordered), on_the_wall(ordered)
+        first, second = (on, off) if wall_pref == "first" else (off, on)
+        pool = first if wall_pref == "never" else (*first, *second)
+        if pool:
+            return aspect_key, _pick(pool, phase, spread=spread, need=need, room=room)
+        if fallback is None:
+            fallback = (aspect_key, _pick(ordered, phase, spread=spread, need=need, room=room))
+    return fallback
+
+
+def _pick(
+    pool: tuple[ExerciseSpec, ...], phase: Phase, *, spread: int, need: int, room: int
+) -> ExerciseSpec:
+    """The rotation pick, EXCEPT while the session is short of its own window floor.
+
+    Rotating there picked a two-minute accessory block four times over and left a 37-minute
+    limit-bouldering session against a 40-minute floor (measured, advanced boulder week 18):
+    `MAX_BLOCKS_PER_SESSION` ran out before the length did. So a slot that exists to add length
+    takes the longest candidate that still fits under the ceiling, authored order breaking ties.
+    Padding it with sets instead is what `MAX_EXPANSION_FACTOR` exists to forbid.
+    """
+    if not need:
+        return pool[spread % len(pool)]
+    fitting = [spec for spec in pool if _spec_seconds(spec, phase) <= room] or list(pool)
+    enough = tuple(spec for spec in fitting if _spec_seconds(spec, phase) >= need)
+    if enough:
+        return enough[spread % len(enough)]
+    return max(fitting, key=lambda spec: _spec_seconds(spec, phase))
 
 
 def _shortfall(planner_input: PlannerInput, phase: Phase, aspect_key: str) -> Shortfall:
@@ -292,7 +845,12 @@ def _shortfall(planner_input: PlannerInput, phase: Phase, aspect_key: str) -> Sh
 
 
 def _block(
-    order_index: int, spec: ExerciseSpec, *, phase: Phase, shortfall: Shortfall | None
+    order_index: int,
+    spec: ExerciseSpec,
+    *,
+    phase: Phase,
+    shortfall: Shortfall | None,
+    sets: int,
 ) -> BlockBlueprint:
     """One exercise, with its prescription snapshotted the way `session_block` snapshots it."""
     prescription = _prescription_for(spec, phase)
@@ -310,7 +868,7 @@ def _block(
                 target_intensity_pct=prescription.intensity_pct,
                 target_rpe=prescription.target_rpe,
             )
-            for index in range(1, prescription.sets + 1)
+            for index in range(1, sets + 1)
         ),
         # No source: `prescription_template` authors no rest between BLOCKS, so v1.0.0
         # leaves it NULL rather than inventing a number, exactly as it does for
@@ -332,7 +890,7 @@ def _prescription_for(spec: ExerciseSpec, phase: Phase) -> PrescriptionSpec:
     )
 
 
-def _title(blocks: list[BlockBlueprint]) -> str:
+def _title(blocks: tuple[BlockBlueprint, ...]) -> str:
     """The session's aspects, in prescribed order. Fits `String(80)` — the safety test checks.
 
     Deliberately not "Strength week 3": the microcycle already carries `phase` and
@@ -346,7 +904,7 @@ def _title(blocks: list[BlockBlueprint]) -> str:
     return ", ".join([names[0], *(name.lower() for name in names[1:])])
 
 
-def _estimated_minutes(blocks: list[BlockBlueprint]) -> int:
+def _estimated_minutes(blocks: tuple[BlockBlueprint, ...]) -> int:
     """Prescribed seconds, rounded up, plus the warm-up nobody gets to skip."""
     seconds = sum(_block_seconds(block) for block in blocks)
     return math.ceil(seconds / 60) + WARMUP_MINUTES

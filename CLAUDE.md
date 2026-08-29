@@ -3257,13 +3257,118 @@ this is the map and the traps.
 
 - **Module layout.** `contract.py` (`GENERATOR_VERSION`, `PlannerInput`, `RefusalReason`,
   `CannotPlanError`, `REFUSAL_MESSAGES`) · `periodisation.py` (gap → weeks, phase order,
-  mesocycle spans) · `schedule.py` (weekday mask, date maths) · `selection.py` (`candidates`,
+  mesocycle spans) · `schedule.py` (weekday mask, date maths) · `climbing.py` (the level bands,
+  the climbing floor, `WALL_EQUIPMENT`, `SESSION_WINDOWS`) · `selection.py` (`candidates`,
   `prescribable`, `ASPECT_EMPHASIS`, the shortfall machinery) · `generate.py` (`generate`) ·
   `blueprint.py` (the frozen output tree) · `fingerprint.py` (`library_digest`,
   `generator_input`) · `__init__.py`, **a re-export facade that defines nothing** — the
   definitions live in `contract.py` because `schedule.py` has to raise a refusal, and a
   definition in the facade the facade re-exports is a cycle. Purity is enforced by
   `server/domain/.ruff.toml`; see the purity bullet under "Session player invariants".
+- **⚠️ CLIMBING IS ALLOCATED FIRST, AND THE WEEK HAS A FLOOR (PR A, issue #84).** The generator
+  used to prescribe **28% of its minutes on a wall**, with week 19 of a real 24-week plan
+  carrying **none at all** — accessory work is easy to schedule, so it crowded out the thing it
+  exists to support. `_microcycle` is therefore **two passes**: every session gets its wall
+  blocks first, then the band's hangboard floor, then supplementary blocks breadth-first across
+  the week, **each one accepted only while the week still meets its band's climbing floor**. So
+  there is no order in which accessory work can displace climbing, and a zero-climbing week is
+  not expressible. Measured after: **87% / 78–79% / 57–59% wall time** by band, no week below
+  its floor, no week without climbing, at every `sessions_per_week` from 1 to 7, both disciplines.
+  - **The bands are Kilian's, by CURRENT grade, and stored as an ORDINAL BOUNDARY per
+    discipline** — never a label, never a cross-scale conversion, because
+    `server/domain/grades.py` keeps the ladders disjoint. Beginner (sport ≤ `6a+`, boulder ≤
+    `6A+`) **85%** · intermediate (`6b`–`7a+` / `6B`–`7A+`) **75%** · advanced (`7b`+ / `7B`+)
+    **50%**. Four named constants in `climbing.py`, one per boundary, so moving a bar is a
+    one-line change. ⚠️ **The boulder row applies Kilian's French label spellings to the Font
+    ladder**, which sets the boulder bar a rung or two higher in ability terms. A choice, not a
+    conversion, and the reason each threshold is its own constant.
+  - **`sessions_per_week == 1` is a climbing session and nothing else.** The supplementary pass
+    is skipped entirely for a one-session week: there is no better use of a single day.
+  - **⚠️ THE BAND IS A TARGET RANGE, NOT ONLY A FLOOR** — beginner **85–90%**, intermediate
+    **75–82%**, advanced **50–62%** (`CLIMBING_TARGET_PCT`). Round 1 met every floor and still
+    put all three bands at 84–91%, because climbing was allocated to exhaustion and
+    `BLOCKS_PER_SESSION` was gone before the supplementary pass ran: the banding was **inert**,
+    and a floor alone cannot detect that. So **both edges of the band do work** — climbing fills
+    to the band's TOP share of the session type's window floor (`CLIMBING_BLOCKS` caps how many
+    blocks it spends doing so), and supplementary work is allowed back down to the BOTTOM. At a
+    single target the two constraints meet exactly and rounding always loses. The floor is still
+    the hard per-week bound and is asserted per week; the range is asserted over the plan.
+  - **⚠️ PRIORITY WORK GOES FIRST IN A SESSION.** `order_index` puts `max_hang`, `repeaters` and
+    `limit_boulder` ahead of `laps`, `circuit`, `intervals`, `straight_sets` and `hold`
+    (`PRIORITY_PROTOCOLS`), because **quality of effort decides the adaptation** — round 1
+    prescribed `technique 15m | power 20m | finger_strength max_hang 12m`, i.e. max hangs after
+    35 minutes of climbing, which is exactly the "turn up subpar and set your training back"
+    failure. Consequence worth knowing: **the session's window is the window of the block that
+    LEADS after ordering**, so a session that takes a hang becomes a hangboard session and is
+    held to 20–45 min — which is why a long endurance day cannot take one.
+  - **⚠️ A LOADING WEEK OWES REAL HANGS, SCALED BY BAND.** In `STRENGTH` and `POWER`
+    (`FINGER_PHASES`) an advanced climber gets **2** max-hang/repeater sessions a week,
+    intermediate **1**, beginner **0** (`FINGER_SESSIONS_PER_WEEK`), placed in their own pass
+    before the general supplementary one. Round 1 gave an advanced climber **8 minutes of finger
+    work a week**; finger strength is the strongest single predictor of climbing performance and
+    matters *more* as level rises. Measured after: **24–31 min/week** in those phases for
+    advanced, 14–16 for intermediate. ⚠️ **Beginner is zero DELIBERATELY** — the sources want
+    6–12 months of consistent climbing before structured hangboarding, nothing in the profile
+    records climbing history, and **Kilian explicitly declined an experience field**, so the band
+    is the only proxy there is. A beginner still meets a hangboard through the ordinary aspect
+    rotation; what they do not get is a floor.
+  - **`WALL_EQUIPMENT` includes `auto_belay`, and issue #84's own measurement did not.** It is a
+    wall you climb without a partner, and excluding it would have the app tell an
+    auto-belay-only climber to go and find somewhere to climb.
+- **⚠️ A SESSION'S LENGTH IS A PROPERTY OF ITS TYPE, NOT OF THE CLIMBER'S FREE TIME.**
+  `SESSION_WINDOWS` maps the leading block's `ProtocolKind` to a minutes window over prescribed
+  work (the 15-minute warm-up is not a block and is outside it). **The ceiling binds in every
+  phase; the floor only in a loading one** — `Phase` in `server/domain/vocabulary.py` is
+  explicit that a deload has its own prescriptions rather than being a scaled block, so topping
+  a deload back up to a loading week's length would contradict the schema's own definition.
+  - **Extra time becomes extra volume ONLY for `endurance` and `technique` on a `laps`,
+    `circuit` or `other` protocol, and then at most `MAX_EXPANSION_FACTOR` (2×) the authored set
+    count.** A `max_hang`, `limit_boulder` or `intervals` session is **never** padded: the low
+    volume *is* the protocol, and "end your bouldering before total exhaustion" is the source.
+    Without the 2× cap a 4-minute technique drill reached its window minimum at **fifteen
+    sets** — measured, which is why the cap exists.
+  - **⚠️ A session is 3 blocks and may take up to 5, but ONLY to reach its type's window floor
+    or to bring a week back inside its band's top edge** (`MAX_BLOCKS_PER_SESSION` in
+    `generate.py`). Both reasons are properties of the *week*, not of the session, which is why a
+    fixed per-session budget could not express them: three chunky wall blocks leave a
+    limit-bouldering session ten minutes short of its own floor, and a two-session week has
+    nowhere else to put its supplementary work. Never extra prescription — that is what the
+    windows and `MAX_EXPANSION_FACTOR` exist to stop. Consequence: `tests/test_planner_gearless.py`
+    and the nowhere-to-climb guard assert `>= BLOCKS_PER_SESSION`, not `==`.
+  - **`_wall_picks` rounds over the phase's wall-led aspects TWICE**, and that is not
+    redundancy: the `strength` phase has only two of them, so one block each left a
+    limit-bouldering session at 30 min against a 40 min floor.
+- **⚠️ ELIGIBILITY IS `prescribable()`; ON-THE-WALL IS A PREFERENCE, NEVER A FILTER.** Round 2
+  gave the climbing pass an on-the-wall filter and the supplementary pass an off-the-wall one,
+  and **six of 85 exercises fell into the gap between them and became unreachable by every
+  profile** — the three wall `core_tension` drills (75 minutes a plan before, 0 after) and the
+  three off-the-wall `power` exercises whose aspect the climbing pass had already spent. **762
+  tests passed the whole time**, because an orphaned exercise still leaves a valid plan that
+  meets every floor. So: both passes consider anything `prescribable()` for the aspect they are
+  filling, the wall test is a *preference and an accounting fact*, and the supplementary pass
+  reads `_Draft.supplementary_used` — an aspect the climbing pass took on a wall may still host
+  one off-the-wall block, because a board session and a gym session for one quality are
+  different training. `tests/test_planner_library_reach.py` pins the register of acceptable
+  orphans and asserts it **in both directions**; it is **empty**, which is a measurement —
+  `origin/dev` carried three.
+- **⚠️ VARIETY IS A REQUIREMENT, AND IT IS THE `_spread` OFFSET (Kilian, 2026-08-29).** A plan
+  should have "a bit of everything rather than the same exercises always". The **aspect**
+  rotations index by `week_no - 1 + session_index`; a **candidate pool** must not, because that
+  sum takes only ~5 distinct values inside a three-week phase, so every pool longer than that
+  lost its tail. `_spread` is the session's ordinal in the whole plan instead. Measured on one
+  28-week intermediate plan: **58 of 85 exercises before, 67 after**, against `origin/dev`'s 68.
+  Deterministic by construction — no RNG, `models.py::Plan`'s reproducibility promise still
+  holds. ⚠️ **The one figure that did NOT come back is dominance**: the most-used exercise is
+  **~11% of blocks against `dev`'s 5.6%**, and that is arithmetic rather than a defect — the
+  plan now spends four times as many minutes on a wall, drawn from the smaller on-wall half of
+  the library (the `strength` phase has exactly **two** prescribable on-wall `power` exercises).
+  Widening it is a CONTENT change, not an allocator one.
+- **Issue #61's naming half shipped here.** A session with no wall time at all carries **one**
+  session-level `Shortfall` naming the equipment rows that would put real climbing in the phase
+  (`selection.wall_unlock_options` / `no_climbing_message`). ⚠️ **It is not a gate and not a
+  thin plan** — the three supplementary blocks are still prescribed and the plan is complete;
+  re-read the hard dead-end bullet under "Onboarding and the profile" before making it one.
+  The refusing half is still deliberately unshipped: no `RefusalReason` is about equipment.
 - **`week_count` comes from the grade-gap ORDINAL, and the table is literal.** A block is
   `LOADING_WEEKS 3 + UNLOAD_WEEKS 1`, so weeks are `4 × blocks`:
 
@@ -3320,6 +3425,9 @@ this is the map and the traps.
   | worst (gap ≥7, 7 sessions/wk, full mask, all 17 equipment) | 32 | 224 | 2,421 | 583.2 KiB | 17.5 KiB |
   | the demo profile (6a→6b, 3/wk) | 16 | 48 | 507 | 124.6 KiB | 4.9 KiB |
 
+  ⚠️ **Both rows are STALE as of PR A** — the climbing-first allocation changes how many blocks
+  and sets a session carries, so re-measure before quoting either. The shape of the conclusion
+  holds; the numbers do not.
   ⚠️ **Even the demo's 16-week plan is larger raw than the entire 85-exercise library** (~90
   KB); the worst case is ~6.5× it. The plan document's estimate (~1,150 sets, 170–250 KB) was
   low by 2–3×. What reaches the wire is the compressed figure — Vercel gzips by default — so
