@@ -3356,12 +3356,13 @@ this is the map and the traps.
   rotations index by `week_no - 1 + session_index`; a **candidate pool** must not, because that
   sum takes only ~5 distinct values inside a three-week phase, so every pool longer than that
   lost its tail. `_spread` is the session's ordinal in the whole plan instead. Measured on one
-  28-week intermediate plan: **58 of 85 exercises before, 67 after**, against `origin/dev`'s 68.
+  28-week intermediate plan: **58 of 85 exercises before, 63 after**, against `origin/dev`'s 68.
   Deterministic by construction — no RNG, `models.py::Plan`'s reproducibility promise still
   holds. ⚠️ **The one figure that did NOT come back is dominance**: the most-used exercise is
-  **~11% of blocks against `dev`'s 5.6%**, and that is arithmetic rather than a defect — the
-  plan now spends four times as many minutes on a wall, drawn from the smaller on-wall half of
-  the library (the `strength` phase has exactly **two** prescribable on-wall `power` exercises).
+  **10.2% of blocks against `dev`'s 5.6%**, and that is arithmetic rather than a defect — the
+  plan now spends roughly three times the SHARE of its minutes on a wall (28% -> 78-87% by band),
+  drawn from the smaller on-wall half of the library (the `strength` phase has exactly **two**
+  prescribable on-wall `power` exercises).
   Widening it is a CONTENT change, not an allocator one.
 - **Issue #61's naming half shipped here.** A session with no wall time at all carries **one**
   session-level `Shortfall` naming the equipment rows that would put real climbing in the phase
