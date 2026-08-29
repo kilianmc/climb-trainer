@@ -25,3 +25,13 @@ coverage/
 # neither of them a deliverable
 .claude/pr-*-state.md
 .claude/pr-*-body.md
+
+# throwaway measurement scripts: they recompute a matrix off `generate()` to size a decision,
+# and the decisions they sized are asserted by tests/ instead
+.claude/*.py
+
+# review aids regenerated on demand, not deliverables: the climbing/supplementary split of the
+# library (the only place a miscategorised exercise is visible — no test can see one) and the
+# round-to-round follow-up notes that go with the state file above
+.claude/exercise-classification.md
+.claude/pr-*-followups.md

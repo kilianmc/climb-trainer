@@ -1102,6 +1102,20 @@ reason = "The four invariants are priority-ordered and the fourth exists only be
 [[exception]]
 path = "server/domain/planner/generate.py"
 kind = "docstring"
+anchor = "server.domain.planner.generate._share_allows"
+limit = 11
+reason = "Four arms say yes regardless of the band's allowance and every one of them is a measured failure of saying no - a three-minute deload session, an emptied gearless session, a session under its type's window floor, and a week the per-session allowance cannot see."
+
+[[exception]]
+path = "server/domain/planner/generate.py"
+kind = "docstring"
+anchor = "server.domain.planner.generate._block_ceiling"
+limit = 5
+reason = "A fixed per-session block budget cannot express either reason a session may take a fourth block, and both are measured failures: a limit-bouldering session ten minutes short of its own window floor, and a two-session week with nowhere else to put the supplementary work."
+
+[[exception]]
+path = "server/domain/planner/generate.py"
+kind = "docstring"
 anchor = "server.domain.planner.generate._intended_aspect"
 limit = 13
 reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
@@ -1117,8 +1131,8 @@ reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
 path = "server/domain/planner/generate.py"
 kind = "docstring"
 anchor = "server.domain.planner.generate._fill_slot"
-limit = 5
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
+limit = 12
+reason = "Records that eligibility is prescribable() and that on-the-wall is only a preference - the one line that made six library exercises unreachable by every profile, with 762 tests green."
 
 [[exception]]
 path = "server/domain/planner/generate.py"
@@ -8581,3 +8595,136 @@ kind = "block"
 anchor = "restart a ring with an arrowhead"
 limit = 7
 reason = "Why restart is not a second play triangle: a running item offers Resume and Restart side by side, and two triangles there means 'carry on' and 'throw that away' look identical."
+
+[[exception]]
+path = "server/domain/planner/climbing.py"
+kind = "hash_run"
+anchor = "any block whose exercise needs one of these is wall time everything else is supplementary auto belay is in the set although issue 84 s own measurement omitted it it is a wall you climb without a partner and leaving it out would have the app tell an auto belay only climber to go and get somewhere to climb"
+limit = 4
+reason = "auto_belay is in the wall set although issue #84's own measurement left it out; the deviation and its consequence for the shortfall message have to travel with the set."
+
+[[exception]]
+path = "server/domain/planner/climbing.py"
+kind = "hash_run"
+anchor = "minutes of prescribed work in a session led by a block of this protocol kind warm up excluded because the warm up is not a block the maximum binds always the minimum is only pursued and only in a loading phase phase in server domain vocabulary py is explicit that a deload has its own prescriptions rather than being a scaled block so topping one back up to a loading week s length would contradict the schema s own definition of it"
+limit = 5
+reason = "The table's two bounds are enforced differently and the asymmetry is a schema fact: padding a deload back up would contradict Phase's own definition in vocabulary.py."
+
+[[exception]]
+path = "server/domain/planner/generate.py"
+kind = "docstring"
+anchor = "server.domain.planner.generate._wall_picks"
+limit = 6
+reason = "The second pass over the same aspects looks redundant and is not: the strength phase has only two wall-led aspects, measured ten minutes short of the window with one block each."
+
+[[exception]]
+path = "tests/test_planner_climbing_floor.py"
+kind = "hash_run"
+anchor = "the plan document s own table restated independently of climbing py on purpose a guard that asks is expandable whether a block may expand agrees with any answer that function gives including a wrong one measured sabotaging it to return true left that arm green"
+limit = 3
+reason = "Records the measured vacuity this duplication fixes: asking is_expandable() left the arm green when that function was sabotaged to return True."
+
+[[exception]]
+path = "tests/test_planner_climbing_floor.py"
+kind = "hash_run"
+anchor = "one climber per band by current grade spanning both ladders so neither discipline s threshold constant can be wrong without a red test the gap is 3 by default the shortest plan covering all five training phases plus deload and taper the band range test sweeps it"
+limit = 3
+reason = "Why six climbers rather than three, why the gap DEFAULT is 3, and the pointer that the band-range test varies it - the three facts a reader needs before adding a case."
+
+[[exception]]
+path = "tests/test_planner_gearless.py"
+kind = "docstring"
+anchor = "tests.test_planner_gearless.test_a_gearless_plan_is_complete_and_every_thin_slot_is_explained"
+limit = 6
+reason = "The one session-level shortfall a gearless session now carries is issue #61's naming half, not the thin plan this test exists to forbid; the two read identically without the note."
+
+[[exception]]
+path = "server/domain/planner/climbing.py"
+kind = "hash_run"
+anchor = "a spray wall is climbing too which"
+limit = 5
+reason = "Kilian's campus_board ruling and the rule behind it - movement versus apparatus, not the word 'board' - so the next reader does not 'fix' the set membership."
+
+[[exception]]
+path = "server/domain/planner/climbing.py"
+kind = "hash_run"
+anchor = "the aspects a climbing session"
+limit = 5
+reason = "Separates 'do these minutes count as climbing?' from 'may this quality name the session?'; conflating the two is what made three wall core drills unprescribable."
+
+[[exception]]
+path = "server/domain/planner/generate.py"
+kind = "docstring"
+anchor = "server.domain.planner.generate._try_supplementary"
+limit = 9
+reason = "Names the ledger this pass reads and the six exercises that reading `used` instead made structurally unreachable - nothing in the signature hints at the distinction."
+
+[[exception]]
+path = "server/domain/planner/generate.py"
+kind = "docstring"
+anchor = "server.domain.planner.generate._spread"
+limit = 10
+reason = "Why the candidate rotation cannot reuse the aspect rotation's offset AND why its stride must not be the session count - the second cost the monotonicity invariant, both measured."
+
+[[exception]]
+path = "tests/test_planner_library_reach.py"
+kind = "docstring"
+anchor = "tests.test_planner_library_reach"
+limit = 14
+reason = "The six unreachable exercises, why no other test could see them, and that the register being empty is a measurement rather than an aspiration."
+
+[[exception]]
+path = "tests/test_planner_library_reach.py"
+kind = "docstring"
+anchor = "tests.test_planner_library_reach.test_every_exercise_the_library_authors_is_reachable_by_some_profile"
+limit = 3
+reason = "An orphaned exercise leaves every other assertion green, so the docstring has to say what the failure looks like from outside."
+
+[[exception]]
+path = "tests/test_planner_library_reach.py"
+kind = "docstring"
+anchor = "tests.test_planner_library_reach.test_one_plan_draws_on_the_breadth_of_the_library"
+limit = 3
+reason = "Why reach across a sweep is not the same claim as breadth within one plan - the distinction is the whole reason this second guard exists."
+
+[[exception]]
+path = "tests/test_planner_library_reach.py"
+kind = "hash_run"
+anchor = "key why no profile can ever be"
+limit = 4
+reason = "The register's editing rule plus the three keys origin/dev carried, which is the only record of what the baseline actually was."
+
+[[exception]]
+path = "tests/test_planner_library_reach.py"
+kind = "hash_run"
+anchor = "both disciplines x all three bands"
+limit = 4
+reason = "Why six profiles and why these six - the measured coverage and runtime are what make the guard cheap enough for the local gate."
+
+[[exception]]
+path = "tests/test_planner_library_reach.py"
+kind = "hash_run"
+anchor = "kilian s requirement and the floor"
+limit = 6
+reason = "Why the floor is a share rather than a count, the per-band measurements behind it, and why beginner is lowest by arithmetic rather than by defect."
+
+[[exception]]
+path = "server/domain/planner/generate.py"
+kind = "docstring"
+anchor = "server.domain.planner.generate._wall_pref"
+limit = 10
+reason = "Three states with three different measured failures behind them - a 63% advanced band, a 37-minute session against a 40-minute floor, and six unreachable exercises - none of which is visible from the signature."
+
+[[exception]]
+path = "server/domain/planner/generate.py"
+kind = "docstring"
+anchor = "server.domain.planner.generate._pick"
+limit = 8
+reason = "Why a length-driven slot abandons the rotation, and why it takes the longest candidate that CLOSES the gap rather than simply the longest - the second cost four exercises their only reachable slot."
+
+[[exception]]
+path = "tests/test_planner_climbing_floor.py"
+kind = "hash_run"
+anchor = "the dimension this sweeps is plan length and it is the one the gate was missing round 3 reordered wall pref to put a session s own length ahead of the week s share and this test stayed green at the gap of 3 every other test here uses that moves the advanced band from 57 58 to 59 61 still inside 50 62 measured over gap 0 7 four weekday masks 2 7 sessions the sabotage breaches only the short plans gap 0 8 weeks and gap 1 12 reach 62 1 64 8 against the 62 ceiling because a short plan is mostly base where preferring the wall buys the most so gap is sampled at both ends of periodisation s week count table 0 8 weeks 6 32 plus the 3 the rest of the file uses sessions per week runs the full 2 7 for completeness but it is not the exposing dimension and neither is the weekday mask all four masks measured identical to a tenth of a point because a mask moves which weekday a session lands on and never how many blocks it gets"
+limit = 11
+reason = "Records the MEASUREMENT that chose this parametrisation: which dimension exposes the _wall_pref sabotage (plan length), the numbers at each gap, and the two dimensions measured NOT to expose it - without which the next reader trims the gaps back and re-blinds the gate."

@@ -228,7 +228,11 @@ EQUIPMENT: Final[tuple[ReferenceSpec, ...]] = (
     ReferenceSpec(
         "outdoor_routes", "Outdoor routes", "Sport or trad routes on real rock, with a rope."
     ),
-    ReferenceSpec("system_board", "System board", "Kilter, Tension, Moon or similar."),
+    ReferenceSpec(
+        "system_board",
+        "System board or spray wall",
+        "Kilter, Tension, Moon, a spray wall, or any other set board you climb on.",
+    ),
     ReferenceSpec("campus_board", "Campus board", "Rungs for contact-strength work."),
     ReferenceSpec("hangboard", "Hangboard", "Fixed edges for hanging protocols."),
     ReferenceSpec("no_hang_device", "No-hang device", "Handheld or pin-loaded finger training."),

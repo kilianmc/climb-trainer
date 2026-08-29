@@ -25,12 +25,20 @@ priority order rather than a top three, because displacement walks it.
 """
 
 from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Set as AbstractSet
 from types import MappingProxyType
 from typing import Final
 
 from server.domain.exercises import DELIBERATELY_UNPRESCRIBED, EXERCISES, ExerciseSpec
 from server.domain.grades import Discipline
-from server.domain.vocabulary import CLIMBING_ASPECTS, EQUIPMENT, INJURY_AREAS, Phase
+from server.domain.planner.climbing import WALL_LED_ASPECTS, requires_wall
+from server.domain.vocabulary import (
+    CLIMBING_ASPECTS,
+    EQUIPMENT,
+    INJURY_AREAS,
+    Phase,
+    ProtocolKind,
+)
 
 # Primary + secondary + support. Three is what fits a session with a warm-up inside a
 # training evening; it is also exactly the gearless floor the library actually meets in
@@ -245,6 +253,72 @@ def shortfall_message(
     if len(listed) == 1:
         return f"To train {aspect} in this phase you need {listed[0]}."
     return f"To train {aspect} in this phase you need one of these: {', '.join(listed)}."
+
+
+def on_the_wall(cands: Iterable[ExerciseSpec]) -> tuple[ExerciseSpec, ...]:
+    """The candidates that put the climber on a wall, in the library's authored order."""
+    return tuple(spec for spec in cands if requires_wall(spec.equipment_keys))
+
+
+def off_the_wall(cands: Iterable[ExerciseSpec]) -> tuple[ExerciseSpec, ...]:
+    """The candidates that are not climbing. Climbing is allocated in its own pass, so this is
+    what "supplementary" means: the remainder is genuinely reserved for other work."""
+    return tuple(spec for spec in cands if not requires_wall(spec.equipment_keys))
+
+
+def with_protocols(
+    cands: Iterable[ExerciseSpec], kinds: AbstractSet[ProtocolKind]
+) -> tuple[ExerciseSpec, ...]:
+    """The candidates written as one of these protocols, in the library's authored order."""
+    return tuple(spec for spec in cands if spec.protocol_kind in kinds)
+
+
+def wall_led_aspects(phase: Phase) -> tuple[str, ...]:
+    """The aspects a climbing session here can be about, in the phase's own order.
+    Equipment-independent: a shortfall has to name what climbing here WOULD be."""
+    return tuple(
+        key
+        for key in ASPECT_EMPHASIS[phase]
+        if key in WALL_LED_ASPECTS and on_the_wall(candidates(phase, key))
+    )
+
+
+def wall_unlock_options(
+    phase: Phase, *, discipline: Discipline, open_injury_keys: Sequence[str]
+) -> tuple[tuple[str, ...], ...]:
+    """The minimal equipment combinations that would put real climbing in this phase, sorted.
+    Same shape and same injury rule as `unlock_options` — an AND per tuple, OR across them."""
+    injured = frozenset(open_injury_keys)
+    requirements = {
+        tuple(sorted(spec.equipment_keys))
+        for key in wall_led_aspects(phase)
+        for spec in on_the_wall(candidates(phase, key))
+        if (spec.discipline is None or spec.discipline is discipline)
+        and not injured.intersection(spec.contraindication_keys)
+    }
+    return tuple(
+        sorted(
+            option
+            for option in requirements
+            if option and not any(set(other) < set(option) for other in requirements)
+        )
+    )
+
+
+def no_climbing_message(options: tuple[tuple[str, ...], ...]) -> str:
+    """The sentence a week with no wall time carries. Equipment rows only, never a substitute,
+    and worded as the app saying something useful rather than as a gate (issue #61)."""
+    if not options:
+        return (
+            "Climbing is the core of this plan, and everything we would put on a wall in this "
+            "phase is work we hold back while you have an injury flagged."
+        )
+    listed = [" and ".join(_EQUIPMENT_NAMES[key].lower() for key in option) for option in options]
+    tail = listed[0] if len(listed) == 1 else f"one of these: {', '.join(listed)}"
+    return (
+        f"Climbing is the core of this plan and we have nowhere to put it, so this phase is "
+        f"supplementary work only. For the climbing itself you need {tail}."
+    )
 
 
 def _blocking_injuries(phase: Phase, aspect_key: str, *, open_injury_keys: Sequence[str]) -> str:

@@ -733,8 +733,8 @@ function WeekCard({
             </ul>
           )}
 
-          {/* A session-level shortfall is the honest empty session: zero blocks, and the
-              sentence that says why. */}
+          {/* A session-level shortfall is either the honest empty session or a session with
+              no wall time in it (issue #84) — the plan is complete either way. */}
           {session.shortfalls.map((shortfall) => (
             <ShortfallNotice
               shortfall={shortfall}
