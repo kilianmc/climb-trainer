@@ -3,6 +3,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { ApiError, NotJsonError } from '../api/client';
 import type { SessionLogRequest, SessionLogResponse } from '../api/types';
 import { useAuth } from '../auth/AuthProvider';
+import { SESSION_COMPLETION_KEY } from '../plan/completion';
 import type { Scope } from '../auth/session';
 
 /**
@@ -88,11 +89,16 @@ export function useSessionLogPut() {
         { method: 'PUT', json: variables.body },
       );
     },
-    // The server's own answer to the write that just committed. The only cache write here, and
-    // there is nothing to invalidate: no other observer reads this key.
+    // The server's own answer to the write that just committed — the only cache write here.
     onSuccess: (response) => {
       if (response === null) return;
       queryClient.setQueryData(sessionLogKey(response.client_uuid), response);
+      // ⚠️ `/plan` derives its completion colours from a plan-linked flush (#85), so the write
+      // that changes them must mark that read stale — its `staleTime` is ten minutes.
+      if (response.planned_session_id === null) return;
+      // Marking, not fetching: `invalidateQueries` refetches only where an observer is mounted,
+      // so a mid-run flush costs no request and `/plan` reads fresh figures when it opens.
+      void queryClient.invalidateQueries({ queryKey: SESSION_COMPLETION_KEY });
     },
   });
 }

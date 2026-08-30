@@ -1,5 +1,5 @@
 import { Link, createLazyFileRoute } from '@tanstack/react-router';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 import type {
   LibraryExercise,
@@ -8,6 +8,7 @@ import type {
   PlanShortfall,
   PlanTree,
   Profile,
+  SessionCompletion,
   Vocabulary,
 } from '../../api/types';
 import { ApiError } from '../../api/client';
@@ -17,6 +18,23 @@ import { humanise } from '../../library/browse';
 import type { PhaseGuides } from '../../plan/PhaseGuide';
 import { PhaseGuideNote, PlanFacts, phaseGuides, phaseLabel } from '../../plan/PhaseGuide';
 import { useAbandonPlan, useActivePlanView, useCreatePlan, usePlanPreview } from '../../plan/api';
+import {
+  BLOCK_MARK_LABEL,
+  blockOutcome,
+  completionBadge,
+  completionBySession,
+  doneBlocks,
+  phaseCompletionBadge,
+  useSessionCompletion,
+} from '../../plan/completion';
+import {
+  allPhases,
+  defaultOpenPhases,
+  planKey,
+  readOpenPhases,
+  samePhases,
+  writeOpenPhases,
+} from '../../plan/phaseToggles';
 import {
   exerciseLabel,
   exercisesByKey,
@@ -28,6 +46,7 @@ import {
 } from '../../plan/blueprint';
 import { phaseInPlan, planGoalFacts } from '../../plan/explain';
 import { useProfileScreen } from '../../profile/api';
+import { localIsoDate } from '../../session/today';
 import { compareToGoal } from '../../profile/grades';
 
 /**
@@ -84,6 +103,13 @@ function Plan() {
   // plan we will offer next — the climber who just abandoned wants a replacement. Cost of being
   // wrong is bounded: one wasted generation if the abandon then fails.
   const preview = usePlanPreview(profile, active.plan === null || replacing);
+  // Beside the plan read, never inside it (#85): only this screen wants these numbers, and
+  // `GET /api/plans/active` is already the heaviest payload in the app.
+  const completion = useSessionCompletion(active.plan ?? null);
+  const completionBySessionId = useMemo(
+    () => completionBySession(completion.data),
+    [completion.data],
+  );
 
   const exercises = library.data?.exercises;
 
@@ -205,8 +231,15 @@ function Plan() {
             abandon={abandon}
             readOnly={readOnly}
           />
-          {/* ONE renderer, for both — see the top of the file. */}
-          <PlanBody plan={shown} exercises={exercises} vocabulary={vocabulary} />
+          {/* ONE renderer, for both — see the top of the file. `key` is what makes the phase
+              toggles below start from their own default when the plan on screen changes. */}
+          <PlanBody
+            key={planKey(shown)}
+            plan={shown}
+            exercises={exercises}
+            vocabulary={vocabulary}
+            completion={completionBySessionId}
+          />
         </>
       )}
     </>
@@ -627,15 +660,35 @@ function PlanBody({
   plan,
   exercises,
   vocabulary,
+  completion,
 }: {
   plan: PlanTree;
   exercises: readonly LibraryExercise[];
   vocabulary: Vocabulary;
+  completion: ReadonlyMap<number, SessionCompletion>;
 }) {
   // ONCE, for the whole plan — both of them. A 32-week plan is sixteen mesocycles over seven
   // phases, so the guide is indexed rather than searched per section.
   const index = exercisesByKey(exercises);
   const guides = phaseGuides(vocabulary);
+
+  const storageKey = planKey(plan);
+  // ONE clock read for the whole body, so the phase badges and the default-open block agree.
+  const todayIso = localIsoDate(new Date());
+
+  // The stored preference first, then the block the climber is standing in. Read once: this
+  // component is keyed by `planKey`, so another plan is another mount.
+  const [open, setOpen] = useState<readonly number[]>(
+    () => readOpenPhases(storageKey) ?? defaultOpenPhases(plan, todayIso),
+  );
+
+  // Persisted on the change, not in an effect — one writer, and nothing to run on mount. The
+  // no-op guard is what absorbs the `toggle` event React fires when it sets `open` itself.
+  const commit = (next: readonly number[]) => {
+    if (samePhases(open, next)) return;
+    setOpen(next);
+    writeOpenPhases(storageKey, next);
+  };
 
   return (
     <>
@@ -659,29 +712,83 @@ function PlanBody({
 
       <PhaseTimeline mesocycles={plan.mesocycles} guides={guides} />
 
+      {/* Fourteen sections at 28 weeks, so both directions are one tap rather than fourteen. */}
+      <div className="ct-app__actions">
+        <button
+          type="button"
+          className="ct-app__button"
+          onClick={() => {
+            commit(allPhases(plan));
+          }}
+        >
+          Expand all phases
+        </button>
+        <button
+          type="button"
+          className="ct-app__button"
+          onClick={() => {
+            commit([]);
+          }}
+        >
+          Collapse all phases
+        </button>
+      </div>
+
       {plan.mesocycles.map((mesocycle) => {
         const guide = guides.get(mesocycle.phase);
+        const phaseBadge = phaseCompletionBadge(mesocycle, completion, todayIso);
         return (
           <section key={mesocycle.start_week}>
-            <h2>
-              {phaseLabel(guides, mesocycle.phase)}{' '}
-              <span className="ct-app__badge">
-                {mesocycle.start_week === mesocycle.end_week
-                  ? `Week ${String(mesocycle.start_week)}`
-                  : `Weeks ${String(mesocycle.start_week)}–${String(mesocycle.end_week)}`}
-              </span>
-            </h2>
-            <PhaseGuideNote guide={guide} inPlan={phaseInPlan(plan, mesocycle.phase)} />
-            <ul className="ct-app__stack">
-              {mesocycle.microcycles.map((microcycle) => (
-                <WeekCard
-                  key={microcycle.week_no}
-                  microcycle={microcycle}
-                  index={index}
-                  guides={guides}
-                />
-              ))}
-            </ul>
+            {/* `<details>`, not a custom toggle: keyboard, focus and the expanded state come
+                from the element. The heading stays the control's own label. */}
+            <details
+              className="ct-app__disclosure ct-app__disclosure--phase"
+              data-completion={phaseBadge?.band}
+              open={open.includes(mesocycle.start_week)}
+              onToggle={(event) => {
+                const isOpen = event.currentTarget.open;
+                commit(
+                  isOpen
+                    ? [...new Set([...open, mesocycle.start_week])]
+                    : open.filter((week) => week !== mesocycle.start_week),
+                );
+              }}
+            >
+              <summary>
+                <h2>
+                  {phaseLabel(guides, mesocycle.phase)}{' '}
+                  <span className="ct-app__badge">
+                    {mesocycle.start_week === mesocycle.end_week
+                      ? `Week ${String(mesocycle.start_week)}`
+                      : `Weeks ${String(mesocycle.start_week)}–${String(mesocycle.end_week)}`}
+                  </span>
+                </h2>
+                {/* In the SUMMARY, so a COLLAPSED phase still carries its own result (#92). A
+                    sibling of the heading, not inside it: the summary is the flex row. */}
+                {phaseBadge === null ? null : (
+                  /* Band AND `--phase` live on the BADGE: a phase and a session are both
+                     `ct-app__disclosure`, and only dark's PHASE badge gets a pill. */
+                  <span
+                    className="ct-app__completion ct-app__completion--phase"
+                    data-completion={phaseBadge.band}
+                  >
+                    {phaseBadge.label}
+                  </span>
+                )}
+              </summary>
+              <PhaseGuideNote guide={guide} inPlan={phaseInPlan(plan, mesocycle.phase)} />
+              <ul className="ct-app__stack">
+                {mesocycle.microcycles.map((microcycle) => (
+                  <WeekCard
+                    key={microcycle.week_no}
+                    microcycle={microcycle}
+                    index={index}
+                    guides={guides}
+                    completion={completion}
+                  />
+                ))}
+              </ul>
+            </details>
           </section>
         );
       })}
@@ -739,10 +846,12 @@ function WeekCard({
   microcycle,
   index,
   guides,
+  completion,
 }: {
   microcycle: PlanMicrocycle;
   index: ReadonlyMap<string, LibraryExercise>;
   guides: PhaseGuides;
+  completion: ReadonlyMap<number, SessionCompletion>;
 }) {
   return (
     <li className="ct-app__card">
@@ -752,35 +861,67 @@ function WeekCard({
       </h3>
       <p className="ct-app__muted">Starts {formatDay(microcycle.start_date)}</p>
 
-      {microcycle.sessions.map((session) => (
-        <details className="ct-app__disclosure" key={session.weekday}>
-          <summary>
-            {weekdayName(session.weekday)} — {session.title}
-          </summary>
-          <p className="ct-app__muted">{sessionSummary(session)}</p>
+      {microcycle.sessions.map((session) => {
+        // Nothing for a preview (no row, so no id) and nothing for a session still to come.
+        const done = session.id == null ? undefined : completion.get(session.id);
+        const badge = completionBadge(done);
+        // `null` for a preview and for a session still to come, which leaves its rows unmarked.
+        const marks = doneBlocks(done);
+        return (
+          <details
+            className="ct-app__disclosure"
+            key={session.weekday}
+            data-completion={badge?.band}
+          >
+            <summary>
+              {weekdayName(session.weekday)} — {session.title}
+              {/* The percentage in WORDS beside the colour, never the colour alone — and the
+                  band on the badge itself, so no enclosing phase can repaint it. */}
+              {badge === null ? null : (
+                <span className="ct-app__completion" data-completion={badge.band}>
+                  {badge.label}
+                </span>
+              )}
+            </summary>
+            <p className="ct-app__muted">{sessionSummary(session)}</p>
 
-          {session.blocks.length > 0 && (
-            <ul className="ct-app__terms">
-              {session.blocks.map((block) => (
-                <li key={block.order_index}>
-                  <strong>{exerciseLabel(block.exercise_key, index)}</strong>{' '}
-                  {humanise(block.aspect_key)} · {setsLine(block, microcycle.phase)}
-                  {block.shortfall !== null && <ShortfallNotice shortfall={block.shortfall} />}
-                </li>
-              ))}
-            </ul>
-          )}
+            {session.blocks.length > 0 && (
+              <ul className="ct-app__terms">
+                {session.blocks.map((block) => {
+                  // Which PART got done (#95). Both the word and the row's edge are keyed on the
+                  // row's OWN `data-done`, so no enclosing phase or session can repaint it.
+                  const outcome = blockOutcome(marks, block.id);
+                  return (
+                    <li
+                      className="ct-app__part"
+                      data-done={outcome ?? undefined}
+                      key={block.order_index}
+                    >
+                      {outcome === null ? null : (
+                        <span className="ct-app__mark" data-done={outcome}>
+                          {BLOCK_MARK_LABEL[outcome]}
+                        </span>
+                      )}
+                      <strong>{exerciseLabel(block.exercise_key, index)}</strong>{' '}
+                      {humanise(block.aspect_key)} · {setsLine(block, microcycle.phase)}
+                      {block.shortfall !== null && <ShortfallNotice shortfall={block.shortfall} />}
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
 
-          {/* A session-level shortfall is either the honest empty session or a session with
+            {/* A session-level shortfall is either the honest empty session or a session with
               no wall time in it (issue #84) — the plan is complete either way. */}
-          {session.shortfalls.map((shortfall) => (
-            <ShortfallNotice
-              shortfall={shortfall}
-              key={`${shortfall.phase}:${shortfall.aspect_key}`}
-            />
-          ))}
-        </details>
-      ))}
+            {session.shortfalls.map((shortfall) => (
+              <ShortfallNotice
+                shortfall={shortfall}
+                key={`${shortfall.phase}:${shortfall.aspect_key}`}
+              />
+            ))}
+          </details>
+        );
+      })}
     </li>
   );
 }

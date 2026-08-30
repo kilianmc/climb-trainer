@@ -106,13 +106,12 @@ function classesInMarkup(source: string): Set<string> {
  * — verified — and the failure mode is a loud over- or under-report on the next run, not a
  * silent one.
  */
-function selectorClasses(css: string): Set<string> {
-  const found = new Set<string>();
+function preludes(css: string): string[] {
+  const found: string[] = [];
   let prelude = '';
   for (const character of css.replace(/\/\*[\s\S]*?\*\//g, '')) {
     if (character === '{') {
-      for (const [, name] of prelude.matchAll(SELECTOR_CLASS))
-        if (name !== undefined) found.add(name);
+      found.push(prelude);
       prelude = '';
     } else if (character === '}' || character === ';') {
       prelude = '';
@@ -121,6 +120,99 @@ function selectorClasses(css: string): Set<string> {
     }
   }
   return found;
+}
+
+function selectorClasses(css: string): Set<string> {
+  const found = new Set<string>();
+  for (const prelude of preludes(css)) {
+    for (const [, name] of prelude.matchAll(SELECTOR_CLASS))
+      if (name !== undefined) found.add(name);
+  }
+  return found;
+}
+
+/**
+ * ## The completion band must not be reachable from an ANCESTOR
+ *
+ * ⚠️ **The regression this pins (PR #95): a 100% session badge rendered AMBER inside a 75%
+ * phase.** `_profile.scss` wrote its band rules as
+ * `.ct-app__disclosure[data-completion='partial'] .ct-app__completion`, and a phase `<details>`
+ * and a session `<details>` are BOTH `ct-app__disclosure`. Once the phase gained an aggregate
+ * band, its attribute matched as an *ancestor* of every session badge inside it; the two rules
+ * tie on specificity, so source order decided and the phase won.
+ *
+ * Nothing else in the gate can see this. `uses no class the stylesheet leaves without a rule`
+ * only asks whether `ct-app__completion` has *some* rule — it did. `contrast.test.ts` only reads
+ * token values. `planCompletionBands.test.tsx` asserts the markup carries the band per badge, but
+ * jsdom applies no compiled SCSS, so it cannot see a selector that reaches past it. This is the
+ * only assertion on the SHAPE of the rule, which is where the defect lived.
+ *
+ * The invariant is structural, not cosmetic: **the band is a property of the badge element**, so
+ * no selector may pair a `[data-completion…]` ancestor with a descendant `.ct-app__completion`.
+ * A child combinator is deliberately still allowed — `x[data-completion] > .ct-app__completion`
+ * cannot be reached from a grandparent, so it is safe and stays available for a container rule
+ * that genuinely needs its own badge.
+ */
+const COMPLETION_LEAK = /\[data-completion[^\]]*\][^,{>]*\s\.ct-app__completion/;
+
+/** ⚠️ The SAME invariant, one attribute along: a block row's done/missed mark (#95) is a
+ *  property of the ROW, so no `[data-done…]` ancestor may reach a row or a mark below it. */
+const DONE_LEAK = /\[data-done[^\]]*\][^,{>]*\s\.ct-app__(?:mark|part)/;
+
+/** Every selector where a band or a mark leaks down the tree, as written in the compiled CSS. */
+function leaks(css: string, pattern: RegExp): string[] {
+  return preludes(css)
+    .flatMap((prelude) => prelude.split(','))
+    .map((selector) => selector.trim().replace(/\s+/g, ' '))
+    .filter((selector) => pattern.test(selector));
+}
+
+function completionLeaks(css: string): string[] {
+  return leaks(css, COMPLETION_LEAK);
+}
+
+function doneLeaks(css: string): string[] {
+  return leaks(css, DONE_LEAK);
+}
+
+/**
+ * ## ⚠️ In DARK the pill belongs to the PHASE badge alone
+ *
+ * The day badges inside a week are a bare band-coloured word and were signed off as they stand
+ * (Kilian, 2026-08-30); only light gives every badge a pill. So any rule handing
+ * `.ct-app__completion` pill GEOMETRY must be GATED — by the light scheme's scope or by the
+ * `--phase` modifier on the badge itself — and an ungated one silently repaints every day badge
+ * in dark. Nothing else in the gate sees it: `contrast.test.ts` reads token values,
+ * `planCompletionBands.test.tsx` runs under jsdom with no compiled SCSS applied, and the leak
+ * guard above only forbids reaching a badge from an ancestor, not over-styling it directly.
+ *
+ * ⚠️ Gating by SELECTOR TEXT, deliberately, so the at-rule context never has to be tracked: the
+ * light half emits `:not([data-theme='dark'])` into its own selector inside the media query.
+ */
+const PILL_GEOMETRY = /(?:border-radius|padding-inline|padding-block)\s*:/;
+
+const PILL_GATE = /ct-app__completion--phase|\[data-theme=['"]?light|:not\(\[data-theme=['"]?dark/;
+
+/** Innermost blocks only: `[^{}]` cannot cross a brace, so a nested at-rule contributes its
+ *  inner rule and its own prelude is skipped. Each selector of a list is judged on its own. */
+function pillRules(css: string): [string, boolean][] {
+  const found: [string, boolean][] = [];
+  const blocks = css.replace(/\/\*[\s\S]*?\*\//g, '').matchAll(/([^{}]+)\{([^{}]*)\}/g);
+  for (const [, prelude, body] of blocks) {
+    if (prelude === undefined || body === undefined || !PILL_GEOMETRY.test(body)) continue;
+    for (const selector of prelude.split(',')) {
+      const one = selector.trim().replace(/\s+/g, ' ');
+      if (one.includes('.ct-app__completion')) found.push([one, PILL_GATE.test(one)]);
+    }
+  }
+  return found;
+}
+
+/** The pill rules no scheme or variant gate reaches — every one of them a dark day badge. */
+function ungatedPills(css: string): string[] {
+  return pillRules(css)
+    .filter(([, gated]) => !gated)
+    .map(([selector]) => selector);
 }
 
 /**
@@ -199,6 +291,35 @@ describe('markup and CSS describe each other', () => {
     expect(withoutMarkup(defined, new Set(used.keys()))).toEqual([]);
   });
 
+  it('lets no completion band leak from an ancestor onto a descendant badge', () => {
+    // The failure prints the offending selectors, because the fix is always the same edit:
+    // drop the ancestor and key the rule on the badge's own `data-completion`.
+    expect(completionLeaks(compiled)).toEqual([]);
+    // Not vacuous: the real stylesheet still styles the badge BY its own band, in both
+    // schemes, so this is a rule shape being asserted rather than an absent feature.
+    expect(compiled).toContain('.ct-app__completion[data-completion=');
+    expect(completionLeaks(compiled).length + preludes(compiled).length).toBeGreaterThan(100);
+  });
+
+  it('lets no done/missed mark leak from an ancestor onto a block row', () => {
+    expect(doneLeaks(compiled)).toEqual([]);
+    // Not vacuous: the row AND its word are really styled, each by its own `data-done`.
+    expect(compiled).toContain('.ct-app__part[data-done=');
+    expect(compiled).toContain('.ct-app__mark[data-done=');
+  });
+
+  it('gives the pill to the PHASE badge alone in dark, never to a day badge', () => {
+    expect(ungatedPills(compiled)).toEqual([]);
+    // Not vacuous: the real stylesheet emits pill rules, from both of the two gates.
+    const selectors = pillRules(compiled).map(([selector]) => selector);
+    expect(selectors.length).toBeGreaterThanOrEqual(3);
+    expect(selectors.some((one) => one.includes('.ct-app__completion--phase'))).toBe(true);
+    // Quote-agnostic: Sass emits `[data-theme=light]` unquoted, which is exactly why `PILL_GATE`
+    // makes the quote optional rather than matching the source spelling.
+    expect(selectors.some((one) => /\[data-theme=['"]?light/.test(one))).toBe(true);
+    expect(selectors.some((one) => /:not\(\[data-theme=['"]?dark/.test(one))).toBe(true);
+  });
+
   it('keeps its exemptions REAL rather than merely unused', () => {
     // If `Marketing.tsx` stops interpolating, every line of `INTERPOLATED` must go with it.
     for (const name of INTERPOLATED.used) expect([...used.keys()]).toContain(name);
@@ -222,6 +343,81 @@ describe('positive control', () => {
     expect(
       withoutMarkup(selectorClasses('.ct-app__unused { color: red; }'), new Set(used.keys())),
     ).toEqual(['ct-app__unused']);
+  });
+
+  it('reports the ancestor-keyed completion selector that shipped the amber-100% bug', () => {
+    // The exact rule `_profile.scss` used to emit, spelled independently of it.
+    expect(
+      completionLeaks(
+        ".ct-app__disclosure[data-completion='partial'] .ct-app__completion { color: red; }",
+      ),
+    ).toEqual([".ct-app__disclosure[data-completion='partial'] .ct-app__completion"]);
+    // …at any depth, and through the light scheme's scoping wrapper too.
+    expect(
+      completionLeaks(
+        ".ct-app[data-theme='light'] .ct-app__disclosure[data-completion] summary .ct-app__completion { color: red; }",
+      ),
+    ).toHaveLength(1);
+  });
+
+  it('reports the ancestor-keyed BLOCK MARK, the same shape one attribute along', () => {
+    expect(
+      doneLeaks(".ct-app__disclosure[data-done='done'] .ct-app__mark { color: red; }"),
+    ).toEqual([".ct-app__disclosure[data-done='done'] .ct-app__mark"]);
+    // …and the row styling its OWN word through a child combinator is allowed, exactly as above.
+    expect(doneLeaks(".ct-app__part[data-done='done'] > .ct-app__mark { color: red; }")).toEqual(
+      [],
+    );
+    expect(doneLeaks(".ct-app__part[data-done='missed'] { border-color: red; }")).toEqual([]);
+  });
+
+  it('allows the two shapes that CANNOT be reached from an ancestor', () => {
+    // The fix: the band on the badge itself.
+    expect(completionLeaks(".ct-app__completion[data-completion='full'] { color: red; }")).toEqual(
+      [],
+    );
+    // And a container styling its OWN badge through the child combinator, which no grandparent
+    // can win — deliberately still permitted, see `COMPLETION_LEAK`.
+    expect(
+      completionLeaks('.ct-app__disclosure[data-completion] > .ct-app__completion { border: 0; }'),
+    ).toEqual([]);
+    // A banded container styling ITSELF is not a leak either.
+    expect(
+      completionLeaks(".ct-app__disclosure[data-completion='low'] { border-color: red; }"),
+    ).toEqual([]);
+    // …and neither is a comma-separated list where the two halves never meet in one selector.
+    expect(completionLeaks('.a[data-completion], .ct-app__completion .b { color: red; }')).toEqual(
+      [],
+    );
+  });
+
+  it('reports an UNGATED pill rule, the shape that would repaint every dark day badge', () => {
+    expect(ungatedPills('.ct-app__completion[data-completion] { border-radius: 999px; }')).toEqual([
+      '.ct-app__completion[data-completion]',
+    ]);
+    // …and one hiding in a selector list beside a gated sibling.
+    expect(
+      ungatedPills(
+        '.ct-app__completion--phase[data-completion], .ct-app__completion { padding-inline: 1px; }',
+      ),
+    ).toEqual(['.ct-app__completion']);
+  });
+
+  it('allows the pill wherever its own selector gates it', () => {
+    expect(
+      ungatedPills('.ct-app__completion--phase[data-completion] { border-radius: 999px; }'),
+    ).toEqual([]);
+    expect(
+      ungatedPills(".ct-app[data-theme='light'] .ct-app__completion { padding-block: 1px; }"),
+    ).toEqual([]);
+    // The media-query half, whose gate is inside its own selector rather than the at-rule.
+    expect(
+      ungatedPills(
+        "@media (prefers-color-scheme: light) { .ct-app:not([data-theme='dark']) .ct-app__completion { padding-block: 1px; } }",
+      ),
+    ).toEqual([]);
+    // A colour-only rule is not a pill, and the dark day badge's own rule is exactly that.
+    expect(ungatedPills(".ct-app__completion[data-completion='low'] { color: red; }")).toEqual([]);
   });
 
   it('does not report a class that IS matched, in either direction', () => {

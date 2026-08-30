@@ -8728,3 +8728,31 @@ kind = "hash_run"
 anchor = "the dimension this sweeps is plan length and it is the one the gate was missing round 3 reordered wall pref to put a session s own length ahead of the week s share and this test stayed green at the gap of 3 every other test here uses that moves the advanced band from 57 58 to 59 61 still inside 50 62 measured over gap 0 7 four weekday masks 2 7 sessions the sabotage breaches only the short plans gap 0 8 weeks and gap 1 12 reach 62 1 64 8 against the 62 ceiling because a short plan is mostly base where preferring the wall buys the most so gap is sampled at both ends of periodisation s week count table 0 8 weeks 6 32 plus the 3 the rest of the file uses sessions per week runs the full 2 7 for completeness but it is not the exposing dimension and neither is the weekday mask all four masks measured identical to a tenth of a point because a mask moves which weekday a session lands on and never how many blocks it gets"
 limit = 11
 reason = "Records the MEASUREMENT that chose this parametrisation: which dimension exposes the _wall_pref sabotage (plan length), the numbers at each gap, and the two dimensions measured NOT to expose it - without which the next reader trims the gaps back and re-blinds the gate."
+
+[[exception]]
+path = "web/src/planCompletionBands.test.tsx"
+kind = "block"
+anchor = "the completion band must be a property of the badge not of anything above it"
+limit = 20
+reason = "The amber-100% regression in full: what a DOM guard can see that the compiled-CSS guard cannot, and why a phase and a session disclosure are indistinguishable from above."
+
+[[exception]]
+path = "web/src/planCompletionBands.test.tsx"
+kind = "block"
+anchor = "100 and 50 over two equally weighted sessions is a phase mean of 75 partial"
+limit = 4
+reason = "Kilian's equal-weight-per-session arithmetic worked through on this fixture, so the expected 75 is checkable without rederiving the mean from the tree."
+
+[[exception]]
+path = "web/src/styles/markupCss.test.ts"
+kind = "block"
+anchor = "the completion band must not be reachable from an ancestor the regression this pins"
+limit = 22
+reason = "The bug this pins, why more specificity or a reorder is not the fix, and why the child combinator stays deliberately allowed - none of which is recoverable from the regex."
+
+[[exception]]
+path = "web/src/styles/markupCss.test.ts"
+kind = "block"
+anchor = "in dark the pill belongs to the phase badge alone the day badges inside a week"
+limit = 14
+reason = "Kilian signed dark's day badges off as they stand, so the guard must say which rules may carry pill geometry, that nothing else in the suite can see an ungated one, and why the gate is read off selector text rather than at-rule context."

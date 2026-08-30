@@ -47,7 +47,7 @@ function contrast(a: string, b: string): number {
 
 /** The declarations in one `@mixin <name>-values` block. Neither block nests, so `[^}]*` is
  *  sufficient and stays readable — that flatness is a deliberate property of `_tokens.scss`. */
-function values(name: 'light' | 'dark'): Record<string, string> {
+function values(name: 'light' | 'dark' | 'light-only'): Record<string, string> {
   const block = new RegExp(String.raw`@mixin ${name}-values \{([^}]*)\}`).exec(SOURCE)?.[1];
   expect(block, `no "@mixin ${name}-values" block in _tokens.scss`).toBeDefined();
 
@@ -73,6 +73,9 @@ const light = values('light');
 // the effective dark palette is the union. Merging also means a token added to only one list
 // would be tested against the wrong scheme rather than skipped.
 const dark = { ...light, ...values('dark') };
+// The completion pill's fills, words and ring (#85): a THIRD block, not a third scheme, and
+// absent from both scheme mixins on purpose — `_tokens.scss` carries why.
+const lightOnly = values('light-only');
 
 const SURFACES = ['bg', 'surface-1', 'surface-2', 'surface-3', 'hover', 'pressed'] as const;
 const CARD_SURFACES = ['bg', 'surface-1', 'surface-2', 'surface-3'] as const;
@@ -103,6 +106,23 @@ const TEXT_PAIRS: [string, string][] = [
  *  borders load-bearing enough to need it — the hairlines are decorative separators. */
 const NON_TEXT_PAIRS: [string, string][] = SURFACES.map((s) => ['border-strong', s]);
 
+/** The three completion bands. Light gives every badge a pale filled pill with an ink ring;
+ *  dark gives the PHASE badge a `--ct-surface-2` pill ringed and lettered in the band colour. */
+const BANDS = ['full', 'partial', 'low'] as const;
+
+/** The word on its own fill: text, so 4.5:1. */
+const FILL_TEXT_PAIRS: [string, string][] = BANDS.map((band) => [
+  `completion-${band}-fg`,
+  `completion-${band}-fill`,
+]);
+
+/** ⚠️ The RING, never the pale fill (1.22:1 at best), against every card surface a disclosure
+ *  can land on: WCAG 1.4.11's 3:1 is the RING's debt, so fill-vs-surface is not asserted. */
+const OUTLINE_SURFACE_PAIRS: [string, string][] = CARD_SURFACES.map((surface): [string, string] => [
+  'completion-outline',
+  surface,
+]);
+
 describe.each([
   ['light', light],
   ['dark', dark],
@@ -113,6 +133,75 @@ describe.each([
 
   it.each(NON_TEXT_PAIRS)('outlines --ct-%s on --ct-%s at 3:1', (fg, bg) => {
     expect(contrast(tone(tokens, fg), tone(tokens, bg))).toBeGreaterThanOrEqual(3);
+  });
+});
+
+describe('completion badge, light scheme only', () => {
+  // The fills are read beside light's surfaces and nothing else: there is no dark counterpart,
+  // by design, so a `dark` row here would be asserting against light values under another name.
+  const tokens = { ...light, ...lightOnly };
+
+  it.each(FILL_TEXT_PAIRS)('renders --ct-%s on its fill --ct-%s at AA 4.5:1', (fg, fill) => {
+    expect(contrast(tone(tokens, fg), tone(tokens, fill))).toBeGreaterThanOrEqual(4.5);
+  });
+
+  it.each(OUTLINE_SURFACE_PAIRS)('bounds the pill with --ct-%s on --ct-%s at 3:1', (ring, bg) => {
+    expect(contrast(tone(tokens, ring), tone(tokens, bg))).toBeGreaterThanOrEqual(3);
+  });
+
+  it('carries a yellow BRIGHTER than any borderless pill could be, which is why the ring exists', () => {
+    // 3:1 against `--ct-bg` caps a borderless fill at luminance 0.256, i.e. 6.12:1 against
+    // black — the gold Kilian rejected. The ring pays that debt, so the fill may exceed it.
+    expect(contrast(tone(tokens, 'completion-partial-fill'), '#000000')).toBeGreaterThan(6.12);
+  });
+
+  it('is a light-only block, so neither scheme mixin may declare its keys', () => {
+    // A key that ALSO appears in a scheme mixin means the fills silently follow the theme, which
+    // is the one thing this treatment must not do; the first half keeps the pairs non-vacuous.
+    expect(Object.keys(lightOnly).sort()).toEqual(
+      [
+        'completion-outline',
+        ...BANDS.flatMap((band) => [`completion-${band}-fg`, `completion-${band}-fill`]),
+      ].sort(),
+    );
+    for (const key of Object.keys(lightOnly)) {
+      expect(Object.keys(light)).not.toContain(key);
+      expect(Object.keys(values('dark'))).not.toContain(key);
+    }
+  });
+});
+
+/** The dark PHASE pill's real pair. Dark declares no `completion-*` token — its ring and word
+ *  are the band tone itself — so the pair is named through the scheme tokens that carry it. */
+const DARK_PHASE_TONES: [string, string][] = [
+  ['full', 'success'],
+  ['partial', 'warning'],
+  ['low', 'danger'],
+];
+
+describe('completion badge, dark scheme — the PHASE pill', () => {
+  // Dark's SESSION badge is a bare word on a card and is already swept by `TEXT_PAIRS`. The
+  // phase badge is a pill on `--ct-surface-2`, so its word and its ring are named against THAT.
+  it.each(DARK_PHASE_TONES)(
+    'renders the %s word --ct-%s on --ct-surface-2 at AA 4.5:1',
+    (_band, token) => {
+      expect(contrast(tone(dark, token), tone(dark, 'surface-2'))).toBeGreaterThanOrEqual(4.5);
+    },
+  );
+
+  // The ring is `currentColor`, i.e. the same tone at a lower threshold TODAY. Both are asserted
+  // because they are two requirements: a ring given its own colour must still clear 1.4.11's 3:1.
+  it.each(DARK_PHASE_TONES)(
+    'rings the %s pill with --ct-%s on --ct-surface-2 at 3:1',
+    (_band, token) => {
+      expect(contrast(tone(dark, token), tone(dark, 'surface-2'))).toBeGreaterThanOrEqual(3);
+    },
+  );
+
+  it('measured DARK tokens, not light ones merged in under the same name', () => {
+    expect(tone(dark, 'surface-2')).not.toBe(tone(light, 'surface-2'));
+    for (const [, token] of DARK_PHASE_TONES)
+      expect(tone(dark, token)).not.toBe(tone(light, token));
   });
 });
 

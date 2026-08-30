@@ -11,8 +11,8 @@
  *   openapi-sha256  the OpenAPI document it was generated from
  *   types-sha256    everything below this comment block
  *
- * openapi-sha256: 3f79a229a4c801957d738bd5e8ee3addd2a291bd9db548a5639bea0244521b8b
- * types-sha256: 499fee2e35823a0d342a55340894e744d3dc29faf0b0d0b5f90753623ebc8188
+ * openapi-sha256: 374936938ef17c7cb7d7c8a7f63ae97316c7943b3a099d13cef2121f6d5b9366
+ * types-sha256: 0f74d513a570a114eafe75486a8d4fe0ca0802db779986447ffe83cbe577e795
  */
 
 export interface paths {
@@ -435,6 +435,38 @@ export interface paths {
      *     the response and can never disagree with the database. **Idempotent, and it creates no row.**
      */
     post: operations['reset_profile_api_profile_reset_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/sessions/completion': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Session Completion
+     * @description How much of each planned session in `from`..`to` actually got done.
+     *
+     *     **Partial completion is a DERIVED QUERY, not a column.** `planned_session.status` says
+     *     whether Finish was pressed; this counts the blocks with at least one logged set, which is
+     *     the only figure that can say WHICH two of three parts — and the rule behind it will be
+     *     tuned, which is why no `planned_session` column holds it.
+     *
+     *     **Its own endpoint, deliberately.** `GET /api/plans/active` is already the heaviest payload
+     *     in the app and only this screen reads these numbers, so they are fetched beside it rather
+     *     than inside it.
+     *
+     *     **One statement, no per-row N+1**, one Neon wake, and read-only: a demo token may call it.
+     *     `skipped` is inferred from `as_of` — nothing in the app writes that status.
+     */
+    get: operations['session_completion_api_sessions_completion_get'];
+    put?: never;
+    post?: never;
     delete?: never;
     options?: never;
     head?: never;
@@ -1234,6 +1266,70 @@ export interface components {
       password: string;
     };
     /**
+     * SessionCompletionOut
+     * @description How much of ONE planned session got done — **derived**, never a stored column.
+     *
+     *     `done_block_ids` says WHICH blocks got done, over the join
+     *     `logged_set.prescribed_set_id → session_block`: every block with at least one logged set,
+     *     keyed on `session_block.id`, the id `plans.BlockOut` carries for a persisted plan.
+     *     `blocks_done` is its length. A set with null `actual_*` values is a **real** completion —
+     *     the "I did this myself" affordance mints exactly those — so nothing here filters them out.
+     *
+     *     `status` is what the write path stored: `completed` means "pressed Finish", never "did it
+     *     all". `state` is derived from it and from `as_of`: `completed`, `pending` for a session still
+     *     to come, `skipped` for one whose day has passed unfinished.
+     *
+     *     ⚠️ **`skipped` names the OUTCOME, not the cause: "past and not finished, whatever the
+     *     reason".** A past `in_progress` session reads `skipped` and that is CORRECT — unfinished and
+     *     skipped are the same result in real life (Kilian, 2026-08-30), which is why the UI shows only
+     *     the percentage. Never render it as "the climber chose to skip this".
+     *
+     *     `percent` is `null` for a session with no blocks at all: there is nothing to have done, and
+     *     reporting 0% for that would read as a failure nobody had.
+     */
+    SessionCompletionOut: {
+      /** Block Count */
+      block_count: number;
+      /** Blocks Done */
+      blocks_done: number;
+      /** Done Block Ids */
+      done_block_ids: number[];
+      /** Percent */
+      percent: number | null;
+      /** Planned Session Id */
+      planned_session_id: number;
+      /**
+       * Scheduled On
+       * Format: date
+       */
+      scheduled_on: string;
+      /**
+       * State
+       * @enum {string}
+       */
+      state: 'completed' | 'skipped' | 'pending';
+      status: components['schemas']['SessionStatus'];
+    };
+    /**
+     * SessionCompletionResponse
+     * @description Completion for every planned session of this climber's inside the window.
+     *
+     *     `as_of` is the server's own date, i.e. the boundary `state` was decided against, so the
+     *     client never re-derives "past" from a clock of its own.
+     *
+     *     Sessions from a stood-down plan are included when their date falls in the window — the
+     *     response is keyed by `planned_session_id`, so a caller reads the ones it asked about.
+     */
+    SessionCompletionResponse: {
+      /**
+       * As Of
+       * Format: date
+       */
+      as_of: string;
+      /** Sessions */
+      sessions: components['schemas']['SessionCompletionOut'][];
+    };
+    /**
      * SessionLogRequest
      * @description The activity/logged_session envelope plus the delta of sets. `extra="forbid"`.
      *
@@ -1849,6 +1945,38 @@ export interface operations {
         };
         content: {
           'application/json': components['schemas']['ProfileResponse'];
+        };
+      };
+    };
+  };
+  session_completion_api_sessions_completion_get: {
+    parameters: {
+      query: {
+        from: string;
+        to: string;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['SessionCompletionResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
         };
       };
     };
