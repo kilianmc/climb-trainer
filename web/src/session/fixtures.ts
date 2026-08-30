@@ -1,4 +1,11 @@
-import type { LibraryExercise, PlanBlock, PlanSession, PlanTree, ProtocolKind } from '../api/types';
+import type {
+  LibraryExercise,
+  PlanBlock,
+  PlanSession,
+  PlanTree,
+  ProtocolKind,
+  Vocabulary,
+} from '../api/types';
 
 /** Plan-tree builders shared by the session tests. Not a `.test.ts` file because several
  * suites need the same shapes, and a duplicated nine-field `SetOut` is how they drift. */
@@ -69,6 +76,8 @@ export function makeSession(blocks: PlanBlock[], scheduledOn = '2026-08-28'): Pl
 export function makePlan(sessions: PlanSession[]): PlanTree {
   return {
     activated_at: '2026-08-24T09:00:00Z',
+    // `null` because `generator_input` is empty here — see `plan/explain.test.ts` for the band.
+    climbing_band: null,
     current_grade_id: 206,
     discipline: 'sport',
     generator_input: {},
@@ -104,4 +113,41 @@ export function makePlan(sessions: PlanSession[]): PlanTree {
 
 export function makeLibrary(): ReadonlyMap<string, LibraryExercise> {
   return new Map();
+}
+
+/** The only field the session screen reads: the phase copy behind the brief's reminder. The
+ *  wording is placeholder on purpose — the real copy is the server's, in `vocabulary.py`. */
+export function makeVocabulary(): Vocabulary {
+  return {
+    grade_systems: [],
+    grades: [],
+    climbing_aspects: [],
+    equipment: [],
+    injury_areas: [],
+    plan_goal: 'what the plan is for',
+    phase_guide: [
+      {
+        phase: 'strength',
+        label: 'Max strength',
+        summary: 'what max strength is',
+        how_to_train: 'how max strength is trained',
+        links: [],
+      },
+      {
+        phase: 'deload',
+        label: 'Deload',
+        summary: 'what a deload is',
+        how_to_train: 'how a deload is taken',
+        links: [],
+      },
+    ],
+    enums: {
+      disciplines: ['sport'],
+      activity_kinds: ['climbing'],
+      ascent_styles: ['redpoint'],
+      protocol_kinds: ['max_hang'],
+      phases: ['deload', 'strength'],
+      session_statuses: ['planned'],
+    },
+  };
 }

@@ -56,6 +56,9 @@ const VOCABULARY: Vocabulary = {
   ],
   equipment: [{ id: 5, key: 'hangboard', name: 'Hangboard', description: 'Edges.' }],
   injury_areas: [{ id: 8, key: 'elbow', name: 'Elbow', description: 'Tendons.' }],
+  // Irrelevant to this fixture; the phase copy is covered by tests/test_phase_guide.py.
+  plan_goal: '',
+  phase_guide: [],
   enums: {
     disciplines: ['boulder', 'sport'],
     activity_kinds: ['climbing'],
@@ -116,6 +119,9 @@ function planTree(ids: { readonly persisted: boolean }): PlanTree {
   const id = (value: number) => (ids.persisted ? value : null);
   return {
     id: id(PERSISTED_PLAN_ID),
+    // Derived on serialisation from `generator_input`; this fixture carries no ordinal, so the
+    // server would send `null`. `plan/explain.test.ts` is where the derived figures are read.
+    climbing_band: null,
     name: 'Road to 6B',
     start_date: '2026-08-31',
     week_count: 1,

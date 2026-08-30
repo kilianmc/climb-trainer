@@ -52,6 +52,9 @@ const VOCABULARY: Vocabulary = {
   // equipment STEP, and PR #10 decides what an owned-vs-lacked flag means.
   equipment: [{ id: 5, key: 'hangboard', name: 'Hangboard', description: 'Edges.' }],
   injury_areas: [{ id: ELBOW_ID, key: 'elbow', name: 'Elbow', description: 'Tendons.' }],
+  // Irrelevant to this fixture; the phase copy is covered by tests/test_phase_guide.py.
+  plan_goal: '',
+  phase_guide: [],
   enums: {
     disciplines: ['boulder', 'sport'],
     activity_kinds: ['climbing'],

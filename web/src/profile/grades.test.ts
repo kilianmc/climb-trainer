@@ -126,6 +126,9 @@ const VOCABULARY: Vocabulary = {
   climbing_aspects: [],
   equipment: [],
   injury_areas: [],
+  // Irrelevant to this fixture; the phase copy is covered by tests/test_phase_guide.py.
+  plan_goal: '',
+  phase_guide: [],
   enums: {
     disciplines: ['boulder', 'sport'],
     activity_kinds: ['climbing'],

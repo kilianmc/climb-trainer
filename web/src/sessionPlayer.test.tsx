@@ -6,7 +6,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import type { ExerciseLibrary, LoggedSetInput, SessionLogRequest } from './api/types';
 import { AuthProvider, createAuth } from './auth/AuthProvider';
 import { createAppRouter, createQueryClient } from './router';
-import { makeBlock, makePlan, makeSession, makeSet } from './session/fixtures';
+import { makeBlock, makePlan, makeSession, makeSet, makeVocabulary } from './session/fixtures';
 import { getRun, setRun } from './session/runStore';
 import { localIsoDate } from './session/today';
 
@@ -122,6 +122,7 @@ function stubFetch(answers: PutAnswer[] = []) {
       const path = new URL(urlOf(input), 'http://localhost').pathname;
       const method = init?.method ?? 'GET';
       if (path === '/api/library') return Promise.resolve(json(LIBRARY));
+      if (path === '/api/vocabulary') return Promise.resolve(json(makeVocabulary()));
       if (path === '/api/plans/active') return Promise.resolve(json({ plan: plan() }));
       if (path.startsWith('/api/sessions/') && method === 'PUT') {
         const uuid = path.slice('/api/sessions/'.length);
@@ -479,7 +480,10 @@ function sessionCard(): HTMLElement {
 /** The completion figure wherever it is on screen. The summary and the finished card word it
  *  identically, which is what makes "the same run reads the same number" assertable. */
 function percent(): string | undefined {
-  return /(\d+)% of the session/.exec(document.body.textContent ?? '')?.[1];
+  // ⚠️ The innermost element, not `document.body.textContent`: concatenated siblings put the
+  // digits of "wk 1–4" straight onto the figure and the scan read 67% as 467%.
+  const line = screen.queryAllByText(/% of the session/).at(-1)?.textContent ?? '';
+  return /(\d+)% of the session/.exec(line)?.[1];
 }
 
 /** Two of three parts done by hand, the third skipped, Finish, then Done. Returns the figure the

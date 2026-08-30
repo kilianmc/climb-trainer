@@ -44,7 +44,14 @@ from decimal import Decimal
 from typing import Any, Final
 
 from fastapi import APIRouter, HTTPException, Response, status
-from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    ValidationError,
+    computed_field,
+    field_validator,
+)
 from sqlalchemy import Select, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, aliased, selectinload
@@ -55,6 +62,7 @@ from server.domain.planner import (
     GENERATOR_VERSION,
     BlockBlueprint,
     CannotPlanError,
+    Level,
     MesocycleBlueprint,
     MicrocycleBlueprint,
     NoteKind,
@@ -65,9 +73,13 @@ from server.domain.planner import (
     SessionBlueprint,
     SetBlueprint,
     Shortfall,
+    climbing_floor_pct,
+    climbing_target_band,
     generate,
     generator_input,
+    level_for,
 )
+from server.domain.planner.climbing import FINGER_PHASES, finger_sessions_for
 from server.domain.planner.schedule import week_start_on_or_after
 from server.domain.vocabulary import (
     EQUIPMENT,
@@ -331,6 +343,54 @@ class NoteOut(BaseModel):
     message: str
 
 
+class ClimbingBandOut(BaseModel):
+    """The training constants THIS plan was generated under. Derived, never stored.
+
+    ⚠️ **Keyed off `generator_input.current_ordinal`, never off the profile's grade today.**
+    `Level` is not persisted (`server/domain/planner/climbing.py`), and it is what
+    `CLIMBING_FLOOR_PCT`, `CLIMBING_TARGET_PCT` and `FINGER_SESSIONS_PER_WEEK` were read
+    with when the tree was built. A climber who logs a harder grade tomorrow has not changed
+    the plan in front of them, so a band re-derived from the profile would make the payload
+    misdescribe its own contents.
+
+    Sent so **no client re-implements a training constant**: the ordinal thresholds are four
+    named ceilings in one Python module, and re-deriving them in TypeScript would put the
+    same numbers in two languages with nothing able to see them drift.
+
+    `finger_phases` is the set those sessions are owed in, so a client can place the figure
+    without knowing which phases they are; `finger_sessions_per_week` is **0 for beginner**
+    by design, and a renderer must omit the line rather than print a zero.
+    """
+
+    level: Level
+    climbing_floor_pct: int
+    climbing_target_pct_low: int
+    climbing_target_pct_high: int
+    finger_sessions_per_week: int
+    finger_phases: list[Phase]
+
+
+def _climbing_band(
+    discipline: Discipline, stored_generator_input: dict[str, Any]
+) -> ClimbingBandOut | None:
+    """Every figure through the function that owns it, so not one number is restated here.
+    `None` on an unusable ordinal — `_grade_gap`'s degrade rule: a reload must not 500."""
+    current = stored_generator_input.get("current_ordinal")
+    if not isinstance(current, int):
+        return None
+    target_low, target_high = climbing_target_band(discipline, current)
+    return ClimbingBandOut(
+        level=level_for(discipline, current),
+        climbing_floor_pct=climbing_floor_pct(discipline, current),
+        climbing_target_pct_low=target_low,
+        climbing_target_pct_high=target_high,
+        # Asked for in a phase that owes the work, so the band's own figure comes back rather
+        # than the zero every non-finger phase would answer with.
+        finger_sessions_per_week=finger_sessions_for(discipline, current, Phase.STRENGTH),
+        finger_phases=[member for member in Phase if member in FINGER_PHASES],
+    )
+
+
 class PlanOut(BaseModel):
     """A whole plan — previewed or persisted — plus what would be needed to reproduce it.
 
@@ -367,6 +427,15 @@ class PlanOut(BaseModel):
     mesocycles: list[MesocycleOut]
     shortfalls: list[ShortfallOut]
     notes: list[NoteOut]
+
+    # mypy cannot see through a decorator stacked on `@property`; pydantic's own docs use
+    # exactly this ignore. The RETURN type is still checked, which is the part that matters.
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def climbing_band(self) -> ClimbingBandOut | None:
+        """Computed on serialisation, on both paths, from fields already on this model —
+        which is why a persisted plan and a preview cannot disagree about it."""
+        return _climbing_band(self.discipline, self.generator_input)
 
 
 def _unprocessable(detail: str) -> HTTPException:

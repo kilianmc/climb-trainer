@@ -27,6 +27,11 @@ export type Grade = Schemas['GradeOut'];
 /** A seeded lookup row — a climbing aspect, a piece of equipment, an injury area. */
 export type ReferenceRow = Schemas['ReferenceRowOut'];
 export type Discipline = Schemas['Discipline'];
+/** The UNIVERSAL copy for one training phase. Keyed by `phase`; sent once, never per mesocycle.
+ *  How the phase applies to one plan is NOT here — see `ClimbingBand` and `plan/explain.ts`. */
+export type PhaseGuide = Schemas['PhaseGuideOut'];
+/** One further-reading link on a `PhaseGuide`. A url and its label, always as a pair. */
+export type PhaseGuideLink = Schemas['GuideLinkOut'];
 
 /**
  * `GET /api/library?v=<buildId>` — the exercise library, whole, in one response.
@@ -71,6 +76,9 @@ export type InjuryInput = Schemas['InjuryIn'];
  */
 export type PlanPreviewRequest = Schemas['PlanPreviewRequest'];
 export type PlanTree = Schemas['PlanOut'];
+/** Derived on every plan response: the band this plan was GENERATED for, and the figures keyed
+ *  by it. ⚠️ Never re-derive these in TypeScript — `ClimbingBandOut` says why. */
+export type ClimbingBand = Schemas['ClimbingBandOut'];
 /**
  * `GET /api/plans/active`. ⚠️ **`{plan: null}` is a 200 and it is the empty state**, not an
  * error — every new account is in it. An envelope rather than a bare nullable body so the
