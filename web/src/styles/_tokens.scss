@@ -122,6 +122,43 @@
   --ct-phase-fg: #ffffff;
 }
 
+// ## The completion badge's PILLS (#85) — the LIGHT scheme's colours, and no dark copy
+//
+// `--ct-warning` is #8f5000 in light only because a 4.5:1 TEXT tone on a near-white card is
+// forced dark, which is exactly why light's "partial" read as brown. A filled pill escapes
+// that, but not for free, and the first attempt paid the wrong price: a pill with NO border IS
+// the boundary, so it owes 3:1 against the card surface (WCAG 1.4.11), which caps its fill's
+// relative luminance at 0.256 — a gold, never a yellow. Kilian rejected the gold, so the pill
+// gets an OUTLINE and the outline carries the boundary instead.
+//
+// With the boundary paid for the fill owes the surface NOTHING, and only the word on it owes
+// 4.5:1 — which is what buys the PALE family Kilian picked off the comparison sheet
+// (2026-08-30): #14532d on #dcfce7 at 8.30, #4a3a00 on #fef08a at 9.52, #7f1d1d on #fee2e2 at
+// 8.20. `--ct-completion-outline` is the light scheme's own ink, ONE token for all three bands
+// so the pills read as one family, and it clears 3:1 against every card surface a disclosure
+// can land on by a factor of five: bg 15.67, surface-1 16.72, surface-2 17.35, surface-3 17.96.
+//
+// ⚠️ These fills are PALE — 1.02:1 to 1.22:1 against the four card surfaces — so fill-vs-surface
+// is not merely the wrong assertion here, it is an unreachable one, and `contrast.test.ts` does
+// not make it. It sweeps the OUTLINE against all four card surfaces at 3:1, each band's word
+// against its own fill at 4.5:1, and pins the yellow ABOVE the 0.256 ceiling a borderless pill
+// would have imposed — so deleting the outline can no longer pass quietly.
+//
+// ⚠️ No dark copy, and dark's pill needs none: it is `--ct-surface-2` ringed and lettered in the
+// band colour, i.e. `currentColor` over tokens both schemes already declare. A dark half here
+// would be seven values nothing reads, and `contrast.test.ts` asserts the two SCHEME mixins
+// declare the same keys. Emitted unconditionally by `declare`, so in dark these are present and
+// inert.
+@mixin light-only-values {
+  --ct-completion-outline: #14171c;
+  --ct-completion-full-fill: #dcfce7;
+  --ct-completion-full-fg: #14532d;
+  --ct-completion-partial-fill: #fef08a;
+  --ct-completion-partial-fg: #4a3a00;
+  --ct-completion-low-fill: #fee2e2;
+  --ct-completion-low-fg: #7f1d1d;
+}
+
 /**
  * The MANUAL override, and it is a separate mixin from `declare` on purpose.
  *
@@ -159,6 +196,10 @@
   @media (prefers-color-scheme: dark) {
     @include dark-values;
   }
+
+  // Unconditional, and not a third scheme: these are light's alone and nothing reads them in
+  // dark. See the block itself for why they are not in `light-values`.
+  @include light-only-values;
 
   // Honest depth: three steps, each saying which surface is above which. No fourth "hero" step
   // and nothing decorative — a shadow here means real elevation. Step 1 is the card, step 2 the

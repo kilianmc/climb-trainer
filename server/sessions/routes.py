@@ -10,11 +10,12 @@ unsent tail. ⚠️ **4xx here is PERMANENT: quarantine the flush, never retry i
 """
 
 import logging
+from collections.abc import Sequence
 from datetime import UTC, date, datetime, timedelta
-from typing import Annotated, Any, Final, NamedTuple
+from typing import Annotated, Any, Final, Literal, NamedTuple
 from uuid import UUID
 
-from fastapi import APIRouter, HTTPException, Response, status
+from fastapi import APIRouter, HTTPException, Query, Response, status
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, field_validator, model_validator
 from sqlalchemy import Integer, Select, case, cast, func, literal, null, select, union_all, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
@@ -562,3 +563,202 @@ def log_session(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=_NOT_SAVED
         ) from None
     return body
+
+
+# --- GET /api/sessions/completion — how much of each planned session got done ----
+
+# The widest window one request may ask for. A 32-week plan is 224 days, so this is the whole
+# longest plan plus room, and it is what stops an unbounded scan of somebody's whole history.
+_COMPLETION_SPAN_DAYS: Final = 400
+# A hard server-side maximum, per CLAUDE.md's rule for list endpoints — in (session x block)
+# ROWS now: every block of the 224 sessions of the longest plan at 7 a week, plus room.
+_COMPLETION_ROWS_MAX: Final = 1500
+
+CompletionState = Literal["completed", "skipped", "pending"]
+
+
+class CompletionWindow(BaseModel):
+    """The dates this read covers, `from`..`to` inclusive.
+
+    Both are required and the span is capped: "return everything" is the resource-exhaustion
+    risk `CLAUDE.md` names for every list endpoint, and a wider window is also a longer Neon
+    read. `from` and `to` are the wire names; they are Python keywords, hence the aliases.
+    """
+
+    model_config = ConfigDict(extra="forbid", populate_by_name=False)
+
+    start: Annotated[date, Field(alias="from")]
+    end: Annotated[date, Field(alias="to")]
+
+    @model_validator(mode="after")
+    def _bounded_span(self) -> "CompletionWindow":
+        if self.end < self.start:
+            raise ValueError("the end of the window is before its start")
+        if (self.end - self.start).days > _COMPLETION_SPAN_DAYS:
+            raise ValueError(f"that window is longer than {_COMPLETION_SPAN_DAYS} days")
+        return self
+
+
+class SessionCompletionOut(BaseModel):
+    """How much of ONE planned session got done — **derived**, never a stored column.
+
+    `done_block_ids` says WHICH blocks got done, over the join
+    `logged_set.prescribed_set_id → session_block`: every block with at least one logged set,
+    keyed on `session_block.id`, the id `plans.BlockOut` carries for a persisted plan.
+    `blocks_done` is its length. A set with null `actual_*` values is a **real** completion —
+    the "I did this myself" affordance mints exactly those — so nothing here filters them out.
+
+    `status` is what the write path stored: `completed` means "pressed Finish", never "did it
+    all". `state` is derived from it and from `as_of`: `completed`, `pending` for a session still
+    to come, `skipped` for one whose day has passed unfinished.
+
+    ⚠️ **`skipped` names the OUTCOME, not the cause: "past and not finished, whatever the
+    reason".** A past `in_progress` session reads `skipped` and that is CORRECT — unfinished and
+    skipped are the same result in real life (Kilian, 2026-08-30), which is why the UI shows only
+    the percentage. Never render it as "the climber chose to skip this".
+
+    `percent` is `null` for a session with no blocks at all: there is nothing to have done, and
+    reporting 0% for that would read as a failure nobody had.
+    """
+
+    planned_session_id: int
+    scheduled_on: date
+    status: SessionStatus
+    state: CompletionState
+    block_count: int
+    blocks_done: int
+    done_block_ids: list[int]
+    percent: int | None
+
+
+class SessionCompletionResponse(BaseModel):
+    """Completion for every planned session of this climber's inside the window.
+
+    `as_of` is the server's own date, i.e. the boundary `state` was decided against, so the
+    client never re-derives "past" from a clock of its own.
+
+    Sessions from a stood-down plan are included when their date falls in the window — the
+    response is keyed by `planned_session_id`, so a caller reads the ones it asked about.
+    """
+
+    as_of: date
+    sessions: list[SessionCompletionOut]
+
+
+def _percent(blocks_done: int, block_count: int) -> int | None:
+    """Whole percent, half-up to match `web/src/session/runStore.ts`'s `Math.round`."""
+    if block_count == 0:
+        return None
+    return (blocks_done * 200 + block_count) // (block_count * 2)
+
+
+def _completion_state(status: SessionStatus, scheduled_on: date, today: date) -> CompletionState:
+    """`skipped` is INFERRED — no endpoint writes it — and only once the day is over."""
+    if status is SessionStatus.COMPLETED:
+        return "completed"
+    return "skipped" if scheduled_on < today else "pending"
+
+
+def _completion_query(user_id: int, window: CompletionWindow) -> Select[Any]:
+    """ONE statement for the whole window, grouped by (session, BLOCK) rather than by session:
+    "33% done" cannot say WHICH third, and no per-session query, whatever the plan's length."""
+    return (
+        select(
+            PlannedSession.id,
+            PlannedSession.scheduled_on,
+            PlannedSession.status,
+            # Null for a session with no blocks at all, which the outer join still yields a row
+            # for — that is the `percent = null` case, not an absent session.
+            SessionBlock.id.label("block_id"),
+            # A logged set reaches this row only through the caller's OWN prescribed set, and
+            # `PUT /api/sessions/{client_uuid}` 404s a prescribed_set_id outside their tree.
+            (func.count(LoggedSet.id) > 0).label("done"),
+        )
+        .select_from(PlannedSession)
+        .join(Microcycle, Microcycle.id == PlannedSession.microcycle_id)
+        .join(Plan, Plan.id == Microcycle.plan_id)
+        .outerjoin(SessionBlock, SessionBlock.planned_session_id == PlannedSession.id)
+        .outerjoin(PrescribedSet, PrescribedSet.session_block_id == SessionBlock.id)
+        .outerjoin(LoggedSet, LoggedSet.prescribed_set_id == PrescribedSet.id)
+        .where(
+            Plan.user_id == user_id,
+            PlannedSession.scheduled_on >= window.start,
+            PlannedSession.scheduled_on <= window.end,
+        )
+        # Both are primary keys, so every other selected column is functionally dependent on
+        # them and Postgres needs nothing else in the GROUP BY.
+        .group_by(PlannedSession.id, SessionBlock.id)
+        # Contiguous per session, which is what makes the truncation below safe to reason about.
+        .order_by(PlannedSession.scheduled_on, PlannedSession.id, SessionBlock.id)
+        .limit(_COMPLETION_ROWS_MAX)
+    )
+
+
+class _CompletionFold(NamedTuple):
+    """One session, accumulating over its own (session x block) rows."""
+
+    scheduled_on: date
+    status: SessionStatus
+    block_ids: list[int]
+    done_block_ids: list[int]
+
+
+def _fold_sessions(rows: Sequence[Any]) -> dict[int, _CompletionFold]:
+    """The statement's block rows, folded to one entry per session in schedule order."""
+    folded: dict[int, _CompletionFold] = {}
+    for row in rows:
+        fold = folded.setdefault(
+            row.id, _CompletionFold(row.scheduled_on, SessionStatus(row.status), [], [])
+        )
+        if row.block_id is None:
+            continue
+        fold.block_ids.append(row.block_id)
+        if row.done:
+            fold.done_block_ids.append(row.block_id)
+    # ⚠️ The cap counts BLOCK rows, so reaching it can CUT a session in half and understate its
+    # `block_count` — a wrong percentage. So the last one goes; insertion order is the ORDER BY.
+    if len(rows) == _COMPLETION_ROWS_MAX and folded:
+        folded.popitem()
+    return folded
+
+
+@router.get("/completion")
+def session_completion(
+    window: Annotated[CompletionWindow, Query()],
+    principal: CurrentUser,
+    session: RequestSession,
+    response: Response,
+) -> SessionCompletionResponse:
+    """How much of each planned session in `from`..`to` actually got done.
+
+    **Partial completion is a DERIVED QUERY, not a column.** `planned_session.status` says
+    whether Finish was pressed; this counts the blocks with at least one logged set, which is
+    the only figure that can say WHICH two of three parts — and the rule behind it will be
+    tuned, which is why no `planned_session` column holds it.
+
+    **Its own endpoint, deliberately.** `GET /api/plans/active` is already the heaviest payload
+    in the app and only this screen reads these numbers, so they are fetched beside it rather
+    than inside it.
+
+    **One statement, no per-row N+1**, one Neon wake, and read-only: a demo token may call it.
+    `skipped` is inferred from `as_of` — nothing in the app writes that status.
+    """
+    response.headers["cache-control"] = _CACHE_CONTROL
+    today = _today_utc()
+    rows = session.execute(_completion_query(principal.user_id, window)).all()
+    return SessionCompletionResponse(
+        as_of=today,
+        sessions=[
+            SessionCompletionOut(
+                planned_session_id=planned_session_id,
+                scheduled_on=fold.scheduled_on,
+                status=fold.status,
+                state=_completion_state(fold.status, fold.scheduled_on, today),
+                block_count=len(fold.block_ids),
+                blocks_done=len(fold.done_block_ids),
+                done_block_ids=fold.done_block_ids,
+                percent=_percent(len(fold.done_block_ids), len(fold.block_ids)),
+            )
+            for planned_session_id, fold in _fold_sessions(rows).items()
+        ],
+    )

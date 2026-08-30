@@ -109,3 +109,8 @@ export type SessionLogResponse = Schemas['SessionLogResponse'];
 export type LoggedSetInput = Schemas['LoggedSetIn'];
 /** The server's id for one set, so the outbox can retire it. No user free text is echoed. */
 export type LoggedSetAck = Schemas['LoggedSetAck'];
+
+/** `GET /api/sessions/completion` — how much of each planned session actually got done.
+ * Derived server-side, per session; `percent` is `null` when the session has no blocks. */
+export type SessionCompletionResponse = Schemas['SessionCompletionResponse'];
+export type SessionCompletion = Schemas['SessionCompletionOut'];

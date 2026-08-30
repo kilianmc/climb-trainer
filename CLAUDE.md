@@ -3553,7 +3553,104 @@ proves it against real Postgres, with every guard sabotaged and recorded;
   user pressed Finish", not "everything got done"; "I did 2 of 3 parts" is a join from
   `logged_set.prescribed_set_id` to `session_block`, counting blocks with at least one logged
   set. No column, because the adherence rule will be tuned — the same argument
-  `PlannedSession`'s own docstring already makes. Displaying the percentage belongs to #64/#12.
+  `PlannedSession`'s own docstring already makes.
+- **`GET /api/sessions/completion` is where that query lives (#85), and a SEPARATE endpoint is
+  the point.** `GET /api/plans/active` is already the heaviest payload in the app and only
+  `/plan` reads these numbers, so they are fetched beside it rather than added to it. **One
+  statement for the whole window whatever the plan's length**, `from`/`to` both required with
+  the span capped, and the same ten-minute `staleTime` as the plan read — so it cannot wake Neon
+  more often than the screen already does. `tests/test_sessions_completion.py` pins all three.
+  - ⚠️ **A logged set with null `actual_*` values is a REAL completion** — PR #15a's "I did this
+    myself" mints exactly those — so nothing on this path may filter them out. `percent` is
+    `null`, never 0, for a session with no blocks: there was nothing to have done.
+  - **`skipped` is INFERRED, and there is still no write path for it.** A session whose day has
+    passed unfinished reads `skipped`, against the SERVER's date, which the response returns as
+    `as_of` so the client never re-derives "past" from a clock of its own. `scheduled_on ==
+    as_of` is `pending`: being conservative about a day still in progress is the safe error.
+  - ⚠️ **`state` names the OUTCOME, not the cause. `skipped` means "past and not finished,
+    whatever the reason"** — a past `in_progress` session reads `skipped`, and that is CORRECT:
+    "unfinished and skipped is the same result in real life" (Kilian, 2026-08-30). #82, #64 and
+    #12 are all meant to reuse this endpoint rather than re-derive the figure, so read it that
+    way and never as "the climber chose to skip it". The field keeps that name deliberately.
+  - **The percentage is derived server-side**, per PR #94's rule; the client only bands it for
+    colour — `100%` green, `50`–`99%` amber, under `50%` red, **50 itself amber**, the boundary
+    living once in `AMBER_FLOOR_PERCENT` (`web/src/plan/completion.ts`). The words are
+    `Completed`, `N% done` and `Skipped` at 0%, and they never branch on `status`: a past
+    session is only its percentage. **Colour is never the only carrier** — `data-completion`
+    carries the band and the word beside it says the same thing. A session with no
+    blocks has no percentage, so it gets neither.
+  - **`done_block_ids` says WHICH parts got done, so every block ROW of a past session is
+    marked** (#95, Kilian: *"i can see that thursday i did 33% done, but i cant see which part of
+    it i missed"*). The same ONE statement is grouped by `(session, block)` rather than by session
+    alone — no second read, and roughly (sessions × blocks) small integers added to the wire — and
+    the key is **`session_block.id`**, the id `plans.BlockOut` already carries for a persisted
+    plan: `order_index` is unique only inside one session, and a preview has neither id nor a
+    figure to show. ⚠️ Because the cap now counts BLOCK rows, reaching it would cut a session in
+    half and understate its `block_count`, so the last session is dropped rather than reported
+    from half its blocks.
+  - ⚠️ **Only a PAST session's rows are marked** — `pending` covers today and everything after
+    it, and a block nobody has reached yet is not a missed one, the same boundary as the badge.
+    The row carries the WORD (`Done`/`Missed`, from `BLOCK_MARK_LABEL`) beside an edge tinted
+    `--ct-success`/`--ct-danger`, tokens `contrast.test.ts` already sweeps against all four card
+    surfaces in both schemes, so the treatment adds none. **Both are keyed on the row's OWN
+    `data-done`**, never an ancestor's, and `markupCss.test.ts::lets no done/missed mark leak from
+    an ancestor` fails the build if that shape appears — the leak below, one attribute along.
+  - ⚠️ **The two schemes render that band DIFFERENTLY, and the light half is scoped so it
+    cannot reach dark** (Kilian reviewed both, 2026-08-30). **In LIGHT every badge** — a phase's
+    and a session's alike — **is a PALE filled pill with one dark ink ring**, and the disclosure's
+    border tint goes away, because a 4.5:1 TEXT tone on a near-white card is forced dark — which
+    is why light's `partial` read brown at `--ct-warning`'s #8f5000. ⚠️ **A pill with NO border
+    IS the boundary**, so it owes 3:1 (WCAG 1.4.11) against the card, which caps its fill at
+    relative luminance 0.256 — a gold, never a yellow, and Kilian rejected the gold. So the
+    **ring** pays the 3:1 and the freed fill buys the pale family he picked off a rendered
+    comparison sheet: #14532d on #dcfce7 at 8.30, #4a3a00 on #fef08a at 9.52, #7f1d1d on #fee2e2
+    at 8.20. ⚠️ **Fill-vs-surface is therefore not merely the wrong assertion but an unreachable
+    one** — those fills sit 1.02:1 to 1.22:1 from the card — **and `contrast.test.ts` does not
+    make it**: ring against all four card surfaces at 3:1, each band's word against its own fill
+    at 4.5:1, and a pin holding the yellow above the ceiling a borderless pill would have
+    imposed. Those seven values are `_tokens.scss`'s
+    `@mixin light-only-values` — deliberately **not** in `light-values`, so `contrast.test.ts`'s
+    "the schemes declare the same keys" assertion still means what it says and dark carries no
+    copy nothing reads. `_profile.scss::completion-light-pills` is included twice, on the OS
+    query and on `[data-theme='light']`, for the reason `overrides` gives; styling everywhere and
+    undoing it in dark is a change to dark under another name.
+  - ⚠️ **In DARK the pill is the PHASE badge's ALONE** (Kilian, 2026-08-30: "for the days inside
+    the week is perfect, dont touch that for dark, only for the phases"). That badge is the same
+    pill filled with the neutral `--ct-surface-2`, ringed and lettered in the band colour —
+    `currentColor`, because `--ct-completion-outline` is near-black and would vanish on a dark
+    surface — and the **day badges keep the bare coloured word** plus the tinted disclosure
+    border they were signed off with. The variant is a **class on the badge**
+    (`ct-app__completion--phase`), never an ancestor selector, for the leak reason below: a phase
+    and a session `<details>` are both `ct-app__disclosure`. The geometry is
+    `_profile.scss::completion-pill`, included by both schemes so that only colour differs.
+    `contrast.test.ts` names that pill's own pairs — the band on `--ct-surface-2` at 4.5:1 as
+    text and at 3:1 as a ring, measured 8.35, 8.25 and 8.94 — and
+    `markupCss.test.ts::gives the pill to the PHASE badge alone in dark` fails the build if a
+    pill rule stops being gated by the light scope or by that modifier.
+    ⚠️ **The REST of dark's appearance still has NO detector** — measured: deleting all three of
+    its band colour rules, and retuning a dark token to a legible but wrong hue, both leave the
+    whole gate green. `contrast.test.ts` guards ratios, never intent.
+- **The plan screen's phases COLLAPSE (#92), persisted per plan under `ct:planPhases`**
+  (`web/src/plan/phaseToggles.ts`). `<details>`/`<summary>` reusing the `ct-app__disclosure`
+  idiom, never a custom toggle; open by default on the block the climber is standing in
+  (`selectSession` + `sessionBlock`), falling back to the **last** block once every session is
+  in the past. One plan's set is stored, so six plans do not leave six entries.
+- **A COLLAPSED phase carries its own AGGREGATE, and the arithmetic is Kilian's: EQUAL WEIGHT
+  PER SESSION** (`phaseCompletionBadge`, `web/src/plan/completion.ts`). "Base is weeks 1-3, each
+  week 4 days, so 12 days, 12 = 100": the phase figure is the **mean of its sessions'
+  percentages**, a skipped or never-started session counting **0**, rounded half-up like the
+  server's `_percent`. Deliberately **not** blocks-done over blocks-planned — that would weight a
+  four-block session above a two-block one, and he weighted the days. It **reuses
+  `completionBand` and `AMBER_FLOOR_PERCENT`** rather than restating the bands, and it renders in
+  the `<summary>`, which is the whole point: a collapsed phase is where it has to show.
+  - ⚠️ **Only a phase ENTIRELY in the past is badged.** A future phase reading 0% red would be
+    alarming and wrong, and the phase being trained is left unbadged while its figure can still
+    move. The test is every session's `scheduled_on` strictly before today, which is exactly the
+    server's own `pending`/`skipped` boundary. A session with no blocks (`percent === null`) is
+    excluded from the mean rather than counted 0.
+  - **Aggregating on the CLIENT is right here and does not breach PR #94's rule.** The client
+    already holds both the completion rows and the plan tree, and no *training constant* is
+    re-derived — the server still owns every derived training fact. No endpoint, no migration.
 - **Ascents are OUT.** An ascent is "the emotional payload of the whole app" and it is **not
   loggable here**; #15a must not be built assuming this endpoint covers it.
 
