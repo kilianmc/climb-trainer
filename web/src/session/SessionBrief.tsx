@@ -1,5 +1,7 @@
-import type { LibraryExercise, PlanSession } from '../api/types';
+import type { LibraryExercise, PlanSession, PlanTree, Vocabulary } from '../api/types';
+import { PhaseGuideNote, PlanFacts, phaseGuides, phaseLabel } from '../plan/PhaseGuide';
 import { exerciseLabel, formatDay, sessionSummary } from '../plan/blueprint';
+import { phaseInPlan, sessionBlock, sessionBlockFacts } from '../plan/explain';
 
 import { ItemRow } from './ItemRow';
 import type { RunRecord } from './runStore';
@@ -12,6 +14,8 @@ import type { ItemView, SessionRun } from './useSessionRun';
  *  `AudioContext` in it, and one built elsewhere starts suspended and never resumes on iOS. */
 export function SessionBrief({
   choice,
+  plan,
+  vocabulary,
   exercises,
   run,
   readOnly,
@@ -20,6 +24,11 @@ export function SessionBrief({
   onStart,
 }: {
   choice: SessionChoice;
+  /** `null` is "no plan yet", which `NothingToday` already covers — the reminder stays absent. */
+  plan: PlanTree | null;
+  /** ⚠️ `undefined` until `GET /api/vocabulary` lands, and the brief NEVER waits for it: the
+   *  phase reminder is absent while it is missing. See `routes/_authed/session.lazy.tsx`. */
+  vocabulary: Vocabulary | undefined;
   exercises: ReadonlyMap<string, LibraryExercise>;
   run: SessionRun;
   readOnly: boolean;
@@ -37,7 +46,14 @@ export function SessionBrief({
       <h1>Session</h1>
       {choice.restDay ? <RestDayNotice scheduledOn={choice.scheduledOn} /> : null}
       {stale === null ? null : <UnsavedRun stale={stale} run={run} />}
-      <SessionCard session={session} exercises={exercises} done={done} run={run} />
+      <SessionCard
+        session={session}
+        plan={plan}
+        vocabulary={vocabulary}
+        exercises={exercises}
+        done={done}
+        run={run}
+      />
       {readOnly ? (
         <p className="ct-app__notice" role="note">
           <span>
@@ -140,11 +156,15 @@ function UnsavedRun({ stale, run }: { stale: RunRecord; run: SessionRun }) {
 /** What the session is, joined against the library — exercise names are not in the plan tree. */
 function SessionCard({
   session,
+  plan,
+  vocabulary,
   exercises,
   done,
   run,
 }: {
   session: PlanSession;
+  plan: PlanTree | null;
+  vocabulary: Vocabulary | undefined;
   exercises: ReadonlyMap<string, LibraryExercise>;
   /** Finished and closed. The card takes the item rows' completed tone; `SessionDone` below
    *  says the same thing in words, because colour is never the only channel. */
@@ -161,6 +181,9 @@ function SessionCard({
         {session.title} <span className="ct-app__badge">{formatDay(session.scheduled_on)}</span>
       </h2>
       <p className="ct-app__muted">{sessionSummary(session)}</p>
+      {/* Inside the card on purpose: on a rest day the card is NEXT week's session, and a week
+          number sitting above it would read as today's. */}
+      <PhaseReminder plan={plan} session={session} vocabulary={vocabulary} />
       {/* Once it is over the card answers what HAPPENED instead of what was planned: the
           outcome list below already names every block and its set count. */}
       {record === null ? (
@@ -205,6 +228,32 @@ function SessionOutcome({ record, items }: { record: RunRecord; items: readonly 
           <ItemRow key={item.blockIndex} item={item} />
         ))}
       </ol>
+    </>
+  );
+}
+
+/* Which week and which block this session belongs to, plus the phase copy `/plan` discloses.
+   ⚠️ Every figure comes from the session ON SCREEN, never from today — see `sessionBlock`. */
+function PhaseReminder({
+  plan,
+  session,
+  vocabulary,
+}: {
+  plan: PlanTree | null;
+  session: PlanSession;
+  vocabulary: Vocabulary | undefined;
+}) {
+  // Absent, not delayed, and not a loading line: a reminder is worth nothing next to the
+  // session it reminds you about, and the vocabulary is a separate, uncoupled read.
+  if (plan === null || vocabulary === undefined) return null;
+  const block = sessionBlock(plan, session);
+  if (block === null) return null;
+
+  const guides = phaseGuides(vocabulary);
+  return (
+    <>
+      <PlanFacts facts={sessionBlockFacts(plan, block, phaseLabel(guides, block.phase))} />
+      <PhaseGuideNote guide={guides.get(block.phase)} inPlan={phaseInPlan(plan, block.phase)} />
     </>
   );
 }

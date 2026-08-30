@@ -6,7 +6,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import type { ExerciseLibrary, LoggedSetInput } from './api/types';
 import { AuthProvider, createAuth } from './auth/AuthProvider';
 import { createAppRouter, createQueryClient } from './router';
-import { makeBlock, makePlan, makeSession, makeSet } from './session/fixtures';
+import { makeBlock, makePlan, makeSession, makeSet, makeVocabulary } from './session/fixtures';
 import { mintSet } from './session/outbox';
 import { compileProtocol } from './session/protocol';
 import type { RunRecord } from './session/runStore';
@@ -112,6 +112,7 @@ function stubFetch() {
     vi.fn((input: unknown) => {
       const path = new URL(urlOf(input), 'http://localhost').pathname;
       if (path === '/api/library') return Promise.resolve(json(LIBRARY));
+      if (path === '/api/vocabulary') return Promise.resolve(json(makeVocabulary()));
       if (path === '/api/plans/active')
         return Promise.resolve(json({ plan: makePlan([session()]) }));
       if (path.startsWith('/api/sessions/'))

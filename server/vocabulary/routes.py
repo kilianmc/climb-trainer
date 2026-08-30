@@ -46,6 +46,8 @@ from sqlalchemy.orm import Session
 from server.auth.deps import RequestSession
 from server.domain.grades import Discipline
 from server.domain.vocabulary import (
+    PHASE_GUIDE,
+    PLAN_GOAL,
     ActivityKind,
     AscentStyle,
     Phase,
@@ -124,6 +126,36 @@ class ClosedVocabulariesOut(BaseModel):
     session_statuses: list[SessionStatus]
 
 
+class GuideLinkOut(BaseModel):
+    """One further-reading link. A record, not two parallel scalars: a URL with no label
+    renders as bare markup, and only a pair can be `for`-looped without pairing checks."""
+
+    url: str
+    label: str
+
+
+class PhaseGuideOut(BaseModel):
+    """What this phase IS and how it is trained — universal, identical for every climber.
+
+    Authored copy from `server/domain/vocabulary.py`, not a database row: a phase is a
+    native enum on `mesocycle`, so there is nothing to seed and nothing to migrate.
+
+    Sent **once per response, keyed by `phase`** rather than on the plan payload, which
+    repeats a mesocycle up to sixteen times and is already 583 KiB at its worst. The plan
+    screen already reads this endpoint, so the copy costs no extra request.
+
+    ⚠️ **The per-plan half is NOT here.** How this phase applies to one climber's plan is
+    derived on `PlanOut.climbing_band` plus the plan's own weeks; this endpoint is cached
+    for an hour and shared by every user, so nothing here may describe the reader.
+    """
+
+    phase: Phase
+    label: str
+    summary: str
+    how_to_train: str
+    links: list[GuideLinkOut]
+
+
 class VocabularyResponse(BaseModel):
     grade_systems: list[GradeSystemOut]
     grades: list[GradeOut]
@@ -131,6 +163,8 @@ class VocabularyResponse(BaseModel):
     equipment: list[ReferenceRowOut]
     injury_areas: list[ReferenceRowOut]
     enums: ClosedVocabulariesOut
+    plan_goal: str
+    phase_guide: list[PhaseGuideOut]
 
 
 def _closed_vocabularies() -> ClosedVocabulariesOut:
@@ -143,6 +177,20 @@ def _closed_vocabularies() -> ClosedVocabulariesOut:
         phases=list(Phase),
         session_statuses=list(SessionStatus),
     )
+
+
+def _phase_guide() -> list[PhaseGuideOut]:
+    """Straight from `PHASE_GUIDE`, in `Phase` declaration order. No DB, no seed."""
+    return [
+        PhaseGuideOut(
+            phase=guide.phase,
+            label=guide.label,
+            summary=guide.summary,
+            how_to_train=guide.how_to_train,
+            links=[GuideLinkOut(url=link.url, label=link.label) for link in guide.links],
+        )
+        for guide in PHASE_GUIDE
+    ]
 
 
 def _reference_rows(session: Session, table: _ReferenceTable) -> list[ReferenceRowOut]:
@@ -198,4 +246,6 @@ def read_vocabulary(response: Response, session: RequestSession) -> VocabularyRe
         equipment=_reference_rows(session, Equipment),
         injury_areas=_reference_rows(session, InjuryArea),
         enums=_closed_vocabularies(),
+        plan_goal=PLAN_GOAL,
+        phase_guide=_phase_guide(),
     )

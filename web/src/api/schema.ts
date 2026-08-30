@@ -11,8 +11,8 @@
  *   openapi-sha256  the OpenAPI document it was generated from
  *   types-sha256    everything below this comment block
  *
- * openapi-sha256: cd3b35b7e831b51385568acd11bf27a26732b9b0cf6d37cfd6d5eb8237a6c8e7
- * types-sha256: 5c99fd272c836a61081873d4b647165643f40b9935f8afc158353f7b5ae4237c
+ * openapi-sha256: 3f79a229a4c801957d738bd5e8ee3addd2a291bd9db548a5639bea0244521b8b
+ * types-sha256: 499fee2e35823a0d342a55340894e744d3dc29faf0b0d0b5f90753623ebc8188
  */
 
 export interface paths {
@@ -609,6 +609,38 @@ export interface components {
       shortfall: components['schemas']['ShortfallOut'] | null;
     };
     /**
+     * ClimbingBandOut
+     * @description The training constants THIS plan was generated under. Derived, never stored.
+     *
+     *     ⚠️ **Keyed off `generator_input.current_ordinal`, never off the profile's grade today.**
+     *     `Level` is not persisted (`server/domain/planner/climbing.py`), and it is what
+     *     `CLIMBING_FLOOR_PCT`, `CLIMBING_TARGET_PCT` and `FINGER_SESSIONS_PER_WEEK` were read
+     *     with when the tree was built. A climber who logs a harder grade tomorrow has not changed
+     *     the plan in front of them, so a band re-derived from the profile would make the payload
+     *     misdescribe its own contents.
+     *
+     *     Sent so **no client re-implements a training constant**: the ordinal thresholds are four
+     *     named ceilings in one Python module, and re-deriving them in TypeScript would put the
+     *     same numbers in two languages with nothing able to see them drift.
+     *
+     *     `finger_phases` is the set those sessions are owed in, so a client can place the figure
+     *     without knowing which phases they are; `finger_sessions_per_week` is **0 for beginner**
+     *     by design, and a renderer must omit the line rather than print a zero.
+     */
+    ClimbingBandOut: {
+      /** Climbing Floor Pct */
+      climbing_floor_pct: number;
+      /** Climbing Target Pct High */
+      climbing_target_pct_high: number;
+      /** Climbing Target Pct Low */
+      climbing_target_pct_low: number;
+      /** Finger Phases */
+      finger_phases: components['schemas']['Phase'][];
+      /** Finger Sessions Per Week */
+      finger_sessions_per_week: number;
+      level: components['schemas']['Level'];
+    };
+    /**
      * ClosedVocabulariesOut
      * @description The native Postgres enums, as their persisted **values** (never member names).
      *
@@ -719,6 +751,17 @@ export interface components {
       /** Name */
       name: string;
     };
+    /**
+     * GuideLinkOut
+     * @description One further-reading link. A record, not two parallel scalars: a URL with no label
+     *     renders as bare markup, and only a pair can be `for`-looped without pairing checks.
+     */
+    GuideLinkOut: {
+      /** Label */
+      label: string;
+      /** Url */
+      url: string;
+    };
     /** HTTPValidationError */
     HTTPValidationError: {
       /** Detail */
@@ -756,6 +799,12 @@ export interface components {
        */
       started_on: string;
     };
+    /**
+     * Level
+     * @description The climber's band, by CURRENT grade. Never persisted — derived on every generate.
+     * @enum {string}
+     */
+    Level: 'beginner' | 'intermediate' | 'advanced';
     /**
      * LoggedSetAck
      * @description The server's id for one set, so the client can retire it from the outbox.
@@ -909,6 +958,32 @@ export interface components {
      */
     Phase: 'base' | 'strength' | 'power' | 'power_endurance' | 'performance' | 'deload' | 'taper';
     /**
+     * PhaseGuideOut
+     * @description What this phase IS and how it is trained — universal, identical for every climber.
+     *
+     *     Authored copy from `server/domain/vocabulary.py`, not a database row: a phase is a
+     *     native enum on `mesocycle`, so there is nothing to seed and nothing to migrate.
+     *
+     *     Sent **once per response, keyed by `phase`** rather than on the plan payload, which
+     *     repeats a mesocycle up to sixteen times and is already 583 KiB at its worst. The plan
+     *     screen already reads this endpoint, so the copy costs no extra request.
+     *
+     *     ⚠️ **The per-plan half is NOT here.** How this phase applies to one climber's plan is
+     *     derived on `PlanOut.climbing_band` plus the plan's own weeks; this endpoint is cached
+     *     for an hour and shared by every user, so nothing here may describe the reader.
+     */
+    PhaseGuideOut: {
+      /** How To Train */
+      how_to_train: string;
+      /** Label */
+      label: string;
+      /** Links */
+      links: components['schemas']['GuideLinkOut'][];
+      phase: components['schemas']['Phase'];
+      /** Summary */
+      summary: string;
+    };
+    /**
      * PlanAbandonResponse
      * @description The timestamp that was set, or the one already there. Idempotent either way.
      */
@@ -946,6 +1021,11 @@ export interface components {
     PlanOut: {
       /** Activated At */
       activated_at?: string | null;
+      /**
+       * @description Computed on serialisation, on both paths, from fields already on this model —
+       *     which is why a persisted plan and a preview cannot disagree about it.
+       */
+      readonly climbing_band: components['schemas']['ClimbingBandOut'] | null;
       /** Current Grade Id */
       current_grade_id: number | null;
       discipline: components['schemas']['Discipline'];
@@ -1370,6 +1450,10 @@ export interface components {
       grades: components['schemas']['GradeOut'][];
       /** Injury Areas */
       injury_areas: components['schemas']['ReferenceRowOut'][];
+      /** Phase Guide */
+      phase_guide: components['schemas']['PhaseGuideOut'][];
+      /** Plan Goal */
+      plan_goal: string;
     };
   };
   responses: never;

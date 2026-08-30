@@ -4,6 +4,7 @@ import { useAuth } from '../../auth/AuthProvider';
 import { useLibrary } from '../../library/api';
 import { useActivePlanView } from '../../plan/api';
 import { exercisesByKey } from '../../plan/blueprint';
+import { useVocabulary } from '../../profile/api';
 import { SessionBrief } from '../../session/SessionBrief';
 import { SessionPlayer } from '../../session/SessionPlayer';
 import { SessionSummary } from '../../session/SessionSummary';
@@ -30,14 +31,17 @@ import { useSessionRun } from '../../session/useSessionRun';
  * ⚠️ **The run always ends on the summary, never on the last set** — peak-end, and it is the only
  * screen that can say honestly whether the sets reached the server.
  *
- * **Two reads, gated on `isLoadingError` and never on `isError`**: query-core's error reducer
- * sets `status: "error"` even with data present, so a failed background refetch must not take a
- * session off the screen mid-run. Exercise names are not in the plan response — `useLibrary`
- * plus `exercisesByKey` is the join, done once here rather than per phase.
+ * **Two GATING reads, gated on `isLoadingError` and never on `isError`** (the vocabulary is a
+ * third, UNGATED one — see `useVocabulary` below): query-core's error reducer sets
+ * `status: "error"` even with data present, so a failed background refetch must not take a
+ * session off the screen mid-run. `useLibrary` plus `exercisesByKey` names the exercises, once.
  */
 function Session() {
   const active = useActivePlanView();
   const library = useLibrary();
+  // ⚠️ NOT in the gate below, and deliberately not retried here: this feeds the brief's phase
+  // reminder, which is absent until it lands. Nothing about the session may wait on it.
+  const vocabulary = useVocabulary();
   const run = useSessionRun();
   // Issue #65: in demo scope the player runs in full and no PUT is ever issued, so the save
   // affordances are ABSENT rather than greyed out. `useSessionRun` enforces the write half.
@@ -115,6 +119,8 @@ function Session() {
   return (
     <SessionBrief
       choice={choice}
+      plan={plan}
+      vocabulary={vocabulary.data}
       exercises={index}
       run={run}
       readOnly={readOnly}

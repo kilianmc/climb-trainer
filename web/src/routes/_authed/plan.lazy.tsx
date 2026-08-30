@@ -14,6 +14,8 @@ import { ApiError } from '../../api/client';
 import { useAuth } from '../../auth/AuthProvider';
 import { useLibrary } from '../../library/api';
 import { humanise } from '../../library/browse';
+import type { PhaseGuides } from '../../plan/PhaseGuide';
+import { PhaseGuideNote, PlanFacts, phaseGuides, phaseLabel } from '../../plan/PhaseGuide';
 import { useAbandonPlan, useActivePlanView, useCreatePlan, usePlanPreview } from '../../plan/api';
 import {
   exerciseLabel,
@@ -24,6 +26,7 @@ import {
   setsLine,
   weekdayName,
 } from '../../plan/blueprint';
+import { phaseInPlan, planGoalFacts } from '../../plan/explain';
 import { useProfileScreen } from '../../profile/api';
 import { compareToGoal } from '../../profile/grades';
 
@@ -203,7 +206,7 @@ function Plan() {
             readOnly={readOnly}
           />
           {/* ONE renderer, for both — see the top of the file. */}
-          <PlanBody plan={shown} exercises={exercises} />
+          <PlanBody plan={shown} exercises={exercises} vocabulary={vocabulary} />
         </>
       )}
     </>
@@ -620,9 +623,19 @@ function DemoUnplannable() {
   );
 }
 
-function PlanBody({ plan, exercises }: { plan: PlanTree; exercises: readonly LibraryExercise[] }) {
-  // ONCE, for the whole plan.
+function PlanBody({
+  plan,
+  exercises,
+  vocabulary,
+}: {
+  plan: PlanTree;
+  exercises: readonly LibraryExercise[];
+  vocabulary: Vocabulary;
+}) {
+  // ONCE, for the whole plan — both of them. A 32-week plan is sixteen mesocycles over seven
+  // phases, so the guide is indexed rather than searched per section.
   const index = exercisesByKey(exercises);
+  const guides = phaseGuides(vocabulary);
 
   return (
     <>
@@ -630,31 +643,48 @@ function PlanBody({ plan, exercises }: { plan: PlanTree; exercises: readonly Lib
         {plan.name} · generator {plan.generator_version}
       </p>
 
+      {/* Why the plan has this shape at all, before the phases that implement it. Server copy:
+          the block arithmetic it describes lives in `server/domain/planner/periodisation.py`. */}
+      <p className="ct-app__lede">{vocabulary.plan_goal}</p>
+
+      {/* And what it is for THIS climber, from the plan's own numbers — `plan/explain.ts`. The
+          band figures arrive derived on the payload; nothing here recomputes a training constant. */}
+      <PlanFacts facts={planGoalFacts(plan, vocabulary)} />
+
       {plan.notes.map((note) => (
         <p className="ct-app__notice" role="note" key={note.kind}>
           <span>{note.message}</span>
         </p>
       ))}
 
-      <PhaseTimeline mesocycles={plan.mesocycles} />
+      <PhaseTimeline mesocycles={plan.mesocycles} guides={guides} />
 
-      {plan.mesocycles.map((mesocycle) => (
-        <section key={mesocycle.start_week}>
-          <h2>
-            {humanise(mesocycle.phase)}{' '}
-            <span className="ct-app__badge">
-              {mesocycle.start_week === mesocycle.end_week
-                ? `Week ${String(mesocycle.start_week)}`
-                : `Weeks ${String(mesocycle.start_week)}–${String(mesocycle.end_week)}`}
-            </span>
-          </h2>
-          <ul className="ct-app__stack">
-            {mesocycle.microcycles.map((microcycle) => (
-              <WeekCard key={microcycle.week_no} microcycle={microcycle} index={index} />
-            ))}
-          </ul>
-        </section>
-      ))}
+      {plan.mesocycles.map((mesocycle) => {
+        const guide = guides.get(mesocycle.phase);
+        return (
+          <section key={mesocycle.start_week}>
+            <h2>
+              {phaseLabel(guides, mesocycle.phase)}{' '}
+              <span className="ct-app__badge">
+                {mesocycle.start_week === mesocycle.end_week
+                  ? `Week ${String(mesocycle.start_week)}`
+                  : `Weeks ${String(mesocycle.start_week)}–${String(mesocycle.end_week)}`}
+              </span>
+            </h2>
+            <PhaseGuideNote guide={guide} inPlan={phaseInPlan(plan, mesocycle.phase)} />
+            <ul className="ct-app__stack">
+              {mesocycle.microcycles.map((microcycle) => (
+                <WeekCard
+                  key={microcycle.week_no}
+                  microcycle={microcycle}
+                  index={index}
+                  guides={guides}
+                />
+              ))}
+            </ul>
+          </section>
+        );
+      })}
 
       {plan.shortfalls.length > 0 && (
         <section>
@@ -681,12 +711,18 @@ function PlanBody({ plan, exercises }: { plan: PlanTree; exercises: readonly Lib
 }
 
 /** The phases in order, one badge per mesocycle — a phase block plus its deload, taper last. */
-function PhaseTimeline({ mesocycles }: { mesocycles: readonly PlanMesocycle[] }) {
+function PhaseTimeline({
+  mesocycles,
+  guides,
+}: {
+  mesocycles: readonly PlanMesocycle[];
+  guides: PhaseGuides;
+}) {
   return (
     <p className="ct-app__tags">
       {mesocycles.map((mesocycle) => (
         <span className="ct-app__badge" key={mesocycle.start_week}>
-          {humanise(mesocycle.phase)} · wk {String(mesocycle.start_week)}
+          {phaseLabel(guides, mesocycle.phase)} · wk {String(mesocycle.start_week)}
           {mesocycle.start_week === mesocycle.end_week ? '' : `–${String(mesocycle.end_week)}`}
         </span>
       ))}
@@ -702,15 +738,17 @@ function PhaseTimeline({ mesocycles }: { mesocycles: readonly PlanMesocycle[] })
 function WeekCard({
   microcycle,
   index,
+  guides,
 }: {
   microcycle: PlanMicrocycle;
   index: ReadonlyMap<string, LibraryExercise>;
+  guides: PhaseGuides;
 }) {
   return (
     <li className="ct-app__card">
       <h3>
         Week {String(microcycle.week_no)}{' '}
-        <span className="ct-app__badge">{humanise(microcycle.phase)}</span>
+        <span className="ct-app__badge">{phaseLabel(guides, microcycle.phase)}</span>
       </h3>
       <p className="ct-app__muted">Starts {formatDay(microcycle.start_date)}</p>
 

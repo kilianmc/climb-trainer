@@ -3436,6 +3436,14 @@ this is the map and the traps.
   ⚠️ **Two profiles that look extreme are not the worst case**: zero equipment is *smaller*
   (fewer prescribable candidates → fewer sets), and a bigger gap is capped at 32 weeks. If it
   ever bites, the lever is trimming sets beyond the first N weeks, not splitting the endpoint.
+- **The server sends the plan's DERIVED facts; the client never re-implements a training
+  constant.** `ClimbingBandOut` on the plan payload carries the band, the climbing floor, the
+  target range and the finger phases the tree was actually built under, so the plan screen can
+  state them; `PHASE_GUIDE` and `PLAN_GOAL` in `server/domain/vocabulary.py` stay universal and
+  say nothing plan-specific. Re-deriving either on the client would put the same training
+  constants in Python and in TypeScript, and **duplication across two files is the one thing no
+  gate here detects** — the drift would surface as a screen confidently describing a plan it is
+  not. `tests/test_phase_guide.py` guards the copy's shape only, never its truth.
 
 ## Persisting a plan (PR #11b — persist == activate)
 

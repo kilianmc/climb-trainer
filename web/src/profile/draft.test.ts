@@ -73,6 +73,9 @@ const VOCABULARY: Vocabulary = {
     { id: 8, key: 'elbow', name: 'Elbow', description: 'Tendons.' },
     { id: 9, key: 'shoulder', name: 'Shoulder', description: 'Cuff.' },
   ],
+  // Irrelevant to this fixture; the phase copy is covered by tests/test_phase_guide.py.
+  plan_goal: '',
+  phase_guide: [],
   enums: {
     disciplines: ['boulder', 'sport'],
     activity_kinds: ['climbing'],

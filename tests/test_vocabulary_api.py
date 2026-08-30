@@ -21,6 +21,8 @@ from server.domain.vocabulary import (
     CLIMBING_ASPECTS,
     EQUIPMENT,
     INJURY_AREAS,
+    PHASE_GUIDE,
+    PLAN_GOAL,
     ActivityKind,
     AscentStyle,
     Phase,
@@ -148,6 +150,20 @@ def test_the_closed_vocabularies_are_the_python_enums(vocabulary: dict[str, Any]
         "phases": [member.value for member in Phase],
         "session_statuses": [member.value for member in SessionStatus],
     }
+
+
+def test_the_phase_guide_arrives_whole_and_KEYED_BY_PHASE(vocabulary: dict[str, Any]) -> None:
+    """The shape, not the prose (`tests/test_phase_guide.py` owns coverage of `Phase`) — and
+    pinned HERE because `/api/library` is CDN-cached and the plan payload repeats a phase."""
+    rows = vocabulary["phase_guide"]
+    assert [row["phase"] for row in rows] == [member.value for member in Phase]
+    for row in rows:
+        assert set(row) == {"phase", "label", "summary", "how_to_train", "links"}
+        assert row["links"]
+        for link in row["links"]:
+            assert set(link) == {"url", "label"}
+    assert vocabulary["plan_goal"] == PLAN_GOAL
+    assert [row["label"] for row in rows] == [guide.label for guide in PHASE_GUIDE]
 
 
 def test_it_is_the_same_for_every_user(

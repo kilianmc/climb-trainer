@@ -323,6 +323,16 @@
     border: 0;
   }
 
+  // TEXT, not a button: an outbound reading suggestion must not read as an action the plan
+  // needs. `--ct-accent` is the link tone `contrast.test.ts` already sweeps — no new colour.
+  &__link {
+    @include mixins.focus-ring;
+
+    color: var(--ct-accent);
+    text-decoration: underline;
+    text-underline-offset: 0.15em;
+  }
+
   &__badge {
     display: inline-flex;
     align-items: center;
