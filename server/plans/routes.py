@@ -1,12 +1,12 @@
-"""`/api/plans` — preview a generated plan, persist it, read it back, stand it down.
+"""`/api/plans` — preview a generated plan, persist it, read it back.
 
 `POST /preview` builds the plan the generator would build and **writes nothing**. `POST ""`
 regenerates the same tree and **persists it, activated, standing the previously active plan
-down in the same transaction**. `GET /active` reads it back — without which a persisted plan is
-invisible after a reload — and `POST /{plan_id}/abandon` stands one down.
+down in the same transaction** — the only way a plan leaves the active set. `GET /active` reads
+it back, without which a persisted plan is invisible after a reload.
 
-⚠️ **`/preview` is the ONLY one of the four in `DEMO_WRITE_EXEMPT_ROUTES`**, because it is the
-only one that writes nothing. The other three are refused for a demo principal twice over:
+⚠️ **`/preview` is the ONLY one of the three in `DEMO_WRITE_EXEMPT_ROUTES`**, because it is the
+only one that writes nothing. The other two are refused for a demo principal twice over:
 `enforce_auth` 403s a demo-scope token on every `POST`, and `get_request_session` has issued
 `SET LOCAL transaction_read_only`. Adding an exemption entry would remove both.
 
@@ -838,13 +838,6 @@ class ActivePlanResponse(BaseModel):
     plan: PlanOut | None
 
 
-class PlanAbandonResponse(BaseModel):
-    """The timestamp that was set, or the one already there. Idempotent either way."""
-
-    id: int
-    abandoned_at: datetime
-
-
 def _persisted_set(prescribed: PrescribedSet) -> SetOut:
     return SetOut(
         id=prescribed.id,
@@ -1318,40 +1311,3 @@ def active_plan(
     response.headers["cache-control"] = _CACHE_CONTROL
     plan = session.scalars(_active_plan_query(principal.user_id).options(_PLAN_TREE)).one_or_none()
     return ActivePlanResponse(plan=None if plan is None else _plan_response(session, plan))
-
-
-@router.post("/{plan_id}/abandon")
-def abandon_plan(
-    plan_id: int, principal: CurrentUser, session: RequestSession, response: Response
-) -> PlanAbandonResponse:
-    """Stand a plan down. **Marks, never deletes.** Idempotent, and 404 for anyone else's.
-
-    **A timestamp and not a delete**, because `activity.planned_session_id` is the only link from a
-    logged activity to the plan it satisfied: deleting would cascade through the tree and destroy
-    the adherence record of sessions the user really did.
-
-    **The 404 is scoped, and the scoping is the security property.** The `WHERE` names both the id
-    and `principal.user_id`, so another user's plan is indistinguishable from one that never
-    existed. A 403 would confirm the row exists — the IDOR read this project treats as its real
-    extraction risk.
-
-    **Idempotent:** an already-abandoned plan keeps its original timestamp, because *when* it was
-    stood down is the fact the diary wants. `completed_at` is deliberately untouched.
-    """
-    response.headers["cache-control"] = _CACHE_CONTROL
-    # ⚠️ Scoped by id and user, deliberately NOT by `_ACTIVE_STATE`: today this endpoint is the
-    # only way to leave the active set, so "abandon a plan that is not active" is unreachable.
-    # **The first path that COMPLETES a plan makes it reachable**, and this would then stamp
-    # `abandoned_at` on a completed plan. Add the guard with that path — a guard now would be an
-    # untestable branch.
-    plan = session.scalars(
-        select(Plan).where(Plan.id == plan_id, Plan.user_id == principal.user_id)
-    ).one_or_none()
-    if plan is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No such plan.")
-    abandoned_at = plan.abandoned_at
-    if abandoned_at is None:
-        abandoned_at = _now_utc()
-        plan.abandoned_at = abandoned_at
-        session.commit()
-    return PlanAbandonResponse(id=plan.id, abandoned_at=abandoned_at)

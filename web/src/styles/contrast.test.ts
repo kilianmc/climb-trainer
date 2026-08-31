@@ -123,6 +123,14 @@ const OUTLINE_SURFACE_PAIRS: [string, string][] = CARD_SURFACES.map((surface): [
   surface,
 ]);
 
+/** ⚠️ ADJACENT FILLS (#93): the current phase's green segment against its neighbours'
+ *  `--ct-surface-3`. The rejected `accent`/`accent-pressed` measures 1.45:1 light, 1.28:1 dark. */
+const ADJACENT_FILL_PAIRS: [string, string][] = [
+  ['accent', 'surface-3'],
+  // …and the bead on that green fill, plus the hairline the month bands are separated by, are
+  // both already swept above (`accent-fg`/`accent` and `border-strong`/every surface).
+];
+
 describe.each([
   ['light', light],
   ['dark', dark],
@@ -134,6 +142,13 @@ describe.each([
   it.each(NON_TEXT_PAIRS)('outlines --ct-%s on --ct-%s at 3:1', (fg, bg) => {
     expect(contrast(tone(tokens, fg), tone(tokens, bg))).toBeGreaterThanOrEqual(3);
   });
+
+  it.each(ADJACENT_FILL_PAIRS)(
+    'separates the --ct-%s fill from --ct-%s beside it at 3:1',
+    (a, b) => {
+      expect(contrast(tone(tokens, a), tone(tokens, b))).toBeGreaterThanOrEqual(3);
+    },
+  );
 });
 
 describe('completion badge, light scheme only', () => {

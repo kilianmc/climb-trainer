@@ -19,7 +19,7 @@ export function phaseLabel(guides: PhaseGuides, phase: string): string {
   return guides.get(phase)?.label ?? humanise(phase);
 }
 
-/** The plan's own facts as badges — the idiom `PhaseTimeline` already uses on the plan screen. */
+/** Structured facts as badges. Read by the session brief and the library, not by `/plan`. */
 export function PlanFacts({ facts }: { facts: readonly PlanFact[] }) {
   if (facts.length === 0) return null;
 
@@ -53,12 +53,9 @@ export function PhaseGuideNote({
         <strong>How to train it:</strong> {guide.how_to_train}
       </p>
       {inPlan !== null && (
-        <>
-          <p className="ct-app__muted">
-            <strong>In your plan:</strong> {inPlan.weeks}
-          </p>
-          <PlanFacts facts={inPlan.facts} />
-        </>
+        <p className="ct-app__muted">
+          <strong>In your plan:</strong> {inPlan.weeks}
+        </p>
       )}
       {guide.links.map((link) => (
         <p className="ct-app__muted" key={link.url}>

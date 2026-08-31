@@ -1,25 +1,25 @@
-import { useMutation, useMutationState, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useMemo } from 'react';
 
-import type { ActivePlanResponse, PlanAbandoned, PlanTree, Profile } from '../api/types';
+import type { ActivePlanResponse, PlanTree, Profile } from '../api/types';
 import { ApiError } from '../api/client';
 import { useAuth } from '../auth/AuthProvider';
 
 import { canPreview, nextMonday, previewKeyParts } from './blueprint';
 
 /**
- * The one read that costs a generation, the one read that says what the climber HAS, and the
- * two writes between them.
+ * The one read that costs a generation, the one read that says what the climber HAS, and the one
+ * write between them — `POST /api/plans`, which is the only way a plan leaves the active set.
  *
  * ## ⚠️ THE RULE THIS FILE IS BUILT ON: the query cache holds SERVER RESPONSES ONLY
  *
  * `web/src/profile/api.ts` carries the measurements — three review rounds, three bugs, every one
  * of them from two writers for one cache entry. So: **no `onMutate`, no snapshot, nothing at all
  * on the error path.** `onSuccess` writes the server's own answer and is the only cache write
- * here; the optimistic view is DERIVED at render time from the pending mutation's variables
- * (`useActivePlanView`), so a failed write needs no rollback and issues no request. Hence no
- * `invalidateQueries` anywhere — the 409 recovery is a read *inside* `mutationFn`, under the same
- * `scope` serialisation, rather than a write racing out of an `onError`.
+ * here, so a failed write needs no rollback and issues no request. Hence no `invalidateQueries`
+ * anywhere — the 409 recovery is a read *inside* `mutationFn`, under the same `scope`
+ * serialisation, rather than a write racing out of an `onError`. ⚠️ **A pending create gets no
+ * optimistic overlay**: the value would be a whole plan tree the server has not generated.
  *
  * ## Every library claim below is a CONSTRUCT, not a line number
  *
@@ -33,9 +33,8 @@ import { canPreview, nextMonday, previewKeyParts } from './blueprint';
  *   and the `success` dispatch: the cache is written before the mutation leaves `pending`.
  * - `mutationCache.js` — `find((m) => m.state.status === "pending")` makes `canRun` true only for
  *   a scope's *first pending* mutation and `this.#mutationCache.runNext(this);` continues the
- *   next, so `scope: { id: 'plan' }` serialises the REQUESTS: create and abandon never overlap.
- * - `queryClient.js` — `if (data === void 0) return;` in `setQueryData`: nothing is written when
- *   the updater yields `undefined`, which is how `useAbandonPlan` says "leave the cache alone".
+ *   next, so `scope: { id: 'plan' }` serialises the REQUESTS: a double-tapped Start cannot have
+ *   two `POST /api/plans` on the wire at once.
  * - `queryObserver.js` — `isLoadingError: isError && !hasData`, the "nothing to show" question
  *   every screen here gates on instead of `isError`.
  * - `queryClient.js` — `revert: true,` is `cancelQueries`'s default and `query.js`'s
@@ -48,19 +47,10 @@ export const PLAN_PREVIEW_KEY = ['plan', 'preview'] as const;
 /** `GET /api/plans/active`. Holds the whole `{plan}` envelope, exactly as the server sent it. */
 export const ACTIVE_PLAN_KEY = ['plan', 'active'] as const;
 
-/**
- * Declared so `useActivePlanView` can find *our* pending abandon and nobody else's:
- * `matchMutation` (query-core `utils.js`) returns false for any mutation with no `mutationKey`.
- */
 export const PLAN_CREATE_KEY = ['plan', 'create'] as const;
-export const PLAN_ABANDON_KEY = ['plan', 'abandon'] as const;
 
-/**
- * ONE scope for both writes: creating a plan stands the previous one down in the same server
- * transaction, so a create and an abandon must never overlap. A double-tap sends its second
- * `POST` only after the first returned, which the server answers with a legitimate 201. The 409
- * comes from a *second tab or device*, where nothing on this client can serialise anything.
- */
+/** A double-tap sends its second `POST` only after the first returned, which the server answers
+ *  with a legitimate 201. The 409 comes from another tab, which nothing here can serialise. */
 const PLAN_WRITE_SCOPE = { id: 'plan' } as const;
 
 /**
@@ -193,41 +183,12 @@ export interface ActivePlanView {
   retry: () => void;
 }
 
-/**
- * Server truth, plus the one optimistic thing this screen can honestly guess.
- *
- * **An abandon in flight renders as "no plan", derived from the pending mutation's own variables
- * and written nowhere.** The click is a Tier-1 write, so the UI must not wait on Postgres, and
- * `mutation.js` dispatches `type: "pending",` synchronously. A failure just drops the overlay —
- * no rollback, no request.
- *
- * ⚠️ **A pending CREATE gets no overlay, deliberately.** The optimistic value would be a whole
- * plan tree the server has not generated yet, and inventing one is exactly what "the cache holds
- * server responses only" forbids.
- *
- * The id is compared rather than assumed, because an abandon can name a plan that is not the
- * active one (a second tab stood a different plan down).
- */
+/** The wrapper survives its one derived value: `ActivePlanView` is where the tri-state and the
+ *  "nothing to show" gate are written down, and both are facts a caller gets wrong without them. */
 export function useActivePlanView(): ActivePlanView {
   const query = useActivePlan();
-  // `useMutationState` (react-query `useMutationState.js`) runs `mutationCache.findAll` on every
-  // cache notification and passes the result through `replaceEqualDeep`, so this array is
-  // referentially stable while nothing relevant changes.
-  const abandoning = useMutationState({
-    filters: { mutationKey: PLAN_ABANDON_KEY, status: 'pending' },
-    // The mutation cache is untyped by design; the `mutationKey` filter is what makes this cast
-    // safe — every match was built by `useAbandonPlan`, whose variables are a plan id.
-    select: (mutation) => mutation.state.variables as number | undefined,
-  });
-
-  const server = query.data;
   return {
-    plan:
-      server === undefined || server === null
-        ? server
-        : abandoning.some((planId) => planId === server.id)
-          ? null
-          : server,
+    plan: query.data,
     isLoadingError: query.isLoadingError,
     retry: () => {
       void query.refetch();
@@ -249,8 +210,8 @@ export function useActivePlanView(): ActivePlanView {
  * top of the file: an `invalidateQueries` from an error handler is the PR #9 bug (measured — a
  * refetch issued before the next write committed resolved second and overwrote a newer
  * `onSuccess`). Inside `mutationFn` it stays under `PLAN_WRITE_SCOPE`, resolves before
- * `onSuccess`, and leaves exactly one writer either way. `null` is legitimate: another session
- * abandoned the plan in between, so the screen offers Start again. Only a 409 `ApiError` is
+ * `onSuccess`, and leaves exactly one writer either way. `null` is still handled — nothing in
+ * the tree can produce it now, and inventing a plan would be worse. Only a 409 `ApiError` is
  * caught; anything else — a `NotJsonError` means a rewrite ate the request — rethrows.
  *
  * **`handlers.onSuccess` is attached HERE, not to `mutate(vars, { … })`.** Per-call options live
@@ -289,37 +250,6 @@ export function useCreatePlan(handlers: CreatePlanHandlers = {}) {
       await cancelStaleRead(queryClient);
       queryClient.setQueryData<ActivePlanResponse>(ACTIVE_PLAN_KEY, { plan });
       handlers.onSuccess?.(plan);
-    },
-  });
-}
-
-/**
- * `POST /api/plans/{plan_id}/abandon` — stand a plan down. Marks, never deletes. Idempotent
- * server-side, 404 for anyone else's plan, and it shares `PLAN_WRITE_SCOPE` with `useCreatePlan`.
- *
- * The response is `{id, abandoned_at}` — not a plan — so there is no server-shaped envelope to
- * install, but "plan `id` is abandoned" entails `{plan: null}` rather than guessing it. Written
- * **only when the cached plan is that plan**: an abandon naming some other plan (a second tab, a
- * stale screen) must not clear an entry that was never about it. Returning `current` unchanged is
- * how "leave the cache alone" is spelled, including when it is `undefined`, which
- * `queryClient.js`'s `if (data === void 0) return;` turns into no write at all.
- */
-export function useAbandonPlan() {
-  const { request } = useAuth();
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationKey: PLAN_ABANDON_KEY,
-    scope: PLAN_WRITE_SCOPE,
-    mutationFn: (planId: number) =>
-      request<PlanAbandoned>(`/api/plans/${String(planId)}/abandon`, { method: 'POST' }),
-    onSuccess: async (abandoned) => {
-      // Same race, same fix: a read in flight would otherwise reinstate the plan just stood
-      // down. See `cancelStaleRead`.
-      await cancelStaleRead(queryClient);
-      queryClient.setQueryData<ActivePlanResponse>(ACTIVE_PLAN_KEY, (current) =>
-        current?.plan?.id === abandoned.id ? { ...current, plan: null } : current,
-      );
     },
   });
 }
