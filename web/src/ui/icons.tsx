@@ -427,6 +427,27 @@ export function IconSound(props: IconProps) {
   );
 }
 
+/** Expand every phase. A VERTICAL chevron pair: `IconNextSet` already owns the horizontal one,
+ *  and this is the axis these controls move things on. Icon-only, so the caller owes a label. */
+export function IconExpandAll(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M8 9.5 12 5.5 16 9.5" />
+      <path d="M8 14.5 12 18.5 16 14.5" />
+    </Icon>
+  );
+}
+
+/** Collapse every phase — `IconExpandAll` mirrored, on the `IconSound`/`IconMuted` precedent. */
+export function IconCollapseAll(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M8 5.5 12 9.5 16 5.5" />
+      <path d="M8 18.5 12 14.5 16 18.5" />
+    </Icon>
+  );
+}
+
 /** Cues off — the same speaker, struck through. The silhouette differs by the diagonal. */
 export function IconMuted(props: IconProps) {
   return (

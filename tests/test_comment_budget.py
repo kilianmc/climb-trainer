@@ -34,7 +34,7 @@ CAPS: Final = {"module": MODULE_DOCSTRING_CAP, "wire": WIRE_CONTRACT_CAP, "plain
 # The ratchet. Entries whose reason starts with BASELINE are the un-reviewed backlog; new
 # comments obey the cap from day one, so this number may only ever go DOWN. Lower it in the
 # same PR that trims the comments — never raise it.
-BASELINE_RATCHET: Final = 1111
+BASELINE_RATCHET: Final = 1092
 
 # Minimum characters of a real reason. "legacy" is not a register entry.
 MIN_REASON_LENGTH: Final = 40

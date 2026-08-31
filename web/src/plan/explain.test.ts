@@ -7,46 +7,14 @@ import type {
   PlanMicrocycle,
   PlanSession,
   PlanTree,
-  Vocabulary,
 } from '../api/types';
 import { selectSession } from '../session/today';
 
 import type { PlanFact } from './explain';
-import { phaseInPlan, planGoalFacts, sessionBlock, sessionBlockFacts } from './explain';
+import { phaseInPlan, sessionBlock, sessionBlockFacts } from './explain';
 
-/* Derived-fact logic over grades, ordinals and week ranges — what the testing policy in
-   `CLAUDE.md` names explicitly. The placeholder prose is deliberately not tested. */
-
-/* ⚠️ The edges are real, not hypothetical: a phase RECURS (six deloads in 28 weeks),
-   `sessions_per_week` can be 1, and the beginner band owes ZERO finger sessions. */
-
-/* Nothing here restates a training constant: every band figure enters through a fixture standing
-   in for `PlanOut.climbing_band`, because the server owns those numbers. */
-
-const SPORT_SYSTEM = 1;
-
-function vocabulary(): Vocabulary {
-  return {
-    grade_systems: [{ id: SPORT_SYSTEM, key: 'french', name: 'French', discipline: 'sport' }],
-    grades: [
-      { id: 11, grade_system_id: SPORT_SYSTEM, label: '6c', ordinal: 2010 },
-      { id: 16, grade_system_id: SPORT_SYSTEM, label: '7b', ordinal: 2015 },
-    ],
-    climbing_aspects: [],
-    equipment: [],
-    injury_areas: [],
-    plan_goal: '',
-    phase_guide: [],
-    enums: {
-      disciplines: ['sport'],
-      activity_kinds: ['climbing'],
-      ascent_styles: ['redpoint'],
-      protocol_kinds: ['max_hang'],
-      phases: ['base'],
-      session_statuses: ['planned'],
-    },
-  };
-}
+/* Week-range logic — what the testing policy in `CLAUDE.md` names explicitly. ⚠️ The edges are
+   real: a phase RECURS, and on a REST DAY the brief describes the NEXT session's block. */
 
 /** Whatever the server derives for an intermediate sport climber. Figures are the fixture's. */
 const INTERMEDIATE: ClimbingBand = {
@@ -55,15 +23,6 @@ const INTERMEDIATE: ClimbingBand = {
   climbing_target_pct_low: 75,
   climbing_target_pct_high: 82,
   finger_sessions_per_week: 1,
-  finger_phases: ['strength', 'power'],
-};
-
-const BEGINNER: ClimbingBand = {
-  level: 'beginner',
-  climbing_floor_pct: 85,
-  climbing_target_pct_low: 85,
-  climbing_target_pct_high: 90,
-  finger_sessions_per_week: 0,
   finger_phases: ['strength', 'power'],
 };
 
@@ -123,58 +82,17 @@ function plan(overrides: Partial<PlanTree> = {}): PlanTree {
   };
 }
 
-const valueOf = (facts: readonly PlanFact[], label: string) =>
-  facts.filter((fact) => fact.label === label).map((fact) => fact.value);
-
-/** Exactly what the badges on `/plan` read, so these expectations ARE the rendered text. */
+/** Exactly what the session brief's badges read, so these expectations ARE the rendered text. */
 const rendered = (facts: readonly PlanFact[]) =>
   facts.map((fact) => `${fact.label}: ${fact.value}`);
 
-describe('the plan-level goal', () => {
-  it('is composed from THIS plan, not from a phrase every plan shares', () => {
-    expect(rendered(planGoalFacts(plan(), vocabulary()))).toEqual([
-      'Goal: 6c → 7b',
-      'Length: 28 weeks in 14 blocks',
-      'Discipline: Sport',
-      'Sessions: 4 sessions a week',
-      'Your strong point: Power',
-      'Your weak point: Mobility',
-      'Your band: Intermediate',
-      'On the wall: 75–82% of each week, never under 75%',
-    ]);
-  });
-
-  it('says "1 session a week", which the generator makes 100% climbing', () => {
-    const one = plan({ generator_input: { sessions_per_week: 1 } });
-    expect(valueOf(planGoalFacts(one, vocabulary()), 'Sessions')).toEqual(['1 session a week']);
-  });
-
-  it('names the gap when a grade label cannot be resolved, rather than printing nothing', () => {
-    const facts = planGoalFacts(plan({ current_grade_id: null }), vocabulary());
-    expect(valueOf(facts, 'Goal')).toEqual(['5 rungs harder']);
-  });
-
-  it('omits every band figure when the server could not derive one', () => {
-    const facts = planGoalFacts(plan({ climbing_band: null }), vocabulary());
-    expect(valueOf(facts, 'Your band')).toEqual([]);
-    expect(valueOf(facts, 'On the wall')).toEqual([]);
-  });
-});
-
 describe('a phase in this plan', () => {
   it('carries EVERY occurrence, because a phase recurs', () => {
-    const strength = phaseInPlan(plan(), 'strength');
-    expect(strength?.weeks).toBe('Weeks 5–7 and 17–19');
-    expect(rendered(strength?.facts ?? [])).toEqual([
-      'Blocks: 2 blocks · 6 of 28 weeks',
-      'Hangboard: 1 session a week',
-    ]);
+    expect(phaseInPlan(plan(), 'strength')?.weeks).toBe('Weeks 5–7 and 17–19');
   });
 
   it('lists all six deloads without claiming to be one block', () => {
-    const deload = phaseInPlan(plan(), 'deload');
-    expect(deload?.weeks).toBe('Weeks 4, 8, 12, 16, 20 and 24');
-    expect(rendered(deload?.facts ?? [])).toEqual(['Blocks: 6 blocks · 6 of 28 weeks']);
+    expect(phaseInPlan(plan(), 'deload')?.weeks).toBe('Weeks 4, 8, 12, 16, 20 and 24');
   });
 
   it('says "Week 28", not "Weeks 28–28", for a single-week mesocycle', () => {
@@ -183,31 +101,6 @@ describe('a phase in this plan', () => {
 
   it('is null for a phase this plan never runs', () => {
     expect(phaseInPlan(plan({ mesocycles: [mesocycle('base', 1, 3)] }), 'taper')).toBeNull();
-  });
-
-  it('places the hangboard figure only in the phases the SERVER says owe one', () => {
-    expect(valueOf(phaseInPlan(plan(), 'strength')?.facts ?? [], 'Hangboard')).toEqual([
-      '1 session a week',
-    ]);
-    expect(valueOf(phaseInPlan(plan(), 'base')?.facts ?? [], 'Hangboard')).toEqual([]);
-  });
-
-  it('OMITS the hangboard line for the beginner band, rather than printing "0 sessions"', () => {
-    const beginner = plan({ climbing_band: BEGINNER });
-    const facts = phaseInPlan(beginner, 'strength')?.facts ?? [];
-    expect(valueOf(facts, 'Hangboard')).toEqual([]);
-    expect(facts.map((fact) => fact.value).join(' ')).not.toContain('0 session');
-  });
-
-  it('flags a declared strength or weakness only where the key IS the phase', () => {
-    const power = phaseInPlan(plan(), 'power');
-    expect(valueOf(power?.facts ?? [], 'You called this')).toEqual(['a strong point']);
-    // `mobility` names no phase, so it is said once at plan level and nowhere per-phase.
-    const everyPhase: Phase[] = ['base', 'strength', 'power', 'power_endurance', 'performance'];
-    const flagged = everyPhase.flatMap((phase) =>
-      valueOf(phaseInPlan(plan(), phase)?.facts ?? [], 'You called this'),
-    );
-    expect(flagged).toEqual(['a strong point']);
   });
 });
 

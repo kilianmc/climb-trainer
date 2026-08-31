@@ -345,7 +345,7 @@ beforeEach(() => {
 
 it('gives a 100% session badge its OWN full band inside a 75% phase', async () => {
   renderPlan();
-  expect(await screen.findByRole('button', { name: 'Abandon this plan' })).toBeInTheDocument();
+  expect(await screen.findByRole('button', { name: 'Build a different plan' })).toBeInTheDocument();
   await settle();
 
   // The fixture really is the shape the bug needs: an amber phase around a green session.
@@ -375,7 +375,7 @@ it('gives a 100% session badge its OWN full band inside a 75% phase', async () =
 
 it('leaves every completion badge self-describing, so no ancestor is consulted', async () => {
   renderPlan();
-  expect(await screen.findByRole('button', { name: 'Abandon this plan' })).toBeInTheDocument();
+  expect(await screen.findByRole('button', { name: 'Build a different plan' })).toBeInTheDocument();
   await settle();
 
   const badges = [...document.querySelectorAll<HTMLElement>('.ct-app__completion')];
@@ -390,7 +390,7 @@ it('leaves every completion badge self-describing, so no ancestor is consulted',
 
 it('marks every block of a PAST session done or missed, in words as well as colour', async () => {
   renderPlan();
-  expect(await screen.findByRole('button', { name: 'Abandon this plan' })).toBeInTheDocument();
+  expect(await screen.findByRole('button', { name: 'Build a different plan' })).toBeInTheDocument();
   await settle();
 
   // Kilian: "i can see that thursday i did 33% done, but i cant see which part of it i missed".
@@ -415,7 +415,7 @@ it('marks every block of a PAST session done or missed, in words as well as colo
 
 it('leaves a FUTURE session unmarked: nobody has missed a block they cannot have done', async () => {
   renderPlan();
-  expect(await screen.findByRole('button', { name: 'Abandon this plan' })).toBeInTheDocument();
+  expect(await screen.findByRole('button', { name: 'Build a different plan' })).toBeInTheDocument();
   await settle();
 
   const future = cardTitled('Power endurance');

@@ -2150,13 +2150,6 @@ limit = 6
 reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
 
 [[exception]]
-path = "server/plans/routes.py"
-kind = "hash_run"
-anchor = "scoped by id and user deliberately"
-limit = 5
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
-
-[[exception]]
 path = "server/profile/routes.py"
 kind = "docstring"
 anchor = "server.profile.routes"
@@ -4216,20 +4209,6 @@ reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
 
 [[exception]]
 path = "tests/test_plans_persist.py"
-kind = "docstring"
-anchor = "tests.test_plans_persist.test_abandon_sets_the_timestamp_and_is_IDEMPOTENT"
-limit = 6
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
-
-[[exception]]
-path = "tests/test_plans_persist.py"
-kind = "docstring"
-anchor = "tests.test_plans_persist.test_abandon_404s_on_ANOTHER_USERS_plan_and_does_not_leak_that_it_exists"
-limit = 6
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
-
-[[exception]]
-path = "tests/test_plans_persist.py"
 kind = "hash_run"
 anchor = "the demo mount"
 limit = 3
@@ -4238,14 +4217,14 @@ reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
 [[exception]]
 path = "tests/test_plans_persist.py"
 kind = "docstring"
-anchor = "tests.test_plans_persist.test_a_DEMO_TOKEN_cannot_reach_either_of_the_two_WRITE_routes"
+anchor = "tests.test_plans_persist.test_a_DEMO_TOKEN_cannot_reach_the_WRITE_route"
 limit = 7
 reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
 
 [[exception]]
 path = "tests/test_plans_persist.py"
 kind = "docstring"
-anchor = "tests.test_plans_persist.test_the_WRITE_routes_are_ABSENT_from_DEMO_WRITE_EXEMPT_ROUTES"
+anchor = "tests.test_plans_persist.test_the_WRITE_ROUTE_is_ABSENT_from_DEMO_WRITE_EXEMPT_ROUTES"
 limit = 6
 reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
 
@@ -5925,20 +5904,6 @@ reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
 [[exception]]
 path = "web/src/plan/api.ts"
 kind = "block"
-anchor = "declared so useactiveplanview can"
-limit = 4
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
-
-[[exception]]
-path = "web/src/plan/api.ts"
-kind = "block"
-anchor = "one scope for both writes creating"
-limit = 6
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
-
-[[exception]]
-path = "web/src/plan/api.ts"
-kind = "block"
 anchor = "ten minutes matching the profile"
 limit = 6
 reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
@@ -5981,29 +5946,8 @@ reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
 [[exception]]
 path = "web/src/plan/api.ts"
 kind = "block"
-anchor = "server truth plus the one optimistic"
-limit = 15
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
-
-[[exception]]
-path = "web/src/plan/api.ts"
-kind = "slash_run"
-anchor = "usemutationstate react query usemutationstate"
-limit = 3
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
-
-[[exception]]
-path = "web/src/plan/api.ts"
-kind = "block"
 anchor = "post api plans generate this climber"
 limit = 24
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
-
-[[exception]]
-path = "web/src/plan/api.ts"
-kind = "block"
-anchor = "post api plans plan id abandon"
-limit = 11
 reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
 
 [[exception]]
@@ -6093,7 +6037,7 @@ reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
 [[exception]]
 path = "web/src/planPersist.test.tsx"
 kind = "block"
-anchor = "the write path on plan start abandon"
+anchor = "the write path on plan start build"
 limit = 23
 reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
 
@@ -6114,43 +6058,8 @@ reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
 [[exception]]
 path = "web/src/planPersist.test.tsx"
 kind = "slash_run"
-anchor = "the screen has already moved on"
-limit = 3
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
-
-[[exception]]
-path = "web/src/planPersist.test.tsx"
-kind = "slash_run"
-anchor = "findby not getby whether the replacement"
-limit = 4
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
-
-[[exception]]
-path = "web/src/planPersist.test.tsx"
-kind = "slash_run"
 anchor = "deliberately a monday that is not"
 limit = 4
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
-
-[[exception]]
-path = "web/src/planPersist.test.tsx"
-kind = "slash_run"
-anchor = "the guard usecreateplan onsuccess"
-limit = 3
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
-
-[[exception]]
-path = "web/src/planPersist.test.tsx"
-kind = "slash_run"
-anchor = "the server s answer names the plan"
-limit = 4
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
-
-[[exception]]
-path = "web/src/planPersist.test.tsx"
-kind = "slash_run"
-anchor = "and with the mutation settled the"
-limit = 3
 reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
 
 [[exception]]
@@ -6274,6 +6183,13 @@ reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
 
 [[exception]]
 path = "web/src/profile/api.ts"
+kind = "slash_run"
+anchor = "usemutationstate react query usemutationstate"
+limit = 4
+reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
+
+[[exception]]
+path = "web/src/profile/api.ts"
 kind = "block"
 anchor = "the two reads and the one write"
 limit = 42
@@ -6305,13 +6221,6 @@ path = "web/src/profile/api.ts"
 kind = "block"
 anchor = "there is nothing to show and the"
 limit = 9
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
-
-[[exception]]
-path = "web/src/profile/api.ts"
-kind = "slash_run"
-anchor = "usemutationstate react query usemutationstate"
-limit = 4
 reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
 
 [[exception]]
@@ -7493,22 +7402,8 @@ reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
 [[exception]]
 path = "web/src/routes/_authed/plan.lazy.tsx"
 kind = "slash_run"
-anchor = "a committed start ends the replacement"
-limit = 4
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
-
-[[exception]]
-path = "web/src/routes/_authed/plan.lazy.tsx"
-kind = "slash_run"
 anchor = "issue 65 s rule and why readonly"
 limit = 4
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
-
-[[exception]]
-path = "web/src/routes/_authed/plan.lazy.tsx"
-kind = "slash_run"
-anchor = "active plan here is the overlaid"
-limit = 3
 reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
 
 [[exception]]
@@ -7523,13 +7418,6 @@ path = "web/src/routes/_authed/plan.lazy.tsx"
 kind = "slash_run"
 anchor = "the precedence a plan the climber"
 limit = 4
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
-
-[[exception]]
-path = "web/src/routes/_authed/plan.lazy.tsx"
-kind = "block"
-anchor = "skipped entirely when a plan is"
-limit = 3
 reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
 
 [[exception]]
@@ -7558,20 +7446,6 @@ path = "web/src/routes/_authed/plan.lazy.tsx"
 kind = "block"
 anchor = "why a start did not land and it"
 limit = 18
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
-
-[[exception]]
-path = "web/src/routes/_authed/plan.lazy.tsx"
-kind = "block"
-anchor = "an alternative was asked for and"
-limit = 5
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
-
-[[exception]]
-path = "web/src/routes/_authed/plan.lazy.tsx"
-kind = "block"
-anchor = "abandon behind a real confirmation"
-limit = 23
 reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
 
 [[exception]]

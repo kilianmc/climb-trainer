@@ -88,6 +88,7 @@ Dependabot can never bump" · "Quality gate" · "Versioning".
 considered and REJECTED" · "Accessibility is part of the design, not a later pass" · "The
 reading measure is a GRID COLUMN" · "Landing imagery — self-hosted, generated out-of-band, and
 URL-resolved at runtime" · "Container queries, not media queries" · "The full-height chain" ·
+"The plan timeline is measured in DAYS" · "The phase week table" ·
 "⚠️ The nav's thresholds are MEASUREMENTS, not breakpoints" · "Light and dark: the `data-theme`
 override" · "PWA — only the decisions a reader would otherwise reverse".
 
@@ -100,7 +101,8 @@ test must be SHOWN to fail before it is trusted" · "⚠️ A class name in mark
 SILENTLY" · "⚠️ Prose is capped, and an executable claim must not be prose".
 
 **The plan generator, `POST /api/plans/preview`, persisting a plan or `GET /api/plans/active`** —
-"The plan generator" · "Persisting a plan".
+"The plan generator" · "Persisting a plan" · "The plan timeline is measured in DAYS" ·
+"The phase week table".
 
 **Logging a session, an outbox flush or `PUT /api/sessions/{client_uuid}`** — "Logging a
 session" · "The `sets` array is a DELTA, not a replacement" · "`duration_minutes` only ever
@@ -2499,6 +2501,7 @@ Two notes for whoever touches it:
 | `_bento.scss` | the bento grid's named areas |
 | `_chrome.scss` | nav (the brand, the three regimes and their measured thresholds), status renders, the action bar that GROUPS but anchors nothing |
 | `_session.scss` | the session player: the height chain's app half, the phase fills, the item list |
+| `_plan.scss` | the plan calendar: the phase timeline's day ruler and the phase week table |
 | `_landing.scss` | the landing page's photographic bands, detail split and icon rules |
 | `app.scss` | the `@use` entry and the `.ct-app` root; imported from `routes/__root.tsx` |
 | `global.scss` | the document reset. `main.tsx` only, and the ONLY file allowed `:root` |
@@ -2831,6 +2834,81 @@ of that panel, which is where it should stick; standalone, nothing scrolls above
 document. Both are right. Note the difference from the inert `sticky` that was removed from
 `&__actionbar`: **a sticky element's range is its containing block**, which for the nav is the
 whole page and for that action bar was a content-sized form (range ≈ 0).
+
+### The plan timeline is measured in DAYS, on one ruler
+
+`web/src/plan/timeline.ts` is the model (pure — today is passed in, as `phaseToggles.ts` takes
+it), `web/src/plan/PlanTimeline.tsx` renders it, and `web/src/styles/_plan.scss` carries the
+geometry with its measurements. Signed off by Kilian after five rounds on a static preview
+(#93). The decisions a later change would otherwise reverse:
+
+- **⚠️ The x axis is DAYS, not weeks-times-a-constant.** One day of bar is `--tl-day`, the grid
+  is `<plan days> * --tl-day` wide, and every track is `<delta days>fr`. The tracks are cut at
+  the **union of the phase boundaries and the REAL month boundaries**, so a segment and a band
+  are measured off one ruler: a 3-week phase lands on exactly 21/28 of a 28-day February, and a
+  partial month at either end is a partial band. Weeks times a constant is the obvious
+  simplification and it is wrong — it makes February and March the same width, so every band
+  edge after the first is a lie. Nothing is rounded to a week and there are no quarters. The bar
+  spans the plan's own first-to-last day: a 12-week plan draws 12 weeks.
+- **Month bands are ONE grey.** Every band is `--ct-bg`; the `--ct-border-strong` hairline at
+  each band start is the whole separation (4.11:1 light, 5.80:1 dark). Do not add an alternating
+  second tone.
+- **The opening year is SUPPRESSED when the plan starts in December**, because it would fight the
+  January label a few days later for the same space. The rule at each 1 January, and its own year
+  label, are unaffected either way.
+- **⚠️ The two themes differ deliberately** — the precedent is #95's light pills against dark's
+  bare words. Light: green phase name, green bar lines, and the current phase as the only
+  green-*filled* segment. Dark: green duration, a `--ct-fg` connector, green segment block edges,
+  green year. **`--ct-accent-pressed` for the current segment is the alternative that MEASURES
+  1.45:1 light and 1.28:1 dark** against `--ct-accent`; `contrast.test.ts` asserts the fill that
+  replaced it. **ZERO new tokens**: `--ct-accent` is the green, and `--ct-success` stays text-only.
+- **The CALLOUT is the `<button>`, not the dot.** That is what gives a 1-week phase a 44px target
+  on both axes while its segment is 1.6rem wide; the dot and the segment are `aria-hidden`
+  presentation. The bar never wraps and never becomes a vertical rail — it scrolls, in a
+  focusable container with an accessible name and `overscroll-behavior-inline: contain`.
+- **⚠️ EXPAND BEFORE SCROLL, then move focus.** Clicking a phase opens its `<details>` and asks
+  for the scroll on a LATER tick (a collapsed disclosure has no laid-out target), then focuses
+  that section's own summary with `preventScroll` — scrolling alone leaves a keyboard user
+  behind, and focusing without it undoes the scroll. `web/src/planPhaseJump.test.tsx` pins all
+  three, in order. The open set goes through the existing `ct:planPhases` path; there is **no URL
+  fragment**, and `prefers-reduced-motion` decides the behaviour.
+- **⚠️ Expand-all and collapse-all are ICON-ONLY at EVERY width** (Kilian, 2026-08-31), so the
+  nav's threshold-driven text-to-icon machinery does **not** apply — only `&__button--icon`'s
+  treatment, plus the `aria-label`, `title` and 44px floor every icon-only control here owes.
+- **The `ct-app__badge` beside a phase name or "Week N" sits at the row's INLINE-END edge**, via
+  `&__titlerow`: `flex: 1` plus an `auto` margin, never absolute positioning. `flex: 1` is what
+  makes it work in the phase `<summary>`, which is itself the flex row.
+
+### The phase week table — one block per day, and codes by CLIPPING
+
+`web/src/plan/phaseWeek.ts` and `web/src/plan/PhaseWeekTable.tsx`, inside each phase's
+disclosure. A real `<table>`: 7 weekday columns x one row per week, laid out with
+`display: grid` + `display: contents`, which is why every level restates its ARIA role.
+
+- **It never transposes.** Narrow shrinks the same 7-column grid — smaller type, 1px gutters, a
+  narrower week column — so the seven days always use the full width.
+- **ONE BLOCK PER DAY**, not one per activity: the day is one block carrying its blocks as lines
+  of text in `order_index` order. No green fill behind the text — the green is spent on the two
+  headers, and a rest day is the sunken `--ct-bg`. There is no corner cell, and the week header
+  is centred on the **block** axis of its full-height row.
+- **⚠️ The short codes are applied by CLIPPING the full name, never `display: none`**, with the
+  code `aria-hidden`, so the full aspect name stays in the accessible name at every width.
+- **The legend is the table's own `<caption>`** (`caption-side: bottom`, mobile-only, borderless,
+  one wrapped run with the codes bold **by weight, not colour**). A caption is not a component
+  under the table, it IS the table, so it cannot read as unrelated.
+- **⚠️ The sizing custom properties (`--cellfont`, `--cellh`, `--celllines`…) are
+  COMPONENT-SCOPED and must not move into `_tokens.scss`** — same reasoning as
+  `--ct-nav-compress` in `_chrome.scss`, and they are deliberately un-prefixed so nothing there
+  can be mistaken for a design token. `--cellh` is **derived from its own parts** (lines x
+  leading x font + gaps + padding), so the row height cannot drift from what is inside it.
+- **⚠️ Known and accepted: a strength day reads `P`.** There is no general `strength` aspect
+  among the eight seeded keys — that is **issue #98**, deliberately sequenced after this table.
+  Do not add an aspect to fix the reading here.
+- **The weekday header row has NO border** (Kilian, 2026-08-31): its sunken `--ct-bg` against the
+  raised day blocks is the whole separation.
+- **The gap to the week-CARD list is `--ct-space-5`, and `&__weekgrid + &__stack` (0,2,0) has to
+  out-specify `_profile.scss`'s `&__disclosure > * + *` (0,1,0)** — which matters because `plan`
+  is `@use`d **before** `profile` in `app.scss`.
 
 ## Onboarding and the profile (PR #9, redesigned by #54)
 
@@ -3448,13 +3526,18 @@ this is the map and the traps.
 ## Persisting a plan (PR #11b — persist == activate)
 
 `POST /api/plans` regenerates the tree from the profile and inserts it **already activated**,
-standing the previous plan down in the same transaction. `GET /api/plans/active` reads it back;
-`POST /api/plans/{id}/abandon` stands one down. Module docstrings carry the detail.
+standing the previous plan down in the same transaction. `GET /api/plans/active` reads it back.
+Module docstrings carry the detail.
 
+- **⚠️ There is no abandon endpoint** — it shipped with this PR and was deleted with its UI
+  (Kilian, 2026-08-31), so **creating a plan is the only way one leaves the active set**.
+  `_stand_down_active_plan` and `Plan.abandoned_at` stay: `create_plan` calls the helper inside
+  its own transaction, and the column is half of `_ACTIVE_STATE`. Standing a plan down still
+  MARKS and never deletes — `activity.planned_session_id` is the only link from a logged activity
+  to the plan it satisfied, so a delete would destroy the adherence record.
 - **There is no "activate" endpoint and there will not be one.** A plan is created activated,
   so `activated_at` is never `NULL` on a persisted row and no state machine exists to get
-  wrong. Abandon marks; it never deletes — `activity.planned_session_id` is the only link from
-  a logged activity to the plan it satisfied.
+  wrong.
 - **One active plan per user is enforced TWICE, and neither half is optional.**
   `uq_plan_one_active_per_user` (partial unique index, `0008`) can only *refuse* a second
   active row — it cannot choose which one survives — so `create_plan` stands the old plan down
@@ -3630,6 +3713,14 @@ proves it against real Postgres, with every guard sabotaged and recorded;
     ⚠️ **The REST of dark's appearance still has NO detector** — measured: deleting all three of
     its band colour rules, and retuning a dark token to a legible but wrong hue, both leave the
     whole gate green. `contrast.test.ts` guards ratios, never intent.
+- **⚠️ "Build a different plan" RESETS THE PROFILE and generates nothing** (Kilian, 2026-08-31):
+  `POST /api/profile/reset`, awaited, then `/onboarding`. It is **behind a confirmation** — the
+  reset clears both grades, the training days, both aspect picks, every `user_aspect_rating` row
+  and every OPEN injury, with no undo — reusing the deleted abandon panel's pattern. It does
+  **not** touch the active plan, so the state it leaves is *no profile, plan still running*: the
+  old plan runs until a new one is started, which stands it down. `useProfileReset` is reused, not
+  re-implemented. The replacement-preview flow went with it, so `usePlanPreview`'s `wanted` is now
+  the empty state alone and a running plan gets one control and no prose.
 - **The plan screen's phases COLLAPSE (#92), persisted per plan under `ct:planPhases`**
   (`web/src/plan/phaseToggles.ts`). `<details>`/`<summary>` reusing the `ct-app__disclosure`
   idiom, never a custom toggle; open by default on the block the climber is standing in

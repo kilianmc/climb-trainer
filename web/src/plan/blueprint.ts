@@ -222,7 +222,7 @@ export function weekdayName(weekday: number): string {
   return WEEKDAY_NAMES[weekday] ?? 'Unscheduled';
 }
 
-const MONTH_NAMES = [
+export const MONTH_NAMES = [
   'Jan',
   'Feb',
   'Mar',

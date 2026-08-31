@@ -11,8 +11,8 @@
  *   openapi-sha256  the OpenAPI document it was generated from
  *   types-sha256    everything below this comment block
  *
- * openapi-sha256: 374936938ef17c7cb7d7c8a7f63ae97316c7943b3a099d13cef2121f6d5b9366
- * types-sha256: 0f74d513a570a114eafe75486a8d4fe0ca0802db779986447ffe83cbe577e795
+ * openapi-sha256: c5da8bc588e9614dc6158f521bd44e2d2b11fb376c569c3c1220b2ad1c00ec87
+ * types-sha256: 2d270260237467cad70a6cef475f580d06db6f9f840af838455897b9e1a1d172
  */
 
 export interface paths {
@@ -334,38 +334,6 @@ export interface paths {
      *     `tests/test_plans_api.py` counts rows after a successful preview.
      */
     post: operations['preview_plan_api_plans_preview_post'];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/api/plans/{plan_id}/abandon': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /**
-     * Abandon Plan
-     * @description Stand a plan down. **Marks, never deletes.** Idempotent, and 404 for anyone else's.
-     *
-     *     **A timestamp and not a delete**, because `activity.planned_session_id` is the only link from a
-     *     logged activity to the plan it satisfied: deleting would cascade through the tree and destroy
-     *     the adherence record of sessions the user really did.
-     *
-     *     **The 404 is scoped, and the scoping is the security property.** The `WHERE` names both the id
-     *     and `principal.user_id`, so another user's plan is indistinguishable from one that never
-     *     existed. A 403 would confirm the row exists — the IDOR read this project treats as its real
-     *     extraction risk.
-     *
-     *     **Idempotent:** an already-abandoned plan keeps its original timestamp, because *when* it was
-     *     stood down is the fact the diary wants. `completed_at` is deliberately untouched.
-     */
-    post: operations['abandon_plan_api_plans__plan_id__abandon_post'];
     delete?: never;
     options?: never;
     head?: never;
@@ -1014,19 +982,6 @@ export interface components {
       phase: components['schemas']['Phase'];
       /** Summary */
       summary: string;
-    };
-    /**
-     * PlanAbandonResponse
-     * @description The timestamp that was set, or the one already there. Idempotent either way.
-     */
-    PlanAbandonResponse: {
-      /**
-       * Abandoned At
-       * Format: date-time
-       */
-      abandoned_at: string;
-      /** Id */
-      id: number;
     };
     /**
      * PlanOut
@@ -1832,37 +1787,6 @@ export interface operations {
         };
         content: {
           'application/json': components['schemas']['PlanOut'];
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  abandon_plan_api_plans__plan_id__abandon_post: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        plan_id: number;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['PlanAbandonResponse'];
         };
       };
       /** @description Validation Error */

@@ -86,8 +86,6 @@ export type ClimbingBand = Schemas['ClimbingBandOut'];
  * ActivePlanResponse` carries the reasoning.
  */
 export type ActivePlanResponse = Schemas['ActivePlanResponse'];
-/** `POST /api/plans/{plan_id}/abandon`. The timestamp set, or the one already there. */
-export type PlanAbandoned = Schemas['PlanAbandonResponse'];
 export type PlanMesocycle = Schemas['MesocycleOut'];
 export type PlanMicrocycle = Schemas['MicrocycleOut'];
 export type PlanSession = Schemas['SessionOut'];

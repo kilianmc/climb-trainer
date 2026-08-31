@@ -1,9 +1,8 @@
-import { Link, createLazyFileRoute } from '@tanstack/react-router';
+import { Link, createLazyFileRoute, useNavigate } from '@tanstack/react-router';
 import { useEffect, useMemo, useRef, useState } from 'react';
 
 import type {
   LibraryExercise,
-  PlanMesocycle,
   PlanMicrocycle,
   PlanShortfall,
   PlanTree,
@@ -15,9 +14,12 @@ import { ApiError } from '../../api/client';
 import { useAuth } from '../../auth/AuthProvider';
 import { useLibrary } from '../../library/api';
 import { humanise } from '../../library/browse';
+import { IconCollapseAll, IconExpandAll } from '../../ui/icons';
 import type { PhaseGuides } from '../../plan/PhaseGuide';
-import { PhaseGuideNote, PlanFacts, phaseGuides, phaseLabel } from '../../plan/PhaseGuide';
-import { useAbandonPlan, useActivePlanView, useCreatePlan, usePlanPreview } from '../../plan/api';
+import { PhaseGuideNote, phaseGuides, phaseLabel } from '../../plan/PhaseGuide';
+import { PhaseWeekTable } from '../../plan/PhaseWeekTable';
+import { PlanTimeline } from '../../plan/PlanTimeline';
+import { useActivePlanView, useCreatePlan, usePlanPreview } from '../../plan/api';
 import {
   BLOCK_MARK_LABEL,
   blockOutcome,
@@ -44,15 +46,15 @@ import {
   setsLine,
   weekdayName,
 } from '../../plan/blueprint';
-import { phaseInPlan, planGoalFacts } from '../../plan/explain';
-import { useProfileScreen } from '../../profile/api';
+import { phaseInPlan } from '../../plan/explain';
+import { useProfileReset, useProfileScreen } from '../../profile/api';
 import { localIsoDate } from '../../session/today';
 import { compareToGoal } from '../../profile/grades';
 
 /**
  * `/plan` — the plan this climber is on, or the one we would build, phase by phase and week by
  * week. Also a write surface: `POST /api/plans` persists a preview activated, and
- * `POST /api/plans/{id}/abandon` stands it down.
+ * `POST /api/profile/reset`, behind a confirmation, is "build a different plan".
  *
  * ⚠️ **ONE RENDERER, because a preview and a persisted plan are the SAME SHAPE.** `PlanBody`
  * takes a `PlanTree` without caring which route produced it; the only difference is which
@@ -80,29 +82,14 @@ function Plan() {
   const { profile, vocabulary, profileFailed, vocabularyFailed, retry } = useProfileScreen();
   const library = useLibrary();
   const active = useActivePlanView();
-  // Whether the climber has asked to see an alternative to the plan they are already on. Off by
-  // default, because that is what keeps the expensive read unmade — see `usePlanPreview`.
-  const [replacing, setReplacing] = useState(false);
-  // ⚠️ A committed Start ENDS the replacement flow: `shown` prefers the proposal while
-  // `replacing` is true, so without this the screen would keep offering "Start this instead" for
-  // the plan that had just become the running one. Attached to the mutation, not to
-  // `mutate(vars, {…})` — see `plan/api.ts`.
-  const create = useCreatePlan({
-    onSuccess: () => {
-      setReplacing(false);
-    },
-  });
-  const abandon = useAbandonPlan();
+  const create = useCreatePlan();
   // ⚠️ Issue #65's rule, and why `readOnly` is threaded rather than turned into a `disabled`
   // prop: **in demo scope the UI never OFFERS an action the principal cannot perform**, so the
   // write affordances below are absent from the tree, not greyed out. Both POSTs 403 for a demo
   // token; `GET /api/plans/active` does not, so the demo mount still reads a whole plan.
   const readOnly = useAuth().scope === 'demo';
 
-  // ⚠️ `active.plan` here is the OVERLAID value, so an abandon in flight starts generating the
-  // plan we will offer next — the climber who just abandoned wants a replacement. Cost of being
-  // wrong is bounded: one wasted generation if the abandon then fails.
-  const preview = usePlanPreview(profile, active.plan === null || replacing);
+  const preview = usePlanPreview(profile, active.plan === null);
   // Beside the plan read, never inside it (#85): only this screen wants these numbers, and
   // `GET /api/plans/active` is already the heaviest payload in the app.
   const completion = useSessionCompletion(active.plan ?? null);
@@ -169,12 +156,10 @@ function Plan() {
   const blocker = previewBlocker(profile);
   const running = active.plan;
 
-  // ⚠️ The precedence: a plan the climber HAS outranks a preview, and while they are looking at
-  // an alternative the alternative outranks the plan. The last `?? preview.data` is the empty
-  // state. Note what does NOT happen — asking for an alternative never takes the running plan off
-  // the screen, because `shown` falls back to `running` while the generator works or fails.
-  const proposed = replacing ? preview.data : undefined;
-  const shown = proposed ?? running ?? preview.data;
+  // ⚠️ The precedence: a plan the climber HAS outranks a preview, and `?? preview.data` is the
+  // empty state. Nothing here offers an alternative to a running plan, so a preview is only ever
+  // the *only* thing there is.
+  const shown = running ?? preview.data;
   // Identity, not a flag: `shown` is one of two objects and this asks which.
   const isRunning = shown !== undefined && shown === running;
 
@@ -184,8 +169,7 @@ function Plan() {
       <GoalLine profile={profile} vocabulary={vocabulary} plan={shown} />
 
       {/* Skipped entirely when a plan is running: the answers behind a plan can drift after it is
-          built, and a plan does not stop existing because the profile moved. Regenerating is what
-          needs a plannable profile, and `PlanActions` gates on the same `blocker`. */}
+          built, and a plan does not stop existing because the profile moved. */}
       {blocker !== null && running === null ? (
         readOnly ? (
           <DemoUnplannable />
@@ -214,23 +198,7 @@ function Plan() {
         <PreviewPending preview={preview} readOnly={readOnly} />
       ) : (
         <>
-          <PlanActions
-            plan={shown}
-            isRunning={isRunning}
-            hasRunningPlan={running !== null}
-            replacing={replacing}
-            canReplace={blocker === null}
-            onReplace={() => {
-              setReplacing(true);
-            }}
-            onKeep={() => {
-              setReplacing(false);
-            }}
-            preview={preview}
-            create={create}
-            abandon={abandon}
-            readOnly={readOnly}
-          />
+          <PlanActions plan={shown} isRunning={isRunning} create={create} readOnly={readOnly} />
           {/* ONE renderer, for both — see the top of the file. `key` is what makes the phase
               toggles below start from their own default when the plan on screen changes. */}
           <PlanBody
@@ -247,104 +215,36 @@ function Plan() {
 }
 
 /**
- * Everything the climber can DO about the plan on screen, and the sentences that say what each
- * action means before it is taken.
+ * Everything the climber can DO about the plan on screen.
  *
  * ⚠️ **Demo scope: hidden, not disabled** (issue #65). `readOnly` returns `null` for the whole
- * component, plus one sentence saying why — a Start button that is merely absent looks like a
- * missing feature, and a `disabled` one reads as broken software rather than as a demo.
+ * component — a `disabled` control reads as broken software rather than as a demo, and this
+ * screen's rule is absence rather than the wizard's disabled-and-explained.
  *
- * Three states: nothing running (Start); a plan running (Abandon behind a confirmation, plus an
- * offer to build something else, with the consequence of the *second* click stated before the
- * first); and a plan running with an alternative on screen (Start, which replaces, or keep). The
- * replacement is one server transaction, so there is no window where the climber has no plan.
+ * Two states: nothing running, so the plan on screen is a preview and Start persists it; and a
+ * plan running, which gets one control and no prose.
  */
 function PlanActions({
   plan,
   isRunning,
-  hasRunningPlan,
-  replacing,
-  canReplace,
-  onReplace,
-  onKeep,
-  preview,
   create,
-  abandon,
   readOnly,
 }: {
   plan: PlanTree;
   isRunning: boolean;
-  hasRunningPlan: boolean;
-  replacing: boolean;
-  canReplace: boolean;
-  onReplace: () => void;
-  onKeep: () => void;
-  preview: ReturnType<typeof usePlanPreview>;
   create: ReturnType<typeof useCreatePlan>;
-  abandon: ReturnType<typeof useAbandonPlan>;
   readOnly: boolean;
 }) {
-  if (readOnly) {
-    return (
-      <p className="ct-app__notice" role="note">
-        <span>
-          This is a real plan, built from the demo climber&apos;s answers, and you can read all of
-          it. The demo account is read-only, so it cannot be started — in your own account this is
-          where you&apos;d begin it.
-        </span>
-      </p>
-    );
-  }
+  if (readOnly) return null;
 
-  if (isRunning) {
-    // Non-null on every persisted plan — the point of `POST /api/plans` returning the tree with
-    // ids. No id means no button, rather than a request to `/api/plans/null/abandon`.
-    const planId = plan.id;
-    return (
-      <>
-        <p className="ct-app__lede">
-          <span className="ct-app__badge">Your plan</span> This is the plan you&apos;re on. Sessions
-          and weeks are yours to follow — nothing here expires.
-        </p>
-        {replacing ? <ReplacementPending preview={preview} onKeep={onKeep} /> : null}
-        {!replacing && canReplace ? (
-          <>
-            <p className="ct-app__notice" role="note">
-              <span>
-                Building a different plan doesn&apos;t touch this one. Starting the new one does:
-                that stands this plan down in the same step, and the weeks you&apos;ve already
-                logged stay in your diary either way.
-              </span>
-            </p>
-            <div className="ct-app__actions">
-              <button type="button" className="ct-app__button" onClick={onReplace}>
-                Build a different plan
-              </button>
-            </div>
-          </>
-        ) : null}
-        {planId === null || planId === undefined ? null : (
-          <AbandonAction planId={planId} abandon={abandon} />
-        )}
-      </>
-    );
-  }
+  if (isRunning) return <StartOverAction />;
 
   return (
     <>
-      {hasRunningPlan ? (
-        <p className="ct-app__notice" role="note">
-          <span>
-            This is a new plan, and nothing has been saved. Starting it stands your current plan
-            down in the same step — one action, and you are never left without a plan.
-          </span>
-        </p>
-      ) : (
-        <p className="ct-app__lede">
-          You don&apos;t have a plan running yet. This is the one we&apos;d build for you — start it
-          and it becomes yours, week by week.
-        </p>
-      )}
+      <p className="ct-app__lede">
+        You don&apos;t have a plan running yet. This is the one we&apos;d build for you — start it
+        and it becomes yours, week by week.
+      </p>
       {create.isError ? <CreateFailure error={create.error} /> : null}
       <div className="ct-app__actions">
         <button
@@ -361,19 +261,122 @@ function PlanActions({
             create.mutate(plan.start_date);
           }}
         >
-          {create.isPending
-            ? 'Starting…'
-            : hasRunningPlan
-              ? 'Start this instead'
-              : 'Start this plan'}
+          {create.isPending ? 'Starting…' : 'Start this plan'}
         </button>
-        {hasRunningPlan ? (
-          <button type="button" className="ct-app__button" onClick={onKeep}>
-            Keep my current plan
-          </button>
-        ) : null}
       </div>
     </>
+  );
+}
+
+/** ⚠️ Confirmed, awaited, and inline rather than a modal: the reset has no undo, the wizard
+ *  reads the profile to pick its step, and `position: fixed` resolves against the SHELL. */
+function StartOverAction() {
+  const navigate = useNavigate();
+  const [confirming, setConfirming] = useState(false);
+  const confirmRef = useRef<HTMLButtonElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  // "Has this panel ever been open?", so the first render does not steal focus from wherever the
+  // router put it.
+  const opened = useRef(false);
+  const [failed, setFailed] = useState(false);
+  const reset = useProfileReset({
+    onError: () => {
+      setFailed(true);
+    },
+    onSuccess: () => {
+      setFailed(false);
+    },
+  });
+
+  useEffect(() => {
+    if (confirming) {
+      opened.current = true;
+      confirmRef.current?.focus();
+      return;
+    }
+    if (opened.current) {
+      opened.current = false;
+      triggerRef.current?.focus();
+    }
+  }, [confirming]);
+
+  // Clears the failure with it: nothing was written, so there is no state left to report once
+  // the question is off the screen.
+  const dismiss = () => {
+    setConfirming(false);
+    setFailed(false);
+  };
+  const onKeyDown = (event: { key: string }) => {
+    if (event.key === 'Escape') dismiss();
+  };
+
+  async function startOver() {
+    try {
+      await reset.mutateAsync();
+    } catch {
+      return;
+    }
+    void navigate({ to: '/onboarding' });
+  }
+
+  if (!confirming) {
+    return (
+      <div className="ct-app__actions">
+        <button
+          ref={triggerRef}
+          type="button"
+          className="ct-app__button"
+          onClick={() => {
+            setConfirming(true);
+          }}
+        >
+          Build a different plan
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="ct-app__card ct-app__card--danger" role="group" aria-labelledby="ct-startover">
+      <h3 id="ct-startover">Build a different plan?</h3>
+      <p>
+        This clears your setup answers — the grade you climb now, the grade you&apos;re aiming at,
+        your training days, your strength and weakness, and anything you&apos;ve flagged as hurting
+        — and walks you through setup again from step one. There is no undo.
+      </p>
+      <p>
+        This plan keeps running until you start the new one, and everything you&apos;ve already
+        logged stays in your diary either way.
+      </p>
+      {/* ⚠️ Inside the panel: closing it to show a message would make them walk the
+          confirmation again for a write that never happened. */}
+      {failed ? (
+        <p className="ct-app__error" role="alert">
+          Your setup answers could not be cleared, so nothing has changed: your plan and your
+          profile are both exactly as they were. Try again.
+        </p>
+      ) : null}
+      <div className="ct-app__actions">
+        <button
+          ref={confirmRef}
+          type="button"
+          className="ct-app__button"
+          disabled={reset.isPending}
+          onKeyDown={onKeyDown}
+          onClick={() => void startOver()}
+        >
+          {reset.isPending ? 'Clearing…' : 'Yes, set up again'}
+        </button>
+        <button
+          type="button"
+          className="ct-app__button ct-app__button--primary"
+          onKeyDown={onKeyDown}
+          onClick={dismiss}
+        >
+          Keep my answers
+        </button>
+      </div>
+    </div>
   );
 }
 
@@ -403,165 +406,6 @@ function CreateFailure({ error }: { error: unknown }) {
         ? 'This page has been open too long to start the plan it is showing. Reload it and start the fresh one.'
         : 'Something interrupted that, and we can’t tell whether it saved. Reload the page to see which plan you’re on.'}
     </p>
-  );
-}
-
-/**
- * An alternative was asked for and has not arrived. The running plan is still below this — see
- * `shown` in `Plan`. Gated on `isLoadingError`, not `isError`: a failed generation must not take
- * a plan the climber is reading off the screen.
- */
-function ReplacementPending({
-  preview,
-  onKeep,
-}: {
-  preview: ReturnType<typeof usePlanPreview>;
-  onKeep: () => void;
-}) {
-  const failed = preview.isLoadingError;
-  return (
-    <>
-      <p
-        className={failed ? 'ct-app__error' : 'ct-app__status'}
-        role={failed ? 'alert' : undefined}
-      >
-        {failed
-          ? 'A different plan could not be built just now. Your current plan is untouched.'
-          : 'Building a different plan…'}
-      </p>
-      <div className="ct-app__actions">
-        {failed ? (
-          <button
-            type="button"
-            className="ct-app__button ct-app__button--primary"
-            onClick={() => void preview.refetch()}
-          >
-            Try again
-          </button>
-        ) : null}
-        <button type="button" className="ct-app__button" onClick={onKeep}>
-          Keep my current plan
-        </button>
-      </div>
-    </>
-  );
-}
-
-/**
- * Abandon, behind a real confirmation.
- *
- * **Not `window.confirm`**: unstyleable, blocks the main thread, suppressible, and its text
- * cannot say that the logged work survives — which is the sentence this confirmation exists for.
- *
- * **An inline panel rather than a modal**, because a modal needs a focus trap, a scroll lock and
- * an inert background, and `position: fixed` and `inert` resolve against kilianmc.com's document
- * in the federated mount. An inline panel also keeps the plan being abandoned visible behind the
- * question.
- *
- * The accessible pattern, deliberately not skipped:
- *
- * - `role="group"` + `aria-labelledby` on the panel's own heading, so the question is its
- *   accessible name.
- * - **Focus moves to the confirming button** on open and back to the trigger on close. The
- *   trigger is remounted by the same render that unmounts the panel, and effects run after
- *   commit, so its ref is populated by the time the effect reads it.
- * - **Escape dismisses**, with the handler on the two buttons rather than the panel: focus can
- *   only be on one of them, and a `keydown` on a non-interactive container is what
- *   `jsx-a11y/no-noninteractive-element-interactions` exists to refuse.
- * - The safe choice carries the visual weight (`--primary`); the destructive one does not.
- */
-function AbandonAction({
-  planId,
-  abandon,
-}: {
-  planId: number;
-  abandon: ReturnType<typeof useAbandonPlan>;
-}) {
-  const [confirming, setConfirming] = useState(false);
-  const confirmRef = useRef<HTMLButtonElement>(null);
-  const triggerRef = useRef<HTMLButtonElement>(null);
-  // "Has this panel ever been open?", so the first render does not steal focus from wherever the
-  // router put it.
-  const opened = useRef(false);
-
-  useEffect(() => {
-    if (confirming) {
-      opened.current = true;
-      confirmRef.current?.focus();
-      return;
-    }
-    if (opened.current) {
-      opened.current = false;
-      triggerRef.current?.focus();
-    }
-  }, [confirming]);
-
-  const dismiss = () => {
-    setConfirming(false);
-  };
-  const onKeyDown = (event: { key: string }) => {
-    if (event.key === 'Escape') dismiss();
-  };
-
-  if (!confirming) {
-    return (
-      <>
-        {abandon.isError ? (
-          <p className="ct-app__error" role="alert">
-            Your plan could not be stood down, so it has not been: it is still yours and still
-            active. Try again.
-          </p>
-        ) : null}
-        <div className="ct-app__actions">
-          <button
-            ref={triggerRef}
-            type="button"
-            className="ct-app__button"
-            onClick={() => {
-              setConfirming(true);
-            }}
-          >
-            Abandon this plan
-          </button>
-        </div>
-      </>
-    );
-  }
-
-  return (
-    <div
-      className="ct-app__card ct-app__card--danger"
-      role="group"
-      aria-labelledby="ct-abandon-question"
-    >
-      <h3 id="ct-abandon-question">Abandon this plan?</h3>
-      <p>
-        It stops being your plan and you&apos;ll have none until you start another. Everything
-        you&apos;ve already logged against it stays in your diary — abandoning marks the plan, it
-        never deletes it.
-      </p>
-      <div className="ct-app__actions">
-        <button
-          ref={confirmRef}
-          type="button"
-          className="ct-app__button"
-          onKeyDown={onKeyDown}
-          onClick={() => {
-            abandon.mutate(planId);
-          }}
-        >
-          Yes, abandon it
-        </button>
-        <button
-          type="button"
-          className="ct-app__button ct-app__button--primary"
-          onKeyDown={onKeyDown}
-          onClick={dismiss}
-        >
-          Keep this plan
-        </button>
-      </div>
-    </div>
   );
 }
 
@@ -656,6 +500,11 @@ function DemoUnplannable() {
   );
 }
 
+/** One id scheme, so the timeline and the phase sections cannot disagree about a target. */
+function phaseAnchorId(startWeek: number): string {
+  return `ct-phase-${String(startWeek)}`;
+}
+
 function PlanBody({
   plan,
   exercises,
@@ -690,47 +539,61 @@ function PlanBody({
     writeOpenPhases(storageKey, next);
   };
 
+  // ⚠️ EXPAND BEFORE SCROLL, and a FRESH OBJECT per click so the same phase can be jumped to
+  // twice — CLAUDE.md "The plan timeline is measured in DAYS" carries the order and its reason.
+  const [jump, setJump] = useState<{ readonly startWeek: number } | null>(null);
+
+  const showPhase = (startWeek: number) => {
+    commit([...new Set([...open, startWeek])]);
+    setJump({ startWeek });
+  };
+
+  useEffect(() => {
+    if (jump === null) return;
+    const node = document.getElementById(phaseAnchorId(jump.startWeek));
+    if (node === null) return;
+    // Reduced motion covers programmatic scrolling too, exactly as `profile.lazy.tsx` has it.
+    const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    node.scrollIntoView({ behavior: reduced ? 'auto' : 'smooth', block: 'start' });
+    // Focus LAST, and with `preventScroll`: scrolling alone leaves a keyboard user behind, and
+    // focusing without it would undo the scroll just asked for.
+    node.querySelector('summary')?.focus({ preventScroll: true });
+  }, [jump]);
+
   return (
     <>
-      <p className="ct-app__muted">
-        {plan.name} · generator {plan.generator_version}
-      </p>
-
-      {/* Why the plan has this shape at all, before the phases that implement it. Server copy:
-          the block arithmetic it describes lives in `server/domain/planner/periodisation.py`. */}
-      <p className="ct-app__lede">{vocabulary.plan_goal}</p>
-
-      {/* And what it is for THIS climber, from the plan's own numbers — `plan/explain.ts`. The
-          band figures arrive derived on the payload; nothing here recomputes a training constant. */}
-      <PlanFacts facts={planGoalFacts(plan, vocabulary)} />
-
       {plan.notes.map((note) => (
         <p className="ct-app__notice" role="note" key={note.kind}>
           <span>{note.message}</span>
         </p>
       ))}
 
-      <PhaseTimeline mesocycles={plan.mesocycles} guides={guides} />
+      <PlanTimeline plan={plan} guides={guides} todayIso={todayIso} onSelect={showPhase} />
 
-      {/* Fourteen sections at 28 weeks, so both directions are one tap rather than fourteen. */}
+      {/* Fourteen sections at 28 weeks, so both directions are one tap rather than fourteen.
+          ⚠️ Icons at EVERY width, so the nav's container-range machinery does not apply here. */}
       <div className="ct-app__actions">
         <button
           type="button"
-          className="ct-app__button"
+          className="ct-app__button ct-app__button--icon"
+          aria-label="Expand all phases"
+          title="Expand all phases"
           onClick={() => {
             commit(allPhases(plan));
           }}
         >
-          Expand all phases
+          <IconExpandAll />
         </button>
         <button
           type="button"
-          className="ct-app__button"
+          className="ct-app__button ct-app__button--icon"
+          aria-label="Collapse all phases"
+          title="Collapse all phases"
           onClick={() => {
             commit([]);
           }}
         >
-          Collapse all phases
+          <IconCollapseAll />
         </button>
       </div>
 
@@ -738,7 +601,7 @@ function PlanBody({
         const guide = guides.get(mesocycle.phase);
         const phaseBadge = phaseCompletionBadge(mesocycle, completion, todayIso);
         return (
-          <section key={mesocycle.start_week}>
+          <section key={mesocycle.start_week} id={phaseAnchorId(mesocycle.start_week)}>
             {/* `<details>`, not a custom toggle: keyboard, focus and the expanded state come
                 from the element. The heading stays the control's own label. */}
             <details
@@ -755,7 +618,7 @@ function PlanBody({
               }}
             >
               <summary>
-                <h2>
+                <h2 className="ct-app__titlerow">
                   {phaseLabel(guides, mesocycle.phase)}{' '}
                   <span className="ct-app__badge">
                     {mesocycle.start_week === mesocycle.end_week
@@ -777,6 +640,7 @@ function PlanBody({
                 )}
               </summary>
               <PhaseGuideNote guide={guide} inPlan={phaseInPlan(plan, mesocycle.phase)} />
+              <PhaseWeekTable mesocycle={mesocycle} />
               <ul className="ct-app__stack">
                 {mesocycle.microcycles.map((microcycle) => (
                   <WeekCard
@@ -817,26 +681,6 @@ function PlanBody({
   );
 }
 
-/** The phases in order, one badge per mesocycle — a phase block plus its deload, taper last. */
-function PhaseTimeline({
-  mesocycles,
-  guides,
-}: {
-  mesocycles: readonly PlanMesocycle[];
-  guides: PhaseGuides;
-}) {
-  return (
-    <p className="ct-app__tags">
-      {mesocycles.map((mesocycle) => (
-        <span className="ct-app__badge" key={mesocycle.start_week}>
-          {phaseLabel(guides, mesocycle.phase)} · wk {String(mesocycle.start_week)}
-          {mesocycle.start_week === mesocycle.end_week ? '' : `–${String(mesocycle.end_week)}`}
-        </span>
-      ))}
-    </p>
-  );
-}
-
 /**
  * One week: its sessions, each behind a disclosure so a 32-week plan is readable without scrolling
  * past a few thousand prescribed sets. `week_no` is plan-global (1..`week_count`), not per
@@ -855,7 +699,7 @@ function WeekCard({
 }) {
   return (
     <li className="ct-app__card">
-      <h3>
+      <h3 className="ct-app__titlerow">
         Week {String(microcycle.week_no)}{' '}
         <span className="ct-app__badge">{phaseLabel(guides, microcycle.phase)}</span>
       </h3>
