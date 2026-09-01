@@ -2,6 +2,7 @@ import { useMutation, useMutationState, useQuery, useQueryClient } from '@tansta
 
 import type { Profile, ProfilePatch, Vocabulary } from '../api/types';
 import { useAuth } from '../auth/AuthProvider';
+import { BUILD_ID } from '../buildId';
 
 /**
  * The two reads and the one write behind onboarding and the profile editor.
@@ -47,7 +48,7 @@ import { useAuth } from '../auth/AuthProvider';
  */
 
 export const PROFILE_KEY = ['profile'] as const;
-export const VOCABULARY_KEY = ['vocabulary'] as const;
+export const VOCABULARY_KEY = ['vocabulary', BUILD_ID] as const;
 
 /**
  * Declared so `useProfileView` can find *our* pending mutations and nobody else's.
@@ -75,7 +76,7 @@ export function useVocabulary() {
   const { request, isAuthenticated } = useAuth();
   return useQuery({
     queryKey: VOCABULARY_KEY,
-    queryFn: () => request<Vocabulary>('/api/vocabulary'),
+    queryFn: () => request<Vocabulary>(`/api/vocabulary?v=${encodeURIComponent(BUILD_ID)}`),
     staleTime: Infinity,
     enabled: isAuthenticated,
   });

@@ -98,11 +98,8 @@ export default defineConfig({
     // AFTER federation(): the service worker precaches the built app shell, so it has to
     // see the final asset graph, remoteEntry stub included.
     VitePWA({
-      // 'prompt', deliberately, not 'autoUpdate'. A silent `skipWaiting` deletes the old
-      // precache the moment a new worker activates, so a page left open across a deploy
-      // 404s on the next lazily-loaded route chunk — and it could swap code under a session
-      // player mid-set. The visitor decides when to take the new build.
-      registerType: 'prompt',
+      // auto update because of old version in client.
+      registerType: 'autoUpdate',
       // We register from `main.tsx`, and only from there (its scope in the federated mount
       // would be kilianmc.com). `null` rather than 'inline' is also forced by the production
       // CSP: `script-src 'self'` blocks an inline registration script with no nonce.

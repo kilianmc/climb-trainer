@@ -96,6 +96,10 @@ function urlOf(input: unknown): string {
   return input instanceof Request ? input.url : '';
 }
 
+// `/api/vocabulary` is requested with the build id as `?v=`, so a suffix match never sees it.
+const isVocabulary = (url: string) =>
+  new URL(url, 'http://localhost').pathname === '/api/vocabulary';
+
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), {
     status,
@@ -168,7 +172,7 @@ beforeEach(() => {
     'fetch',
     vi.fn((input: unknown, init?: RequestInit) => {
       const url = urlOf(input);
-      if (url.endsWith('/api/vocabulary')) return Promise.resolve(json(VOCABULARY));
+      if (isVocabulary(url)) return Promise.resolve(json(VOCABULARY));
       if (url.endsWith('/api/profile') && (init?.method ?? 'GET') === 'GET') {
         return Promise.resolve(json(THREE_OF_FOUR));
       }
@@ -230,7 +234,7 @@ it('sends exactly the injuries step and celebrates only after the server accepts
   // rather than left with a comment claiming a guarantee these assertions do not provide.
   vi.mocked(fetch).mockImplementation((input: unknown, init?: RequestInit) => {
     const url = urlOf(input);
-    if (url.endsWith('/api/vocabulary')) return Promise.resolve(json(VOCABULARY));
+    if (isVocabulary(url)) return Promise.resolve(json(VOCABULARY));
     if (url.endsWith('/api/profile') && (init?.method ?? 'GET') === 'GET') {
       return Promise.resolve(json(THREE_OF_FOUR));
     }
@@ -337,7 +341,7 @@ function stubProfile(
   const gets = options.getResponses ?? [() => json(options.profile ?? HALF_AVAILABILITY)];
   vi.mocked(fetch).mockImplementation((input: unknown, init?: RequestInit) => {
     const url = urlOf(input);
-    if (url.endsWith('/api/vocabulary')) return Promise.resolve(json(VOCABULARY));
+    if (isVocabulary(url)) return Promise.resolve(json(VOCABULARY));
     if (url.endsWith('/api/profile') && (init?.method ?? 'GET') === 'GET') {
       const responder = gets[Math.min(getCount, gets.length - 1)];
       getCount += 1;

@@ -11,8 +11,8 @@
  *   openapi-sha256  the OpenAPI document it was generated from
  *   types-sha256    everything below this comment block
  *
- * openapi-sha256: c5da8bc588e9614dc6158f521bd44e2d2b11fb376c569c3c1220b2ad1c00ec87
- * types-sha256: 2d270260237467cad70a6cef475f580d06db6f9f840af838455897b9e1a1d172
+ * openapi-sha256: 434bfbb744851ecafce47b201c3f7c0f779bfb515e55d3093b1b025072f3098b
+ * types-sha256: d3e11d1e6a0a85d850de8423ec69196b3de773a73d630e66f6eaed55de7ce31a
  */
 
 export interface paths {
@@ -490,6 +490,9 @@ export interface paths {
      *
      *     Authenticated like every other route (deny-by-default), but user-independent: nothing
      *     here is scoped by `user_id` because nothing here belongs to a user.
+     *
+     *     `v` is **declared and deliberately unused**, as on `GET /api/library`: it exists so the
+     *     client can put a build id in the URL and so the schema documents it.
      */
     get: operations['read_vocabulary_api_vocabulary_get'];
     put?: never;
@@ -1942,7 +1945,9 @@ export interface operations {
   };
   read_vocabulary_api_vocabulary_get: {
     parameters: {
-      query?: never;
+      query?: {
+        v?: string | null;
+      };
       header?: never;
       path?: never;
       cookie?: never;
@@ -1956,6 +1961,15 @@ export interface operations {
         };
         content: {
           'application/json': components['schemas']['VocabularyResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
         };
       };
     };

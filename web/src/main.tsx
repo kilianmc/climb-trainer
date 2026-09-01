@@ -4,8 +4,8 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 
 import { AuthProvider } from './auth/AuthProvider';
+import { registerServiceWorker } from './pwa/register';
 import { createAppContext, createAppRouter } from './router';
-import { UpdateBar } from './ui/UpdateBar';
 import './styles/global.scss';
 
 /**
@@ -14,15 +14,14 @@ import './styles/global.scss';
  *
  * ⚠️ This is the ONLY file that may ever register a service worker. From `remote.tsx`
  * the scope would be kilianmc.com and it would intercept the live portfolio's requests.
- * `<UpdateBar>` is what pulls in `pwa/updatePrompt`, which registers it — so that component
- * may be rendered from here and from nowhere in the route tree, which both mounts share.
- * `remote.guard.test.tsx` asserts the negative, `main.pwa.test.tsx` the positive.
- *
- * It renders as a SIBLING of the router, outside `.ct-app`, hence the token mixin in
- * `styles/_tokens.scss` rather than tokens declared on that element.
+ * `pwa/register` may therefore be imported from here and from nowhere in the route tree,
+ * which both mounts share. `remote.guard.test.tsx` asserts the negative,
+ * `main.pwa.test.tsx` the positive.
  */
 const container = document.getElementById('root');
 if (!container) throw new Error('#root is missing from index.html');
+
+registerServiceWorker();
 
 // One `Auth` for the router context and for React, so the guard and the nav can never
 // disagree about who is signed in. No token ever leaves this closure.
@@ -41,7 +40,6 @@ createRoot(container, {
     <AuthProvider auth={auth}>
       <QueryClientProvider client={queryClient}>
         <RouterProvider router={router} />
-        <UpdateBar />
       </QueryClientProvider>
     </AuthProvider>
   </StrictMode>,

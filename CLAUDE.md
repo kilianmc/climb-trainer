@@ -224,7 +224,8 @@ secrets are read in `server/settings.py` from unprefixed env vars.
 
 ⚠️ **The one build-time value this repo injects is deliberately NOT a `VITE_*` var.**
 `__BUILD_ID__` — the `define` in `web/vite.config.ts`, read through `web/src/buildId.ts` —
-keys `GET /api/library?v=…`. It goes through `define` precisely so that **nothing has to be
+keys the two cached reference reads, `GET /api/library?v=…` and `GET /api/vocabulary?v=…`. It
+goes through `define` precisely so that **nothing has to be
 configured in the Vercel project** for a deploy to bust that cache: a build id that depends on
 somebody remembering to set an env var is a build id that eventually stops changing, and a
 year-long `immutable` then pins a stale exercise library. The value is a public deploy
@@ -354,8 +355,7 @@ or Query defaults live. `main.tsx` gives it `createBrowserHistory`, `remote.tsx`
 - **Styles are split by mount**, which is what keeps the `.ct-app` rule honest:
   `styles/app.scss` is imported from `routes/__root.tsx` (so both mounts get it, and it
   contains zero `:root`/`body` rules), `styles/global.scss` only from `main.tsx` (the
-  document reset, which must never reach the shell), and `styles/update-bar.scss` only from
-  `ui/UpdateBar.tsx`, which only `main.tsx` imports. **Since PR #7 this is asserted on the BUILT
+  document reset, which must never reach the shell). **Since PR #7 this is asserted on the BUILT
   stylesheet the shell loads, by `src/distContract.test.ts`** — not on the sources. The
   distinction is the whole point and was measured: a per-source-file scan with per-file
   exemptions stayed green while one added line, `@use 'global';` in `app.scss`, emitted
@@ -371,11 +371,10 @@ A service worker registered from the federated entry would be **scoped to
 kilianmc.com** and start intercepting the production portfolio's requests. Low
 likelihood, severe blast radius. **SW registration lives in `main.tsx` only.**
 
-It constrains *component placement*, not just entry files: `pwa/updatePrompt.ts` calls
-`registerSW` at module scope, so **anything that imports it — `ui/UpdateBar.tsx` included —
-may be rendered from `main.tsx` and from nowhere in the route tree**, which `remote.tsx`
-shares. Putting the update bar in `__root.tsx` is the realistic mistake; it looks like
-chrome, and chrome lives in the root route.
+It constrains *imports*, not just entry files: `pwa/register.ts` calls `registerSW`, so **that
+module, and anything that imports it, may be reached from `main.tsx` and from nowhere in the
+route tree**, which `remote.tsx` shares. A component in `__root.tsx` pulling it in is the
+realistic mistake; chrome looks like it belongs in the root route.
 
 Three tests hold the line, and they need each other:
 
@@ -598,10 +597,9 @@ npm run codegen:api   # uv run python -m server.openapi_schema | node web/script
 The registration lives in `main.tsx` only — see the service-worker rule above for the two tests
 that enforce it. What follows is the reasoning that is not visible in the config:
 
-- **`registerType: 'prompt'`, not `autoUpdate`.** `autoUpdate` calls `skipWaiting`, which
-  **deletes the outdated precache as the new worker activates** — so a tab left open across a
-  deploy then 404s on the next lazily-loaded route chunk, and later it could swap code under a
-  session player mid-set. The visitor takes the update, via `ui/UpdateBar.tsx`.
+- **`registerType: 'autoUpdate'`.** ⚠️ The plugin only adds `skipWaiting` + `clientsClaim` when
+  `injectRegister` is `auto` or nullish (`vite-plugin-pwa@1.3.0`, `dist/index.js`); setting it to
+  `false` or `'script'` silently drops both.
 - **`injectRegister: null`.** We register from `main.tsx`, and the alternative is blocked
   anyway: the production document CSP is `script-src 'self'` with no nonce, so the `'inline'`
   strategy's inline `<script>` would never execute. `null` also means the plugin injects nothing
@@ -625,7 +623,7 @@ that enforce it. What follows is the reasoning that is not visible in the config
   through the share scope. Precaching them is what makes the standalone app work offline at all.
   (An earlier note here said the standalone app never loads `remoteEntry.js`. It was wrong.)
 - **The four decisions above are asserted, not just recorded.** `src/pwaContract.test.ts` reads
-  `vite.config.ts` off disk (modelled on `mf-contract.test.ts`) and fails on `autoUpdate`, on a
+  `vite.config.ts` off disk (modelled on `mf-contract.test.ts`) and fails on `prompt`, on a
   non-`null` `injectRegister`, on a missing `/api` denylist, and on the *presence of the token*
   `runtimeCaching` anywhere. Before it existed, adding `runtimeCaching` for `/api` passed the whole
   gate. It strips comments first, because this config explains those rules in prose.
@@ -642,12 +640,6 @@ that enforce it. What follows is the reasoning that is not visible in the config
     production build**, for a script that runs when the logo changes. Dependabot alerts cover
     devDependencies and this repo is at zero; `npm audit` is 0 with the pinned-`npx` form. Do not
     "fix" the config file by adding the import back.
-- **The update prompt must be dismissable, and its Reload needs an explicit fallback.** Both are
-  bugs that were shipped and measured, both recorded in `pwa/updatePrompt.ts`: the bar is `fixed`
-  at the bottom, so with no dismiss it permanently covered the bottom-anchored primary action; and
-  prompt mode's reload is gated on `event.isUpdate`, which is false on an **uncontrolled** client
-  (first visit, hard reload), where tapping Reload otherwise activates the worker and does nothing
-  visible. `global.scss` reserves the bar's height with `body:has(.ct-update-bar__panel)`.
 - **No `orientation` in the manifest.** The app is used in landscape on a bouldering mat as
   often as in portrait.
 - **`vite preview` proxies `/api` too**, mirroring `server`. Production serves `/api` from this
@@ -772,7 +764,8 @@ recorded it as a side effect, batch it.**
   Auth gates who can cause a cache **MISS**, and a miss is an origin read and therefore a Neon
   wake — so an unauthenticated library endpoint would hand a bot exactly the wake that
   `POST /api/auth/demo` was rewritten to remove. It is deliberately not in `PUBLIC_ROUTES`.
-  ⚠️ `GET /api/vocabulary` deliberately keeps `private, max-age=3600`. **The two rules differ
+  ⚠️ `GET /api/vocabulary` carries the same `?v=` key but keeps `private, max-age=3600`.
+  **The two headers differ
   on purpose** — see that endpoint's own bullet under "Onboarding and the profile" for why it
   has no business in a shared cache; do not "harmonise" them.
 - **Two connection strings, and this bullet is their one explanation** (every other mention in
@@ -2517,7 +2510,6 @@ Two notes for whoever touches it:
 | `_landing.scss` | the landing page's photographic bands, detail split and icon rules |
 | `app.scss` | the `@use` entry and the `.ct-app` root; imported from `routes/__root.tsx` |
 | `global.scss` | the document reset. `main.tsx` only, and the ONLY file allowed `:root` |
-| `update-bar.scss` | the PWA update bar. `ui/UpdateBar.tsx` only, i.e. standalone only |
 
 Guiding principle, in Kilian's words, and still the tie-breaker: **"we prefer useful than
 looking pretty."** When a visual flourish and legibility disagree, legibility wins without
@@ -2583,7 +2575,7 @@ lighting.
   **1.09:1** — `(0.0056 + 0.05) / 0.05`, with fully opaque pure black. A blurred shadow at a
   realistic peak alpha lands at 1.04–1.06:1. The first draft of PR #7 shipped a "reduced dark
   scale" that measured 1.05–1.07:1: three GPU-costing steps rendering as nothing. Dark elevation
-  therefore rests on the surface scale and the hairlines alone, and the floating update bar carries
+  therefore rests on the surface scale and the hairlines alone, and a floating surface leans on
   `--ct-border-strong` (4.2:1 non-text) instead. **If you re-add dark shadows, measure them
   first** — and note the only way to make them work is to lift `--ct-bg`, which re-opens every
   dark contrast pair.
@@ -2609,20 +2601,20 @@ lighting.
   federated mount**, because the route tree is shared. **PR #15a closed that deferral with
   neither** — see "The full-height chain"; anything needing a real bottom bar becomes the last row
   of its own full-height grid. `env(safe-area-inset-*)` under `max()` floors is in use on
-  `.ct-app`'s own padding and on the update bar, which may be `fixed` because `main.tsx` alone
-  renders it. `viewport-fit=cover` is already set in `index.html`.
+  `.ct-app`'s own padding. `viewport-fit=cover` is already set in `index.html`.
 - **⚠️ No `position: fixed` and no viewport units anywhere the route tree can reach.** Both mounts
   share that tree, and in the federated mount both resolve against **kilianmc.com's viewport** — a
-  `fixed` element would float over the portfolio's own chrome. Both are allowed only in the
-  `main.tsx`-only subtree, which is why the PWA update bar may use `fixed` and `_chrome.scss` may
-  not. Asserted on the built remote stylesheet by `distContract.test.ts`; inline
+  `fixed` element would float over the portfolio's own chrome. Both would be allowed only in the
+  `main.tsx`-only subtree, and **no stylesheet uses either today**. Asserted on the built remote
+  stylesheet by `distContract.test.ts`; inline
   `style={{ position: 'fixed' }}` in a component never becomes CSS, so `designGuard.test.ts` scans
   the `.tsx` sources for that separately.
   ⚠️ **The viewport-unit half of that rule had NO detector at all until PR #9** — three guards
   covered `position: fixed` from two directions and nothing looked for `vh`/`vw`/`dvh`/`svh`.
-  `designGuard.test.ts` now greps every stylesheet for them, with **no exemption**: neither
-  `main.tsx`-only sheet wants one today, and a dead exemption is worse than none (add one, with a
-  control, the day the update bar needs `100dvh`). **The `.tsx` sources are scanned too**, with
+  `designGuard.test.ts` now greps every stylesheet for them, with **no exemption**: the one
+  `main.tsx`-only sheet wants none, and a dead exemption is worse than none (add one, with a
+  control, the day something in that subtree needs `100dvh`). **The `.tsx` sources are scanned
+  too**, with
   `sizes="…"` stripped first: an inline `style={{ blockSize: '100vh' }}` never becomes CSS and
   would otherwise pass the whole gate, while the two `sizes="100vw"` hints on `<LandingPicture>`
   are resource selection — they can fetch one rung too many in the shell, they can never move a
@@ -2680,8 +2672,8 @@ branching, and unlike the `50% - 50vw` idiom it cannot produce a horizontal scro
 - **`img-src 'self' data:` means every image is bundled and every icon is inline SVG markup.**
   `ui/icons.tsx` — never `<img src="…svg">`, which is both a blocked external fetch and a glyph
   that cannot inherit `currentColor`. Every icon is `aria-hidden` + `focusable="false"` and has a
-  text label beside it; icon-only controls are deferred to the session player, per the same
-  reasoning as the update bar's "Later" button.
+  text label beside it; icon-only controls are deferred to the session player, because a word
+  carries an accessible name and a hittable width without an `aria-label`.
 - **`src/publicUrl.ts` is the image half of the `web/src/api/client.ts` bug.** A bare
   `src="/landing/x.avif"` resolves against the DOCUMENT, which in the federated mount is
   kilianmc.com — every photograph 404s there while working perfectly standalone. So the origin
@@ -2746,11 +2738,11 @@ Both of these are structural, not stylistic. Do not "simplify" either.
   DOM order — which matters because DOM order here is frozen by tests.
 - **Tokens live on `.ct-app`, never `:root`** — in the federated mount `app.scss` is injected
   into kilianmc.com's document.
-  - **Why a Sass mixin rather than a rule:** the PWA update bar is rendered from `main.tsx`
-    as a *sibling* of the router (it must be — see the service-worker rule), so it sits
-    outside `.ct-app` and inherits nothing. `_tokens.scss` therefore exposes
-    `@mixin declare`, included by both `.ct-app` and `.ct-update-bar`. A second `.ct-app`
-    element is **not** the fix: that element's padding, max-width and background would apply.
+  - **Why a Sass mixin rather than a rule:** `global.scss` paints the standalone document
+    canvas from `body`, which sits outside `.ct-app` and inherits nothing. `_tokens.scss`
+    therefore exposes `@mixin declare`, included by `.ct-app` and by that `body` rule. A second
+    `.ct-app` element is **not** the fix: that element's padding, max-width and background
+    would apply.
 
 ### The four screen sizes are NAMED, and they are container sizes
 
@@ -2843,8 +2835,8 @@ changing the OS scheme no longer moves the app.
 light values plus a `@media (prefers-color-scheme: dark)` block. **A media query carries no
 specificity**, so an attribute selector on the same element beats both blocks whatever the source
 order — which is the entire mechanism. `overrides` is therefore a *separate* mixin from `declare`
-and is included by `.ct-app` only, never by `.ct-update-bar`: nothing sets the attribute on the
-update bar, which is rendered from `main.tsx` outside the router. The attribute goes on `.ct-app`
+and is included by `.ct-app` only, never by `global.scss`'s `body`: nothing sets the attribute on
+the document canvas. The attribute goes on `.ct-app`
 and nowhere else — not `<html>`, not `<body>`, which belong to kilianmc.com in the federated
 mount. `global.scss` bridges the standalone document canvas with `body:has(.ct-app[data-theme…])`,
 which is legal *there* because that file never ships to the shell.
@@ -3351,9 +3343,11 @@ weakness**, the editor became sections rather than a second wizard, and there is
   (`climbing_aspects`, `equipment`, `injury_areas`). The cost is six short arrays in every
   response and zero database time, and the six assertions are worth that. Say only that.
 - **Caching on that endpoint is `private, max-age=3600`, not the library rule's
-  `public, immutable`.** It is user-independent and only a deploy can change it, but there is
-  no build id in the URL (so a year-long immutable cache would pin a stale vocabulary) and it
-  requires a bearer token (so it has no business in a shared CDN cache). React Query holds it
+  `public, immutable`.** It is user-independent and only a deploy can change it, but it requires
+  a bearer token, so it has no business in a shared CDN cache. It carries the same
+  `?v=<buildId>` key as `/api/library`, so a new bundle asks a new URL and cannot be answered
+  out of an entry cached before its own deploy — which is what the browser cache did to PR #94's
+  new `plan_goal` and `phase_guide` fields. React Query holds it
   at `staleTime: Infinity` for the rest of the session. ⚠️ **There is no `Vary:
   Authorization`, and that is only safe while the body is user-independent** — a browser
   cache keys on the URL alone, so two accounts sharing a browser share the entry. The moment
@@ -3919,8 +3913,7 @@ branching and nothing read off `window`. `_session.scss` gates its half behind
 - ⚠️ **A plain `min-block-size: 100%` chain COLLAPSES TO ZERO**, because a percentage block-size
   resolves to nothing against an auto-height ancestor. `body` and `#root` are **flexed** instead: a
   flex item's resolved main size is definite for its children's percentages, and unlike a hard
-  `block-size: 100%` on `body` it does not force a permanent scrollbar once the update bar reserves
-  its strip.
+  `block-size: 100%` on `body` it does not force a permanent scrollbar.
 - **`_layout.scss`'s `align-content: start` became load-bearing at the same moment.** A grid's
   default is `stretch`, so once `.ct-app` fills the document its implicit `auto` rows share out the
   leftover space and the nav row grows to half the window on a short screen. A no-op wherever the

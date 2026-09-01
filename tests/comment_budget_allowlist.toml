@@ -6483,39 +6483,11 @@ limit = 4
 reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
 
 [[exception]]
-path = "web/src/pwa/updatePrompt.ts"
-kind = "block"
-anchor = "service worker registration and"
-limit = 13
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
-
-[[exception]]
-path = "web/src/pwa/updatePrompt.ts"
-kind = "block"
-anchor = "sampled at module scope which is"
-limit = 4
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
-
-[[exception]]
-path = "web/src/pwa/updatePrompt.ts"
-kind = "block"
-anchor = "activates the waiting worker then"
-limit = 12
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
-
-[[exception]]
-path = "web/src/pwa/updatePrompt.ts"
-kind = "block"
-anchor = "closes the prompt without updating"
-limit = 6
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
-
-[[exception]]
 path = "web/src/pwaContract.test.ts"
 kind = "block"
-anchor = "four pwa decisions claude md records"
+anchor = "four pwa properties claude md records"
 limit = 20
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
+reason = "Four config properties whose breach is silent; each bullet names the failure the setting prevents, which is the only place that mapping is written down."
 
 [[exception]]
 path = "web/src/registerSubmit.test.tsx"
@@ -7397,13 +7369,6 @@ path = "web/src/ui/ThemeSwitch.tsx"
 kind = "block"
 anchor = "light dark as a sun and a moon"
 limit = 21
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
-
-[[exception]]
-path = "web/src/ui/UpdateBar.tsx"
-kind = "block"
-anchor = "the registertype prompt half of"
-limit = 14
 reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
 
 [[exception]]

@@ -57,7 +57,7 @@ it('registers a service worker from the standalone entry', async () => {
 
 it('positive control: the spy is what reports it, not the import succeeding', async () => {
   // `import('./main')` resolving proves nothing on its own — the assertion above would read the
-  // same if `UpdateBar` were rendered but `registerSW` never called. So: a fresh module graph with
+  // same if `pwa/register` were imported but `registerSW` never called. So: a fresh module graph with
   // the spy in place must go from zero calls to at least one, and only because of the import.
   expect(register).not.toHaveBeenCalled();
 
