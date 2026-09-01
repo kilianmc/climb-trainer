@@ -810,17 +810,7 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    """For local and CI use only.
-
-    **Never run against production** — `migrate.yml` deliberately offers no `downgrade`
-    action, and recovery there is a Neon branch restore. This body drops real training
-    history, which is precisely why it must not be one dropdown click away.
-
-    Indexes first (a table cannot be dropped while an index on it is being named), then
-    tables in exact reverse creation order so no foreign key is ever left dangling, then
-    `grade`'s added constraint, then the enum types last: a type cannot go while a column
-    still uses it.
-    """
+    """For local and CI use only — never production; recovery is a Neon branch restore."""
     op.drop_index("ix_ascent_tag_link_ascent_tag_id", table_name="ascent_tag_link")
     op.drop_index("ix_logged_set_prescribed_set_id", table_name="logged_set")
     op.drop_index("ix_logged_set_note_tsv", table_name="logged_set")

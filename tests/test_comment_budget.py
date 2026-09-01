@@ -155,10 +155,6 @@ def _candidates() -> list[Path]:
                 continue
             if path.suffix not in SCOPED_SUFFIXES:
                 continue
-            # A shipped revision is frozen history: its prose describes the day it ran and
-            # rewriting it would be a lie. `migrations/env.py` is live code and stays in scope.
-            if path.parent == ROOT / "migrations" / "versions":
-                continue
             found.append(path)
     return found
 
@@ -681,11 +677,12 @@ def test_exactly_the_known_generated_files_are_skipped() -> None:
     )
 
 
-def test_shipped_migrations_are_out_of_scope_but_migration_env_is_not() -> None:
-    """The one wholesale path skip, and the live file inside it that must NOT inherit it."""
+def test_every_migration_revision_is_in_scope_alongside_migration_env() -> None:
+    """There is no wholesale path skip left: a future revision is born budgeted, not exempt."""
     scoped = {_relative(path) for path in scoped_files()}
     assert "migrations/env.py" in scoped, "migrations/env.py is live code and stays in scope"
-    assert not any(path.startswith("migrations/versions/") for path in scoped)
+    revisions = sorted(path for path in scoped if path.startswith("migrations/versions/"))
+    assert len(revisions) >= 8, f"only {len(revisions)} revision(s) in scope: {revisions}"
 
 
 def test_the_allowlist_declares_only_known_kinds(allowlist: list[Entry]) -> None:

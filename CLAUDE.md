@@ -840,6 +840,11 @@ changing an argument; do not restate it here.
   migration must never race a deploy, and deploys here are automatic while migrations
   are not.
 - **Expand → deploy → contract**, always, for the same reason.
+- **Two revision-shape facts are a GUARD, not prose** (`tests/test_migration_revision_shape.py`):
+  a CHECK constraint name must not reach an `op.*` call pre-derived, because `ck` is the one
+  `NAMING_CONVENTION` key that interpolates `%(constraint_name)s` and Alembic compares CHECK
+  constraints by name — pass the bare suffix or `op.f()` — and every enum must be built as
+  `postgresql.ENUM(..., create_type=False)`, a parameter `sa.Enum` accepts and silently discards.
 - **Never migrate at startup.** Note that there is **no startup revision check today** —
   nothing in `server/` reads `alembic_version`, so a schema/code mismatch is not detected
   or warned about at boot. If one is ever added it must only **READ** and **warn**, never
@@ -2376,9 +2381,20 @@ wire-contract docstring **20** (FastAPI ships those to API consumers, who cannot
 instead). **`.github/`'s workflow YAML is in scope on the same two tiers** — a FILE HEADER
 block reads as a module docstring (**10**) and every other own-line `#` run as an inline run
 (**2**) — which is what closes the gap that let 15- and 28-line runs grow in `ci.yml` and
-`migrate.yml`. Over-cap is allowed **only** with a row in `tests/comment_budget_allowlist.toml`
-naming what the length buys; that file is the register of exceptions and its `BASELINE_RATCHET`
-may only ever go down.
+`migrate.yml`, and **`migrations/versions/` is in scope too** — the wholesale skip that treated a
+shipped revision as frozen history was deleted once those revisions carried no prose, so a future
+revision is born budgeted. Over-cap is allowed **only** with a row in
+`tests/comment_budget_allowlist.toml` naming what the length buys; that file is the register of
+exceptions, and its `BASELINE_RATCHET` may only ever go down and may not sit more than 25 above
+the real count.
+
+**⚠️ The un-reviewed `BASELINE` rows are on a DEADLINE, not merely frozen** —
+`BASELINE_DEADLINE` is four dated milestones stepping the permitted count down to **zero**,
+green until each date and hard red after it until the count fits. **Read the constants for the
+dates, not this sentence.** Editing a target cannot buy silence: `MILESTONE_MIN_CUT` keeps every
+target at least 150 below the ratchet, which is more than the ratchet's own 25 of permitted
+slack, so raising a target would mean raising the ratchet further than its own arm allows. The
+only move left is trimming comments.
 
 **After every PR, re-check the `CLAUDE.md` section covering what you touched** — confirm it
 still holds, or update it in the same PR. `.github/pull_request_template.md` carries the
