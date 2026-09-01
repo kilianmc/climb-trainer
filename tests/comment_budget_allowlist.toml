@@ -15,27 +15,6 @@
 # the comment is the intended way to interact with this file.
 
 [[exception]]
-path = "migrations/env.py"
-kind = "docstring"
-anchor = "migrations.env"
-limit = 26
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
-
-[[exception]]
-path = "migrations/env.py"
-kind = "docstring"
-anchor = "migrations.env._require_url"
-limit = 9
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
-
-[[exception]]
-path = "migrations/env.py"
-kind = "hash_run"
-anchor = "note on compare type true set in"
-limit = 5
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
-
-[[exception]]
 path = "server/admin.py"
 kind = "docstring"
 anchor = "server.admin"
@@ -1452,212 +1431,72 @@ reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
 [[exception]]
 path = "server/models.py"
 kind = "hash_run"
-anchor = "native postgres enum closed vocabularies"
-limit = 5
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
-
-[[exception]]
-path = "server/models.py"
-kind = "hash_run"
 anchor = "the rest of the closed vocabularies"
 limit = 6
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
+reason = "Names the SQLAlchemy default that `values_callable` exists to defeat - without it Postgres stores 'MAX_HANG' while every query, payload and TypeScript union says 'max_hang' - and why a shared helper was rejected as exactly as easy to bypass."
 
 [[exception]]
 path = "server/models.py"
 kind = "hash_run"
 anchor = "sa text true sa text false never"
 limit = 7
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
-
-[[exception]]
-path = "server/models.py"
-kind = "hash_run"
-anchor = "kilograms to two decimals added"
-limit = 4
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
-
-[[exception]]
-path = "server/models.py"
-kind = "hash_run"
-anchor = "free text bounds they are here"
-limit = 3
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
-
-[[exception]]
-path = "server/models.py"
-kind = "hash_run"
-anchor = "exercise substitution hint revision"
-limit = 3
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
+reason = "A trap rather than a bug: `func.true()` compiles to a non-Postgres function that only Alembic's renderer reads today, so a tempting `create_all()` fixture would fail on three columns for a reason that looks nothing like the cause."
 
 [[exception]]
 path = "server/models.py"
 kind = "docstring"
 anchor = "server.models.GradeSystem"
 limit = 21
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
-
-[[exception]]
-path = "server/models.py"
-kind = "docstring"
-anchor = "server.models.Grade"
-limit = 7
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
-
-[[exception]]
-path = "server/models.py"
-kind = "hash_run"
-anchor = "redundant next to the primary key"
-limit = 5
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
+reason = "Records the issue #55 latent bug a fresh-database CI can never see: serials follow declaration order in CI but not in dev or production, so ordering by `id` renders a newly inserted system last for real users only."
 
 [[exception]]
 path = "server/models.py"
 kind = "docstring"
 anchor = "server.models.AppUser"
 limit = 15
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
-
-[[exception]]
-path = "server/models.py"
-kind = "hash_run"
-anchor = "nullable because the demo account"
-limit = 4
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
-
-[[exception]]
-path = "server/models.py"
-kind = "hash_run"
-anchor = "mapped datetime picks up timestamptz"
-limit = 3
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
+reason = "Two facts from outside the code: `citext` is not guaranteed on Neon and enabling an extension is privileged, so case-insensitivity is an edge invariant; and the NULL `password_hash` is what makes the demo account structurally unloggable."
 
 [[exception]]
 path = "server/models.py"
 kind = "docstring"
 anchor = "server.models.AuthSession"
 limit = 15
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
+reason = "Explains refresh-token reuse detection and why revoking the whole family - logging the legitimate holder out too - is the correct trade. Nothing in the columns conveys that a second presentation means the token was captured."
 
 [[exception]]
 path = "server/models.py"
 kind = "docstring"
 anchor = "server.models.Invite"
 limit = 21
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
+reason = "Says why sha256 beats argon2 for 128 bits of CSPRNG output, why uses/max_uses is a counter rather than a boolean `used` flag, and how the row lock and the CHECK divide the limit between application and database."
 
 [[exception]]
 path = "server/models.py"
 kind = "docstring"
 anchor = "server.models.RateLimit"
 limit = 10
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
-
-[[exception]]
-path = "server/models.py"
-kind = "hash_run"
-anchor = "reference the exercise library"
-limit = 3
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
-
-[[exception]]
-path = "server/models.py"
-kind = "docstring"
-anchor = "server.models.ClimbingAspect"
-limit = 6
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
-
-[[exception]]
-path = "server/models.py"
-kind = "docstring"
-anchor = "server.models.Equipment"
-limit = 6
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
-
-[[exception]]
-path = "server/models.py"
-kind = "docstring"
-anchor = "server.models.InjuryArea"
-limit = 6
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
-
-[[exception]]
-path = "server/models.py"
-kind = "docstring"
-anchor = "server.models.AscentTag"
-limit = 10
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
+reason = "Explains why the limiter lives in Postgres at all: a serverless function is frozen between requests, so an in-process counter would reset on every cold start and be per-instance even when warm. There is no Redis here."
 
 [[exception]]
 path = "server/models.py"
 kind = "docstring"
 anchor = "server.models.Exercise"
 limit = 21
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
-
-[[exception]]
-path = "server/models.py"
-kind = "hash_run"
-anchor = "null discipline agnostic a hangboard"
-limit = 3
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
-
-[[exception]]
-path = "server/models.py"
-kind = "hash_run"
-anchor = "no dumbbell a packed backpack lives"
-limit = 6
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
+reason = "Carries two rejected designs: a single `parent_id` whose inferred direction is wrong at every branch point, and the `energy_system` column that is a product question rather than an implementation detail."
 
 [[exception]]
 path = "server/models.py"
 kind = "hash_run"
 anchor = "logical retirement is the fallback"
 limit = 11
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
-
-[[exception]]
-path = "server/models.py"
-kind = "docstring"
-anchor = "server.models.ExerciseEquipment"
-limit = 6
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
-
-[[exception]]
-path = "server/models.py"
-kind = "hash_run"
-anchor = "the composite pk leads with exercise"
-limit = 6
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
-
-[[exception]]
-path = "server/models.py"
-kind = "docstring"
-anchor = "server.models.ExerciseContraindication"
-limit = 7
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
+reason = "Kilian's call that an exercise he judged weak is DELETED rather than hidden, plus the NO ACTION that makes Postgres refuse the delete instead of cascading into somebody's training diary. Neither is visible from the column."
 
 [[exception]]
 path = "server/models.py"
 kind = "docstring"
 anchor = "server.models.PrescriptionTemplate"
 limit = 14
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
-
-[[exception]]
-path = "server/models.py"
-kind = "hash_run"
-anchor = "reps or seconds depending on the"
-limit = 3
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
-
-[[exception]]
-path = "server/models.py"
-kind = "hash_run"
-anchor = "the user s profile"
-limit = 3
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
+reason = "Explains the deliberately absent `intensity_anchor` vocabulary - what a percentage is of is already derivable from `protocol_kind` - and names the one condition under which adding it would be right."
 
 [[exception]]
 path = "server/models.py"
@@ -1669,79 +1508,30 @@ reason = "Three nullable columns where NULL means unanswered and must never take
 [[exception]]
 path = "server/models.py"
 kind = "hash_run"
-anchor = "the grade being trained for null"
-limit = 3
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
-
-[[exception]]
-path = "server/models.py"
-kind = "hash_run"
-anchor = "what they climb now on the same"
-limit = 8
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
-
-[[exception]]
-path = "server/models.py"
-kind = "hash_run"
-anchor = "the headline answer about their"
-limit = 3
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
-
-[[exception]]
-path = "server/models.py"
-kind = "hash_run"
-anchor = "free text and the eleventh row"
-limit = 3
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
-
-[[exception]]
-path = "server/models.py"
-kind = "hash_run"
-anchor = "equipment reviewed at is retired"
-limit = 7
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
-
-[[exception]]
-path = "server/models.py"
-kind = "hash_run"
-anchor = "7 bits monday bit 0 0 is a legal"
-limit = 3
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
-
-[[exception]]
-path = "server/models.py"
-kind = "hash_run"
 anchor = "one aspect cannot be both the strongest"
 limit = 4
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
+reason = "Postgres behaviour: `NULL <> NULL` is NULL, so the `<>` spelling would pass this CHECK vacuously in exactly the state these columns spend most of their life in. `IS DISTINCT FROM` is the whole reason it holds."
 
 [[exception]]
 path = "server/models.py"
 kind = "docstring"
 anchor = "server.models.UserAspectRating"
 limit = 24
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
+reason = "Records that issue #54 demoted these eight sliders from the generator's only picture of a weakness to optional detail, and why the profile's single deliberate answer is the one to trust instead."
 
 [[exception]]
 path = "server/models.py"
 kind = "docstring"
 anchor = "server.models.UserInjury"
 limit = 8
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
+reason = "Says why a row per injury beats a boolean per area: 'resolved in March' is information the generator uses to reintroduce withheld exercises, and a flag that gets flipped back loses it."
 
 [[exception]]
 path = "server/models.py"
 kind = "hash_run"
 anchor = "at most one open injury per area"
 limit = 10
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
-
-[[exception]]
-path = "server/models.py"
-kind = "hash_run"
-anchor = "the plan tree prescription never"
-limit = 8
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
+reason = "Names the real read-then-insert race in `PATCH /api/profile` that this partial unique index closes, and why resolved rows sit outside the predicate. Postgres has no partial unique constraint, only an index."
 
 [[exception]]
 path = "server/models.py"
@@ -1755,126 +1545,70 @@ path = "server/models.py"
 kind = "hash_run"
 anchor = "at most one active plan per user"
 limit = 4
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
-
-[[exception]]
-path = "server/models.py"
-kind = "docstring"
-anchor = "server.models.Mesocycle"
-limit = 7
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
+reason = "The `text()` versus `func.text()` trap: the wrong spelling type-checks, lints and passes every local test, then fails against real Postgres. Nothing in the code or the suite reveals that."
 
 [[exception]]
 path = "server/models.py"
 kind = "docstring"
 anchor = "server.models.Microcycle"
 limit = 21
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
+reason = "Explains why `plan_id` is carried down from the parent and how the composite foreign key makes that denormalisation safe rather than merely intended, plus why a second FK straight to `plan` is refused."
 
 [[exception]]
 path = "server/models.py"
 kind = "hash_run"
 anchor = "required by the composite cascade"
 limit = 6
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
+reason = "Corrects the belief that the two unique constraints already cover this foreign key: both lead with other columns, so `mesocycle_id` has no usable index while deleting a plan cascades through every mesocycle in it."
 
 [[exception]]
 path = "server/models.py"
 kind = "docstring"
 anchor = "server.models.PlannedSession"
 limit = 16
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
+reason = "Says why adherence is a query rather than a constraint: the rule is product logic that will be tuned, and a schema that hard-coded it would have to be migrated to tune it."
 
 [[exception]]
 path = "server/models.py"
 kind = "docstring"
 anchor = "server.models.SessionBlock"
 limit = 16
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
-
-[[exception]]
-path = "server/models.py"
-kind = "hash_run"
-anchor = "three distinct rests live in this"
-limit = 6
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
-
-[[exception]]
-path = "server/models.py"
-kind = "docstring"
-anchor = "server.models.PrescribedSet"
-limit = 11
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
-
-[[exception]]
-path = "server/models.py"
-kind = "hash_run"
-anchor = "matches prescription template intensity"
-limit = 3
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
-
-[[exception]]
-path = "server/models.py"
-kind = "hash_run"
-anchor = "logging kept strictly distinct"
-limit = 3
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
+reason = "Records a known, accepted asymmetry: `aspect_key` is read live while `protocol_kind` is snapshotted, so re-authoring an exercise's aspect changes what an already-persisted plan says a block trains."
 
 [[exception]]
 path = "server/models.py"
 kind = "docstring"
 anchor = "server.models.Activity"
 limit = 38
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
-
-[[exception]]
-path = "server/models.py"
-kind = "hash_run"
-anchor = "the training day which is what"
-limit = 3
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
+reason = "Explains why the supertype exists before there is any data to migrate, and the Postgres fact that pins `srpe_load` to this table: `GENERATED ... STORED` can only reference columns of its own table."
 
 [[exception]]
 path = "server/models.py"
 kind = "hash_run"
 anchor = "session rpe x minutes the standard"
 limit = 12
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
+reason = "The `rpe::integer` cast: without it `int2 * int2` raises 'smallint out of range' before the widening cast, and on the outbox path that payload retries forever and can never succeed."
 
 [[exception]]
 path = "server/models.py"
 kind = "hash_run"
 anchor = "this user s training newest first"
 limit = 4
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
+reason = "Two facts a reader would otherwise reverse: a two-column btree is scanned backwards at the same cost, and an explicit DESC would make this an expression index that Alembic compares poorly for no gain."
 
 [[exception]]
 path = "server/models.py"
 kind = "hash_run"
 anchor = "required by the on delete set null on planned"
 limit = 25
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
-
-[[exception]]
-path = "server/models.py"
-kind = "hash_run"
-anchor = "1 1440 one minute to twenty four"
-limit = 4
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
+reason = "The repo's whole index-the-referencing-side rule, in the one place it is stated: Postgres does not index it for you, an omission is invisible to CI and billed as Neon awake time, and the NO ACTION keys are deliberately unindexed."
 
 [[exception]]
 path = "server/models.py"
 kind = "docstring"
 anchor = "server.models.LoggedSession"
 limit = 27
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
-
-[[exception]]
-path = "server/models.py"
-kind = "hash_run"
-anchor = "free text search over session notes"
-limit = 5
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
+reason = "Says why SQLAlchemy joined-table inheritance was rejected - four of the five activity kinds have no subclass - and records that an earlier count of the free-text fields was wrong and which two it left out."
 
 [[exception]]
 path = "server/models.py"
@@ -1888,49 +1622,21 @@ path = "server/models.py"
 kind = "hash_run"
 anchor = "required by the on delete set null on prescribed"
 limit = 4
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
+reason = "Gives the magnitude that makes this the worst of the four to omit: abandoning a 24-week plan deletes ~1000 prescribed sets, each of which would otherwise sequentially scan the largest table in the app."
 
 [[exception]]
 path = "server/models.py"
 kind = "docstring"
 anchor = "server.models.Ascent"
 limit = 31
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
-
-[[exception]]
-path = "server/models.py"
-kind = "hash_run"
-anchor = "the route or problem name free"
-limit = 3
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
-
-[[exception]]
-path = "server/models.py"
-kind = "hash_run"
-anchor = "no single column foreignkey both"
-limit = 3
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
-
-[[exception]]
-path = "server/models.py"
-kind = "hash_run"
-anchor = "required by the on delete set null above"
-limit = 4
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
-
-[[exception]]
-path = "server/models.py"
-kind = "docstring"
-anchor = "server.models.AscentTagLink"
-limit = 7
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
+reason = "Explains why the ordinal is stored twice and how the composite FK makes the copy safe: a transposed bulk-insert argument would otherwise file a French rope send in the boulder pyramid, silently and unrecoverably."
 
 [[exception]]
 path = "server/models.py"
 kind = "docstring"
 anchor = "server.models.JournalEntry"
 limit = 31
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
+reason = "The reasoning behind the no-goal-weight rule - climbing's documented disordered-eating problem - which the guard test can enforce but not explain, and which a well-meaning change would otherwise reverse."
 
 [[exception]]
 path = "server/openapi_schema.py"
@@ -1958,147 +1664,63 @@ path = "server/plans/routes.py"
 kind = "docstring"
 anchor = "server.plans.routes"
 limit = 38
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
+reason = "This file's decision register: why a POST serves a read (the `/api/library` CDN trap read backwards), why `/preview` is the only demo-exempt route of the three, and where each of the six refusals is raised."
 
 [[exception]]
 path = "server/plans/routes.py"
 kind = "hash_run"
 anchor = "a security decision not cache tuning"
 limit = 11
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
-
-[[exception]]
-path = "server/plans/routes.py"
-kind = "hash_run"
-anchor = "how far either side of today s"
-limit = 8
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
+reason = "A shared-cache entry here would hand a stranger a picture of somebody's open injuries and no behavioural test could see it happen; the contrast with `/api/library`'s immutable caching is what stops the two rules being merged."
 
 [[exception]]
 path = "server/plans/routes.py"
 kind = "hash_run"
 anchor = "the full 17 row vocabulary kilian"
 limit = 8
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
+reason = "Kilian's decision 3 (2026-08-24): every real user has zero `user_equipment` rows since issue #54 deleted the step, so reading that table would thin every plan to its bodyweight options. Names the one line that changes later."
 
 [[exception]]
 path = "server/plans/routes.py"
 kind = "docstring"
 anchor = "server.plans.routes._now_utc"
 limit = 10
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
+reason = "Why a Python instant beats the house `func.now()` here: a column set to a SQL function is not readable from the objects just inserted, so it would cost 200+ extra round trips to learn a timestamp already known."
 
 [[exception]]
 path = "server/plans/routes.py"
 kind = "docstring"
 anchor = "server.plans.routes.PlanPreviewRequest._a_bounded_monday"
 limit = 10
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
-
-[[exception]]
-path = "server/plans/routes.py"
-kind = "hash_run"
-anchor = "one wire shape for a plan previewed"
-limit = 15
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
-
-[[exception]]
-path = "server/plans/routes.py"
-kind = "docstring"
-anchor = "server.plans.routes._unprocessable"
-limit = 5
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
-
-[[exception]]
-path = "server/plans/routes.py"
-kind = "docstring"
-anchor = "server.plans.routes._planner_input"
-limit = 10
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
-
-[[exception]]
-path = "server/plans/routes.py"
-kind = "docstring"
-anchor = "server.plans.routes._grade_ids"
-limit = 6
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
-
-[[exception]]
-path = "server/plans/routes.py"
-kind = "hash_run"
-anchor = "the persisted plan the same models"
-limit = 19
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
+reason = "The order of bound-then-normalise IS the correctness argument: the bound judges the client's value, so normalising afterwards may legitimately carry the start past the horizon. Reversing it would refuse valid requests."
 
 [[exception]]
 path = "server/plans/routes.py"
 kind = "hash_run"
 anchor = "a coordinate not a row id and not"
 limit = 10
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
-
-[[exception]]
-path = "server/plans/routes.py"
-kind = "docstring"
-anchor = "server.plans.routes._stored_caveats"
-limit = 6
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
-
-[[exception]]
-path = "server/plans/routes.py"
-kind = "docstring"
-anchor = "server.plans.routes._ReadContext"
-limit = 5
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
+reason = "Says why a caveat key is a natural coordinate rather than a row id or a list index: caveats are written before any `session_block.id` exists, and a list index would mis-attach silently the day an `order_by` changed."
 
 [[exception]]
 path = "server/plans/routes.py"
 kind = "docstring"
 anchor = "server.plans.routes._exercise_reference"
 limit = 10
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
-
-[[exception]]
-path = "server/plans/routes.py"
-kind = "docstring"
-anchor = "server.plans.routes._grade_gap"
-limit = 9
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
-
-[[exception]]
-path = "server/plans/routes.py"
-kind = "hash_run"
-anchor = "a keyerror here would be a fault"
-limit = 3
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
-
-[[exception]]
-path = "server/plans/routes.py"
-kind = "docstring"
-anchor = "server.plans.routes._plan_response"
-limit = 6
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
+reason = "Two decisions a reader would reverse: the whole table is cheaper than building an `IN (...)` by walking the 2,400-node tree twice, and retired exercises are INCLUDED so an old plan still resolves to a name."
 
 [[exception]]
 path = "server/plans/routes.py"
 kind = "hash_run"
 anchor = "active once as criteria rather"
 limit = 9
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
-
-[[exception]]
-path = "server/plans/routes.py"
-kind = "hash_run"
-anchor = "one select per level rather than"
-limit = 3
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
+reason = "This criterion must stay character-identical to the index predicate: the index can only refuse a second active row, so a drift would leave it passing while the app quietly stopped agreeing with it."
 
 [[exception]]
 path = "server/plans/routes.py"
 kind = "docstring"
 anchor = "server.plans.routes._exercise_ids"
 limit = 10
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
+reason = "Says why a missing key is an assertion rather than a fallback: both alternatives are worse than a 500, since skipping the block ships a session missing an exercise the user was told they would do."
 
 [[exception]]
 path = "server/plans/routes.py"
@@ -2109,45 +1731,17 @@ reason = "Six citations of the installed SQLAlchemy 2.0.52 source, plus the back
 
 [[exception]]
 path = "server/plans/routes.py"
-kind = "hash_run"
-anchor = "initialised empty so the collection"
-limit = 3
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
-
-[[exception]]
-path = "server/plans/routes.py"
-kind = "hash_run"
-anchor = "the denormalised column the composite"
-limit = 4
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
-
-[[exception]]
-path = "server/plans/routes.py"
 kind = "docstring"
 anchor = "server.plans.routes._stand_down_active_plan"
 limit = 10
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
-
-[[exception]]
-path = "server/plans/routes.py"
-kind = "docstring"
-anchor = "server.plans.routes._constraint_name"
-limit = 5
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
-
-[[exception]]
-path = "server/plans/routes.py"
-kind = "docstring"
-anchor = "server.plans.routes._is_one_active_conflict"
-limit = 5
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
+reason = "Records the invariant that removes the need for a separate switch endpoint, and the Postgres fact behind the ordering: the index is not deferrable, so the old row must leave the predicate before the new one enters."
 
 [[exception]]
 path = "server/plans/routes.py"
 kind = "hash_run"
 anchor = "never re raised input minimisation"
 limit = 6
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
+reason = "`str(IntegrityError)` carries the failing statement's bound parameters, which on this INSERT are the climber's open-injury keys; explains both the redaction and why `from None` keeps them out of the renderer."
 
 [[exception]]
 path = "server/profile/routes.py"
@@ -3184,6 +2778,13 @@ kind = "docstring"
 anchor = "tests.test_comment_budget.test_the_wire_tier_does_not_swallow_the_whole_routes_file"
 limit = 5
 reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
+
+[[exception]]
+path = "tests/test_comment_budget.py"
+kind = "hash_run"
+anchor = "the deadline the ratchet stops the backlog growing"
+limit = 11
+reason = "The INTERLOCK is the whole point and nothing executable can state it: a target capped at BASELINE_RATCHET - MILESTONE_MIN_CUT plus a ratchet that may not sit 25 above reality is why an inflated number cannot buy silence. Unexplained, it reads like two arbitrary constants."
 
 [[exception]]
 path = "tests/test_content_seed.py"

@@ -1,31 +1,12 @@
-# Alembic runner — MANUAL ONLY.
-#
-# WHY THERE IS NO `on: push` HERE, and why adding one would be a mistake:
-# deploys in this project are automatic, migrations deliberately are not. If a
-# migration ran on push it would race the deployment that pushed it, and the loser is
-# decided by whichever finishes first — so the API can come up against a schema that is
-# either not there yet or already changed underneath it. Migrations therefore run out of
-# band, on a human's decision, following expand -> deploy -> contract. The FastAPI
-# lifespan never migrates -- and today does not read `alembic_version` either, so nothing
-# warns you at boot about a schema/code mismatch. See CLAUDE.md, "Migrations run out-of-band".
-#
-# Nothing in this file may print a connection string. The repository is public and so
-# are these logs: no `set -x`, no `echo "$DATABASE_URL"`, not even a masked prefix.
-# That is easier to violate than it looks, and it was violated on the first real run —
-# by a `--verbose` flag, not by an `echo`. See the note on the `current` steps below.
-#
-# DISPATCHING THIS: the workflow is only *registered* because the file exists on the
-# default branch (`main`) — `workflow_dispatch` is ignored on any other branch, and
-# before it was registered `gh workflow run` answered `HTTP 404: not found on the
-# default branch`. But GitHub takes the job definition AND the checkout from the ref you
-# select, so pick it deliberately: run the ref whose `migrations/` directory you mean to
-# apply. `main` has carried the migrations since the v2.0.0 promotion, so the ref is a real
-# choice rather than a workaround: omit it to apply what production has, and pass
-# `--ref dev` when the revision you want exists only on `dev` and is not promoted yet
-# (`gh workflow run migrate.yml --ref dev -f environment=dev -f action=current`).
-# `environment` chooses the DATABASE; the ref chooses the MIGRATIONS. They are
-# independent, and mixing them up is how production gets a revision that was never
-# reviewed.
+# Alembic runner — MANUAL ONLY. Actions -> Migrate -> Run workflow, or `gh workflow run
+# migrate.yml`. The three inputs document themselves in the dispatch dialog below.
+# PREREQUISITE: both GitHub environments (`dev`, `production`) must carry
+# `DATABASE_URL_UNPOOLED` (the direct endpoint, which Alembic reads) and `DATABASE_URL` (the
+# pooled one, which the two seed steps read) as environment secrets; without them the job
+# starts and fails on the first Alembic step.
+# THE POLICY AND THE THREE TRAPS are in CLAUDE.md, "How to actually run one" and "⚠️ Three
+# traps, all paid for on the day it first ran" — who dispatches this and the approval gate,
+# default-branch registration, environment-versus-ref, and why no step here uses `--verbose`.
 name: Migrate
 
 on:
@@ -37,18 +18,8 @@ on:
         required: true
         options: [dev, production]
       action:
-        # `current` is first AND the default on purpose: clicking straight through the
-        # dialog without reading it performs a read-only revision check, not a DDL run.
-        #
-        # THERE IS DELIBERATELY NO `downgrade` OPTION, and adding one would be a mistake.
-        # Production holds real user accounts, and a downgrade is the one action here that
-        # destroys rows irreversibly — it must not be one dropdown click away from the
-        # production database, least of all sitting next to the option people actually
-        # want. Recovery from a bad migration is a **Neon branch restore** (take the branch
-        # BEFORE the upgrade run), not an Alembic downgrade: a downgrade runs more untested
-        # DDL against an already-damaged database, while a restore returns to a known-good
-        # copy. The migrations' own `downgrade()` bodies stay correct and are for local and
-        # CI use. See CLAUDE.md, "Production data durability".
+        # ⚠️ No `downgrade` option, and the default is read-only — see CLAUDE.md,
+        # "⚠️ Production data durability — real accounts, no undo".
         description: "current = read the applied revision · upgrade = run migrations · history = list revisions"
         type: choice
         required: true
@@ -70,34 +41,20 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  # NOTE: deliberately NOT named `web`, `server` or `secrets`. Those three are required
-  # status checks in a GitHub ruleset and the names are load-bearing.
+  # Deliberately NOT named `web`, `server` or `secrets` — see CLAUDE.md, "Quality gate".
   migrate:
     runs-on: ubuntu-latest
 
-    # GitHub environment protection applies here: `production` can require Kilian's
-    # approval before the job starts, and the connection strings are environment
-    # secrets, so a run against `dev` cannot reach production's database.
+    # Selects the GitHub environment, so `production`'s protection rules apply and each
+    # environment carries its own connection secrets: a `dev` run cannot reach production's.
     environment: ${{ inputs.environment }}
 
     env:
-      # Alembic uses the DIRECT (unpooled) endpoint. DDL and CREATE TYPE need a real
-      # session; through Neon's PgBouncer transaction-mode pooler a migration tends to
-      # HANG rather than error, which is far worse to diagnose.
+      # Two endpoints, not interchangeable — see CLAUDE.md, "The other compute rules".
       DATABASE_URL_UNPOOLED: ${{ secrets.DATABASE_URL_UNPOOLED }}
-      # The seed step goes through `server.db`, which reads the pooled URL.
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
-      # Choice inputs are constrained, but they are still interpolated into a shell, so
-      # they are passed as environment variables and quoted rather than expanded inline.
-      ACTION: ${{ inputs.action }}
-      # ⚠️ THE OPT-IN. `migrations/env.py` refuses a non-local database host without this
-      # (see `server/db.py::require_migration_host`), because a developer with the
-      # production URL in `.env` could otherwise apply DDL by typing
-      # `uv run alembic upgrade head` and skip this workflow's approval gate entirely.
-      # This workflow is the sanctioned remote path, so it is the one place that declares
-      # the intent. **Nothing else may set this**, and the guard is deliberately not keyed
-      # off `CI`/`GITHUB_ACTIONS` — an ambient CI variable would hand the same permission
-      # to every other workflow.
+      # ⚠️ THE OPT-IN, and this workflow is the only sanctioned setter:
+      # `server/db.py::require_migration_host` refuses a non-local host without it.
       CT_ALLOW_REMOTE_MIGRATION: "1"
 
     steps:
@@ -105,27 +62,16 @@ jobs:
       - uses: astral-sh/setup-uv@v10.0.1
         with:
           enable-cache: true
-      # No `--all-groups`: alembic and the server package are runtime dependencies, and
-      # a migration run has no use for pytest, ruff or mypy. `--frozen` still fails if
-      # uv.lock is stale, so this runs exactly the versions CI and Vercel resolved.
+      # No `--all-groups`: a migration run has no use for pytest, ruff or mypy. For
+      # `--frozen`, see CLAUDE.md, "Never add a `requirements.txt`".
       - run: uv sync --frozen
 
-      # The "before" half of the audit trail. For `action: current` this is the whole job.
-      #
-      # NO `--verbose` HERE, and that is not a style preference. `alembic current
-      # --verbose` prints a `Current revision(s) for <url>:` header before the revision.
-      # Alembic obscures the password and GitHub masks the secret, but the Neon endpoint
-      # HOSTNAME, region and database name survive into a **public** Actions log — which
-      # is precisely what the header comment at the top of this file forbids. It happened
-      # (on the very first run; that run was deleted). Bare `current` prints the revision
-      # and emits no such header, which is all the audit trail needs. Nothing else on this
-      # path logs the URL: `sqlalchemy.engine` is pinned to WARNING in `alembic.ini` and
-      # `migrations/env.py` never prints it.
+      # The "before" half of the audit trail; for `action: current` this is the whole job.
+      # ⚠️ Bare `current`, never `--verbose` — CLAUDE.md's trap 3 is why.
       - name: Applied revision (before)
         run: uv run alembic current
 
-      # `--verbose` IS safe here: `history` reads the migration files and never opens a
-      # connection, so there is no URL for it to put in the header.
+      # `--verbose` is safe on `history` alone — same trap 3.
       - name: Revision history
         if: ${{ inputs.action == 'history' }}
         run: uv run alembic history --verbose
@@ -134,26 +80,16 @@ jobs:
         if: ${{ inputs.action == 'upgrade' }}
         run: uv run alembic upgrade head
 
-      # The "after" half. The two together are the record of what this run actually
-      # moved, which matters because nothing else logs it. Bare `current` again — same
-      # reason as above.
+      # The "after" half. The pair is the only record of what this run moved.
       - name: Applied revision (after)
         if: ${{ inputs.action == 'upgrade' }}
         run: uv run alembic current
 
-      # The same seed module CI, local development and production all use. Upserts and
-      # never deletes, so re-running it is safe and cheap.
+      # Two modules, in this order — see CLAUDE.md, "Migrations run out-of-band".
       - name: Seed reference data
         if: ${{ inputs.action == 'upgrade' && inputs.seed }}
         run: uv run python -m server.seed
 
-      # The exercise library. A SECOND module because it is authored *content* rather than
-      # derived vocabulary — `server/seed.py`'s own docstring draws that line — and it runs
-      # under the same `seed` input, always AFTER `server.seed`: it resolves climbing
-      # aspect, equipment and injury KEYS to ids and fails loudly if the vocabularies are
-      # not there yet. Idempotent by upsert on `key`; the only rows it ever removes are
-      # library join rows the content no longer authors (see its module docstring for why
-      # that does not weaken "the seed never deletes").
       - name: Seed the exercise library
         if: ${{ inputs.action == 'upgrade' && inputs.seed }}
         run: uv run python -m server.contentseed

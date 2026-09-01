@@ -3,9 +3,6 @@
 Revision ID: ${up_revision}
 Revises: ${down_revision | comma,n}
 Create Date: ${create_date}
-
-Expand -> deploy -> contract. Deploys are automatic here and migrations are not, so a
-revision must be safe against the *currently deployed* code as well as the new code.
 """
 
 from collections.abc import Sequence
