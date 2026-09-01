@@ -1,3 +1,5 @@
+@use 'sizes';
+
 // The page frame: a centred reading measure with a FULL-BLEED escape hatch, built entirely out
 // of intrinsic sizing.
 //
@@ -103,6 +105,42 @@
 
   &__main > &__bleed {
     grid-column: ct-bleed;
+  }
+
+  // The WIDE column: layout-shaped content, bounded, and reachable at ANY depth.
+  //
+  // Issue #99. The plan screen is the case: the timeline and the phase week table are TABLES, not
+  // prose, and both sat in a 704px measure on a 1440px screen. Widening `--ct-measure` is the
+  // wrong fix — it is the READING measure, and `&__prose` beside it was measured too.
+  //
+  // ⚠️ **Not `&__bleed`, and it cannot be.** `&__bleed` is a DIRECT-CHILD placement rule; the week
+  // table is `main > section > details > table`. A `<details>` cannot pass grid placement through
+  // either — its contents sit behind a shadow slot (`::details-content`), so its light children
+  // are the grid items of nothing — and lifting the table out of the disclosure would stop it
+  // collapsing with its phase. So this escape is INTRINSIC rather than a placement, and the class
+  // works wherever it lands.
+  //
+  // ⚠️ **`cqi` is why this is allowed where `50% - 50vw` is banned.** `100cqi` is the inline size
+  // of the nearest query container, which here is `.ct-app` itself: the app's own width in BOTH
+  // mounts, never kilianmc.com's viewport. Nor can it produce the horizontal scrollbar the `vw`
+  // idiom does — the container is measured inside the scrollbar, and the width stops a gutter
+  // short of it. ⚠️ It relies on there being no `container-type` between `.ct-app` and the
+  // element: a length unit resolves against the nearest container on that axis and CANNOT be
+  // pointed at a name. `ct-card` and `ct-player` are the only others, and neither is an ancestor
+  // of the two call sites.
+  //
+  // Below `$desktop` there is no rule at all, so the element is an ordinary child of the measure:
+  // mobile and tablet have nothing worth gaining. The cap is `$big` — past the big-screen size the
+  // extra room goes back to the gutters rather than into a 1400px table row.
+  & &__wide {
+    @container ct-app (min-inline-size: #{sizes.$desktop}) {
+      --ct-wide: min(#{sizes.$big}, 100cqi - var(--ct-gutter-start) - var(--ct-gutter-end));
+
+      inline-size: var(--ct-wide);
+      // Symmetric NEGATIVE margins. `%` is the containing block — the measure column, which is
+      // already centred in the container — so centring on it centres in the container.
+      margin-inline: calc((100% - var(--ct-wide)) / 2);
+    }
   }
 
   // The reading measure INSIDE a bleed section. Two of them, because they answer different

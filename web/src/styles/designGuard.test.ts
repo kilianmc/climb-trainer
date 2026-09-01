@@ -35,6 +35,16 @@ import { stripComments } from '../test/sourceScan';
  *   JavaScript, and unlike a computed unit it is greppable. Measuring the window and writing it
  *   into a style is how a "full height" screen gets built in React, and in the federated mount
  *   that window is kilianmc.com's.
+ * - **`matchMedia` with a WIDTH feature** — the width `@media` rule above, rewritten in
+ *   TypeScript: `matchMedia('(min-width: 64rem)')` asks the same wrong window. The CALL is
+ *   legitimate and stays; only the query text is judged, which is why the five asking
+ *   `prefers-color-scheme`, `prefers-reduced-motion` and `display-mode` pass. Scanned over
+ *   `.ts` and `.tsx` minus `*.test.*` — nothing in a test ships a layout decision, and
+ *   without that exclusion this file's own controls would red it. ⚠️ **Only a query written
+ *   literally at the call site is visible**: `matchMedia(query)` and `'(min-' + 'width: …)'`
+ *   slip past, the same gap as the computed unit above (an interpolated *threshold* is still
+ *   caught — the feature name stays literal). If a width genuinely must reach JS, observe
+ *   `.ct-app` with a `ResizeObserver`; that is the app's own box in both mounts.
  * - **Inline `position: 'fixed'` in a component** — positioned against kilianmc.com's viewport in
  *   the federated mount, and structurally invisible to `distContract.test.ts`. `position: fixed`
  *   in a *stylesheet* is deliberately NOT scanned: it is legitimate in `update-bar.scss` and
@@ -76,6 +86,19 @@ const VIEWPORT_UNIT =
   /\d\s*(vh|vw|vmin|vmax|vi|vb|dvh|dvw|dvi|dvb|dvmin|dvmax|svh|svw|svi|svb|svmin|svmax|lvh|lvw|lvi|lvb|lvmin|lvmax)\b/i;
 const hasViewportUnit = (source: string) => VIEWPORT_UNIT.test(stripComments(source));
 
+/** Each `@media` prelude on its own. `@container` cannot match the `\b` after `@media`, and a
+ *  Sass interpolation only truncates the REPORTED text — the feature name comes first. */
+const MEDIA_PRELUDE = /@media\b([^{]*)\{/g;
+
+/** A width asked of the VIEWPORT, range form and logical spelling included. The four screen
+ *  sizes are `@container ct-app` sizes instead, and `_sizes.scss` is where that is argued. */
+const WIDTH_FEATURE = /\b(?:min-|max-)?(?:width|inline-size)\b/;
+
+const widthMediaQueries = (source: string): string[] =>
+  [...stripComments(source).matchAll(MEDIA_PRELUDE)]
+    .map(([, prelude]) => (prelude ?? '').trim())
+    .filter((prelude) => WIDTH_FEATURE.test(prelude));
+
 /** A `sizes` attribute in JSX or HTML, quoted any of the three ways. */
 const SIZES_ATTRIBUTE = /sizes\s*=\s*(["'`])[^"'`]*\1/g;
 
@@ -88,8 +111,20 @@ const hasViewportUnitInMarkup = (source: string) =>
 const VIEWPORT_MEASUREMENT = /\b(innerHeight|innerWidth|outerHeight|outerWidth|visualViewport)\b/;
 const measuresTheViewport = (source: string) => VIEWPORT_MEASUREMENT.test(stripComments(source));
 
+/** A `matchMedia` query written literally at the call site, captured. Bare and `window.`-
+ *  prefixed read alike, exactly as `VIEWPORT_MEASUREMENT` above. */
+const MATCH_MEDIA_CALL = /matchMedia\s*\(\s*(['"`])([^'"`]*)\1/g;
+
+const widthMatchMedia = (source: string): string[] =>
+  [...stripComments(source).matchAll(MATCH_MEDIA_CALL)]
+    .map(([, , query]) => (query ?? '').trim())
+    .filter((query) => WIDTH_FEATURE.test(query));
+
 const sheets = sources('.scss');
 const components = sources('.tsx');
+// `sources` matches on `endsWith`, so `.ts` and `.tsx` are disjoint sets and both are needed.
+const TEST_FILE = /\.test\.tsx?$/;
+const shipped = [...sources('.ts'), ...sources('.tsx')].filter(([name]) => !TEST_FILE.test(name));
 
 describe('the stylesheets', () => {
   it('are all found, recursively', () => {
@@ -100,6 +135,13 @@ describe('the stylesheets', () => {
     expect(names).toContain('styles/_tokens.scss');
     expect(sheets.length).toBeGreaterThanOrEqual(9);
     expect(components.length).toBeGreaterThanOrEqual(10);
+    // `.ts` too, or the two legitimate `matchMedia` calls below would go unscanned and the
+    // rule's negative controls would be synthetic rather than live in-repo.
+    const shippedNames = shipped.map(([name]) => name);
+    expect(shippedNames).toContain('theme.ts');
+    expect(shippedNames).toContain('session/wakeLock.ts');
+    expect(shippedNames).not.toContain('styles/designGuard.test.ts');
+    expect(shipped.length).toBeGreaterThanOrEqual(40);
   });
 
   it.each(sheets)('%s uses no backdrop-filter and no @import', (_name, source) => {
@@ -111,12 +153,20 @@ describe('the stylesheets', () => {
     expect(hasViewportUnit(source)).toBe(false);
   });
 
+  it.each(sheets)('%s asks no WIDTH question of the viewport', (_name, source) => {
+    expect(widthMediaQueries(source)).toEqual([]);
+  });
+
   it.each(components)('%s sizes nothing against the viewport inline', (_name, source) => {
     expect(hasViewportUnitInMarkup(source)).toBe(false);
   });
 
   it.each(components)('%s does not measure the window', (_name, source) => {
     expect(measuresTheViewport(source)).toBe(false);
+  });
+
+  it.each(shipped)('%s asks matchMedia no WIDTH question', (_name, source) => {
+    expect(widthMatchMedia(source)).toEqual([]);
   });
 
   it.each(sheets.filter(([name]) => !name.endsWith(GLOBAL)))(
@@ -179,6 +229,58 @@ describe('positive control', () => {
     expect(
       hasViewportUnitInMarkup('<img sizes="100vw" style={{ inlineSize: \'100vw\' }} alt="" />'),
     ).toBe(true);
+  });
+
+  it.each([
+    ['min-width', '@media (min-width: 48rem) { .x { color: red } }'],
+    ['max-width in a compound query', '@media screen and (max-width: 600px) { .x { color: red } }'],
+    ['the range form', '@media (width >= 48rem) { .x { color: red } }'],
+    ['the logical spelling', '@media (min-inline-size: 64rem) { .x { color: red } }'],
+  ])('the width-media detector sees %s', (_label, bad) => {
+    expect(widthMediaQueries(bad)).toHaveLength(1);
+    expect(widthMediaQueries(`// never do this: ${bad}\n`)).toEqual([]);
+  });
+
+  it.each([
+    [
+      'the container query that replaces it',
+      '@container ct-app (min-inline-size: 64rem) { .x { color: red } }',
+    ],
+    [
+      'a reduced-motion query',
+      '@media (prefers-reduced-motion: reduce) { .x { transition: none } }',
+    ],
+    ['a colour-scheme query', '@media (prefers-color-scheme: dark) { .x { color: red } }'],
+    ['a declaration merely naming the property', '.x { min-inline-size: 100%; }'],
+  ])('the width-media detector does not fire on %s', (_label, good) => {
+    expect(widthMediaQueries(good)).toEqual([]);
+  });
+
+  it.each([
+    ['min-width', "const wide = window.matchMedia('(min-width: 64rem)').matches;"],
+    ['max-width', 'if (matchMedia("(max-width: 600px)").matches) collapse();'],
+    ['the range form', 'const wide = window.matchMedia(`(width >= 64rem)`).matches;'],
+    ['the logical spelling', "const wide = matchMedia('(min-inline-size: 48rem)').matches;"],
+    ['an interpolated THRESHOLD', 'window.matchMedia(`(min-width: ${bp}px)`).matches;'],
+  ])('the width-matchMedia detector sees %s', (_label, bad) => {
+    expect(widthMatchMedia(bad)).toHaveLength(1);
+    expect(widthMatchMedia(`// never do this: ${bad}\n`)).toEqual([]);
+  });
+
+  it.each([
+    ['the colour-scheme read in `theme.ts`', "window.matchMedia('(prefers-color-scheme: dark)')"],
+    ['the reduced-motion read the routes make', "matchMedia('(prefers-reduced-motion: reduce)')"],
+    ['the standalone read in `wakeLock.ts`', "window.matchMedia('(display-mode: standalone)')"],
+    ['the ResizeObserver that replaces it', 'ro.observe(node); // entry.contentRect.width'],
+  ])('the width-matchMedia detector does not fire on %s', (_label, good) => {
+    expect(widthMatchMedia(good)).toEqual([]);
+  });
+
+  it('records what the matchMedia pattern CANNOT see, for the same reason as the unit one', () => {
+    // The feature name has to be literal at the call site. Both of these reach the DOM as a
+    // width question and neither is catchable by a source scan — see the docstring.
+    expect(widthMatchMedia('const mq = window.matchMedia(query);')).toEqual([]);
+    expect(widthMatchMedia("matchMedia('(min-' + 'width: 64rem)')")).toEqual([]);
   });
 
   it('sees an UPPERCASE unit, which the missing `i` flag would have let through', () => {

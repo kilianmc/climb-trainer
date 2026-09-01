@@ -7242,8 +7242,8 @@ reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
 path = "web/src/styles/designGuard.test.ts"
 kind = "block"
 anchor = "closed design decisions scanned"
-limit = 37
-reason = "Six scanned decisions, each a closed call, plus the honest statement that a computed viewport unit in a .tsx has no backstop anywhere in the gate."
+limit = 47
+reason = "Seven scanned decisions, each a closed call, plus the honest statement of what neither the computed-unit pattern nor the literal-query matchMedia pattern can see, and the ResizeObserver escape hatch that replaces the latter."
 
 [[exception]]
 path = "web/src/styles/designGuard.test.ts"

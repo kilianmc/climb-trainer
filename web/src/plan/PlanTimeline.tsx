@@ -36,8 +36,13 @@ export function PlanTimeline({
 
   return (
     // Focusable, or a keyboard user cannot scroll it; named, so the group is not entered blind.
-    // eslint-disable-next-line jsx-a11y/no-noninteractive-tabindex
-    <div className="ct-app__tlscroll" tabIndex={0} role="group" aria-label={timeline.label}>
+    <div
+      className="ct-app__tlscroll ct-app__wide"
+      // eslint-disable-next-line jsx-a11y/no-noninteractive-tabindex
+      tabIndex={0}
+      role="group"
+      aria-label={timeline.label}
+    >
       {/* eslint-disable-next-line jsx-a11y/no-redundant-roles -- `list-style: none` drops list
           semantics in WebKit, and the phase items are `display: contents`. */}
       <ol

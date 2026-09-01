@@ -18,7 +18,11 @@ export function PhaseWeekTable({ mesocycle }: { mesocycle: PlanMesocycle }) {
   if (model.rows.length === 0) return null;
 
   return (
-    <table className="ct-app__weekgrid" role="table" aria-label="This phase week by week">
+    <table
+      className="ct-app__weekgrid ct-app__wide"
+      role="table"
+      aria-label="This phase week by week"
+    >
       <caption style={cell(model.rows.length + 2, 1)}>
         {model.legend.map((entry, index) => (
           <span key={entry.key}>
