@@ -12,6 +12,7 @@ line numbers; five staleness arms below make an unearned entry a hard failure.
 import ast
 import tomllib
 from dataclasses import dataclass, replace
+from datetime import date
 from pathlib import Path
 from typing import Final
 
@@ -34,7 +35,28 @@ CAPS: Final = {"module": MODULE_DOCSTRING_CAP, "wire": WIRE_CONTRACT_CAP, "plain
 # The ratchet. Entries whose reason starts with BASELINE are the un-reviewed backlog; new
 # comments obey the cap from day one, so this number may only ever go DOWN. Lower it in the
 # same PR that trims the comments — never raise it.
-BASELINE_RATCHET: Final = 1092
+BASELINE_RATCHET: Final = 996
+
+# The DEADLINE. The ratchet stops the backlog GROWING; nothing stops it sitting, and a register
+# where every row still reads "not yet reviewed" a year from now is a freeze, not a cleanup. Each
+# milestone is a date and the most BASELINE rows that may remain once it has passed: green until
+# the date, then hard red until the count is at or below the target. The last target is 0, so the
+# backlog has an end rather than a floor.
+#
+# ⚠️ **Editing a number cannot buy silence, by construction.** A target may never exceed
+# `BASELINE_RATCHET - MILESTONE_MIN_CUT`, the ratchet may only ever go DOWN, and the ratchet may
+# not sit more than 25 above the real count (`test_the_ratchet_is_not_slack`). `MILESTONE_MIN_CUT`
+# is deliberately larger than that 25, so raising a target far enough to matter would mean raising
+# the ratchet further than its own arm allows. The only move left is trimming comments.
+BASELINE_DEADLINE: Final = (
+    (date(2026, 12, 1), 800),
+    (date(2027, 3, 1), 550),
+    (date(2027, 6, 1), 275),
+    (date(2027, 9, 1), 0),
+)
+# Larger than the ratchet's 25 of permitted slack, so the ratchet's own arm is what refuses an
+# inflated target rather than this one having to guess at a motive.
+MILESTONE_MIN_CUT: Final = 150
 
 # Minimum characters of a real reason. "legacy" is not a register entry.
 MIN_REASON_LENGTH: Final = 40
@@ -517,6 +539,51 @@ def test_the_ratchet_is_not_slack(allowlist: list[Entry]) -> None:
         f"BASELINE_RATCHET is {BASELINE_RATCHET} but only {len(baseline)} entries remain. "
         f"Lower the ratchet in this PR — slack in it is a comment budget nobody is holding to."
     )
+
+
+def _milestones_due(count: int, today: date) -> list[tuple[date, int]]:
+    """Milestones whose date has arrived and whose target `count` still exceeds."""
+    return [(due, target) for due, target in BASELINE_DEADLINE if today >= due and count > target]
+
+
+def test_the_baseline_backlog_is_burned_down_on_schedule(allowlist: list[Entry]) -> None:
+    """The deadline. A backlog the ratchet has merely frozen is not a backlog being cleared."""
+    baseline = [entry for entry in allowlist if entry.reason.startswith("BASELINE")]
+    due = _milestones_due(len(baseline), date.today())
+    formatted = "\n".join(
+        f"  by {when.isoformat()}: at most {target} BASELINE rows — "
+        f"trim or justify {len(baseline) - target} more"
+        for when, target in due
+    )
+    assert not due, (
+        f"{len(baseline)} BASELINE rows remain and a burn-down milestone has passed. Trim the "
+        f"comments, or replace the BASELINE reason with a real one, until the count fits:\n"
+        f"{formatted}"
+    )
+
+
+def test_the_deadline_schedule_demands_a_real_cut() -> None:
+    """The deadline's anti-slack arm: a target nobody has to meet is a date, not a deadline."""
+    dates = [due for due, _ in BASELINE_DEADLINE]
+    targets = [target for _, target in BASELINE_DEADLINE]
+    assert dates == sorted(set(dates)), "milestones must be in strictly increasing date order"
+    assert targets == sorted(set(targets), reverse=True), "each target must be below the last"
+    assert targets[-1] == 0, "the final milestone must retire the backlog, not park it"
+    assert targets[0] <= BASELINE_RATCHET - MILESTONE_MIN_CUT, (
+        f"the first target is {targets[0]}, which is not {MILESTONE_MIN_CUT} below the ratchet "
+        f"({BASELINE_RATCHET}). Raising a target only works by raising the ratchet, which "
+        f"test_the_ratchet_is_not_slack refuses — lower the target instead."
+    )
+
+
+def test_the_deadline_arm_goes_red_once_a_milestone_has_passed() -> None:
+    """Positive control. A deadline nobody has watched fire is a deadline nobody should trust."""
+    first_due, first_target = BASELINE_DEADLINE[0]
+    assert _milestones_due(first_target + 1, first_due) == [(first_due, first_target)]
+    assert _milestones_due(first_target, first_due) == []
+    last_due, _ = BASELINE_DEADLINE[-1]
+    assert _milestones_due(1, last_due) == [BASELINE_DEADLINE[-1]]
+    assert _milestones_due(0, last_due) == []
 
 
 # ---------------------------------------------------------------------------------

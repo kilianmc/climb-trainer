@@ -3,70 +3,6 @@
 Revision ID: 0004
 Revises: 0003
 Create Date: 2026-08-21
-
-The domain schema: everything the app is actually for. Twenty-four tables and five new
-native enum types, in one revision because they are one dependency graph — `logged_set`
-points at `prescribed_set`, `activity` points at `planned_session`, and splitting them
-across revisions would produce intermediate states no deploy would ever run against.
-
-**Purely additive.** No column is dropped and no row is rewritten. `app_user`,
-`auth_session`, `invite`, `rate_limit` and `grade_system` are untouched entirely; `grade`
-gains **one unique constraint** on `(id, ordinal)`, which is additive by construction —
-`id` is already its primary key, so the constraint cannot fail on any existing row, and
-`grade` holds re-seedable reference data rather than user rows. Code running before this
-revision keeps working after it (expand -> deploy -> contract).
-`tests/test_migrations_additive.py` enforces that, and this revision is the reason its
-protected set grew from `app_user` alone to every table that holds irreplaceable user
-data.
-
-Hand-written, like 0001-0003, because there is no Postgres on this machine to
-autogenerate against. The bodies below were **rendered from the model metadata** with
-`alembic.autogenerate.render_python_code` rather than typed out, so a name or a type can
-not drift by transcription; CI is still what proves the DDL runs, by executing
-`alembic upgrade head` against a throwaway `postgres:17-alpine` and then `alembic check`
-against the models.
-
-⚠️ **What `alembic check` does NOT cover: the enum VALUE LISTS below.** An earlier draft of
-this docstring claimed it did. It does not — a SQLAlchemy `ENUM` compiles to its type
-*name*, so `compare_type=True` sees `activity_kind` on both sides and is blind to the
-membership and the order. Deleting `taper` from `phase` below leaves `alembic check` and
-the whole suite green, and the first plan needing a taper mesocycle then dies at runtime on
-`invalid input value for enum phase`. That gap is closed by
-`tests/test_vocabulary_contract.py`, which compares these six lists against
-`server/domain/vocabulary.py` directly. The duplication itself stays: importing live
-application code into a migration un-pins it from history, which is the one thing a
-migration must never be.
-
-## Two things that differ from 0001-0003, both deliberate
-
-**1. Constraint names are wrapped in `op.f()`.** 0003 documents the trap: `op.create_table`
-applies `NAMING_CONVENTION` itself, and the `ck` template interpolates the name you pass,
-so a pre-derived `ck_invite_max_uses_positive` comes back out as
-`ck_invite_ck_invite_max_uses_positive`. `op.f()` marks a name as already final, which
-removes the trap instead of requiring everyone to remember the exception — and it is what
-`alembic check` compares against, since the model side derives these same strings.
-
-**2. The five new enum types are created ONCE, explicitly, up front.** Each is declared
-with `create_type=False` so that `op.create_table` does not also emit `CREATE TYPE`; the
-implicit path is what produces "type activity_kind already exists" on the second table to
-use it (0001's comment, still true). `discipline` already exists from 0001 and is
-therefore declared here but never created.
-
-## Not a data migration
-
-Every table starts empty. There is nothing to backfill and no `server_default` written
-across existing rows, because no existing row gains a column. The seed
-(`python -m server.seed`) fills the four new reference tables — `climbing_aspect`,
-`equipment`, `injury_area`, `ascent_tag` — and must be run after this upgrade; the exercise
-library itself is content, authored separately, and is not seeded here.
-
-## One reversal recorded here on purpose
-
-`ascent.tags text[]` and its GIN index are **gone**, replaced by the `ascent_tag` lookup
-plus the `ascent_tag_link` join (Kilian, 2026-08-21). If a later revision proposes bringing
-the array back as "simpler", read `server/domain/vocabulary.py::ASCENT_TAGS` first — the
-array version fragments the vocabulary it exists to aggregate, and it was the only
-unbounded write in the schema.
 """
 
 from collections.abc import Sequence
@@ -80,18 +16,6 @@ down_revision: str | None = "0003"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
-# create_type=False on every one of them: the types are created (and dropped) explicitly
-# in upgrade()/downgrade() below, so `op.create_table` must not try to emit CREATE TYPE
-# again for the second and subsequent tables that use one.
-#
-# The value lists must match `server/domain/vocabulary.py` exactly, lowercase — that is
-# what `values_callable` in server/models.py guarantees on the ORM side.
-#
-# ⚠️ **`alembic check` does NOT verify this**, contrary to what this comment said until
-# 2026-08-21 — see the ⚠️ in the module docstring above. An `ENUM` compiles to its type
-# name, so the comparison never looks inside. `tests/test_vocabulary_contract.py` is what
-# checks it, and this comment is corrected here rather than deleted because the false
-# version is exactly what would make a future reader delete that test as redundant.
 discipline = postgresql.ENUM("boulder", "sport", name="discipline", create_type=False)
 activity_kind = postgresql.ENUM(
     "climbing",
@@ -146,27 +70,16 @@ session_status = postgresql.ENUM(
     create_type=False,
 )
 
-# `discipline` is NOT in here: 0001 created it, and creating it again would be a no-op at
-# best and a confusing failure at worst.
 NEW_ENUM_TYPES = (activity_kind, ascent_style, protocol_kind, phase, session_status)
 
 
 def upgrade() -> None:
     bind = op.get_bind()
-    # checkfirst so a partially-applied environment can be brought forward, exactly as
-    # 0001 does for `discipline`.
     for enum_type in NEW_ENUM_TYPES:
         enum_type.create(bind, checkfirst=True)
 
-    # The ONLY change to a table that already exists, and it is additive: `grade` gains a
-    # unique constraint on (id, ordinal) so that `ascent` can reference the pair with a
-    # composite foreign key. `id` is already the primary key, so this can never fail on
-    # existing rows — and `grade` is re-seedable reference data with no user rows in it.
     op.create_unique_constraint("uq_grade_id_ordinal", "grade", ["id", "ordinal"])
 
-    # Tags are a FIXED vocabulary: this lookup plus the `ascent_tag_link` join, NOT
-    # `ascent.tags text[]` + a GIN index. Reversed 2026-08-21 (Kilian); the reasoning
-    # is in server/domain/vocabulary.py::ASCENT_TAGS. Seeded by server/seed.py.
     op.create_table(
         "ascent_tag",
         sa.Column("id", sa.Integer(), nullable=False),
@@ -208,9 +121,6 @@ def upgrade() -> None:
         sa.PrimaryKeyConstraint("id", name=op.f("pk_injury_area")),
         sa.UniqueConstraint("key", name=op.f("uq_injury_area_key")),
     )
-    # The library. Self-referential progression/regression foreign keys, so this table
-    # has to exist before its own constraints can point at it — op.create_table handles
-    # that in one statement.
     op.create_table(
         "exercise",
         sa.Column("id", sa.Integer(), nullable=False),
@@ -422,11 +332,6 @@ def upgrade() -> None:
         sa.PrimaryKeyConstraint("id", name=op.f("pk_user_injury")),
     )
     op.create_index("ix_user_injury_user_id", "user_injury", ["user_id"], unique=False)
-    # `show_body_metrics` defaults to TRUE: %BW is the most useful strength number in
-    # climbing, and a default of off would make the feature undiscoverable. Turning it
-    # off hides the weight trend and every %BW figure and stops any weigh-in prompt.
-    # There is deliberately no goal-weight, target-weight or BMI column here or anywhere
-    # else in this migration; see CLAUDE.md, 'The app never recommends losing weight'.
     op.create_table(
         "user_profile",
         sa.Column("user_id", sa.Integer(), nullable=False),
@@ -468,10 +373,6 @@ def upgrade() -> None:
         ),
         sa.PrimaryKeyConstraint("user_id", name=op.f("pk_user_profile")),
     )
-    # uq_mesocycle_id_plan_id looks redundant next to the primary key. It is not: it is
-    # the TARGET of microcycle's composite foreign key below, and a composite FK needs a
-    # unique constraint on exactly those columns to reference. Dropping it breaks the
-    # next table.
     op.create_table(
         "mesocycle",
         sa.Column("id", sa.Integer(), nullable=False),
@@ -490,13 +391,6 @@ def upgrade() -> None:
         sa.UniqueConstraint("id", "plan_id", name=op.f("uq_mesocycle_id_plan_id")),
         sa.UniqueConstraint("plan_id", "start_week", name=op.f("uq_mesocycle_plan_id_start_week")),
     )
-    # `plan_id` is carried down from mesocycle so that `(plan_id, week_no)` — the hottest
-    # read in the app — needs no join. The composite foreign key on
-    # (mesocycle_id, plan_id) is what makes that denormalisation safe rather than merely
-    # intended: a row whose plan_id disagrees with its mesocycle's is rejected by
-    # Postgres. uq_microcycle_plan_id_week_no doubles as the index for (plan_id, week_no),
-    # but the composite FK needs its OWN index: neither unique constraint on this table
-    # leads with `mesocycle_id`.
     op.create_table(
         "microcycle",
         sa.Column("id", sa.Integer(), nullable=False),
@@ -550,17 +444,6 @@ def upgrade() -> None:
     op.create_index(
         "ix_planned_session_scheduled_on", "planned_session", ["scheduled_on"], unique=False
     )
-    # THE SUPERTYPE. One row per activity of any kind; `logged_session` below is the 1:1
-    # climbing-only subtype. See server/models.py::Activity for why this is one table
-    # and not five.
-    #
-    # `srpe_load` is GENERATED ... STORED. Note `rpe::integer`: both operands are
-    # SMALLINT, so the uncast product resolves as int2*int2 and raises `smallint out of
-    # range` before the widening cast to this INTEGER column — which on the outbox path
-    # is a payload that retries forever. The duration CHECK is the other half.
-    #
-    # uq_activity_id_activity_kind is the target of logged_session's composite foreign
-    # key. Keep it.
     op.create_table(
         "activity",
         sa.Column("id", sa.Integer(), nullable=False),
@@ -636,10 +519,6 @@ def upgrade() -> None:
             name=op.f("uq_session_block_planned_session_id_order_index"),
         ),
     )
-    # THE SUBTYPE, and the constraint that makes it one. `activity_id` is primary key AND
-    # foreign key (at most one subtype row per activity); `activity_kind` is repeated
-    # with CHECK (= 'climbing') and a composite FK to activity (id, activity_kind), so
-    # Postgres itself refuses to hang a logged session off a bike ride.
     op.create_table(
         "logged_session",
         sa.Column("activity_id", sa.Integer(), nullable=False),
@@ -660,11 +539,6 @@ def upgrade() -> None:
         ),
         sa.PrimaryKeyConstraint("activity_id", name=op.f("pk_logged_session")),
     )
-    # Free-text search over the diary. Expression indexes (`to_tsvector`), which Alembic
-    # skips on BOTH sides of an autogenerate comparison rather than reporting a phantom
-    # diff — so `alembic check` stays quiet without anything being excluded by hand.
-    # `simple`, not `english`: no stemming and no stopword list is the right call for short
-    # notes full of proper nouns. Partial, because most of these columns are NULL.
     op.create_index(
         "ix_logged_session_notes_tsv",
         "logged_session",
@@ -710,11 +584,6 @@ def upgrade() -> None:
             name=op.f("uq_prescribed_set_session_block_id_set_index"),
         ),
     )
-    # (grade_id, grade_ordinal) -> grade (id, ordinal) is the third use of the composite
-    # FK technique, and it is what makes the denormalised ordinal safe: the band IS the
-    # discipline, so a transposed ordinal would file a rope send in the boulder pyramid
-    # with nothing to recover the truth from. It needs uq_grade_id_ordinal, added to the
-    # existing `grade` table above.
     op.create_table(
         "ascent",
         sa.Column("id", sa.Integer(), nullable=False),
@@ -938,7 +807,6 @@ def upgrade() -> None:
     op.create_index(
         "ix_ascent_tag_link_ascent_tag_id", "ascent_tag_link", ["ascent_tag_id"], unique=False
     )
-    # ### end Alembic commands ###
 
 
 def downgrade() -> None:
@@ -1003,4 +871,3 @@ def downgrade() -> None:
     op.drop_constraint("uq_grade_id_ordinal", "grade", type_="unique")
     for enum_type in reversed(NEW_ENUM_TYPES):
         enum_type.drop(op.get_bind(), checkfirst=True)
-    # `discipline` stays: 0001 owns it, and grade_system still uses it.
