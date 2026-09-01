@@ -11,7 +11,7 @@ line numbers; five staleness arms below make an unearned entry a hard failure.
 
 import ast
 import tomllib
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Final
 
@@ -41,8 +41,12 @@ MIN_REASON_LENGTH: Final = 40
 # Minimum characters of an anchor, so a short phrase cannot match half the file.
 MIN_ANCHOR_LENGTH: Final = 30
 
-SCOPE: Final = ("server", "migrations", "tests", "web/src")
+SCOPE: Final = ("server", "migrations", "tests", "web/src", ".github")
 KINDS: Final = ("hash_run", "docstring", "slash_run", "block")
+# `.github/` is in scope for its workflows: a `#` run there is prose nothing else in the gate
+# reads, which is how 15- and 28-line runs grew in two files no cap applied to.
+YAML_SUFFIXES: Final = {".yml", ".yaml"}
+SCOPED_SUFFIXES: Final = {".py", ".ts", ".tsx"} | YAML_SUFFIXES
 
 # Detected by MARKER, not by path: a path list rots the moment a generator's output moves,
 # whereas the marker travels with the file. Two generators, two spellings — TanStack Router
@@ -127,7 +131,7 @@ def _candidates() -> list[Path]:
         for path in sorted((ROOT / root).rglob("*")):
             if not path.is_file() or "__pycache__" in path.parts:
                 continue
-            if path.suffix not in {".py", ".ts", ".tsx"}:
+            if path.suffix not in SCOPED_SUFFIXES:
                 continue
             # A shipped revision is frozen history: its prose describes the day it ran and
             # rewriting it would be a lie. `migrations/env.py` is live code and stays in scope.
@@ -271,6 +275,12 @@ def _own_line_runs(
     return comments
 
 
+def _yaml_runs(path: Path, lines: list[str]) -> list[Comment]:
+    """Line 1 starts the FILE HEADER, which takes the module cap; every other run is plain."""
+    runs = _own_line_runs(path, lines, "#", "hash_run", [])
+    return [replace(run, tier="module") if run.line == 1 else run for run in runs]
+
+
 def _block_comments(path: Path, source: str) -> tuple[list[Comment], list[range]]:
     """`/* ... */`, JSDoc included. Span is newlines + 1.
 
@@ -306,6 +316,8 @@ def collect() -> list[Comment]:
             comments.extend(docstrings)
             excluded = docstring_ranges + _multiline_string_ranges(tree)
             comments.extend(_own_line_runs(path, lines, "#", "hash_run", excluded))
+        elif path.suffix in YAML_SUFFIXES:
+            comments.extend(_yaml_runs(path, lines))
         else:
             blocks, block_ranges = _block_comments(path, source)
             comments.extend(blocks)
@@ -537,6 +549,23 @@ def test_the_slash_and_block_detectors_do_not_double_count_or_eat_a_url() -> Non
     assert [comment.span for comment in blocks] == [4]
     slashes = _own_line_runs(Path("sample.ts"), source.splitlines(), "//", "slash_run", ranges)
     assert [comment.span for comment in slashes] == [2]
+
+
+def test_the_yaml_header_takes_the_module_cap_and_a_later_run_does_not(tmp_path: Path) -> None:
+    """Positive control on the two YAML tiers — a header is a file's decisions, a run is a why."""
+    lines = ["# one", "# two", "", "jobs:", "  # three", "  # four"]
+    found = _yaml_runs(tmp_path / "sample.yml", lines)
+    assert [(comment.tier, comment.cap, comment.span) for comment in found] == [
+        ("module", MODULE_DOCSTRING_CAP, 2),
+        ("plain", CAP, 2),
+    ]
+
+
+def test_the_workflows_are_in_scope_so_a_regrown_comment_run_is_caught() -> None:
+    """`.github/` was out of scope twice over, by root and by suffix — hence two long runs."""
+    scoped = {_relative(path) for path in scoped_files()}
+    assert ".github/workflows/ci.yml" in scoped
+    assert ".github/workflows/migrate.yml" in scoped
 
 
 def test_the_docstring_detector_counts_the_lines_a_reader_sees() -> None:

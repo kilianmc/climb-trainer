@@ -946,21 +946,11 @@ rules, not preferences.
 > both DB URLs, and the secrets live only in the GitHub environments. **Read this section
 > before any PR that adds a migration or promotes.**
 
-Actions → **Migrate** → *Run workflow*. Three inputs:
-
-- **`environment`** — `dev` or `production`. This selects the GitHub **environment**, so
-  `production`'s protection rules (approval) apply and each environment carries its own
-  connection secrets. A `dev` run therefore cannot reach production's database.
-- **`action`** — **`current` is the default, and it is read-only**: it prints the applied
-  revision and stops. `upgrade` runs `alembic upgrade head` and prints `current` both
-  before and after, so the job log is the audit trail. `history` lists the revisions.
-- **`seed`** — off by default; when on, runs `python -m server.seed` after a successful
-  upgrade.
-
-**Prerequisite:** the two GitHub environments (`dev`, `production`) must exist, each
-with **`DATABASE_URL_UNPOOLED`** (the *direct* endpoint — Alembic uses this) and
-**`DATABASE_URL`** (the *pooled* endpoint — the seed step uses this) as environment
-secrets. Without them the job starts and fails on the first Alembic step.
+**The MECHANICS live in the header of `.github/workflows/migrate.yml`** — the dialog, the
+`gh workflow run` form and the two environment secrets each environment must carry. They have
+exactly one point of use, and the three inputs already describe themselves in the dispatch
+dialog, so this file keeps the policy above and the three traps below and does not restate the
+walkthrough.
 
 The workflow is `workflow_dispatch`-only and never prints a connection string; keep both
 properties if you edit it.
@@ -2322,7 +2312,9 @@ DATABASE_URL="${CT_TEST_DATABASE_URL:-}" DATABASE_URL_UNPOOLED=""
 - **CI** runs `uv run pytest -q` directly against its `postgres:17-alpine` service, so it never
   goes through this script and always runs the full set. **Never weaken a DB-backed test on the
   assumption that nothing runs it, and never make the gate *require* a database** — and never
-  substitute SQLite to dodge the skip. CI is where the migrations and the seed are executed.
+  substitute SQLite to dodge the skip. CI always executes the migrations and the seed; locally
+  both happen only when you opt in — `db:up` takes the database to head, and the `seeded`
+  fixture seeds it.
 
 **Batch your edits and run `npm run check` once at the end**, not once per file.
 
@@ -2381,7 +2373,10 @@ clock tests need fake timers plus a `performance.now` shim.
 **Five caps, enforced by `tests/test_comment_budget.py`:** module docstring **10** ·
 class/function docstring **2** · inline `#`/`//` run **2** · `/* */` block **2** ·
 wire-contract docstring **20** (FastAPI ships those to API consumers, who cannot read the code
-instead). Over-cap is allowed **only** with a row in `tests/comment_budget_allowlist.toml`
+instead). **`.github/`'s workflow YAML is in scope on the same two tiers** — a FILE HEADER
+block reads as a module docstring (**10**) and every other own-line `#` run as an inline run
+(**2**) — which is what closes the gap that let 15- and 28-line runs grow in `ci.yml` and
+`migrate.yml`. Over-cap is allowed **only** with a row in `tests/comment_budget_allowlist.toml`
 naming what the length buys; that file is the register of exceptions and its `BASELINE_RATCHET`
 may only ever go down.
 

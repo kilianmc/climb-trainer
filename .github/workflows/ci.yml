@@ -30,45 +30,22 @@ jobs:
       - run: npm run format:check
       - run: npm run lint
       - run: npm run typecheck
-      # BUILD BEFORE TEST, deliberately (issue #26). `vite build` is what regenerates
-      # `src/routeTree.gen.ts`, and several tests assert against that tree, so tests should
-      # read a freshly generated one rather than whatever is committed.
-      #
-      # What this does NOT do is convert a silent green into a red — measured 2026-08-18 by
-      # renaming `plan.lazy.tsx` to `plan.tsx`. Old order: 14 failures, all at
-      # `vite:import-analysis` (`Failed to resolve import "./routes/_authed/plan.lazy"`),
-      # because the stale committed tree still holds that dynamic import. New order: 2
-      # failures, `expected [Function Plan] to be undefined`. So the win is diagnostic —
-      # a transform error that names the wrong thing becomes two assertions that name the
-      # lost code-splitting — plus removing the ordering dependency that
-      # `web/src/publicRoutes.test.ts` had to work around by reading the route files.
-      #
-      # Costs no wall-clock on a GREEN run, since `npm run build` already runs `tsc -b`. On a
-      # red one every test failure now waits out a full build first, locally too.
+      # BUILD BEFORE TEST, deliberately (issue #26) — see CLAUDE.md, "Quality gate".
       - run: npm run build
       - run: npm run test
-      # `vite build` rewrites the committed route tree, so a stale one is only visible as
-      # a dirty tree after the build. Regeneration is deterministic, hence exit-code 0 on
-      # an up-to-date file. `git diff --exit-code` also exits 0 on a pathspec that matches
-      # NOTHING, so the file's existence is asserted first — otherwise a rename or a move
-      # of this step out of the `web` job leaves the check passing forever.
+      # Two steps, and the existence one is not decoration — see CLAUDE.md,
+      # "Routing: one tree, two histories".
       - run: git ls-files --error-unmatch src/routeTree.gen.ts
       - run: git diff --exit-code -- src/routeTree.gen.ts
 
-  # NOTE: the job names `web`, `server` and `secrets` are required status checks in a
-  # GitHub ruleset. RENAMING ONE SILENTLY BREAKS THE MERGE GATE — the rule then waits
-  # forever for a check that no longer exists. Add steps freely; don't rename jobs.
+  # ⚠️ Job names are required status checks — see CLAUDE.md, "Quality gate".
   server:
     runs-on: ubuntu-latest
 
-    # Real Postgres, not SQLite. The schema depends on native enums, composite foreign
-    # keys, GENERATED ... STORED, GIN expression indexes and window functions, so a SQLite
-    # run would pass while proving nothing. This is also the ONLY place the migrations get
-    # executed, since the dev machine has no Postgres and no Docker.
+    # See CLAUDE.md, "SQLite is disqualified for tests".
     services:
       postgres:
-        # Pinned to Neon's major version, so CI tests the server the app actually runs
-        # against. Bump this when Neon's default major moves.
+        # Pinned to Neon's major — see CLAUDE.md, "Local Postgres for the test suite".
         image: postgres:17-alpine
         env:
           POSTGRES_USER: postgres
@@ -85,8 +62,8 @@ jobs:
           --health-retries 5
 
     env:
-      # CI has a single endpoint and no pooler, so DATABASE_URL_UNPOOLED is unset and
-      # Alembic falls back to this. Against Neon, both must be set.
+      # Unset DATABASE_URL_UNPOOLED, so Alembic falls back to this one — see CLAUDE.md,
+      # "The other compute rules".
       DATABASE_URL: postgresql://postgres:postgres@localhost:5432/climb_trainer_test
       CORS_ORIGINS: http://localhost:5173
 
@@ -95,27 +72,15 @@ jobs:
       - uses: astral-sh/setup-uv@v10.0.1
         with:
           enable-cache: true
-      # --frozen fails if uv.lock is stale, so the lockfile can never drift from
-      # pyproject.toml unnoticed. Vercel installs from this same lock.
+      # `--frozen` — see CLAUDE.md, "Never add a `requirements.txt`".
       - run: uv sync --all-groups --frozen
       - run: uv run ruff check .
       - run: uv run ruff format --check .
       - run: uv run mypy
-      # CI is where the migrations are proven. Nothing runs this automatically against
-      # production — see the out-of-band migration rule in CLAUDE.md.
+      # CI is the only place these two run — see CLAUDE.md, "Migrations run out-of-band".
       - run: uv run alembic upgrade head
-      # Catches model drift: a change to server/models.py with no matching revision.
       - run: uv run alembic check
-      # ⚠️ **The skip count is asserted, and that assertion is the point of this step.**
-      # Every DB-backed test SKIPS when DATABASE_URL is unset or the schema is behind
-      # (tests/conftest.py), and a skip is GREEN. `conftest` was changed on 2026-08-21 to
-      # skip rather than error on an un-migrated database — correct, because migrations run
-      # out-of-band behind an approval gate and there is a legitimate window — but that
-      # removed the only signal telling CI the tests actually ran. Delete the
-      # `alembic upgrade head` step above and, without this, 60+ tests turn into skips and
-      # the build stays green.
-      #
-      # `-rs` prints every skip reason, so a failure here names exactly what did not run.
+      # `-rs` prints every skip reason, so a failure here names exactly what did not run;
       # `pipefail` so a genuine test failure is not swallowed by `tee`.
       - name: pytest — and assert nothing was skipped
         run: |
