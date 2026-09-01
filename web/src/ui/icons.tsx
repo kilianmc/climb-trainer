@@ -197,6 +197,23 @@ export function IconMoon(props: IconProps) {
 }
 
 /**
+ * Keep the screen on / let it sleep, in the session player's control bar.
+ *
+ * A crescent **with the two z's**, and the z's are the whole reason this is not `IconMoon`: the
+ * bare crescent is already spoken for by the theme switch, two screens away, and one glyph
+ * meaning "dark" in the nav and "screen timeout" in the player is the kind of collision nobody
+ * notices until they are looking at both at once.
+ */
+export function IconSleep(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M16.5 15.5A6.5 6.5 0 0 1 8 7a6.5 6.5 0 1 0 8.5 8.5z" />
+      <path d="M15.5 3h4l-4 5h4" />
+    </Icon>
+  );
+}
+
+/**
  * Log out — the power symbol (IEC 5009), not an arrow leaving a door.
  *
  * Kilian's call (round 6). It also survives the icon-only nav better than the arrow did: a broken
@@ -318,6 +335,125 @@ export function IconBandage(props: IconProps) {
     <Icon {...props}>
       <rect x="1.9" y="8.4" width="20.2" height="7.2" rx="3.6" transform="rotate(-45 12 12)" />
       <path d="M9.6 9.6 14.4 14.4M14.4 9.6 9.6 14.4" />
+    </Icon>
+  );
+}
+
+/**
+ * The session player's control set — eight glyphs, all icon-only, all on the shared frame.
+ *
+ * ⚠️ **This is the place the file's own "icon-only controls are deferred to the session player"
+ * note was pointing at**, so the price of admission is paid by every caller: an `aria-label`
+ * that says what pressing DOES, a matching `title` for the pointer, and the 44px `--ct-tap`
+ * floor `&__button--icon` supplies. The glyphs are chosen for SILHOUETTE, because on this screen
+ * they sit in a row with chalky hands and no labels between them: a filled triangle (start), a
+ * ring-and-arrow (restart), two bars (pause), a double chevron (next set), a chevron into a bar
+ * (end this one now), a tick, a cross, and a speaker. No two share an outline.
+ */
+
+/** Pause — two bars. Filled, like `IconPlay`, so the pair reads as one control at 16px. */
+export function IconPause(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <rect x="7" y="5" width="3.5" height="14" rx="1.2" fill="currentColor" stroke="none" />
+      <rect x="13.5" y="5" width="3.5" height="14" rx="1.2" fill="currentColor" stroke="none" />
+    </Icon>
+  );
+}
+
+/**
+ * Restart — a ring with an arrowhead, deliberately NOT a second play triangle.
+ *
+ * A running item offers Resume and Restart side by side, and two triangles there is a control
+ * whose two meanings are "carry on" and "throw that away and do it again". The circular arrow is
+ * the one glyph everybody already reads as "from the top".
+ */
+export function IconRestart(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M20 12a8 8 0 1 1-2.6-5.9" />
+      <path d="M20.5 3.5v4.2h-4.2" />
+    </Icon>
+  );
+}
+
+/** Next set — a double chevron. Rightward like `IconPlay`, but hollow and doubled. */
+export function IconNextSet(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M6 6l6 6-6 6" />
+      <path d="M13 6l6 6-6 6" />
+    </Icon>
+  );
+}
+
+/** "Didn't finish it" — a chevron into a bar. Neither the double chevron (which logs the sets
+ *  it crosses) nor the cross (which ends the item): it sits in the same row as both. */
+export function IconEndPhase(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M7 6l6 6-6 6" />
+      <path d="M17 5.5v13" />
+    </Icon>
+  );
+}
+
+/** "I did this one" — a tick. */
+export function IconCheck(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M4.5 12.5 9.5 17.5 19.5 6.5" />
+    </Icon>
+  );
+}
+
+/** "I did not do this" — a cross, the tick's counterpart and never a close button here. */
+export function IconCross(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M6 6l12 12M18 6 6 18" />
+    </Icon>
+  );
+}
+
+/** Cues on — a speaker with two waves. */
+export function IconSound(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M4 9.5h3.2L12 5.5v13L7.2 14.5H4z" />
+      <path d="M15.6 9.2a4 4 0 0 1 0 5.6" />
+      <path d="M18.2 6.6a7.6 7.6 0 0 1 0 10.8" />
+    </Icon>
+  );
+}
+
+/** Expand every phase. A VERTICAL chevron pair: `IconNextSet` already owns the horizontal one,
+ *  and this is the axis these controls move things on. Icon-only, so the caller owes a label. */
+export function IconExpandAll(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M8 9.5 12 5.5 16 9.5" />
+      <path d="M8 14.5 12 18.5 16 14.5" />
+    </Icon>
+  );
+}
+
+/** Collapse every phase — `IconExpandAll` mirrored, on the `IconSound`/`IconMuted` precedent. */
+export function IconCollapseAll(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M8 5.5 12 9.5 16 5.5" />
+      <path d="M8 18.5 12 14.5 16 18.5" />
+    </Icon>
+  );
+}
+
+/** Cues off — the same speaker, struck through. The silhouette differs by the diagonal. */
+export function IconMuted(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M4 9.5h3.2L12 5.5v13L7.2 14.5H4z" />
+      <path d="M16 9.5l5 5M21 9.5l-5 5" />
     </Icon>
   );
 }

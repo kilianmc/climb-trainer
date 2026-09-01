@@ -11,13 +11,13 @@ looks exactly like a bound that is present.
 through a request, because a `TestClient` would add an auth fixture and a session
 dependency to a test about arithmetic.
 
-## `duration_minutes` has no endpoint yet, and is tested anyway
+## `duration_minutes` belongs to another endpoint, and is tested here anyway
 
 It is the specific obligation PR #9 owes (CLAUDE.md, "The domain schema"): `srpe_load` is
-`rpe::integer * duration_minutes`, so a payload in **seconds** overflows `SMALLINT` before
-it widens into the `INTEGER` column — and on the outbox path that is a write which retries
-forever and can never succeed. The bound lives in `server/fields.py` from this PR, and
-this is the test that keeps it there until PR #10's logging endpoint imports it.
+`rpe::integer * duration_minutes`, so a payload in **seconds** overflows `SMALLINT` before it
+widens into the `INTEGER` column — and on the outbox path that retries forever and can never
+succeed. ⚠️ It HAS a consumer now, `server/sessions/routes.py`, which imports the same
+`server/fields.py` bound; the earlier claim here that it had none is false, and this stays.
 """
 
 import pytest

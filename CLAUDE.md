@@ -87,9 +87,11 @@ Dependabot can never bump" · "Quality gate" · "Versioning".
 **Styling, the landing page or anything visual** — "UI design direction" · "Glassmorphism:
 considered and REJECTED" · "Accessibility is part of the design, not a later pass" · "The
 reading measure is a GRID COLUMN" · "Landing imagery — self-hosted, generated out-of-band, and
-URL-resolved at runtime" · "Container queries, not media queries" · "⚠️ The nav's thresholds
-are MEASUREMENTS, not breakpoints" · "Light and dark: the `data-theme` override" · "PWA — only
-the decisions a reader would otherwise reverse".
+URL-resolved at runtime" · "Container queries, not media queries" ·
+"The four screen sizes are NAMED, and they are container sizes" · "The full-height chain" ·
+"The plan timeline is measured in DAYS" · "The phase week table" ·
+"⚠️ The nav's thresholds are MEASUREMENTS, not breakpoints" · "Light and dark: the `data-theme`
+override" · "PWA — only the decisions a reader would otherwise reverse".
 
 **Running the app locally, or a blank page that is not your code** — "Local development" ·
 "Local Postgres for the test suite" · "⚠️ A dev server and the gate at the same time can blank
@@ -100,10 +102,15 @@ test must be SHOWN to fail before it is trusted" · "⚠️ A class name in mark
 SILENTLY" · "⚠️ Prose is capped, and an executable claim must not be prose".
 
 **The plan generator, `POST /api/plans/preview`, persisting a plan or `GET /api/plans/active`** —
-"The plan generator" · "Persisting a plan".
+"The plan generator" · "Persisting a plan" · "The plan timeline is measured in DAYS" ·
+"The phase week table".
 
-**Building the session player** — "Session player invariants" · "Screen Wake Lock — a
-user-owned TOGGLE, and a progressive enhancement".
+**Logging a session, an outbox flush or `PUT /api/sessions/{client_uuid}`** — "Logging a
+session" · "The `sets` array is a DELTA, not a replacement" · "`duration_minutes` only ever
+grows".
+
+**Building the session player** — "Session player invariants" · "The full-height chain" ·
+"Screen Wake Lock — a user-owned TOGGLE, and a progressive enhancement".
 
 ### What lives outside this file — the master map
 
@@ -217,7 +224,8 @@ secrets are read in `server/settings.py` from unprefixed env vars.
 
 ⚠️ **The one build-time value this repo injects is deliberately NOT a `VITE_*` var.**
 `__BUILD_ID__` — the `define` in `web/vite.config.ts`, read through `web/src/buildId.ts` —
-keys `GET /api/library?v=…`. It goes through `define` precisely so that **nothing has to be
+keys the two cached reference reads, `GET /api/library?v=…` and `GET /api/vocabulary?v=…`. It
+goes through `define` precisely so that **nothing has to be
 configured in the Vercel project** for a deploy to bust that cache: a build id that depends on
 somebody remembering to set an env var is a build id that eventually stops changing, and a
 year-long `immutable` then pins a stale exercise library. The value is a public deploy
@@ -347,8 +355,7 @@ or Query defaults live. `main.tsx` gives it `createBrowserHistory`, `remote.tsx`
 - **Styles are split by mount**, which is what keeps the `.ct-app` rule honest:
   `styles/app.scss` is imported from `routes/__root.tsx` (so both mounts get it, and it
   contains zero `:root`/`body` rules), `styles/global.scss` only from `main.tsx` (the
-  document reset, which must never reach the shell), and `styles/update-bar.scss` only from
-  `ui/UpdateBar.tsx`, which only `main.tsx` imports. **Since PR #7 this is asserted on the BUILT
+  document reset, which must never reach the shell). **Since PR #7 this is asserted on the BUILT
   stylesheet the shell loads, by `src/distContract.test.ts`** — not on the sources. The
   distinction is the whole point and was measured: a per-source-file scan with per-file
   exemptions stayed green while one added line, `@use 'global';` in `app.scss`, emitted
@@ -364,11 +371,10 @@ A service worker registered from the federated entry would be **scoped to
 kilianmc.com** and start intercepting the production portfolio's requests. Low
 likelihood, severe blast radius. **SW registration lives in `main.tsx` only.**
 
-It constrains *component placement*, not just entry files: `pwa/updatePrompt.ts` calls
-`registerSW` at module scope, so **anything that imports it — `ui/UpdateBar.tsx` included —
-may be rendered from `main.tsx` and from nowhere in the route tree**, which `remote.tsx`
-shares. Putting the update bar in `__root.tsx` is the realistic mistake; it looks like
-chrome, and chrome lives in the root route.
+It constrains *imports*, not just entry files: `pwa/register.ts` calls `registerSW`, so **that
+module, and anything that imports it, may be reached from `main.tsx` and from nowhere in the
+route tree**, which `remote.tsx` shares. A component in `__root.tsx` pulling it in is the
+realistic mistake; chrome looks like it belongs in the root route.
 
 Three tests hold the line, and they need each other:
 
@@ -591,10 +597,9 @@ npm run codegen:api   # uv run python -m server.openapi_schema | node web/script
 The registration lives in `main.tsx` only — see the service-worker rule above for the two tests
 that enforce it. What follows is the reasoning that is not visible in the config:
 
-- **`registerType: 'prompt'`, not `autoUpdate`.** `autoUpdate` calls `skipWaiting`, which
-  **deletes the outdated precache as the new worker activates** — so a tab left open across a
-  deploy then 404s on the next lazily-loaded route chunk, and later it could swap code under a
-  session player mid-set. The visitor takes the update, via `ui/UpdateBar.tsx`.
+- **`registerType: 'autoUpdate'`.** ⚠️ The plugin only adds `skipWaiting` + `clientsClaim` when
+  `injectRegister` is `auto` or nullish (`vite-plugin-pwa@1.3.0`, `dist/index.js`); setting it to
+  `false` or `'script'` silently drops both.
 - **`injectRegister: null`.** We register from `main.tsx`, and the alternative is blocked
   anyway: the production document CSP is `script-src 'self'` with no nonce, so the `'inline'`
   strategy's inline `<script>` would never execute. `null` also means the plugin injects nothing
@@ -618,7 +623,7 @@ that enforce it. What follows is the reasoning that is not visible in the config
   through the share scope. Precaching them is what makes the standalone app work offline at all.
   (An earlier note here said the standalone app never loads `remoteEntry.js`. It was wrong.)
 - **The four decisions above are asserted, not just recorded.** `src/pwaContract.test.ts` reads
-  `vite.config.ts` off disk (modelled on `mf-contract.test.ts`) and fails on `autoUpdate`, on a
+  `vite.config.ts` off disk (modelled on `mf-contract.test.ts`) and fails on `prompt`, on a
   non-`null` `injectRegister`, on a missing `/api` denylist, and on the *presence of the token*
   `runtimeCaching` anywhere. Before it existed, adding `runtimeCaching` for `/api` passed the whole
   gate. It strips comments first, because this config explains those rules in prose.
@@ -635,12 +640,6 @@ that enforce it. What follows is the reasoning that is not visible in the config
     production build**, for a script that runs when the logo changes. Dependabot alerts cover
     devDependencies and this repo is at zero; `npm audit` is 0 with the pinned-`npx` form. Do not
     "fix" the config file by adding the import back.
-- **The update prompt must be dismissable, and its Reload needs an explicit fallback.** Both are
-  bugs that were shipped and measured, both recorded in `pwa/updatePrompt.ts`: the bar is `fixed`
-  at the bottom, so with no dismiss it permanently covered the bottom-anchored primary action; and
-  prompt mode's reload is gated on `event.isUpdate`, which is false on an **uncontrolled** client
-  (first visit, hard reload), where tapping Reload otherwise activates the worker and does nothing
-  visible. `global.scss` reserves the bar's height with `body:has(.ct-update-bar__panel)`.
 - **No `orientation` in the manifest.** The app is used in landscape on a bouldering mat as
   often as in portrait.
 - **`vite preview` proxies `/api` too**, mirroring `server`. Production serves `/api` from this
@@ -765,7 +764,8 @@ recorded it as a side effect, batch it.**
   Auth gates who can cause a cache **MISS**, and a miss is an origin read and therefore a Neon
   wake — so an unauthenticated library endpoint would hand a bot exactly the wake that
   `POST /api/auth/demo` was rewritten to remove. It is deliberately not in `PUBLIC_ROUTES`.
-  ⚠️ `GET /api/vocabulary` deliberately keeps `private, max-age=3600`. **The two rules differ
+  ⚠️ `GET /api/vocabulary` carries the same `?v=` key but keeps `private, max-age=3600`.
+  **The two headers differ
   on purpose** — see that endpoint's own bullet under "Onboarding and the profile" for why it
   has no business in a shared cache; do not "harmonise" them.
 - **Two connection strings, and this bullet is their one explanation** (every other mention in
@@ -834,6 +834,11 @@ changing an argument; do not restate it here.
   migration must never race a deploy, and deploys here are automatic while migrations
   are not.
 - **Expand → deploy → contract**, always, for the same reason.
+- **Two revision-shape facts are a GUARD, not prose** (`tests/test_migration_revision_shape.py`):
+  a CHECK constraint name must not reach an `op.*` call pre-derived, because `ck` is the one
+  `NAMING_CONVENTION` key that interpolates `%(constraint_name)s` and Alembic compares CHECK
+  constraints by name — pass the bare suffix or `op.f()` — and every enum must be built as
+  `postgresql.ENUM(..., create_type=False)`, a parameter `sa.Enum` accepts and silently discards.
 - **Never migrate at startup.** Note that there is **no startup revision check today** —
   nothing in `server/` reads `alembic_version`, so a schema/code mismatch is not detected
   or warned about at boot. If one is ever added it must only **READ** and **warn**, never
@@ -940,21 +945,11 @@ rules, not preferences.
 > both DB URLs, and the secrets live only in the GitHub environments. **Read this section
 > before any PR that adds a migration or promotes.**
 
-Actions → **Migrate** → *Run workflow*. Three inputs:
-
-- **`environment`** — `dev` or `production`. This selects the GitHub **environment**, so
-  `production`'s protection rules (approval) apply and each environment carries its own
-  connection secrets. A `dev` run therefore cannot reach production's database.
-- **`action`** — **`current` is the default, and it is read-only**: it prints the applied
-  revision and stops. `upgrade` runs `alembic upgrade head` and prints `current` both
-  before and after, so the job log is the audit trail. `history` lists the revisions.
-- **`seed`** — off by default; when on, runs `python -m server.seed` after a successful
-  upgrade.
-
-**Prerequisite:** the two GitHub environments (`dev`, `production`) must exist, each
-with **`DATABASE_URL_UNPOOLED`** (the *direct* endpoint — Alembic uses this) and
-**`DATABASE_URL`** (the *pooled* endpoint — the seed step uses this) as environment
-secrets. Without them the job starts and fails on the first Alembic step.
+**The MECHANICS live in the header of `.github/workflows/migrate.yml`** — the dialog, the
+`gh workflow run` form and the two environment secrets each environment must carry. They have
+exactly one point of use, and the three inputs already describe themselves in the dispatch
+dialog, so this file keeps the policy above and the three traps below and does not restate the
+walkthrough.
 
 The workflow is `workflow_dispatch`-only and never prints a connection string; keep both
 properties if you edit it.
@@ -1054,7 +1049,8 @@ reader would otherwise try to undo:
   hygiene, they are FK targets. **The technique is the house pattern for a denormalisation:
   if you copy a column down, tie it back.** One place deliberately does not
   (`logged_set.exercise_id` vs its prescription's) — see that model's docstring for the cost
-  argument and the write-path obligation it creates instead — **issue #62**, not PR #10,
+  argument and the write-path obligation it creates instead — **issue #62**, whose owner is
+  now `server/sessions/routes.py` (PR #15b, a 422 that rejects the whole flush). Not PR #10,
   which shipped a read-only library and no write path at all.
 
 - **`ascent.tags` is gone.** Tags were `text[]` + a GIN index; they are now the seeded
@@ -2315,7 +2311,9 @@ DATABASE_URL="${CT_TEST_DATABASE_URL:-}" DATABASE_URL_UNPOOLED=""
 - **CI** runs `uv run pytest -q` directly against its `postgres:17-alpine` service, so it never
   goes through this script and always runs the full set. **Never weaken a DB-backed test on the
   assumption that nothing runs it, and never make the gate *require* a database** — and never
-  substitute SQLite to dodge the skip. CI is where the migrations and the seed are executed.
+  substitute SQLite to dodge the skip. CI always executes the migrations and the seed; locally
+  both happen only when you opt in — `db:up` takes the database to head, and the `seeded`
+  fixture seeds it.
 
 **Batch your edits and run `npm run check` once at the end**, not once per file.
 
@@ -2374,9 +2372,23 @@ clock tests need fake timers plus a `performance.now` shim.
 **Five caps, enforced by `tests/test_comment_budget.py`:** module docstring **10** ·
 class/function docstring **2** · inline `#`/`//` run **2** · `/* */` block **2** ·
 wire-contract docstring **20** (FastAPI ships those to API consumers, who cannot read the code
-instead). Over-cap is allowed **only** with a row in `tests/comment_budget_allowlist.toml`
-naming what the length buys; that file is the register of exceptions and its `BASELINE_RATCHET`
-may only ever go down.
+instead). **`.github/`'s workflow YAML is in scope on the same two tiers** — a FILE HEADER
+block reads as a module docstring (**10**) and every other own-line `#` run as an inline run
+(**2**) — which is what closes the gap that let 15- and 28-line runs grow in `ci.yml` and
+`migrate.yml`, and **`migrations/versions/` is in scope too** — the wholesale skip that treated a
+shipped revision as frozen history was deleted once those revisions carried no prose, so a future
+revision is born budgeted. Over-cap is allowed **only** with a row in
+`tests/comment_budget_allowlist.toml` naming what the length buys; that file is the register of
+exceptions, and its `BASELINE_RATCHET` may only ever go down and may not sit more than 25 above
+the real count.
+
+**⚠️ The un-reviewed `BASELINE` rows are on a DEADLINE, not merely frozen** —
+`BASELINE_DEADLINE` is four dated milestones stepping the permitted count down to **zero**,
+green until each date and hard red after it until the count fits. **Read the constants for the
+dates, not this sentence.** Editing a target cannot buy silence: `MILESTONE_MIN_CUT` keeps every
+target at least 150 below the ratchet, which is more than the ratchet's own 25 of permitted
+slack, so raising a target would mean raising the ratchet further than its own arm allows. The
+only move left is trimming comments.
 
 **After every PR, re-check the `CLAUDE.md` section covering what you touched** — confirm it
 still holds, or update it in the same PR. `.github/pull_request_template.md` carries the
@@ -2492,11 +2504,12 @@ Two notes for whoever touches it:
 | `_primitives.scss` | button (3 variants), input, field, error, badge, text primitives |
 | `_card.scss` | the card surface and its `@container` rules |
 | `_bento.scss` | the bento grid's named areas |
-| `_chrome.scss` | nav (the brand, the three regimes and their measured thresholds), status renders, bottom-anchored action bar |
+| `_chrome.scss` | nav (the brand, the three regimes and their measured thresholds), status renders, the action bar that GROUPS but anchors nothing |
+| `_session.scss` | the session player: the height chain's app half, the phase fills, the item list |
+| `_plan.scss` | the plan calendar: the phase timeline's day ruler and the phase week table |
 | `_landing.scss` | the landing page's photographic bands, detail split and icon rules |
 | `app.scss` | the `@use` entry and the `.ct-app` root; imported from `routes/__root.tsx` |
 | `global.scss` | the document reset. `main.tsx` only, and the ONLY file allowed `:root` |
-| `update-bar.scss` | the PWA update bar. `ui/UpdateBar.tsx` only, i.e. standalone only |
 
 Guiding principle, in Kilian's words, and still the tie-breaker: **"we prefer useful than
 looking pretty."** When a visual flourish and legibility disagree, legibility wins without
@@ -2562,7 +2575,7 @@ lighting.
   **1.09:1** — `(0.0056 + 0.05) / 0.05`, with fully opaque pure black. A blurred shadow at a
   realistic peak alpha lands at 1.04–1.06:1. The first draft of PR #7 shipped a "reduced dark
   scale" that measured 1.05–1.07:1: three GPU-costing steps rendering as nothing. Dark elevation
-  therefore rests on the surface scale and the hairlines alone, and the floating update bar carries
+  therefore rests on the surface scale and the hairlines alone, and a floating surface leans on
   `--ct-border-strong` (4.2:1 non-text) instead. **If you re-add dark shadows, measure them
   first** — and note the only way to make them work is to lift `--ct-bg`, which re-opens every
   dark contrast pair.
@@ -2585,23 +2598,23 @@ lighting.
   — measured, the login submit sat ~300px above the fold with no scroll at all — so the sticky and
   the `env()` floor were removed rather than left looking load-bearing. Real anchoring needs
   `position: fixed` or `100dvh`/`100svh`, and **both resolve against kilianmc.com's viewport in the
-  federated mount**, because the route tree is shared. It therefore belongs to the session player
-  (planned PR #15a), the first genuinely full-height screen, which needs a mount-aware height
-  decision anyway. `env(safe-area-inset-*)` under `max()` floors is in use on `.ct-app`'s own
-  padding and on the update bar, which may be `fixed` because `main.tsx` alone renders it.
-  `viewport-fit=cover` is already set in `index.html`.
+  federated mount**, because the route tree is shared. **PR #15a closed that deferral with
+  neither** — see "The full-height chain"; anything needing a real bottom bar becomes the last row
+  of its own full-height grid. `env(safe-area-inset-*)` under `max()` floors is in use on
+  `.ct-app`'s own padding. `viewport-fit=cover` is already set in `index.html`.
 - **⚠️ No `position: fixed` and no viewport units anywhere the route tree can reach.** Both mounts
   share that tree, and in the federated mount both resolve against **kilianmc.com's viewport** — a
-  `fixed` element would float over the portfolio's own chrome. Both are allowed only in the
-  `main.tsx`-only subtree, which is why the PWA update bar may use `fixed` and `_chrome.scss` may
-  not. Asserted on the built remote stylesheet by `distContract.test.ts`; inline
+  `fixed` element would float over the portfolio's own chrome. Both would be allowed only in the
+  `main.tsx`-only subtree, and **no stylesheet uses either today**. Asserted on the built remote
+  stylesheet by `distContract.test.ts`; inline
   `style={{ position: 'fixed' }}` in a component never becomes CSS, so `designGuard.test.ts` scans
   the `.tsx` sources for that separately.
   ⚠️ **The viewport-unit half of that rule had NO detector at all until PR #9** — three guards
   covered `position: fixed` from two directions and nothing looked for `vh`/`vw`/`dvh`/`svh`.
-  `designGuard.test.ts` now greps every stylesheet for them, with **no exemption**: neither
-  `main.tsx`-only sheet wants one today, and a dead exemption is worse than none (add one, with a
-  control, the day the update bar needs `100dvh`). **The `.tsx` sources are scanned too**, with
+  `designGuard.test.ts` now greps every stylesheet for them, with **no exemption**: the one
+  `main.tsx`-only sheet wants none, and a dead exemption is worse than none (add one, with a
+  control, the day something in that subtree needs `100dvh`). **The `.tsx` sources are scanned
+  too**, with
   `sizes="…"` stripped first: an inline `style={{ blockSize: '100vh' }}` never becomes CSS and
   would otherwise pass the whole gate, while the two `sizes="100vw"` hints on `<LandingPicture>`
   are resource selection — they can fetch one rung too many in the shell, they can never move a
@@ -2659,8 +2672,8 @@ branching, and unlike the `50% - 50vw` idiom it cannot produce a horizontal scro
 - **`img-src 'self' data:` means every image is bundled and every icon is inline SVG markup.**
   `ui/icons.tsx` — never `<img src="…svg">`, which is both a blocked external fetch and a glyph
   that cannot inherit `currentColor`. Every icon is `aria-hidden` + `focusable="false"` and has a
-  text label beside it; icon-only controls are deferred to the session player, per the same
-  reasoning as the update bar's "Later" button.
+  text label beside it; icon-only controls are deferred to the session player, because a word
+  carries an accessible name and a hittable width without an `aria-label`.
 - **`src/publicUrl.ts` is the image half of the `web/src/api/client.ts` bug.** A bare
   `src="/landing/x.avif"` resolves against the DOCUMENT, which in the federated mount is
   kilianmc.com — every photograph 404s there while working perfectly standalone. So the origin
@@ -2725,11 +2738,38 @@ Both of these are structural, not stylistic. Do not "simplify" either.
   DOM order — which matters because DOM order here is frozen by tests.
 - **Tokens live on `.ct-app`, never `:root`** — in the federated mount `app.scss` is injected
   into kilianmc.com's document.
-  - **Why a Sass mixin rather than a rule:** the PWA update bar is rendered from `main.tsx`
-    as a *sibling* of the router (it must be — see the service-worker rule), so it sits
-    outside `.ct-app` and inherits nothing. `_tokens.scss` therefore exposes
-    `@mixin declare`, included by both `.ct-app` and `.ct-update-bar`. A second `.ct-app`
-    element is **not** the fix: that element's padding, max-width and background would apply.
+  - **Why a Sass mixin rather than a rule:** `global.scss` paints the standalone document
+    canvas from `body`, which sits outside `.ct-app` and inherits nothing. `_tokens.scss`
+    therefore exposes `@mixin declare`, included by `.ct-app` and by that `body` rule. A second
+    `.ct-app` element is **not** the fix: that element's padding, max-width and background
+    would apply.
+
+### The four screen sizes are NAMED, and they are container sizes
+
+`web/src/styles/_sizes.scss` carries **the table** — four names, four numbers, the px-to-rem
+arithmetic, and the widths that are deliberately NOT on the scale. **Read it there rather than
+duplicating it here**, exactly as with the nav's thresholds below: a table in two places is a
+table that disagrees with itself. What belongs in this file:
+
+- **They are `@container ct-app` sizes, not `@media` ones**, for the reason the section above
+  gives — in the federated mount the viewport is kilianmc.com's, so a 1400px browser would hand a
+  ~600px panel the big-screen layout. `designGuard.test.ts` now fails on any width `@media` in a
+  stylesheet **and on any width `matchMedia` in a shipped `.ts`/`.tsx`**, so that is a guard
+  rather than a promise.
+- **A Sass module, not a token.** A query prelude is parsed before custom properties are
+  substituted, so `min-inline-size: var(--ct-bp-tablet)` is invalid CSS and lightningcss rejects
+  it outright. Consumers interpolate `#{sizes.$desktop}`, as `_chrome.scss` already does with
+  `#{$icons}`.
+- **A width is a screen size only when it answers "how big a screen is this".** The nav's five
+  thresholds, and the `34rem` five files share, are MEASUREMENTS and stay where they are;
+  `_sizes.scss` names each exemption and its reason, so nobody "finishes the migration" later.
+- **`.ct-app__wide` is what layout-shaped content uses** — the plan timeline and the phase week
+  table, which are tables rather than prose. It lives in `_layout.scss` beside the measure and the
+  bleed column, and it is deliberately NOT a third grid column: `&__bleed` is a direct-child rule,
+  and the week table sits inside a `<details>`, whose light children are behind a shadow slot and
+  can never be grid items of anything. So it is intrinsic — `100cqi` against `.ct-app`, capped at
+  the big-screen size, and applied only from the desktop size up. `cqi` is the app's own width in
+  both mounts, which is why it is allowed where `50% - 50vw` is banned.
 
 ### ⚠️ The nav's thresholds are MEASUREMENTS, not breakpoints
 
@@ -2795,8 +2835,8 @@ changing the OS scheme no longer moves the app.
 light values plus a `@media (prefers-color-scheme: dark)` block. **A media query carries no
 specificity**, so an attribute selector on the same element beats both blocks whatever the source
 order — which is the entire mechanism. `overrides` is therefore a *separate* mixin from `declare`
-and is included by `.ct-app` only, never by `.ct-update-bar`: nothing sets the attribute on the
-update bar, which is rendered from `main.tsx` outside the router. The attribute goes on `.ct-app`
+and is included by `.ct-app` only, never by `global.scss`'s `body`: nothing sets the attribute on
+the document canvas. The attribute goes on `.ct-app`
 and nowhere else — not `<html>`, not `<body>`, which belong to kilianmc.com in the federated
 mount. `global.scss` bridges the standalone document canvas with `body:has(.ct-app[data-theme…])`,
 which is legal *there* because that file never ships to the shell.
@@ -2825,6 +2865,81 @@ of that panel, which is where it should stick; standalone, nothing scrolls above
 document. Both are right. Note the difference from the inert `sticky` that was removed from
 `&__actionbar`: **a sticky element's range is its containing block**, which for the nav is the
 whole page and for that action bar was a content-sized form (range ≈ 0).
+
+### The plan timeline is measured in DAYS, on one ruler
+
+`web/src/plan/timeline.ts` is the model (pure — today is passed in, as `phaseToggles.ts` takes
+it), `web/src/plan/PlanTimeline.tsx` renders it, and `web/src/styles/_plan.scss` carries the
+geometry with its measurements. Signed off by Kilian after five rounds on a static preview
+(#93). The decisions a later change would otherwise reverse:
+
+- **⚠️ The x axis is DAYS, not weeks-times-a-constant.** One day of bar is `--tl-day`, the grid
+  is `<plan days> * --tl-day` wide, and every track is `<delta days>fr`. The tracks are cut at
+  the **union of the phase boundaries and the REAL month boundaries**, so a segment and a band
+  are measured off one ruler: a 3-week phase lands on exactly 21/28 of a 28-day February, and a
+  partial month at either end is a partial band. Weeks times a constant is the obvious
+  simplification and it is wrong — it makes February and March the same width, so every band
+  edge after the first is a lie. Nothing is rounded to a week and there are no quarters. The bar
+  spans the plan's own first-to-last day: a 12-week plan draws 12 weeks.
+- **Month bands are ONE grey.** Every band is `--ct-bg`; the `--ct-border-strong` hairline at
+  each band start is the whole separation (4.11:1 light, 5.80:1 dark). Do not add an alternating
+  second tone.
+- **The opening year is SUPPRESSED when the plan starts in December**, because it would fight the
+  January label a few days later for the same space. The rule at each 1 January, and its own year
+  label, are unaffected either way.
+- **⚠️ The two themes differ deliberately** — the precedent is #95's light pills against dark's
+  bare words. Light: green phase name, green bar lines, and the current phase as the only
+  green-*filled* segment. Dark: green duration, a `--ct-fg` connector, green segment block edges,
+  green year. **`--ct-accent-pressed` for the current segment is the alternative that MEASURES
+  1.45:1 light and 1.28:1 dark** against `--ct-accent`; `contrast.test.ts` asserts the fill that
+  replaced it. **ZERO new tokens**: `--ct-accent` is the green, and `--ct-success` stays text-only.
+- **The CALLOUT is the `<button>`, not the dot.** That is what gives a 1-week phase a 44px target
+  on both axes while its segment is 1.6rem wide; the dot and the segment are `aria-hidden`
+  presentation. The bar never wraps and never becomes a vertical rail — it scrolls, in a
+  focusable container with an accessible name and `overscroll-behavior-inline: contain`.
+- **⚠️ EXPAND BEFORE SCROLL, then move focus.** Clicking a phase opens its `<details>` and asks
+  for the scroll on a LATER tick (a collapsed disclosure has no laid-out target), then focuses
+  that section's own summary with `preventScroll` — scrolling alone leaves a keyboard user
+  behind, and focusing without it undoes the scroll. `web/src/planPhaseJump.test.tsx` pins all
+  three, in order. The open set goes through the existing `ct:planPhases` path; there is **no URL
+  fragment**, and `prefers-reduced-motion` decides the behaviour.
+- **⚠️ Expand-all and collapse-all are ICON-ONLY at EVERY width** (Kilian, 2026-08-31), so the
+  nav's threshold-driven text-to-icon machinery does **not** apply — only `&__button--icon`'s
+  treatment, plus the `aria-label`, `title` and 44px floor every icon-only control here owes.
+- **The `ct-app__badge` beside a phase name or "Week N" sits at the row's INLINE-END edge**, via
+  `&__titlerow`: `flex: 1` plus an `auto` margin, never absolute positioning. `flex: 1` is what
+  makes it work in the phase `<summary>`, which is itself the flex row.
+
+### The phase week table — one block per day, and codes by CLIPPING
+
+`web/src/plan/phaseWeek.ts` and `web/src/plan/PhaseWeekTable.tsx`, inside each phase's
+disclosure. A real `<table>`: 7 weekday columns x one row per week, laid out with
+`display: grid` + `display: contents`, which is why every level restates its ARIA role.
+
+- **It never transposes.** Narrow shrinks the same 7-column grid — smaller type, 1px gutters, a
+  narrower week column — so the seven days always use the full width.
+- **ONE BLOCK PER DAY**, not one per activity: the day is one block carrying its blocks as lines
+  of text in `order_index` order. No green fill behind the text — the green is spent on the two
+  headers, and a rest day is the sunken `--ct-bg`. There is no corner cell, and the week header
+  is centred on the **block** axis of its full-height row.
+- **⚠️ The short codes are applied by CLIPPING the full name, never `display: none`**, with the
+  code `aria-hidden`, so the full aspect name stays in the accessible name at every width.
+- **The legend is the table's own `<caption>`** (`caption-side: bottom`, mobile-only, borderless,
+  one wrapped run with the codes bold **by weight, not colour**). A caption is not a component
+  under the table, it IS the table, so it cannot read as unrelated.
+- **⚠️ The sizing custom properties (`--cellfont`, `--cellh`, `--celllines`…) are
+  COMPONENT-SCOPED and must not move into `_tokens.scss`** — same reasoning as
+  `--ct-nav-compress` in `_chrome.scss`, and they are deliberately un-prefixed so nothing there
+  can be mistaken for a design token. `--cellh` is **derived from its own parts** (lines x
+  leading x font + gaps + padding), so the row height cannot drift from what is inside it.
+- **⚠️ Known and accepted: a strength day reads `P`.** There is no general `strength` aspect
+  among the eight seeded keys — that is **issue #98**, deliberately sequenced after this table.
+  Do not add an aspect to fix the reading here.
+- **The weekday header row has NO border** (Kilian, 2026-08-31): its sunken `--ct-bg` against the
+  raised day blocks is the whole separation.
+- **The gap to the week-CARD list is `--ct-space-5`, and `&__weekgrid + &__stack` (0,2,0) has to
+  out-specify `_profile.scss`'s `&__disclosure > * + *` (0,1,0)** — which matters because `plan`
+  is `@use`d **before** `profile` in `app.scss`.
 
 ## Onboarding and the profile (PR #9, redesigned by #54)
 
@@ -3136,8 +3251,9 @@ weakness**, the editor became sections rather than a second wizard, and there is
     hygiene.** Clearing the cache while a screen is still mounted makes its observer refetch:
     measured on the real logout path, **one extra `GET /api/profile`** issued after the token
     was dropped, which is a 401, which `refresh.ts` answers with a refresh POST — a **Postgres
-    write** on a path that previously did none. `queryObserver.js:445/451/461` gate every fetch
-    decision on `enabled`, so this closes it at the source. Re-measured after: zero.
+    write** on a path that previously did none. `queryObserver.js` gates every fetch decision on
+    `resolveQueryValue(options.enabled, query) !== false`, so this closes it at the source.
+    Re-measured after: zero.
 - **⚠️ Anything touching mutations, the query cache or a route-level query guard must be
   VERIFIED against `web/node_modules/@tanstack/query-core/` for the installed version** —
   not from memory, not from the docs, not from reasoning about what would be sensible. Three
@@ -3227,9 +3343,11 @@ weakness**, the editor became sections rather than a second wizard, and there is
   (`climbing_aspects`, `equipment`, `injury_areas`). The cost is six short arrays in every
   response and zero database time, and the six assertions are worth that. Say only that.
 - **Caching on that endpoint is `private, max-age=3600`, not the library rule's
-  `public, immutable`.** It is user-independent and only a deploy can change it, but there is
-  no build id in the URL (so a year-long immutable cache would pin a stale vocabulary) and it
-  requires a bearer token (so it has no business in a shared CDN cache). React Query holds it
+  `public, immutable`.** It is user-independent and only a deploy can change it, but it requires
+  a bearer token, so it has no business in a shared CDN cache. It carries the same
+  `?v=<buildId>` key as `/api/library`, so a new bundle asks a new URL and cannot be answered
+  out of an entry cached before its own deploy — which is what the browser cache did to PR #94's
+  new `plan_goal` and `phase_guide` fields. React Query holds it
   at `staleTime: Infinity` for the rest of the session. ⚠️ **There is no `Vary:
   Authorization`, and that is only safe while the body is user-independent** — a browser
   cache keys on the URL alone, so two accounts sharing a browser share the entry. The moment
@@ -3251,13 +3369,119 @@ this is the map and the traps.
 
 - **Module layout.** `contract.py` (`GENERATOR_VERSION`, `PlannerInput`, `RefusalReason`,
   `CannotPlanError`, `REFUSAL_MESSAGES`) · `periodisation.py` (gap → weeks, phase order,
-  mesocycle spans) · `schedule.py` (weekday mask, date maths) · `selection.py` (`candidates`,
+  mesocycle spans) · `schedule.py` (weekday mask, date maths) · `climbing.py` (the level bands,
+  the climbing floor, `WALL_EQUIPMENT`, `SESSION_WINDOWS`) · `selection.py` (`candidates`,
   `prescribable`, `ASPECT_EMPHASIS`, the shortfall machinery) · `generate.py` (`generate`) ·
   `blueprint.py` (the frozen output tree) · `fingerprint.py` (`library_digest`,
   `generator_input`) · `__init__.py`, **a re-export facade that defines nothing** — the
   definitions live in `contract.py` because `schedule.py` has to raise a refusal, and a
   definition in the facade the facade re-exports is a cycle. Purity is enforced by
   `server/domain/.ruff.toml`; see the purity bullet under "Session player invariants".
+- **⚠️ CLIMBING IS ALLOCATED FIRST, AND THE WEEK HAS A FLOOR (PR A, issue #84).** The generator
+  used to prescribe **28% of its minutes on a wall**, with week 19 of a real 24-week plan
+  carrying **none at all** — accessory work is easy to schedule, so it crowded out the thing it
+  exists to support. `_microcycle` is therefore **two passes**: every session gets its wall
+  blocks first, then the band's hangboard floor, then supplementary blocks breadth-first across
+  the week, **each one accepted only while the week still meets its band's climbing floor**. So
+  there is no order in which accessory work can displace climbing, and a zero-climbing week is
+  not expressible. Measured after: **87% / 78–79% / 57–59% wall time** by band, no week below
+  its floor, no week without climbing, at every `sessions_per_week` from 1 to 7, both disciplines.
+  - **The bands are Kilian's, by CURRENT grade, and stored as an ORDINAL BOUNDARY per
+    discipline** — never a label, never a cross-scale conversion, because
+    `server/domain/grades.py` keeps the ladders disjoint. Beginner (sport ≤ `6a+`, boulder ≤
+    `6A+`) **85%** · intermediate (`6b`–`7a+` / `6B`–`7A+`) **75%** · advanced (`7b`+ / `7B`+)
+    **50%**. Four named constants in `climbing.py`, one per boundary, so moving a bar is a
+    one-line change. ⚠️ **The boulder row applies Kilian's French label spellings to the Font
+    ladder**, which sets the boulder bar a rung or two higher in ability terms. A choice, not a
+    conversion, and the reason each threshold is its own constant.
+  - **`sessions_per_week == 1` is a climbing session and nothing else.** The supplementary pass
+    is skipped entirely for a one-session week: there is no better use of a single day.
+  - **⚠️ THE BAND IS A TARGET RANGE, NOT ONLY A FLOOR** — beginner **85–90%**, intermediate
+    **75–82%**, advanced **50–62%** (`CLIMBING_TARGET_PCT`). Round 1 met every floor and still
+    put all three bands at 84–91%, because climbing was allocated to exhaustion and
+    `BLOCKS_PER_SESSION` was gone before the supplementary pass ran: the banding was **inert**,
+    and a floor alone cannot detect that. So **both edges of the band do work** — climbing fills
+    to the band's TOP share of the session type's window floor (`CLIMBING_BLOCKS` caps how many
+    blocks it spends doing so), and supplementary work is allowed back down to the BOTTOM. At a
+    single target the two constraints meet exactly and rounding always loses. The floor is still
+    the hard per-week bound and is asserted per week; the range is asserted over the plan.
+  - **⚠️ PRIORITY WORK GOES FIRST IN A SESSION.** `order_index` puts `max_hang`, `repeaters` and
+    `limit_boulder` ahead of `laps`, `circuit`, `intervals`, `straight_sets` and `hold`
+    (`PRIORITY_PROTOCOLS`), because **quality of effort decides the adaptation** — round 1
+    prescribed `technique 15m | power 20m | finger_strength max_hang 12m`, i.e. max hangs after
+    35 minutes of climbing, which is exactly the "turn up subpar and set your training back"
+    failure. Consequence worth knowing: **the session's window is the window of the block that
+    LEADS after ordering**, so a session that takes a hang becomes a hangboard session and is
+    held to 20–45 min — which is why a long endurance day cannot take one.
+  - **⚠️ A LOADING WEEK OWES REAL HANGS, SCALED BY BAND.** In `STRENGTH` and `POWER`
+    (`FINGER_PHASES`) an advanced climber gets **2** max-hang/repeater sessions a week,
+    intermediate **1**, beginner **0** (`FINGER_SESSIONS_PER_WEEK`), placed in their own pass
+    before the general supplementary one. Round 1 gave an advanced climber **8 minutes of finger
+    work a week**; finger strength is the strongest single predictor of climbing performance and
+    matters *more* as level rises. Measured after: **24–31 min/week** in those phases for
+    advanced, 14–16 for intermediate. ⚠️ **Beginner is zero DELIBERATELY** — the sources want
+    6–12 months of consistent climbing before structured hangboarding, nothing in the profile
+    records climbing history, and **Kilian explicitly declined an experience field**, so the band
+    is the only proxy there is. A beginner still meets a hangboard through the ordinary aspect
+    rotation; what they do not get is a floor.
+  - **`WALL_EQUIPMENT` includes `auto_belay`, and issue #84's own measurement did not.** It is a
+    wall you climb without a partner, and excluding it would have the app tell an
+    auto-belay-only climber to go and find somewhere to climb.
+- **⚠️ A SESSION'S LENGTH IS A PROPERTY OF ITS TYPE, NOT OF THE CLIMBER'S FREE TIME.**
+  `SESSION_WINDOWS` maps the leading block's `ProtocolKind` to a minutes window over prescribed
+  work (the 15-minute warm-up is not a block and is outside it). **The ceiling binds in every
+  phase; the floor only in a loading one** — `Phase` in `server/domain/vocabulary.py` is
+  explicit that a deload has its own prescriptions rather than being a scaled block, so topping
+  a deload back up to a loading week's length would contradict the schema's own definition.
+  - **Extra time becomes extra volume ONLY for `endurance` and `technique` on a `laps`,
+    `circuit` or `other` protocol, and then at most `MAX_EXPANSION_FACTOR` (2×) the authored set
+    count.** A `max_hang`, `limit_boulder` or `intervals` session is **never** padded: the low
+    volume *is* the protocol, and "end your bouldering before total exhaustion" is the source.
+    Without the 2× cap a 4-minute technique drill reached its window minimum at **fifteen
+    sets** — measured, which is why the cap exists.
+  - **⚠️ A session is 3 blocks and may take up to 5, but ONLY to reach its type's window floor
+    or to bring a week back inside its band's top edge** (`MAX_BLOCKS_PER_SESSION` in
+    `generate.py`). Both reasons are properties of the *week*, not of the session, which is why a
+    fixed per-session budget could not express them: three chunky wall blocks leave a
+    limit-bouldering session ten minutes short of its own floor, and a two-session week has
+    nowhere else to put its supplementary work. Never extra prescription — that is what the
+    windows and `MAX_EXPANSION_FACTOR` exist to stop. Consequence: `tests/test_planner_gearless.py`
+    and the nowhere-to-climb guard assert `>= BLOCKS_PER_SESSION`, not `==`.
+  - **`_wall_picks` rounds over the phase's wall-led aspects TWICE**, and that is not
+    redundancy: the `strength` phase has only two of them, so one block each left a
+    limit-bouldering session at 30 min against a 40 min floor.
+- **⚠️ ELIGIBILITY IS `prescribable()`; ON-THE-WALL IS A PREFERENCE, NEVER A FILTER.** Round 2
+  gave the climbing pass an on-the-wall filter and the supplementary pass an off-the-wall one,
+  and **six of 85 exercises fell into the gap between them and became unreachable by every
+  profile** — the three wall `core_tension` drills (75 minutes a plan before, 0 after) and the
+  three off-the-wall `power` exercises whose aspect the climbing pass had already spent. **762
+  tests passed the whole time**, because an orphaned exercise still leaves a valid plan that
+  meets every floor. So: both passes consider anything `prescribable()` for the aspect they are
+  filling, the wall test is a *preference and an accounting fact*, and the supplementary pass
+  reads `_Draft.supplementary_used` — an aspect the climbing pass took on a wall may still host
+  one off-the-wall block, because a board session and a gym session for one quality are
+  different training. `tests/test_planner_library_reach.py` pins the register of acceptable
+  orphans and asserts it **in both directions**; it is **empty**, which is a measurement —
+  `origin/dev` carried three.
+- **⚠️ VARIETY IS A REQUIREMENT, AND IT IS THE `_spread` OFFSET (Kilian, 2026-08-29).** A plan
+  should have "a bit of everything rather than the same exercises always". The **aspect**
+  rotations index by `week_no - 1 + session_index`; a **candidate pool** must not, because that
+  sum takes only ~5 distinct values inside a three-week phase, so every pool longer than that
+  lost its tail. `_spread` is the session's ordinal in the whole plan instead. Measured on one
+  28-week intermediate plan: **58 of 85 exercises before, 63 after**, against `origin/dev`'s 68.
+  Deterministic by construction — no RNG, `models.py::Plan`'s reproducibility promise still
+  holds. ⚠️ **The one figure that did NOT come back is dominance**: the most-used exercise is
+  **10.2% of blocks against `dev`'s 5.6%**, and that is arithmetic rather than a defect — the
+  plan now spends roughly three times the SHARE of its minutes on a wall (28% -> 78-87% by band),
+  drawn from the smaller on-wall half of the library (the `strength` phase has exactly **two**
+  prescribable on-wall `power` exercises).
+  Widening it is a CONTENT change, not an allocator one.
+- **Issue #61's naming half shipped here.** A session with no wall time at all carries **one**
+  session-level `Shortfall` naming the equipment rows that would put real climbing in the phase
+  (`selection.wall_unlock_options` / `no_climbing_message`). ⚠️ **It is not a gate and not a
+  thin plan** — the three supplementary blocks are still prescribed and the plan is complete;
+  re-read the hard dead-end bullet under "Onboarding and the profile" before making it one.
+  The refusing half is still deliberately unshipped: no `RefusalReason` is about equipment.
 - **`week_count` comes from the grade-gap ORDINAL, and the table is literal.** A block is
   `LOADING_WEEKS 3 + UNLOAD_WEEKS 1`, so weeks are `4 × blocks`:
 
@@ -3314,6 +3538,9 @@ this is the map and the traps.
   | worst (gap ≥7, 7 sessions/wk, full mask, all 17 equipment) | 32 | 224 | 2,421 | 583.2 KiB | 17.5 KiB |
   | the demo profile (6a→6b, 3/wk) | 16 | 48 | 507 | 124.6 KiB | 4.9 KiB |
 
+  ⚠️ **Both rows are STALE as of PR A** — the climbing-first allocation changes how many blocks
+  and sets a session carries, so re-measure before quoting either. The shape of the conclusion
+  holds; the numbers do not.
   ⚠️ **Even the demo's 16-week plan is larger raw than the entire 85-exercise library** (~90
   KB); the worst case is ~6.5× it. The plan document's estimate (~1,150 sets, 170–250 KB) was
   low by 2–3×. What reaches the wire is the compressed figure — Vercel gzips by default — so
@@ -3321,17 +3548,30 @@ this is the map and the traps.
   ⚠️ **Two profiles that look extreme are not the worst case**: zero equipment is *smaller*
   (fewer prescribable candidates → fewer sets), and a bigger gap is capped at 32 weeks. If it
   ever bites, the lever is trimming sets beyond the first N weeks, not splitting the endpoint.
+- **The server sends the plan's DERIVED facts; the client never re-implements a training
+  constant.** `ClimbingBandOut` on the plan payload carries the band, the climbing floor, the
+  target range and the finger phases the tree was actually built under, so the plan screen can
+  state them; `PHASE_GUIDE` and `PLAN_GOAL` in `server/domain/vocabulary.py` stay universal and
+  say nothing plan-specific. Re-deriving either on the client would put the same training
+  constants in Python and in TypeScript, and **duplication across two files is the one thing no
+  gate here detects** — the drift would surface as a screen confidently describing a plan it is
+  not. `tests/test_phase_guide.py` guards the copy's shape only, never its truth.
 
 ## Persisting a plan (PR #11b — persist == activate)
 
 `POST /api/plans` regenerates the tree from the profile and inserts it **already activated**,
-standing the previous plan down in the same transaction. `GET /api/plans/active` reads it back;
-`POST /api/plans/{id}/abandon` stands one down. Module docstrings carry the detail.
+standing the previous plan down in the same transaction. `GET /api/plans/active` reads it back.
+Module docstrings carry the detail.
 
+- **⚠️ There is no abandon endpoint** — it shipped with this PR and was deleted with its UI
+  (Kilian, 2026-08-31), so **creating a plan is the only way one leaves the active set**.
+  `_stand_down_active_plan` and `Plan.abandoned_at` stay: `create_plan` calls the helper inside
+  its own transaction, and the column is half of `_ACTIVE_STATE`. Standing a plan down still
+  MARKS and never deletes — `activity.planned_session_id` is the only link from a logged activity
+  to the plan it satisfied, so a delete would destroy the adherence record.
 - **There is no "activate" endpoint and there will not be one.** A plan is created activated,
   so `activated_at` is never `NULL` on a persisted row and no state machine exists to get
-  wrong. Abandon marks; it never deletes — `activity.planned_session_id` is the only link from
-  a logged activity to the plan it satisfied.
+  wrong.
 - **One active plan per user is enforced TWICE, and neither half is optional.**
   `uq_plan_one_active_per_user` (partial unique index, `0008`) can only *refuse* a second
   active row — it cannot choose which one survives — so `create_plan` stands the old plan down
@@ -3383,6 +3623,207 @@ standing the previous plan down in the same transaction. `GET /api/plans/active`
   fills it in **only when absent**. ⚠️ Absent-means-uncacheable, never a blanket: overwriting
   `GET /api/library`'s `public, s-maxage=31536000, immutable` would be a real regression.
 
+## Logging a session (PR #15b — one idempotent PUT)
+
+`PUT /api/sessions/{client_uuid}` is the whole write path: `server/sessions/routes.py` is the
+router, the models and the SQL, and nothing else is in the package. `tests/test_sessions_log.py`
+proves it against real Postgres, with every guard sabotaged and recorded;
+`tests/test_sessions_validation.py` owns the DB-free bounds and runs in the local gate.
+
+- **ONE route, called at start, at every mid-run flush and at Finish.** The client mints the
+  `client_uuid` and addresses the same URL every time, so create-or-locate is the only shape
+  available. That is what makes "Two write tiers"' piggyback rule **structural** rather than a
+  convention: a Tier-1 mid-run action carries whatever the outbox holds in the same request, and
+  with one contract there is no second request to forget to attach the outbox to.
+- **The idempotency key IS the authorisation scope.** The activity upsert's conflict target is
+  `(user_id, client_uuid)` with `user_id` bound from the token, so the same uuid from two
+  accounts is two sessions and there is no path on which a client-supplied id selects the row.
+  A `planned_session_id` or `prescribed_set_id` outside the caller's own plan tree is a **404
+  whose status and detail are byte-identical to the nonexistent case** — not-yours and
+  not-there are the same answer — and it is checked **before** any 422, so no message can
+  confirm that a stranger's row exists.
+- **Invariant A (issue #62) is a 422 that rejects the WHOLE flush.** A set naming a different
+  exercise than its prescription's block is refused with **zero** rows written: the transaction
+  is atomic anyway, a broken prescription mapping makes the rest of that block suspect, and
+  accepting the others writes a plausible-looking lie. Dropping just the bad set would lose
+  data invisibly, which is the failure the issue exists to prevent.
+- **⚠️ 4xx here is PERMANENT — quarantine the flush, never retry it. 5xx is retryable.** Without
+  that rule a 422 becomes the payload that "retries forever and can never succeed" which
+  `server/fields.py`'s own docstring warns about. Every `HTTPException` detail in the module is
+  a fixed string with no interpolation, so nothing bypasses `server/app.py`'s 422 allowlist.
+- **At most five statements, whatever the set count** — measured 5 for a plan-linked flush of
+  1..120 sets, 3 off-plan, 2 for a bare start. Ownership, activity upsert, subtype upsert, one
+  batch set upsert, one `planned_session` status update: **one request, one transaction, one
+  Neon wake.** Collapsing them into a single data-modifying CTE is expressible and was
+  **rejected** — the cost driver is how spread out queries are, not how many (see "Neon bills
+  AWAKE TIME, not writes"), so it buys milliseconds and pays permanently in readability and in
+  one unmappable `IntegrityError`.
+  `test_the_STATEMENT_COUNT_is_INDEPENDENT_OF_THE_SET_COUNT` pins it, and was shown red against
+  a per-set loop.
+- **`finished` is a request field, NOT a column, and no Alembic revision was added.** The only
+  server behaviour that depends on finish-ness is the `planned_session.status` transition —
+  unfinished → `in_progress`, finishing → `completed`, and **never backwards**, which is what
+  keeps a finishing replay's response byte-identical. `skipped` and `rescheduled` are
+  deliberately not terminal: actually doing the session is stronger evidence than a plan-screen
+  tap that said it would not happen.
+- **Partial completion is a DERIVED QUERY, not a column.** `status = 'completed'` means "the
+  user pressed Finish", not "everything got done"; "I did 2 of 3 parts" is a join from
+  `logged_set.prescribed_set_id` to `session_block`, counting blocks with at least one logged
+  set. No column, because the adherence rule will be tuned — the same argument
+  `PlannedSession`'s own docstring already makes.
+- **`GET /api/sessions/completion` is where that query lives (#85), and a SEPARATE endpoint is
+  the point.** `GET /api/plans/active` is already the heaviest payload in the app and only
+  `/plan` reads these numbers, so they are fetched beside it rather than added to it. **One
+  statement for the whole window whatever the plan's length**, `from`/`to` both required with
+  the span capped, and the same ten-minute `staleTime` as the plan read — so it cannot wake Neon
+  more often than the screen already does. `tests/test_sessions_completion.py` pins all three.
+  - ⚠️ **A logged set with null `actual_*` values is a REAL completion** — PR #15a's "I did this
+    myself" mints exactly those — so nothing on this path may filter them out. `percent` is
+    `null`, never 0, for a session with no blocks: there was nothing to have done.
+  - **`skipped` is INFERRED, and there is still no write path for it.** A session whose day has
+    passed unfinished reads `skipped`, against the SERVER's date, which the response returns as
+    `as_of` so the client never re-derives "past" from a clock of its own. `scheduled_on ==
+    as_of` is `pending`: being conservative about a day still in progress is the safe error.
+  - ⚠️ **`state` names the OUTCOME, not the cause. `skipped` means "past and not finished,
+    whatever the reason"** — a past `in_progress` session reads `skipped`, and that is CORRECT:
+    "unfinished and skipped is the same result in real life" (Kilian, 2026-08-30). #82, #64 and
+    #12 are all meant to reuse this endpoint rather than re-derive the figure, so read it that
+    way and never as "the climber chose to skip it". The field keeps that name deliberately.
+  - **The percentage is derived server-side**, per PR #94's rule; the client only bands it for
+    colour — `100%` green, `50`–`99%` amber, under `50%` red, **50 itself amber**, the boundary
+    living once in `AMBER_FLOOR_PERCENT` (`web/src/plan/completion.ts`). The words are
+    `Completed`, `N% done` and `Skipped` at 0%, and they never branch on `status`: a past
+    session is only its percentage. **Colour is never the only carrier** — `data-completion`
+    carries the band and the word beside it says the same thing. A session with no
+    blocks has no percentage, so it gets neither.
+  - **`done_block_ids` says WHICH parts got done, so every block ROW of a past session is
+    marked** (#95, Kilian: *"i can see that thursday i did 33% done, but i cant see which part of
+    it i missed"*). The same ONE statement is grouped by `(session, block)` rather than by session
+    alone — no second read, and roughly (sessions × blocks) small integers added to the wire — and
+    the key is **`session_block.id`**, the id `plans.BlockOut` already carries for a persisted
+    plan: `order_index` is unique only inside one session, and a preview has neither id nor a
+    figure to show. ⚠️ Because the cap now counts BLOCK rows, reaching it would cut a session in
+    half and understate its `block_count`, so the last session is dropped rather than reported
+    from half its blocks.
+  - ⚠️ **Only a PAST session's rows are marked** — `pending` covers today and everything after
+    it, and a block nobody has reached yet is not a missed one, the same boundary as the badge.
+    The row carries the WORD (`Done`/`Missed`, from `BLOCK_MARK_LABEL`) beside an edge tinted
+    `--ct-success`/`--ct-danger`, tokens `contrast.test.ts` already sweeps against all four card
+    surfaces in both schemes, so the treatment adds none. **Both are keyed on the row's OWN
+    `data-done`**, never an ancestor's, and `markupCss.test.ts::lets no done/missed mark leak from
+    an ancestor` fails the build if that shape appears — the leak below, one attribute along.
+  - ⚠️ **The two schemes render that band DIFFERENTLY, and the light half is scoped so it
+    cannot reach dark** (Kilian reviewed both, 2026-08-30). **In LIGHT every badge** — a phase's
+    and a session's alike — **is a PALE filled pill with one dark ink ring**, and the disclosure's
+    border tint goes away, because a 4.5:1 TEXT tone on a near-white card is forced dark — which
+    is why light's `partial` read brown at `--ct-warning`'s #8f5000. ⚠️ **A pill with NO border
+    IS the boundary**, so it owes 3:1 (WCAG 1.4.11) against the card, which caps its fill at
+    relative luminance 0.256 — a gold, never a yellow, and Kilian rejected the gold. So the
+    **ring** pays the 3:1 and the freed fill buys the pale family he picked off a rendered
+    comparison sheet: #14532d on #dcfce7 at 8.30, #4a3a00 on #fef08a at 9.52, #7f1d1d on #fee2e2
+    at 8.20. ⚠️ **Fill-vs-surface is therefore not merely the wrong assertion but an unreachable
+    one** — those fills sit 1.02:1 to 1.22:1 from the card — **and `contrast.test.ts` does not
+    make it**: ring against all four card surfaces at 3:1, each band's word against its own fill
+    at 4.5:1, and a pin holding the yellow above the ceiling a borderless pill would have
+    imposed. Those seven values are `_tokens.scss`'s
+    `@mixin light-only-values` — deliberately **not** in `light-values`, so `contrast.test.ts`'s
+    "the schemes declare the same keys" assertion still means what it says and dark carries no
+    copy nothing reads. `_profile.scss::completion-light-pills` is included twice, on the OS
+    query and on `[data-theme='light']`, for the reason `overrides` gives; styling everywhere and
+    undoing it in dark is a change to dark under another name.
+  - ⚠️ **In DARK the pill is the PHASE badge's ALONE** (Kilian, 2026-08-30: "for the days inside
+    the week is perfect, dont touch that for dark, only for the phases"). That badge is the same
+    pill filled with the neutral `--ct-surface-2`, ringed and lettered in the band colour —
+    `currentColor`, because `--ct-completion-outline` is near-black and would vanish on a dark
+    surface — and the **day badges keep the bare coloured word** plus the tinted disclosure
+    border they were signed off with. The variant is a **class on the badge**
+    (`ct-app__completion--phase`), never an ancestor selector, for the leak reason below: a phase
+    and a session `<details>` are both `ct-app__disclosure`. The geometry is
+    `_profile.scss::completion-pill`, included by both schemes so that only colour differs.
+    `contrast.test.ts` names that pill's own pairs — the band on `--ct-surface-2` at 4.5:1 as
+    text and at 3:1 as a ring, measured 8.35, 8.25 and 8.94 — and
+    `markupCss.test.ts::gives the pill to the PHASE badge alone in dark` fails the build if a
+    pill rule stops being gated by the light scope or by that modifier.
+    ⚠️ **The REST of dark's appearance still has NO detector** — measured: deleting all three of
+    its band colour rules, and retuning a dark token to a legible but wrong hue, both leave the
+    whole gate green. `contrast.test.ts` guards ratios, never intent.
+- **⚠️ "Build a different plan" RESETS THE PROFILE and generates nothing** (Kilian, 2026-08-31):
+  `POST /api/profile/reset`, awaited, then `/onboarding`. It is **behind a confirmation** — the
+  reset clears both grades, the training days, both aspect picks, every `user_aspect_rating` row
+  and every OPEN injury, with no undo — reusing the deleted abandon panel's pattern. It does
+  **not** touch the active plan, so the state it leaves is *no profile, plan still running*: the
+  old plan runs until a new one is started, which stands it down. `useProfileReset` is reused, not
+  re-implemented. The replacement-preview flow went with it, so `usePlanPreview`'s `wanted` is now
+  the empty state alone and a running plan gets one control and no prose.
+- **The plan screen's phases COLLAPSE (#92), persisted per plan under `ct:planPhases`**
+  (`web/src/plan/phaseToggles.ts`). `<details>`/`<summary>` reusing the `ct-app__disclosure`
+  idiom, never a custom toggle; open by default on the block the climber is standing in
+  (`selectSession` + `sessionBlock`), falling back to the **last** block once every session is
+  in the past. One plan's set is stored, so six plans do not leave six entries.
+- **A COLLAPSED phase carries its own AGGREGATE, and the arithmetic is Kilian's: EQUAL WEIGHT
+  PER SESSION** (`phaseCompletionBadge`, `web/src/plan/completion.ts`). "Base is weeks 1-3, each
+  week 4 days, so 12 days, 12 = 100": the phase figure is the **mean of its sessions'
+  percentages**, a skipped or never-started session counting **0**, rounded half-up like the
+  server's `_percent`. Deliberately **not** blocks-done over blocks-planned — that would weight a
+  four-block session above a two-block one, and he weighted the days. It **reuses
+  `completionBand` and `AMBER_FLOOR_PERCENT`** rather than restating the bands, and it renders in
+  the `<summary>`, which is the whole point: a collapsed phase is where it has to show.
+  - ⚠️ **Only a phase ENTIRELY in the past is badged.** A future phase reading 0% red would be
+    alarming and wrong, and the phase being trained is left unbadged while its figure can still
+    move. The test is every session's `scheduled_on` strictly before today, which is exactly the
+    server's own `pending`/`skipped` boundary. A session with no blocks (`percent === null`) is
+    excluded from the mean rather than counted 0.
+  - **Aggregating on the CLIENT is right here and does not breach PR #94's rule.** The client
+    already holds both the completion rows and the plan tree, and no *training constant* is
+    re-derived — the server still owns every derived training fact. No endpoint, no migration.
+- **Ascents are OUT.** An ascent is "the emotional payload of the whole app" and it is **not
+  loggable here**; #15a must not be built assuming this endpoint covers it.
+
+### The `sets` array is a DELTA, not a replacement
+
+`PUT` implies replace, and that reading is **deliberately overridden for the array**: the PUT
+replaces the *identity* of the addressed session and *merges* field values. Four reasons, in
+descending force:
+
+1. The route carries whatever the outbox holds — by definition the unsent tail — so replace
+   semantics would make a mid-run piggyback **delete every set already persisted**.
+2. Replace is not idempotent under an at-least-once outbox: request A can land after request B,
+   so delete-what's-absent turns a late retry into data loss. Upsert-by-`client_uuid` is
+   order-insensitive for disjoint flushes and last-write-wins for the same uuid.
+3. Absence is not a signal the client can produce — it would have to send the whole run on
+   every flush, contradicting the Tier-2 batching rule.
+4. Deleting a set is a distinct user action needing its own idempotency story, and no
+   affordance for it exists yet.
+
+The merge rule: an **omitted** envelope field means "no change", an explicit **`null`** means
+"clear", read through `model_fields_set` — the idiom at `server/profile/routes.py`. **A set is
+replaced WHOLE, by its `client_uuid`**, with no omitted-versus-null per set, because a
+`logged_set` is minted complete when the set finishes and a multi-row `VALUES` needs identical
+keys in every row anyway. A duplicate `client_uuid` or `set_index` inside one payload is a
+**422**, because two rows with one conflict key is a Postgres `cardinality_violation` — i.e. a
+500 with the whole flush in the log. Refused rather than de-duplicated: a repeated uuid means
+the client's minting is broken, and silently keeping one of the pair loses a set.
+
+⚠️ **`set_index` is the chronological 1..N ordinal of the WHOLE session**, not per block; which
+part a set belonged to is carried by `prescribed_set_id`. If that is ever revisited in favour of
+per-block indexes, the duplicate-`set_index` 422 **must be dropped in the same change**, or it
+will refuse real data.
+
+### `duration_minutes` only ever grows
+
+The column is `NOT NULL` with no default, so every PUT carries it — including the start PUT,
+which does not yet know the answer. So `DO UPDATE` sets
+`duration_minutes = GREATEST(activity.duration_minutes, EXCLUDED.duration_minutes)`, and a
+stale late retry cannot shorten a session. This is not cosmetic: `activity.srpe_load` is
+`GENERATED … STORED` from it, so a shortened duration silently corrupts training load.
+
+Two obligations follow:
+
+- **The client sends elapsed-minutes-so-far, floored at 1 — never the plan's
+  `estimated_minutes`.** Under `GREATEST`, sending 90 at minute zero pins the session at 90 for
+  good.
+- **⚠️ #12's "edit a logged session" must NOT reuse this route**, because it cannot shorten one.
+
 ## Session player invariants (PR #15a onward)
 
 Recorded here because each is a specific bug that a naive implementation ships:
@@ -3413,6 +3854,71 @@ Recorded here because each is a specific bug that a naive implementation ships:
   `POST /api/plans/preview` (blueprint without writing) possible, which is what makes the demo
   mount interactive — see "The plan generator".
 
+**What PR #15a settled. Each one is a decision a later change would otherwise undo:**
+
+- **State goes on `data-phase` / `data-state`, never an interpolated class name.**
+  `` `ct-app__player--${kind}` `` is `markupCss.test.ts`'s one blind spot and trips it in BOTH
+  directions at once — the truncated stem reads as a class with no rule, the four real modifiers
+  as rules with no markup — for a decision worth no allowlist row.
+- **`ct:run` IS the run record**, and which of brief/player/summary shows is read off it rather
+  than off a URL or component state. Versioned by `RUN_VERSION` (**4**) and **discarded on a bump,
+  never migrated**: a run lives for one session, so decoding a stale shape buys a day at most and
+  risks a wrong clock. Two more keys, both preferences: `ct:sound`, `ct:keepScreenOn`.
+- **Pause FREEZES the clock rather than stopping it** — `clockAt(run, now)` is
+  `run.pausedAtEpochMs ?? now`, one expression so nothing derived can forget it — and resuming
+  **shifts** `phaseStartedAtEpochMs` by the held duration. Re-stamping it to `now` silently
+  restarts the phase and hands back time already spent. ⚠️ The paused guard lives in **`tick()`
+  itself, not only in the rAF effect**: the `visibilitychange` re-anchor calls `tick()` directly,
+  which is exactly the backgrounded-while-paused case.
+- **The set-ordinal ceiling is read BEFORE unflushed sets are dropped, and never falls.**
+  `nextSetIndex` takes it over `logged + pending + quarantined`, and an ordinal this run has minted
+  is never issued twice: a dropped set is unacknowledged, not provably unwritten — a 5xx can arrive
+  after the server committed — and a reused `set_index` is a `cardinality_violation`, i.e. a 422
+  that quarantines the whole flush. ⚠️ Deriving the offset from an attempt counter was a **real
+  bug**: marking an item done by hand issues ordinals without incrementing it, so a *first* start
+  walked straight into used ones.
+- **Marking an item done by hand LOGS its prescribed sets, with null measurements** —
+  `client_uuid`, `exercise_id`, `prescribed_set_id`, `set_index`, `completed_at` and nothing else,
+  because inventing numbers nobody measured is worse than recording none. Partial completion is the
+  derived query above, so an item claimed but unlogged would score zero and contradict the climber.
+  **Skipping logs nothing at all**, which is what keeps that figure honest.
+- **The finish is not reversible SERVER-side.** "Go back" on the summary restores the local run and
+  issues **zero** requests: `planned_session.status` never moves backwards, so `finished: false`
+  would be a Neon wake bought to pretend otherwise. Re-finishing is idempotent.
+- **The summary acknowledgement is on the RECORD** (`summaryClosedAtEpochMs`), not in React state:
+  a route component unmounts on every navigation, and as a `useState` flag it resurrected the RPE
+  prompt.
+- **Focus mode**: while an item runs the others are **absent, not dimmed**, and session-level
+  actions (Finish) leave the bar with it — one decision, readable at arm's length, and no wrong
+  button within reach of a chalky hand.
+- **`--ct-success` is a TEXT-only token**, on `--ct-warning`'s pattern: no `--ct-success-fg` and no
+  reverse pair. ⚠️ Never substitute `--ct-phase-work` — it is a *fill*, and its dark value measures
+  **1.68:1** as text on `--ct-surface-1`.
+- **Two accepted gaps, recorded so they are not rediscovered as bugs**: a finished run record is
+  never discarded from `localStorage` (nothing calls `abort()` on it, deliberately — that would
+  throw away unsent sets), and backgrounding a finished-and-closed session still re-persists it to
+  stamp `hiddenAtEpochMs`.
+
+### The full-height chain — an in-flow `100%`, not `fixed` and not `100dvh`
+
+The player is the app's first screen that must fill the space it is given, and it closes
+`_chrome.scss`'s deferral with **neither** viewport mechanism, because the federated mount rules
+both out. The chain is `html { block-size: 100% }` → flexed `body` → flexed `#root` → `.ct-app`,
+anchored in **`global.scss`, which only `main.tsx` loads**. In the shell there is no anchor, the
+`100%` resolves against an indefinite ancestor and the player degrades to content height. **That
+degradation is the decision, not a fallback** — one expression, correct in both mounts, with no
+branching and nothing read off `window`. `_session.scss` gates its half behind
+`.ct-app:has(.ct-app__player)`, so no other screen moves.
+
+- ⚠️ **A plain `min-block-size: 100%` chain COLLAPSES TO ZERO**, because a percentage block-size
+  resolves to nothing against an auto-height ancestor. `body` and `#root` are **flexed** instead: a
+  flex item's resolved main size is definite for its children's percentages, and unlike a hard
+  `block-size: 100%` on `body` it does not force a permanent scrollbar.
+- **`_layout.scss`'s `align-content: start` became load-bearing at the same moment.** A grid's
+  default is `stretch`, so once `.ct-app` fills the document its implicit `auto` rows share out the
+  leftover space and the nav row grows to half the window on a short screen. A no-op wherever the
+  height is still the content's.
+
 ### Screen Wake Lock — a user-owned TOGGLE, and a progressive enhancement
 
 Kilian did not ask for this as an automatic behaviour and pushed back on it, so keep it
@@ -3425,7 +3931,7 @@ NEVER acquired silently.** Kilian's reasoning, worth keeping verbatim because it
 part that gets optimised away: *"as a user you like to be in control, or feel like you
 are given the choice."*
 
-Requirements for PR #15a:
+Requirements, and they held:
 
 - **A visible switch in the session player that the user owns.** Label it plainly —
   "Keep screen on". Acquisition is **conditional on that toggle**; there is no

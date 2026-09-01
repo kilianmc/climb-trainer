@@ -1,28 +1,11 @@
-"""Alembic environment.
+"""Alembic environment: the DIRECT (unpooled) endpoint, and a remote host is REFUSED.
 
-Two rules this file enforces, both of which have bitten real projects:
-
-1. **The URL comes from the environment, and its absence is a loud, specific error** —
-   not a `None` that surfaces 20 frames deep as "Could not parse SQLAlchemy URL".
-   Nothing here reads a URL from `alembic.ini`, because this repo is public.
-
-2. **Alembic uses the DIRECT (unpooled) endpoint.** DDL and `CREATE TYPE` need a real
-   session; running them through Neon's PgBouncer transaction-mode pooler is the
-   migration failure that presents as an intermittent hang rather than an error.
-
-3. **A non-local host is REFUSED unless `CT_ALLOW_REMOTE_MIGRATION=1`.** See
-   `server/db.py::require_migration_host`. Until 2026-08-21 this file had no guard at all
-   and its own docstring recommended the bare command — so with the production URL in
-   `.env` (which is how this machine is configured), `uv run alembic upgrade head` typed
-   locally applied DDL to production and skipped the approval gate entirely. The
-   sanctioned path, `.github/workflows/migrate.yml`, sets the variable itself; nothing
-   else should. It is deliberately **not** keyed off `CI`/`GITHUB_ACTIONS`.
-
-Migrations are run **out of band** — a manual `workflow_dispatch` job with
-`environment: production` and an approval gate — never automatically on push, because
-a migration must never race a deploy. Expand -> deploy -> contract, always. CI proves
-the migrations by running `alembic upgrade head` against a throwaway Postgres before
-pytest.
+DDL through Neon's transaction-mode PgBouncer pooler HANGS rather than errors, so the pooled
+URL is only a fallback where there is one endpoint (CI, local Postgres). The refusal exists
+because on 2026-08-21 this file had no guard and its own docstring recommended the bare
+command: with the production URL in `.env`, a local `uv run alembic upgrade head` applied DDL
+to production and skipped the approval gate. See CLAUDE.md, "Migrations run out-of-band", and
+`server.db.require_migration_host`.
 """
 
 from logging.config import fileConfig
@@ -51,23 +34,16 @@ _MISSING_URL = (
     f"string — DDL must not go through the transaction-mode pooler), or {POOLED_URL_ENV} "
     f"when there is only one endpoint, as in CI and local Postgres. Locally: "
     f"`cp .env.example .env` and fill it in — {DOTENV_PATH} is loaded automatically via "
-    f"server.settings, so `uv run alembic ...` needs no `--env-file` flag — though note "
-    f"it will REFUSE a non-local host without CT_ALLOW_REMOTE_MIGRATION=1; use the "
-    f"Migrate workflow for that. "
-    f"flag. Never commit a real value: .env is gitignored and this repo is public."
+    f"server.settings, so `uv run alembic ...` needs no `--env-file` flag. Note that a "
+    f"non-local host is REFUSED without CT_ALLOW_REMOTE_MIGRATION=1; use the Migrate "
+    f"workflow for that, and never commit a real value — .env is gitignored and this repo "
+    f"is public."
 )
 
 
 def _require_url() -> str:
-    """The URL to migrate, after the host has been vetted.
-
-    ⚠️ **The host is extracted and passed on alone — never the URL.** A URL bound to the
-    argument of a function that raises is rendered in the traceback, password included;
-    that is a real regression this project has already had once (see `host_of`). Note that
-    `url` *is* a local of this frame, which a `--showlocals`-style renderer could print, so
-    the refusal is raised from `require_migration_host`'s frame rather than from here, and
-    nothing on that side ever sees the string.
-    """
+    """Vets the HOST alone: a URL in a frame local or argument prints password-and-all in a
+    traceback (a regression this repo has had), so `require_migration_host` raises, not us."""
     url = direct_database_url()
     if url is None:
         raise RuntimeError(_MISSING_URL)
@@ -75,11 +51,8 @@ def _require_url() -> str:
     return normalise_database_url(url)
 
 
-# NOTE on `compare_type=True`, set in both modes below: a column type change becomes a
-# real autogenerate diff instead of being silently ignored, which is what makes
-# `alembic check` worth running. `compare_server_default` is deliberately left OFF —
-# Postgres round-trips defaults as rendered SQL text, so it reports cosmetic
-# differences constantly and would make `alembic check` cry wolf.
+# `compare_type=True`, set in BOTH modes below: a column type change becomes a real
+# autogenerate diff instead of being silently ignored. `compare_server_default` stays OFF.
 
 
 def run_migrations_offline() -> None:

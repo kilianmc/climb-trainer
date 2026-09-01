@@ -2,7 +2,6 @@
 // mount must not restyle kilianmc.com, so everything else lives in `app.scss` under `.ct-app`,
 // and this file is the ONLY one allowed `:root`, `html` or `body` selectors.
 @use 'tokens';
-@use 'mixins';
 
 :root {
   color-scheme: light dark;
@@ -13,13 +12,45 @@
 // background propagates to the canvas, which fixes it for the whole viewport.
 //
 // The token mixin is included rather than the hex repeated: `.ct-app` stays the declaration
-// site that matters, and this is the same standalone-only pattern `update-bar.scss` uses. Do
-// NOT read this as licence to declare tokens globally — this file cannot reach the shell.
+// site that matters, and this file is standalone-only. Do NOT read this as licence to declare
+// tokens globally — nothing here can reach the shell.
 body {
   @include tokens.declare;
 
+  display: flex;
+  flex-direction: column;
+  min-block-size: 100%;
   margin: 0;
   background: var(--ct-bg);
+}
+
+// THE STANDALONE HEIGHT ANCHOR, and this file is the only legal place for it.
+//
+// The session player is the app's first genuinely full-height screen and it is built out of an
+// in-flow `100%` chain (`_session.scss`), because `position: fixed` and `100dvh` both resolve
+// against kilianmc.com's viewport in the federated mount. A percentage block-size resolves to
+// nothing against an auto-height ancestor, so something above `.ct-app` has to be definite —
+// and `html`, `body` and `#root` are exactly the three elements that exist only in the
+// standalone document. Nothing here can reach the shell.
+//
+// `flex`, not `block-size: 100%` down the chain: a flexed item's resolved main size IS definite
+// for its children's percentages, so the app can still grow past the window without the
+// always-on scrollbar a hard `100%` on `body` produces.
+html {
+  block-size: 100%;
+}
+
+#root {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+}
+
+// `flex-shrink: 0`: under the player gate `.ct-app` swaps its automatic content-based minimum
+// for `min-block-size: 100%`, and without this a screen taller than the window would be
+// squeezed into it instead of scrolling.
+#root > .ct-app {
+  flex: 1 0 auto;
 }
 
 // The manual theme override, for the CANVAS — and this is the one place it can be done.
@@ -48,20 +79,4 @@ body:has(.ct-app[data-theme='dark']) {
   @include tokens.dark-values;
 
   color-scheme: dark;
-}
-
-// The update bar is `position: fixed`, so it does not push content: measured, it covered 32.5px
-// of the 44px "Open the demo" button at the bottom of the landing page, and `elementFromPoint` at
-// the button's centre returned the bar. This reserves exactly the bar's height while it is
-// showing, from the SAME expression the bar is built from — see `update-bar-metrics`, and note
-// that hand-deriving this is what left it 2px short of the bar's real 74px.
-//
-// `:has()` is inside the project's browser baseline (Chrome 105, Safari 15.4, Firefox 121; Vite
-// 8's `baseline-widely-available` target is above all three), and it keeps this JS-free — no
-// resize observer, no measured height in state. Safe here because `global.scss` is
-// standalone-only, which is also the only place `.ct-update-bar` can exist.
-body:has(.ct-update-bar__panel) {
-  @include mixins.update-bar-metrics;
-
-  padding-block-end: var(--ct-update-bar-total);
 }

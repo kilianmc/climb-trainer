@@ -228,7 +228,11 @@ EQUIPMENT: Final[tuple[ReferenceSpec, ...]] = (
     ReferenceSpec(
         "outdoor_routes", "Outdoor routes", "Sport or trad routes on real rock, with a rope."
     ),
-    ReferenceSpec("system_board", "System board", "Kilter, Tension, Moon or similar."),
+    ReferenceSpec(
+        "system_board",
+        "System board or spray wall",
+        "Kilter, Tension, Moon, a spray wall, or any other set board you climb on.",
+    ),
     ReferenceSpec("campus_board", "Campus board", "Rungs for contact-strength work."),
     ReferenceSpec("hangboard", "Hangboard", "Fixed edges for hanging protocols."),
     ReferenceSpec("no_hang_device", "No-hang device", "Handheld or pin-loaded finger training."),
@@ -313,4 +317,232 @@ ASCENT_TAGS: Final[tuple[AscentTagSpec, ...]] = (
     AscentTagSpec("good_conditions", "Good conditions", "Cool, dry, high friction.", "conditions"),
     AscentTagSpec("humid", "Humid", "Damp, low friction.", "conditions"),
     AscentTagSpec("cold", "Cold", "Cold enough to affect the skin.", "conditions"),
+)
+
+
+@dataclass(frozen=True, slots=True)
+class GuideLink:
+    """One further-reading link: URL and the words the screen renders for it, as ONE record.
+    A pair by construction, so a URL can never reach the markup with nothing to click."""
+
+    url: str
+    label: str
+
+
+@dataclass(frozen=True, slots=True)
+class PhaseGuide:
+    """The UNIVERSAL half of a phase's copy, keyed by the enum: no row, no seed, no migration.
+    What a phase *is* never varies by climber; `server/plans/routes.py` derives the plan half."""
+
+    phase: Phase
+    label: str
+    summary: str
+    how_to_train: str
+    links: tuple[GuideLink, ...]
+
+
+# ⚠️ **Describes what THIS generator prescribes, not periodisation in general.** Every claim
+# is checkable in `periodisation.py`, and the plan's own numbers are derived, never restated here.
+PLAN_GOAL: Final = (
+    "Every block is three loading weeks and one unloading week. The blocks run in order — base "
+    "first, the strength qualities in the middle, performance last — and a quality is maintained "
+    "after its own block rather than previewed before it."
+)
+
+# ⚠️ **Authored prose with sourced further reading: 2-3 links a phase, checked by
+# `tests/test_phase_guide.py`.** Reword a claim only with a source that still supports it.
+PHASE_GUIDE: Final[tuple[PhaseGuide, ...]] = (
+    PhaseGuide(
+        Phase.BASE,
+        "Base",
+        "The block that builds the capacity every later block spends — mileage, movement, and "
+        "enough aerobic base to recover between hard goes rather than just survive them. It goes "
+        "first because it is the slowest thing in the plan to build: a real aerobic adaptation "
+        "wants eight weeks or more of honest work.",
+        "Volume before intensity. Long, continuous, submaximal climbing, one to three sessions a "
+        "week, progressing by adding time before adding difficulty. Finish able to do more than "
+        "you did, because climbing a base block to failure costs you the plan, not just the week. "
+        "Whether maximum strength belongs inside a base phase is genuinely contested; this plan "
+        "gives strength its own block so these weeks stay spent on capacity. Endurance leads "
+        "every session here, then technique, then the tissue work that keeps the pulling "
+        "durable — power sits last on purpose.",
+        (
+            GuideLink(
+                "https://www.climbstrong.com/resource-posts/third-gear-the-aerobic-energy-system",
+                "Climb Strong: the aerobic energy system",
+            ),
+            GuideLink(
+                "https://www.trainingbeta.com/wp-content/uploads/2015/05/1.-Alex-Barrows-Training-Doc-V2-for-training-beta.pdf",
+                "Alex Barrows: adaptation times (PDF, §3)",
+            ),
+            GuideLink(
+                "https://trainingforclimbing.com/cameron-horsts-proven-strategy-for-endurance-training/",
+                "Eric Hörst: high-volume submaximal climbing",
+            ),
+        ),
+    ),
+    PhaseGuide(
+        Phase.STRENGTH,
+        "Max strength",
+        "Maximum strength is the ceiling the rest of your climbing sits under: the most force your "
+        "fingers and pulling muscles can produce in a single effort. It matters because it is the "
+        "slowest quality in the plan to build and the one that raises everything above it — and "
+        "because hand strength tracks climbing ability more closely than almost anything else you "
+        "can measure.",
+        "High intensity, low volume, full rest. Short maximal efforts — seven to ten seconds on "
+        "the fingers — with minutes rather than seconds between them, two or three sessions a "
+        "week at most, and always from a rested state rather than tacked onto the end of a "
+        "session. Progress by adding load, not repetitions. How much hangboarding a block "
+        "warrants is genuinely contested: some coaches program it twice a week as standard, "
+        "others hold that you should hangboard only if fingers are your identified weakness. "
+        "Fingers lead here — depending on your current grade the plan owes one or two real "
+        "hangboard sessions a week, scheduled first in the session rather than behind the "
+        "climbing.",
+        (
+            GuideLink(
+                "https://strengthclimbing.com/eric-horst-7-53-hangboard-routine/",
+                "The 7-53 max-hang protocol, explained",
+            ),
+            GuideLink(
+                "https://stevenlow.org/my-7-5-year-self-assessment-of-climbing-strength-training-and-hangboard/",
+                "Steven Low: 7.5 years of strength and hangboard training",
+            ),
+            GuideLink(
+                "https://www.climbstrong.com/resource-posts/tendon-strength-a-primer",
+                "Climb Strong: tendons adapt slowly (a primer)",
+            ),
+        ),
+    ),
+    PhaseGuide(
+        Phase.POWER,
+        "Power",
+        "Power is force applied fast: the hard single move, the cut-loose, the move you either do "
+        "or you don't. It runs on the alactic system, which supplies maximal effort for under "
+        "about ten seconds and, given real rest, produces very little fatigue. Training it raises "
+        "the hardest move you can do, which is usually what a grade is actually asking.",
+        "Three to five moves at genuine 100 percent, then rest until you mean it — minutes, not "
+        "seconds. Keep total volume low, arrive rested, and stop when the quality drops instead "
+        "of pushing on: one all-out effort does more for power than a pile of moderate attempts. "
+        "Getting sweaty and pumped means you have quietly switched to training something else. "
+        "Limit boulders lead the session and contact strength sits right behind them, and power "
+        "endurance is deliberately absent so the attempts stay maximal.",
+        (
+            GuideLink(
+                "https://www.trainingbeta.com/4-keys-to-limit-bouldering/",
+                "Matt Pincus: four keys to limit bouldering",
+            ),
+            GuideLink(
+                "https://www.climbstrong.com/resource-posts/optimizing-first-gear-training-the-alactic-energy-system",
+                "Climb Strong: the alactic system, and why it costs little",
+            ),
+        ),
+    ),
+    PhaseGuide(
+        Phase.POWER_ENDURANCE,
+        "Power endurance",
+        "The ability to keep making hard moves when you are already pumped — typically 20 to 60 "
+        "moves with no real rest, which is what most sport routes actually are. It is the quality "
+        "that decides whether you fall at the chains having done every move in isolation. It also "
+        "comes back within weeks, which is why it sits late in the plan rather than early.",
+        "Fixed intensity, fixed rests, and a work duration that matches your route: intervals at "
+        "a grade or two below your onsight limit, held at that grade until you fail, rather than "
+        "random hard laps. Dropping the intensity to survive the set turns the session into "
+        "endurance training under a different name. How hard these sessions should be is "
+        "contested — one school argues that training to a searing pump is too intense to build "
+        "repeatable capacity, and that the aerobic work underneath matters more. Power endurance "
+        "leads here with aerobic endurance immediately behind it, because the capacity underneath "
+        "is what lets the next hard session happen two days later.",
+        (
+            GuideLink(
+                "https://www.climbing.com/skills/winter-endurance-training/",
+                "Power-endurance intervals: setting the grade and the rests",
+            ),
+            GuideLink(
+                "https://gripped.com/indoor-climbing/boost-your-power-endurance-with-bouldering-4x4s/",
+                "Bouldering 4x4s, and the choices inside them",
+            ),
+            GuideLink(
+                "https://www.climbstrong.com/resource-posts/fundamentals-of-endurance",
+                "Climb Strong: why 'train till pumped' is not capacity training",
+            ),
+        ),
+    ),
+    PhaseGuide(
+        Phase.PERFORMANCE,
+        "Performance",
+        "The block where you stop building and start converting. Nothing you add now arrives in "
+        "time; what moves the grade is knowing the climb — beta, sequences, rest positions, "
+        "clipping stances, when to go. This is the block where the previous ones get spent.",
+        "Choose the project deliberately, then treat every attempt as information: work sections, "
+        "rehearse the sequences you keep failing, write the beta down, and link progressively "
+        "bigger pieces. The attempts are the training, so protect them — over-projecting "
+        "produces the same flat, declining performance that over-training does. Limit attempts "
+        "and redpoint burns lead this block, with power endurance right behind so stamina is "
+        "still trained if that is your weakness.",
+        (
+            GuideLink(
+                "https://www.climbing.com/skills/learn-this-redpoint-smarter-to-redpoint-harder/",
+                "Redpoint smarter: working the moves and the clips",
+            ),
+            GuideLink(
+                "https://www.trainingbeta.com/matt-pincus-projecting-principles/",
+                "Matt Pincus: the principles behind projecting",
+            ),
+            GuideLink(
+                "https://gripped.com/profiles/maximizing-your-late-season-projecting/",
+                "Choosing a project you can actually finish this season",
+            ),
+        ),
+    ),
+    PhaseGuide(
+        Phase.DELOAD,
+        "Deload",
+        "The fourth week of every block, and the week in which the previous three actually become "
+        "fitness. Training is only the stimulus; the adaptation happens in the recovery. A block "
+        "with no unload week ends up as accumulated fatigue that looks exactly like a plateau.",
+        "Cut the volume roughly in half and keep the intensity honest. Same number of sessions, "
+        "shorter, on ground you move well on — a deload is not a week off and not a week to climb "
+        "through. How often a climber needs one is contested: sources put it anywhere from every "
+        "third week to every eighth, and some would judge it by feel rather than schedule it at "
+        "all. This plan fixes it at every fourth week, because a cadence you do not have to judge "
+        "is the one you actually take. It is a block in its own right rather than a scaled-down "
+        "one: technique and mobility lead at low load, and the maximal qualities sit last.",
+        (
+            GuideLink(
+                "https://gripped.com/indoor-climbing/training-hard-heres-why-you-need-a-deload-week/",
+                "Why you need a deload week",
+            ),
+            GuideLink(
+                "https://stevenlow.org/the-fundamentals-of-bodyweight-strength-training/",
+                "Steven Low: recovery weeks (see 'Proper recovery weeks')",
+            ),
+            GuideLink(
+                "https://www.davemacleod.com/blog/rest",
+                "Dave MacLeod: rest days — how many, and what's in them",
+            ),
+        ),
+    ),
+    PhaseGuide(
+        Phase.TAPER,
+        "Taper",
+        "The final week of the plan, pointed at one thing: arriving fresh. Fatigue hides fitness, "
+        "so the taper's whole job is to let the previous months show up on the day. Nothing you "
+        "add this week can make you stronger, and plenty can make you tired.",
+        "Volume down to roughly half, intensity unchanged or even a touch higher. Keep the short, "
+        "sharp, maximal efforts — they cost almost nothing to recover from — and drop the "
+        "capacity work that leaves you pumped. Climb on your target style, on ground you already "
+        "move well on, and stop before you are tired. There is no isolated finger loading at all "
+        "this week and no full power-endurance session, but short maximal efforts are still "
+        "prescribed.",
+        (
+            GuideLink(
+                "https://www.trainingbeta.com/wp-content/uploads/2015/05/1.-Alex-Barrows-Training-Doc-V2-for-training-beta.pdf",
+                "Alex Barrows on tapering (PDF, §3.3)",
+            ),
+            GuideLink(
+                "https://gripped.com/indoor-climbing/how-to-peak-for-outdoor-climbing-trips/",
+                "How to peak for an outdoor trip",
+            ),
+        ),
+    ),
 )

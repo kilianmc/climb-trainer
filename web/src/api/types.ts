@@ -27,6 +27,11 @@ export type Grade = Schemas['GradeOut'];
 /** A seeded lookup row — a climbing aspect, a piece of equipment, an injury area. */
 export type ReferenceRow = Schemas['ReferenceRowOut'];
 export type Discipline = Schemas['Discipline'];
+/** The UNIVERSAL copy for one training phase. Keyed by `phase`; sent once, never per mesocycle.
+ *  How the phase applies to one plan is NOT here — see `ClimbingBand` and `plan/explain.ts`. */
+export type PhaseGuide = Schemas['PhaseGuideOut'];
+/** One further-reading link on a `PhaseGuide`. A url and its label, always as a pair. */
+export type PhaseGuideLink = Schemas['GuideLinkOut'];
 
 /**
  * `GET /api/library?v=<buildId>` — the exercise library, whole, in one response.
@@ -71,6 +76,9 @@ export type InjuryInput = Schemas['InjuryIn'];
  */
 export type PlanPreviewRequest = Schemas['PlanPreviewRequest'];
 export type PlanTree = Schemas['PlanOut'];
+/** Derived on every plan response: the band this plan was GENERATED for, and the figures keyed
+ *  by it. ⚠️ Never re-derive these in TypeScript — `ClimbingBandOut` says why. */
+export type ClimbingBand = Schemas['ClimbingBandOut'];
 /**
  * `GET /api/plans/active`. ⚠️ **`{plan: null}` is a 200 and it is the empty state**, not an
  * error — every new account is in it. An envelope rather than a bare nullable body so the
@@ -78,8 +86,6 @@ export type PlanTree = Schemas['PlanOut'];
  * ActivePlanResponse` carries the reasoning.
  */
 export type ActivePlanResponse = Schemas['ActivePlanResponse'];
-/** `POST /api/plans/{plan_id}/abandon`. The timestamp set, or the one already there. */
-export type PlanAbandoned = Schemas['PlanAbandonResponse'];
 export type PlanMesocycle = Schemas['MesocycleOut'];
 export type PlanMicrocycle = Schemas['MicrocycleOut'];
 export type PlanSession = Schemas['SessionOut'];
@@ -92,3 +98,17 @@ export type PlanNote = Schemas['NoteOut'];
 export type Phase = Schemas['Phase'];
 export type ActivityKind = Schemas['ActivityKind'];
 export type ProtocolKind = Schemas['ProtocolKind'];
+
+/** `PUT /api/sessions/{client_uuid}`. ⚠️ `sets` is a DELTA and `duration_minutes` is required
+ * on every request — CLAUDE.md's "Logging a session" carries both rules. */
+export type SessionLogRequest = Schemas['SessionLogRequest'];
+export type SessionLogResponse = Schemas['SessionLogResponse'];
+/** One set that happened. Replaced whole by its `client_uuid`; the client mints that uuid. */
+export type LoggedSetInput = Schemas['LoggedSetIn'];
+/** The server's id for one set, so the outbox can retire it. No user free text is echoed. */
+export type LoggedSetAck = Schemas['LoggedSetAck'];
+
+/** `GET /api/sessions/completion` — how much of each planned session actually got done.
+ * Derived server-side, per session; `percent` is `null` when the session has no blocks. */
+export type SessionCompletionResponse = Schemas['SessionCompletionResponse'];
+export type SessionCompletion = Schemas['SessionCompletionOut'];

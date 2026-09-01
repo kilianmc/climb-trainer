@@ -52,6 +52,9 @@ const VOCABULARY: Vocabulary = {
   // equipment STEP, and PR #10 decides what an owned-vs-lacked flag means.
   equipment: [{ id: 5, key: 'hangboard', name: 'Hangboard', description: 'Edges.' }],
   injury_areas: [{ id: ELBOW_ID, key: 'elbow', name: 'Elbow', description: 'Tendons.' }],
+  // Irrelevant to this fixture; the phase copy is covered by tests/test_phase_guide.py.
+  plan_goal: '',
+  phase_guide: [],
   enums: {
     disciplines: ['boulder', 'sport'],
     activity_kinds: ['climbing'],
@@ -92,6 +95,10 @@ function urlOf(input: unknown): string {
   if (input instanceof URL) return input.href;
   return input instanceof Request ? input.url : '';
 }
+
+// `/api/vocabulary` is requested with the build id as `?v=`, so a suffix match never sees it.
+const isVocabulary = (url: string) =>
+  new URL(url, 'http://localhost').pathname === '/api/vocabulary';
 
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), {
@@ -165,7 +172,7 @@ beforeEach(() => {
     'fetch',
     vi.fn((input: unknown, init?: RequestInit) => {
       const url = urlOf(input);
-      if (url.endsWith('/api/vocabulary')) return Promise.resolve(json(VOCABULARY));
+      if (isVocabulary(url)) return Promise.resolve(json(VOCABULARY));
       if (url.endsWith('/api/profile') && (init?.method ?? 'GET') === 'GET') {
         return Promise.resolve(json(THREE_OF_FOUR));
       }
@@ -227,7 +234,7 @@ it('sends exactly the injuries step and celebrates only after the server accepts
   // rather than left with a comment claiming a guarantee these assertions do not provide.
   vi.mocked(fetch).mockImplementation((input: unknown, init?: RequestInit) => {
     const url = urlOf(input);
-    if (url.endsWith('/api/vocabulary')) return Promise.resolve(json(VOCABULARY));
+    if (isVocabulary(url)) return Promise.resolve(json(VOCABULARY));
     if (url.endsWith('/api/profile') && (init?.method ?? 'GET') === 'GET') {
       return Promise.resolve(json(THREE_OF_FOUR));
     }
@@ -334,7 +341,7 @@ function stubProfile(
   const gets = options.getResponses ?? [() => json(options.profile ?? HALF_AVAILABILITY)];
   vi.mocked(fetch).mockImplementation((input: unknown, init?: RequestInit) => {
     const url = urlOf(input);
-    if (url.endsWith('/api/vocabulary')) return Promise.resolve(json(VOCABULARY));
+    if (isVocabulary(url)) return Promise.resolve(json(VOCABULARY));
     if (url.endsWith('/api/profile') && (init?.method ?? 'GET') === 'GET') {
       const responder = gets[Math.min(getCount, gets.length - 1)];
       getCount += 1;

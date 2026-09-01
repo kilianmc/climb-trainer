@@ -1,12 +1,12 @@
-"""`/api/plans` — preview a generated plan, persist it, read it back, stand it down.
+"""`/api/plans` — preview a generated plan, persist it, read it back.
 
 `POST /preview` builds the plan the generator would build and **writes nothing**. `POST ""`
 regenerates the same tree and **persists it, activated, standing the previously active plan
-down in the same transaction**. `GET /active` reads it back — without which a persisted plan is
-invisible after a reload — and `POST /{plan_id}/abandon` stands one down.
+down in the same transaction** — the only way a plan leaves the active set. `GET /active` reads
+it back, without which a persisted plan is invisible after a reload.
 
-⚠️ **`/preview` is the ONLY one of the four in `DEMO_WRITE_EXEMPT_ROUTES`**, because it is the
-only one that writes nothing. The other three are refused for a demo principal twice over:
+⚠️ **`/preview` is the ONLY one of the three in `DEMO_WRITE_EXEMPT_ROUTES`**, because it is the
+only one that writes nothing. The other two are refused for a demo principal twice over:
 `enforce_auth` 403s a demo-scope token on every `POST`, and `get_request_session` has issued
 `SET LOCAL transaction_read_only`. Adding an exemption entry would remove both.
 
@@ -44,7 +44,14 @@ from decimal import Decimal
 from typing import Any, Final
 
 from fastapi import APIRouter, HTTPException, Response, status
-from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    ValidationError,
+    computed_field,
+    field_validator,
+)
 from sqlalchemy import Select, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, aliased, selectinload
@@ -55,6 +62,7 @@ from server.domain.planner import (
     GENERATOR_VERSION,
     BlockBlueprint,
     CannotPlanError,
+    Level,
     MesocycleBlueprint,
     MicrocycleBlueprint,
     NoteKind,
@@ -65,9 +73,13 @@ from server.domain.planner import (
     SessionBlueprint,
     SetBlueprint,
     Shortfall,
+    climbing_floor_pct,
+    climbing_target_band,
     generate,
     generator_input,
+    level_for,
 )
+from server.domain.planner.climbing import FINGER_PHASES, finger_sessions_for
 from server.domain.planner.schedule import week_start_on_or_after
 from server.domain.vocabulary import (
     EQUIPMENT,
@@ -110,14 +122,8 @@ _logger = logging.getLogger(__name__)
 # quietly kept working.
 _CACHE_CONTROL: Final = "private, no-store"
 
-# How far either side of today's UTC date a client may place a start.
-#
-# ⚠️ Deliberately NOT in `server/fields.py`, whose discipline is one bounded type per persisted
-# CHECK: `plan.start_date` has no CHECK, and this is a request-sanity bound rather than a schema
-# fact.
-#
-# A week behind, because a client in UTC-11 legitimately calls this on what the server still
-# calls yesterday, and because "start the plan from last Monday" is a real thing to ask for.
+# How far either side of today's UTC date a start may sit. NOT in `server/fields.py`: no CHECK
+# backs it. A week behind, because a client in UTC-11 asks on what the server calls yesterday.
 _START_DATE_BACKDATE_DAYS: Final = 7
 _START_DATE_HORIZON_DAYS: Final = 365
 
@@ -196,21 +202,8 @@ class PlanPreviewRequest(BaseModel):
         return week_start_on_or_after(value)
 
 
-# ---------------------------------------------------------------------------------
-# ONE wire shape for a plan, previewed or persisted
-# ---------------------------------------------------------------------------------
-#
-# ⚠️ These models serve BOTH `/preview` and the persisted routes, so
-# `web/src/routes/_authed/plan.lazy.tsx` renders one tree with one renderer.
-#
-# The only difference is **which nullable fields are filled**: a preview is not a row, so
-# everything only a row has is `null` — every `id`, a block's `exercise_id`, a session's
-# `status`, the plan's `activated_at`. A persisted plan fills all of them; every other field has
-# the same name and the same meaning on both paths.
-#
-# A nullable `id` rather than two model families is a real trade — it lets a client forget to
-# check — and it is the cheaper one: the alternative is a second renderer for the same tree, and
-# a second renderer is where the two drift.
+# ONE wire shape for a plan, previewed or persisted. The only difference is which nullable
+# fields are filled: a preview is not a row, so every `id`, `status` and `activated_at` is null.
 
 
 class SetOut(BaseModel):
@@ -331,6 +324,54 @@ class NoteOut(BaseModel):
     message: str
 
 
+class ClimbingBandOut(BaseModel):
+    """The training constants THIS plan was generated under. Derived, never stored.
+
+    ⚠️ **Keyed off `generator_input.current_ordinal`, never off the profile's grade today.**
+    `Level` is not persisted (`server/domain/planner/climbing.py`), and it is what
+    `CLIMBING_FLOOR_PCT`, `CLIMBING_TARGET_PCT` and `FINGER_SESSIONS_PER_WEEK` were read
+    with when the tree was built. A climber who logs a harder grade tomorrow has not changed
+    the plan in front of them, so a band re-derived from the profile would make the payload
+    misdescribe its own contents.
+
+    Sent so **no client re-implements a training constant**: the ordinal thresholds are four
+    named ceilings in one Python module, and re-deriving them in TypeScript would put the
+    same numbers in two languages with nothing able to see them drift.
+
+    `finger_phases` is the set those sessions are owed in, so a client can place the figure
+    without knowing which phases they are; `finger_sessions_per_week` is **0 for beginner**
+    by design, and a renderer must omit the line rather than print a zero.
+    """
+
+    level: Level
+    climbing_floor_pct: int
+    climbing_target_pct_low: int
+    climbing_target_pct_high: int
+    finger_sessions_per_week: int
+    finger_phases: list[Phase]
+
+
+def _climbing_band(
+    discipline: Discipline, stored_generator_input: dict[str, Any]
+) -> ClimbingBandOut | None:
+    """Every figure through the function that owns it, so not one number is restated here.
+    `None` on an unusable ordinal — `_grade_gap`'s degrade rule: a reload must not 500."""
+    current = stored_generator_input.get("current_ordinal")
+    if not isinstance(current, int):
+        return None
+    target_low, target_high = climbing_target_band(discipline, current)
+    return ClimbingBandOut(
+        level=level_for(discipline, current),
+        climbing_floor_pct=climbing_floor_pct(discipline, current),
+        climbing_target_pct_low=target_low,
+        climbing_target_pct_high=target_high,
+        # Asked for in a phase that owes the work, so the band's own figure comes back rather
+        # than the zero every non-finger phase would answer with.
+        finger_sessions_per_week=finger_sessions_for(discipline, current, Phase.STRENGTH),
+        finger_phases=[member for member in Phase if member in FINGER_PHASES],
+    )
+
+
 class PlanOut(BaseModel):
     """A whole plan — previewed or persisted — plus what would be needed to reproduce it.
 
@@ -368,27 +409,25 @@ class PlanOut(BaseModel):
     shortfalls: list[ShortfallOut]
     notes: list[NoteOut]
 
+    # mypy cannot see through a decorator stacked on `@property`; pydantic's own docs use
+    # exactly this ignore. The RETURN type is still checked, which is the part that matters.
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def climbing_band(self) -> ClimbingBandOut | None:
+        """Computed on serialisation, on both paths, from fields already on this model —
+        which is why a persisted plan and a preview cannot disagree about it."""
+        return _climbing_band(self.discipline, self.generator_input)
+
 
 def _unprocessable(detail: str) -> HTTPException:
-    """A well-formed request against stored state no plan can be built from.
-
-    Matches `server/profile/routes.py::_unprocessable`. The client holds the profile and decides
-    whether to ask at all, so this is defence in depth, and it invents no error-code vocabulary.
-    """
+    """A well-formed request against stored state no plan can be built from. Matches
+    `server/profile/routes.py::_unprocessable`, so no error-code vocabulary is invented here."""
     return HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=detail)
 
 
 def _planner_input(session: Session, user_id: int, start_date: date) -> PlannerInput:
-    """The profile, resolved into the generator's input. Two statements, no writes.
-
-    The four NULL refusals are raised here (see the module docstring), as `CannotPlanError` rather
-    than `HTTPException`, so the route has one mapping site for all six reasons.
-
-    ⚠️ `user_id` comes from the token and from nowhere else.
-
-    The four grade/aspect lookups are outer JOINs rather than follow-up selects: primary-key reads
-    of tiny seeded tables, and every extra round trip is Neon awake time.
-    """
+    """The profile, resolved into the generator's input. Two statements, no writes; the four NULL
+    refusals are raised here as `CannotPlanError`, and `user_id` comes from the token only."""
     target_grade = aliased(Grade)
     current_grade = aliased(Grade)
     strength = aliased(ClimbingAspect)
@@ -453,12 +492,8 @@ def _planner_input(session: Session, user_id: int, start_date: date) -> PlannerI
 
 
 def _grade_ids(session: Session, user_id: int) -> tuple[int | None, int | None]:
-    """The two `grade.id`s, for the response only.
-
-    `PlannerInput` carries ordinals, so `generate()` leaves both `None`. Set here rather than
-    `dataclasses.replace`d onto the blueprint, because adding ids to the input would give the
-    domain a value it has no use for and would put them in the reproducibility digest.
-    """
+    """The two `grade.id`s, for the response only. Not `replace`d onto the blueprint: the domain
+    has no use for an id, and it would land in the reproducibility digest."""
     row = session.execute(
         select(UserProfile.target_grade_id, UserProfile.current_grade_id).where(
             UserProfile.user_id == user_id
@@ -599,25 +634,8 @@ def preview_plan(
     )
 
 
-# ---------------------------------------------------------------------------------
-# The PERSISTED plan — the same models, with the nullable fields filled in
-# ---------------------------------------------------------------------------------
-#
-# Four fields the persisted response would otherwise lack, and where each comes from:
-#
-# - the plan's `shortfalls` and `notes`, a session's `shortfalls`, a block's `shortfall` —
-#   **stored**, as `plan.generator_caveats` (`0008`). Without them the `/plan` screen loses every
-#   equipment-gap banner on reload; the plan is still complete (a shortfall is never a gate), but
-#   a plan that silently stops explaining itself is worse than one that never did.
-# - `grade_gap` — **derived** from `generator_input`'s two ordinals (`_grade_gap`).
-# - `aspect_key` and `exercise_key` — **derived** from `_exercise_reference`, the second carried
-#   next to `exercise_id` rather than replaced by it.
-#
-# ⚠️ One column for all four caveat kinds, not four, and not one each on `plan`,
-# `planned_session` and `session_block`. They are ONE fact — what the generator said about the
-# plan it built — written by one statement, read by one screen, and **never queried inside**, the
-# same argument `plan.generator_input` is `jsonb` for. Per-row columns would have put ~2,400
-# mostly-NULL jsonb values in `session_block` to record a handful of caveats.
+# The PERSISTED plan — the same models with the nullable fields filled. Caveats are STORED, in
+# `plan.generator_caveats`; `grade_gap` and the two keys are DERIVED. Why one column: `Plan`.
 
 
 def _session_key(week_no: int, weekday: int) -> str:
@@ -663,12 +681,8 @@ class _StoredCaveats(BaseModel):
 
 
 def _stored_caveats(blueprint: PlanBlueprint) -> dict[str, Any]:
-    """The blueprint's caveats, as the JSON `plan.generator_caveats` holds. Write path only.
-
-    Sparse: a session with every slot filled and a block with no shortfall contribute no
-    key at all, so a well-equipped climber's plan stores two empty lists and two empty
-    objects rather than one entry per node.
-    """
+    """The blueprint's caveats, as the JSON `plan.generator_caveats` holds. Write path only, and
+    SPARSE: a node with nothing to say contributes no key at all."""
     session_shortfalls: dict[str, list[ShortfallOut]] = {}
     block_shortfalls: dict[str, ShortfallOut] = {}
     for mesocycle in blueprint.mesocycles:
@@ -705,11 +719,8 @@ def _read_caveats(plan: Plan) -> _StoredCaveats:
 
 @dataclass(frozen=True, slots=True)
 class _ReadContext:
-    """What the plan's own rows cannot answer, fetched once per response.
-
-    `exercises` maps `exercise.id` to `(key, aspect_key)` — the two fields a persisted block
-    derives rather than stores. `caveats` is `plan.generator_caveats`, parsed.
-    """
+    """What the plan's own rows cannot answer, fetched once per response: `exercise.id` to
+    `(key, aspect_key)`, the two fields a persisted block derives, plus the parsed caveats."""
 
     exercises: dict[int, tuple[str, str]]
     caveats: _StoredCaveats
@@ -737,15 +748,8 @@ def _exercise_reference(session: Session) -> dict[int, tuple[str, str]]:
 
 
 def _grade_gap(stored_generator_input: dict[str, Any]) -> int:
-    """`target_ordinal - current_ordinal`, off the stored `generator_input`.
-
-    Derived rather than stored: both ordinals are already on the row inside the reproducibility
-    record, so a column would be a third copy of one fact and the copy that drifts. Joining the
-    two nullable grade *ids* to `grade.ordinal` is the other route and is not used — the ordinals
-    are what the generator actually consumed.
-
-    Same degrade rule as `_StoredCaveats`: unrecognised ordinals yield **0**, never a 500.
-    """
+    """`target_ordinal - current_ordinal`, off the stored `generator_input`. Derived, not stored:
+    a column would be a third copy of one fact. Unrecognised ordinals yield 0, never a 500."""
     target = stored_generator_input.get("target_ordinal")
     current = stored_generator_input.get("current_ordinal")
     if isinstance(target, int) and isinstance(current, int):
@@ -769,13 +773,6 @@ class ActivePlanResponse(BaseModel):
     plan: PlanOut | None
 
 
-class PlanAbandonResponse(BaseModel):
-    """The timestamp that was set, or the one already there. Idempotent either way."""
-
-    id: int
-    abandoned_at: datetime
-
-
 def _persisted_set(prescribed: PrescribedSet) -> SetOut:
     return SetOut(
         id=prescribed.id,
@@ -793,9 +790,8 @@ def _persisted_set(prescribed: PrescribedSet) -> SetOut:
 def _persisted_block(
     block: SessionBlock, context: _ReadContext, *, week_no: int, weekday: int
 ) -> BlockOut:
-    # A `KeyError` here would be a fault, not a missing-data case, so it is not defended
-    # against: `session_block.exercise_id` is NOT NULL and `NO ACTION`, so Postgres refuses
-    # to delete an exercise a plan points at, and the map above is the whole table.
+    # A `KeyError` here would be a fault, not missing data: `exercise_id` is NOT NULL and
+    # `NO ACTION`, so Postgres refuses to delete an exercise a plan points at.
     exercise_key, aspect_key = context.exercises[block.exercise_id]
     return BlockOut(
         id=block.id,
@@ -865,12 +861,8 @@ def _persisted_mesocycle(mesocycle: Mesocycle, context: _ReadContext) -> Mesocyc
 
 
 def _plan_response(session: Session, plan: Plan) -> PlanOut:
-    """A persisted plan, in the shape `/preview` returns. **One extra statement.**
-
-    That statement is `_exercise_reference`, issued once per response rather than once per block,
-    and it is what buys `exercise_key` and `aspect_key` on a block with no column for either. Used
-    by both `POST ""` and `GET /active`, so a created plan and a reloaded one are byte-identical.
-    """
+    """A persisted plan, in the shape `/preview` returns. **One extra statement** —
+    `_exercise_reference`, once per response, buying `exercise_key` and `aspect_key`."""
     context = _ReadContext(exercises=_exercise_reference(session), caveats=_read_caveats(plan))
     return PlanOut(
         id=plan.id,
@@ -912,8 +904,7 @@ def _active_plan_query(user_id: int) -> Select[tuple[Plan]]:
 
 
 # One SELECT per level rather than one wide join: a join down five 1:N edges repeats every
-# ancestor's columns on every leaf row, and round trips are the cheap axis here (six statements
-# in one transaction is one Neon wake either way). The relationships already declare `order_by`.
+# ancestor's columns on every leaf row, and six statements in one transaction is one Neon wake.
 _PLAN_TREE: Final = (
     selectinload(Plan.mesocycles)
     .selectinload(Mesocycle.microcycles)
@@ -1041,8 +1032,7 @@ def _insert_plan_tree(
         generator_caveats=_stored_caveats(blueprint),
         activated_at=activated_at,
         # Initialised empty so the collection counts as LOADED: otherwise the first
-        # `plan.mesocycles.append(...)` below lazy-loads it — one extra round trip, guaranteed
-        # to return zero rows.
+        # `plan.mesocycles.append(...)` lazy-loads it — a round trip guaranteed to return zero.
         mesocycles=[],
     )
     session.add(plan)
@@ -1093,10 +1083,8 @@ def _insert_plan_tree(
                 )
             microcycles.append(
                 Microcycle(
-                    # ⚠️ The denormalised column the composite FK
-                    # `(mesocycle_id, plan_id) -> mesocycle (id, plan_id)` ties back. No
-                    # relationship exists for SQLAlchemy to populate it from, so omitting it is
-                    # not a NULL — it is a failed insert.
+                    # ⚠️ The denormalised column the composite FK ties back. No relationship
+                    # exists for SQLAlchemy to populate it, so omitting it is a FAILED INSERT.
                     plan_id=plan.id,
                     week_no=microcycle_blueprint.week_no,
                     start_date=microcycle_blueprint.start_date,
@@ -1136,20 +1124,14 @@ def _stand_down_active_plan(session: Session, user_id: int, at: datetime) -> Non
 
 
 def _constraint_name(error: IntegrityError) -> str | None:
-    """psycopg3's `Diagnostic.constraint_name` — the index name for a unique violation.
-
-    Read structurally rather than from a substring of the driver's message, and it is the ONLY
-    part of an `IntegrityError` this module may keep: see `create_plan`.
-    """
+    """psycopg3's `Diagnostic.constraint_name`, read structurally rather than from a substring of
+    the driver's message. The ONLY part of an `IntegrityError` this module may keep."""
     return getattr(getattr(error.orig, "diag", None), "constraint_name", None)
 
 
 def _is_one_active_conflict(error: IntegrityError) -> bool:
-    """Was this the one-active-plan index, or something else?
-
-    Anything else — a foreign key, a CHECK, an unknown index — is a real 500 and must not be
-    reported to the client as "you already have a plan".
-    """
+    """Was this the one-active-plan index? Anything else — a foreign key, a CHECK, an unknown
+    index — is a real 500 and must not be reported as "you already have a plan"."""
     return _constraint_name(error) == _ONE_ACTIVE_INDEX
 
 
@@ -1249,40 +1231,3 @@ def active_plan(
     response.headers["cache-control"] = _CACHE_CONTROL
     plan = session.scalars(_active_plan_query(principal.user_id).options(_PLAN_TREE)).one_or_none()
     return ActivePlanResponse(plan=None if plan is None else _plan_response(session, plan))
-
-
-@router.post("/{plan_id}/abandon")
-def abandon_plan(
-    plan_id: int, principal: CurrentUser, session: RequestSession, response: Response
-) -> PlanAbandonResponse:
-    """Stand a plan down. **Marks, never deletes.** Idempotent, and 404 for anyone else's.
-
-    **A timestamp and not a delete**, because `activity.planned_session_id` is the only link from a
-    logged activity to the plan it satisfied: deleting would cascade through the tree and destroy
-    the adherence record of sessions the user really did.
-
-    **The 404 is scoped, and the scoping is the security property.** The `WHERE` names both the id
-    and `principal.user_id`, so another user's plan is indistinguishable from one that never
-    existed. A 403 would confirm the row exists — the IDOR read this project treats as its real
-    extraction risk.
-
-    **Idempotent:** an already-abandoned plan keeps its original timestamp, because *when* it was
-    stood down is the fact the diary wants. `completed_at` is deliberately untouched.
-    """
-    response.headers["cache-control"] = _CACHE_CONTROL
-    # ⚠️ Scoped by id and user, deliberately NOT by `_ACTIVE_STATE`: today this endpoint is the
-    # only way to leave the active set, so "abandon a plan that is not active" is unreachable.
-    # **The first path that COMPLETES a plan makes it reachable**, and this would then stamp
-    # `abandoned_at` on a completed plan. Add the guard with that path — a guard now would be an
-    # untestable branch.
-    plan = session.scalars(
-        select(Plan).where(Plan.id == plan_id, Plan.user_id == principal.user_id)
-    ).one_or_none()
-    if plan is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No such plan.")
-    abandoned_at = plan.abandoned_at
-    if abandoned_at is None:
-        abandoned_at = _now_utc()
-        plan.abandoned_at = abandoned_at
-        session.commit()
-    return PlanAbandonResponse(id=plan.id, abandoned_at=abandoned_at)

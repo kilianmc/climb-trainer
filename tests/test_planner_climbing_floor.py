@@ -1,0 +1,435 @@
+"""⚠️ GUARD. Climbing is the core of every week of a generated plan, and long enough to be one.
+DB-free. Issue #84: the generator prescribed 28% of its minutes on a wall and gave week 19 none at
+all, while ruff, mypy and the whole suite stayed green — because nothing recomputed the wall-minutes
+matrix from a real plan. Every claim here is therefore MEASURED off `generate()`'s own output, never
+restated from `server/domain/planner/climbing.py`: the PR #63 lesson was that 20 exercises landed in
+the wrong tuple with 266 tests passing, and only recomputing the matrix caught it. The session
+windows are the second half — a fixed-volume protocol must never be padded, because low volume *is*
+the protocol. Shown to fail before being trusted; captures in `.claude/pr-a-state.md`.
+"""
+
+from collections.abc import Mapping
+from datetime import date
+
+import pytest
+
+from server.domain.exercises import EXERCISES
+from server.domain.grades import Discipline, GradeSystemKey, ordinal_of
+from server.domain.planner.blueprint import BlockBlueprint, PlanBlueprint
+from server.domain.planner.climbing import (
+    EXPANDABLE_ASPECTS,
+    EXPANDABLE_PROTOCOLS,
+    MAX_EXPANSION_FACTOR,
+    UNLOADING_PHASES,
+    WALL_EQUIPMENT,
+    Level,
+    climbing_floor_pct,
+    level_for,
+    session_window,
+)
+from server.domain.planner.contract import PlannerInput
+from server.domain.planner.generate import SECONDS_PER_REP, generate
+from server.domain.planner.selection import BLOCKS_PER_SESSION
+from server.domain.vocabulary import EQUIPMENT, Phase, ProtocolKind
+
+_MONDAY = date(2026, 8, 24)
+_ALL_EQUIPMENT = tuple(sorted(spec.key for spec in EQUIPMENT))
+_BY_KEY = {spec.key: spec for spec in EXERCISES}
+
+# The plan document's own table, restated INDEPENDENTLY of `climbing.py` on purpose: a guard
+# that asks `is_expandable()` whether a block may expand agrees with any answer that function
+# gives, including a wrong one. Measured: sabotaging it to `return True` left that arm green.
+_MAY_EXPAND: frozenset[tuple[str, ProtocolKind]] = frozenset(
+    {
+        ("endurance", ProtocolKind.LAPS),
+        ("endurance", ProtocolKind.CIRCUIT),
+        ("endurance", ProtocolKind.OTHER),
+        ("technique", ProtocolKind.LAPS),
+        ("technique", ProtocolKind.CIRCUIT),
+        ("technique", ProtocolKind.OTHER),
+    }
+)
+
+# Kilian's target BANDS. This and the two tables below are restated independently of
+# `climbing.py` for `_MAY_EXPAND`'s reason: a guard that reads its constant agrees with it.
+_TARGET_BAND: Mapping[Level, tuple[int, int]] = {
+    Level.BEGINNER: (85, 90),
+    Level.INTERMEDIATE: (75, 82),
+    Level.ADVANCED: (50, 62),
+}
+
+# Real max-hang / repeater sessions a LOADING week owes, per band. Beginner is zero by decision:
+# the sources want 6-12 months of climbing first and no column records that history.
+_FINGER_SESSIONS_PER_WEEK: Mapping[Level, int] = {
+    Level.BEGINNER: 0,
+    Level.INTERMEDIATE: 1,
+    Level.ADVANCED: 2,
+}
+_FINGER_PROTOCOLS = frozenset({ProtocolKind.MAX_HANG, ProtocolKind.REPEATERS})
+_FINGER_PHASES = frozenset({Phase.STRENGTH, Phase.POWER})
+
+# Quality first. The fixed-volume protocols are the ones whose adaptation is decided by the
+# quality of the effort, so none of them may sit behind any of the volume protocols.
+_PRIORITY_PROTOCOLS = frozenset(
+    {ProtocolKind.MAX_HANG, ProtocolKind.REPEATERS, ProtocolKind.LIMIT_BOULDER}
+)
+_VOLUME_PROTOCOLS = frozenset(
+    {
+        ProtocolKind.LAPS,
+        ProtocolKind.CIRCUIT,
+        ProtocolKind.INTERVALS,
+        ProtocolKind.STRAIGHT_SETS,
+        ProtocolKind.HOLD,
+    }
+)
+
+# One climber per band, by CURRENT grade, spanning both ladders so neither discipline's
+# threshold constant can be wrong without a red test. The gap is 3 by default — the shortest
+# plan covering all five training phases plus deload and taper; the band-range test sweeps it.
+_CLIMBERS: tuple[tuple[Level, Discipline, GradeSystemKey, str], ...] = (
+    (Level.BEGINNER, Discipline.SPORT, GradeSystemKey.FRENCH, "6a"),
+    (Level.BEGINNER, Discipline.BOULDER, GradeSystemKey.FONT, "6A"),
+    (Level.INTERMEDIATE, Discipline.SPORT, GradeSystemKey.FRENCH, "6c"),
+    (Level.INTERMEDIATE, Discipline.BOULDER, GradeSystemKey.FONT, "6C"),
+    (Level.ADVANCED, Discipline.SPORT, GradeSystemKey.FRENCH, "7c"),
+    (Level.ADVANCED, Discipline.BOULDER, GradeSystemKey.FONT, "7C"),
+)
+
+
+def _input(
+    discipline: Discipline,
+    system: GradeSystemKey,
+    label: str,
+    sessions: int,
+    mask: int,
+    gap: int = 3,
+) -> PlannerInput:
+    """A plannable climber with the full equipment vocabulary and no injuries."""
+    current = ordinal_of(system, label)
+    return PlannerInput(
+        discipline=discipline,
+        current_ordinal=current,
+        target_ordinal=current + gap,
+        sessions_per_week=sessions,
+        available_weekdays=mask,
+        strength_aspect_key=None,
+        weakness_aspect_key=None,
+        open_injury_keys=(),
+        equipment_keys=_ALL_EQUIPMENT,
+        start_date=_MONDAY,
+    )
+
+
+def _block_seconds(block: BlockBlueprint) -> int:
+    """Recomputed here rather than imported, so the guard does not share the code it checks."""
+    per_set = sum(
+        (item.target_work_seconds or (item.target_reps or 0) * SECONDS_PER_REP)
+        + (item.target_rest_seconds or 0)
+        for item in block.sets
+    )
+    return (
+        per_set
+        + max(len(block.sets) - 1, 0) * (block.rest_between_sets_seconds or 0)
+        + (block.rest_after_seconds or 0)
+    )
+
+
+def _on_wall(block: BlockBlueprint) -> bool:
+    """Wall time is read off the exercise's own equipment, from the library, not off the block."""
+    return bool(WALL_EQUIPMENT.intersection(_BY_KEY[block.exercise_key].equipment_keys))
+
+
+def _weekly_matrix(plan: PlanBlueprint) -> list[tuple[int, Phase, int, int, int]]:
+    """`(week_no, phase, wall_seconds, other_seconds, climbing_sessions)` for every week."""
+    rows: list[tuple[int, Phase, int, int, int]] = []
+    for mesocycle in plan.mesocycles:
+        for microcycle in mesocycle.microcycles:
+            wall = other = climbing = 0
+            for session in microcycle.sessions:
+                on_wall = sum(_block_seconds(b) for b in session.blocks if _on_wall(b))
+                wall += on_wall
+                other += sum(_block_seconds(b) for b in session.blocks if not _on_wall(b))
+                climbing += 1 if on_wall else 0
+            rows.append((microcycle.week_no, microcycle.phase, wall, other, climbing))
+    return rows
+
+
+@pytest.mark.parametrize(("level", "discipline", "system", "label"), _CLIMBERS)
+@pytest.mark.parametrize("sessions", [1, 2, 3, 5, 7])
+def test_every_week_meets_its_bands_climbing_floor(
+    level: Level, discipline: Discipline, system: GradeSystemKey, label: str, sessions: int
+) -> None:
+    """The #84 matrix, recomputed. Per WEEK, not over the plan's total: a 28% plan and a plan
+    with one empty week can share the same average."""
+    assert level_for(discipline, ordinal_of(system, label)) is level
+    floor = climbing_floor_pct(discipline, ordinal_of(system, label))
+    plan = generate(_input(discipline, system, label, sessions, 0b111_1111))
+    matrix = _weekly_matrix(plan)
+    assert matrix
+    for week_no, phase, wall, other, climbing in matrix:
+        assert wall > 0, (
+            f"week {week_no} ({phase.value}) prescribes no climbing at all for a "
+            f"{level.value} — that is issue #84's week 19."
+        )
+        assert climbing >= min(sessions, 2), (
+            f"week {week_no} ({phase.value}) has {climbing} climbing session(s) of "
+            f"{sessions} scheduled; every week owes 1-2."
+        )
+        assert wall * 100 >= floor * (wall + other), (
+            f"week {week_no} ({phase.value}) is {100 * wall / (wall + other):.0f}% wall "
+            f"time against a {floor}% floor for {level.value}: {wall // 60} min climbing "
+            f"vs {other // 60} min of everything else."
+        )
+
+
+def test_a_single_session_week_is_climbing_and_nothing_else() -> None:
+    """`sessions_per_week == 1` gets a climbing session — not a hangboard, not mobility."""
+    plan = generate(_input(Discipline.BOULDER, GradeSystemKey.FONT, "6C", 1, 0b000_0100))
+    sessions = [
+        session
+        for mesocycle in plan.mesocycles
+        for microcycle in mesocycle.microcycles
+        for session in microcycle.sessions
+    ]
+    assert len(sessions) == plan.week_count
+    for session in sessions:
+        assert session.blocks
+        assert all(_on_wall(block) for block in session.blocks), (
+            f"a one-day week prescribed {[b.exercise_key for b in session.blocks]}; with one "
+            f"session there is no better use of it than climbing."
+        )
+
+
+@pytest.mark.parametrize("sessions", [1, 2, 3, 4, 5, 6])
+def test_more_available_days_never_reduces_climbing_minutes(sessions: int) -> None:
+    """Monotonicity, measured week by week: a day added is climbing added, never traded."""
+    fewer = _weekly_matrix(
+        generate(_input(Discipline.SPORT, GradeSystemKey.FRENCH, "6c", sessions, 0b111_1111))
+    )
+    more = _weekly_matrix(
+        generate(_input(Discipline.SPORT, GradeSystemKey.FRENCH, "6c", sessions + 1, 0b111_1111))
+    )
+    for (week_no, phase, wall, _o, _c), (_w, _p, wall_more, _o2, _c2) in zip(
+        fewer, more, strict=True
+    ):
+        assert wall_more >= wall, (
+            f"going from {sessions} to {sessions + 1} sessions dropped week {week_no} "
+            f"({phase.value}) from {wall // 60} to {wall_more // 60} min of climbing."
+        )
+
+
+@pytest.mark.parametrize(("level", "discipline", "system", "label"), _CLIMBERS)
+def test_every_session_lands_inside_its_types_window(
+    level: Level, discipline: Discipline, system: GradeSystemKey, label: str
+) -> None:
+    """The window belongs to the session's TYPE, i.e. its leading block's protocol kind. The
+    ceiling binds in every phase; the floor only in a loading one, or a deload is not one."""
+    del level
+    plan = generate(_input(discipline, system, label, 5, 0b111_1111))
+    for mesocycle in plan.mesocycles:
+        for microcycle in mesocycle.microcycles:
+            unloading = microcycle.phase in {Phase.DELOAD, Phase.TAPER}
+            for session in microcycle.sessions:
+                if not session.blocks:
+                    continue
+                minutes = sum(_block_seconds(b) for b in session.blocks) / 60
+                kind = session.blocks[0].protocol_kind
+                floor, ceiling = session_window(kind)
+                assert minutes <= ceiling, (
+                    f"week {microcycle.week_no}, a {kind.value}-led session runs "
+                    f"{minutes:.0f} min against a {ceiling} min window."
+                )
+                assert unloading or minutes >= floor, (
+                    f"week {microcycle.week_no} ({microcycle.phase.value}), a {kind.value}-led "
+                    f"session runs {minutes:.0f} min against a {floor} min floor."
+                )
+
+
+@pytest.mark.parametrize(("level", "discipline", "system", "label"), _CLIMBERS)
+def test_a_fixed_volume_protocol_is_never_padded_and_an_expandable_one_is_capped(
+    level: Level, discipline: Discipline, system: GradeSystemKey, label: str
+) -> None:
+    """Extra time may not become extra volume where low volume is the protocol. Compared against
+    the AUTHORED prescription, so a grown block shows even when the session still fits."""
+    del level
+    plan = generate(_input(discipline, system, label, 5, 0b111_1111))
+    for mesocycle in plan.mesocycles:
+        for microcycle in mesocycle.microcycles:
+            for session in microcycle.sessions:
+                for block in session.blocks:
+                    spec = _BY_KEY[block.exercise_key]
+                    authored = next(
+                        p.sets for p in spec.prescriptions if p.phase is microcycle.phase
+                    )
+                    expandable = (
+                        block.aspect_key,
+                        block.protocol_kind,
+                    ) in _MAY_EXPAND and microcycle.phase not in {Phase.DELOAD, Phase.TAPER}
+                    ceiling = authored * MAX_EXPANSION_FACTOR if expandable else authored
+                    assert authored <= len(block.sets) <= ceiling, (
+                        f"{block.exercise_key} ({block.protocol_kind.value}, "
+                        f"{microcycle.phase.value}) is authored at {authored} sets and was "
+                        f"prescribed {len(block.sets)}; expandable={expandable}."
+                    )
+
+
+def test_the_expandability_table_cannot_widen_without_a_decision() -> None:
+    """Pinned literals, on `tests/test_library_contract.py`'s pattern: widening any of these is
+    a training decision — a deload has its own prescriptions — so it must not pass silently."""
+    assert EXPANDABLE_ASPECTS == frozenset({"endurance", "technique"})
+    assert EXPANDABLE_PROTOCOLS == frozenset(
+        {ProtocolKind.LAPS, ProtocolKind.CIRCUIT, ProtocolKind.OTHER}
+    )
+    assert UNLOADING_PHASES == frozenset({Phase.DELOAD, Phase.TAPER})
+    assert MAX_EXPANSION_FACTOR == 2
+
+
+def test_a_climber_with_nowhere_to_climb_gets_a_plan_that_names_what_is_missing() -> None:
+    """Issue #61's naming half: the plan is complete — full supplementary sessions — and every
+    week says out loud which equipment rows would put real climbing in it."""
+    current = ordinal_of(GradeSystemKey.FRENCH, "6c")
+    plan = generate(
+        PlannerInput(
+            discipline=Discipline.SPORT,
+            current_ordinal=current,
+            target_ordinal=current + 3,
+            sessions_per_week=3,
+            available_weekdays=0b010_0101,
+            strength_aspect_key=None,
+            weakness_aspect_key=None,
+            open_injury_keys=(),
+            equipment_keys=("hangboard", "pull_up_bar", "resistance_bands"),
+            start_date=_MONDAY,
+        )
+    )
+    named: list[str] = []
+    for mesocycle in plan.mesocycles:
+        for microcycle in mesocycle.microcycles:
+            for session in microcycle.sessions:
+                assert len(session.blocks) >= BLOCKS_PER_SESSION, (
+                    "an unbuildable climbing floor must not thin the plan; it names the gap."
+                )
+                wall = [shortfall for shortfall in session.shortfalls if shortfall.options]
+                assert wall, f"week {microcycle.week_no} has no climbing and does not say why."
+                named.extend(
+                    key for shortfall in wall for option in shortfall.options for key in option
+                )
+    assert set(named) & WALL_EQUIPMENT, (
+        f"the shortfalls name {sorted(set(named))} and not one place to climb."
+    )
+
+
+def _hang_sessions(plan: PlanBlueprint, phase_filter: frozenset[Phase] | None) -> list[int]:
+    """Sessions per week carrying a real hangboard block, for the weeks in `phase_filter`."""
+    return [
+        sum(
+            1
+            for session in microcycle.sessions
+            if any(
+                block.aspect_key == "finger_strength" and block.protocol_kind in _FINGER_PROTOCOLS
+                for block in session.blocks
+            )
+        )
+        for mesocycle in plan.mesocycles
+        for microcycle in mesocycle.microcycles
+        if phase_filter is None or microcycle.phase in phase_filter
+    ]
+
+
+# ⚠️ THE DIMENSION THIS SWEEPS IS PLAN LENGTH, and it is the one the gate was missing. Round 3
+# reordered `_wall_pref` to put a session's own length ahead of the week's share and this test
+# stayed GREEN: at the gap of 3 every other test here uses, that moves the advanced band from
+# 57-58% to 59-61%, still inside 50-62. Measured over gap 0-7 × four weekday masks × 2-7
+# sessions, the sabotage breaches only the SHORT plans — gap 0 (8 weeks) and gap 1 (12) reach
+# 62.1-64.8% against the 62% ceiling — because a short plan is mostly `base`, where preferring
+# the wall buys the most. So gap is sampled at both ends of `periodisation`'s week_count table
+# (0 → 8 weeks, 6 → 32) plus the 3 the rest of the file uses. `sessions_per_week` runs the full
+# 2-7 for completeness, but it is NOT the exposing dimension and neither is the weekday mask:
+# all four masks measured identical to a tenth of a point, because a mask moves which weekday a
+# session lands on and never how many blocks it gets.
+@pytest.mark.parametrize(("level", "discipline", "system", "label"), _CLIMBERS)
+@pytest.mark.parametrize("sessions", [2, 3, 4, 5, 6, 7])
+@pytest.mark.parametrize("gap", [0, 3, 6])
+def test_the_measured_climbing_share_lands_inside_its_bands_target_range(
+    level: Level,
+    discipline: Discipline,
+    system: GradeSystemKey,
+    label: str,
+    sessions: int,
+    gap: int,
+) -> None:
+    """The band is a TARGET RANGE, not only a floor. Round 1 met every floor and still put all
+    three bands at 84-91%, so the banding was inert — a floor alone cannot detect that."""
+    low, high = _TARGET_BAND[level]
+    matrix = _weekly_matrix(generate(_input(discipline, system, label, sessions, 0b111_1111, gap)))
+    wall = sum(row[2] for row in matrix)
+    other = sum(row[3] for row in matrix)
+    share = 100 * wall / (wall + other)
+    assert low <= share <= high, (
+        f"a {level.value} training {sessions}x a week on a grade gap of {gap} "
+        f"({len(matrix)} weeks) gets {share:.1f}% of prescribed minutes "
+        f"on a wall, against a target band of {low}-{high}%: {wall // 60} min climbing vs "
+        f"{other // 60} min of everything else. Above the band the supplementary work is "
+        f"crowded out; below it the plan has stopped being a climbing plan."
+    )
+
+
+@pytest.mark.parametrize(("level", "discipline", "system", "label"), _CLIMBERS)
+@pytest.mark.parametrize("sessions", [2, 3, 5, 7])
+def test_a_loading_week_meets_its_bands_finger_strength_floor(
+    level: Level, discipline: Discipline, system: GradeSystemKey, label: str, sessions: int
+) -> None:
+    """Finger strength is the strongest single predictor of climbing performance and matters more
+    as level rises, so a strength or power week owes real hangs — not a leftover slot."""
+    wanted = _FINGER_SESSIONS_PER_WEEK[level]
+    plan = generate(_input(discipline, system, label, sessions, 0b111_1111))
+    weeks = _hang_sessions(plan, _FINGER_PHASES)
+    assert weeks, "no strength or power week in the plan; the parametrisation is wrong."
+    for index, count in enumerate(weeks, start=1):
+        assert count >= wanted, (
+            f"loading week {index} of a {level.value}'s plan has {count} real max-hang or "
+            f"repeater session(s) against a floor of {wanted}. Round 1 measured eight minutes "
+            f"of finger work a week for an advanced climber."
+        )
+
+
+@pytest.mark.parametrize("sessions", [2, 3, 5, 7])
+def test_the_finger_strength_floor_RISES_WITH_THE_BAND(sessions: int) -> None:
+    """The other direction, and the arm that keeps the zero honest: a beginner must get strictly
+    less structured hangboarding than an intermediate, and an intermediate than an advanced."""
+    counts = [
+        sum(_hang_sessions(generate(_input(discipline, system, label, sessions, 0b111_1111)), None))
+        for _level, discipline, system, label in _CLIMBERS
+        if discipline is Discipline.SPORT
+    ]
+    beginner, intermediate, advanced = counts
+    assert beginner < intermediate < advanced, (
+        f"hangboard sessions per plan at {sessions}x a week are beginner={beginner}, "
+        f"intermediate={intermediate}, advanced={advanced}; the band has to order them."
+    )
+
+
+@pytest.mark.parametrize(("level", "discipline", "system", "label"), _CLIMBERS)
+def test_priority_work_never_sits_behind_volume_work(
+    level: Level, discipline: Discipline, system: GradeSystemKey, label: str
+) -> None:
+    """Quality of effort decides the adaptation, so a max hang cannot sit behind 35 minutes of
+    climbing — that is the "turn up subpar and set your training back" failure, prescribed."""
+    del level
+    plan = generate(_input(discipline, system, label, 5, 0b111_1111))
+    for mesocycle in plan.mesocycles:
+        for microcycle in mesocycle.microcycles:
+            for session in microcycle.sessions:
+                order = [block.order_index for block in session.blocks]
+                assert order == sorted(order) == list(range(1, len(order) + 1)), (
+                    f"week {microcycle.week_no} has blocks indexed {order}."
+                )
+                seen_volume: list[str] = []
+                for block in session.blocks:
+                    if block.protocol_kind in _VOLUME_PROTOCOLS:
+                        seen_volume.append(block.exercise_key)
+                    assert not (block.protocol_kind in _PRIORITY_PROTOCOLS and seen_volume), (
+                        f"week {microcycle.week_no} ({microcycle.phase.value}) prescribes "
+                        f"{block.exercise_key} ({block.protocol_kind.value}) after "
+                        f"{seen_volume}; fixed-volume quality work leads a session."
+                    )

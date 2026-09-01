@@ -1,0 +1,73 @@
+// The FOUR screen sizes this app is designed at, and the ONLY place their numbers are written.
+//
+//   | name       | from   | as rem | asked as                                                |
+//   | ---------- | ------ | ------ | ------------------------------------------------------- |
+//   | Mobile     | 350px  | —      | the BASE — no query at all                                |
+//   | Tablet     | 768px  | 48rem  | `@container ct-app (min-inline-size: #{sizes.$tablet})`   |
+//   | Screen     | 1024px | 64rem  | `@container ct-app (min-inline-size: #{sizes.$desktop})`  |
+//   | Big screen | 1200px | 75rem  | `@container ct-app (min-inline-size: #{sizes.$big})`      |
+//
+// Kilian's numbers, issue #99. Mobile has no variable because it has no query: it is what a box
+// gets when nothing matched, and 350px is the narrowest width the layout is checked at rather
+// than a threshold anything tests for.
+//
+// ## Sass variables, because a CUSTOM PROPERTY CANNOT BE USED HERE
+//
+// `@container ct-app (min-inline-size: var(--ct-bp-tablet))` is not valid CSS. A query prelude is
+// parsed before custom properties are substituted, and the build's CSS pipeline rejects it
+// outright — lightningcss answers `Invalid media query`. So the one source has to be a Sass module
+// that consumers INTERPOLATE, which is what `_chrome.scss` already does with `#{$icons}`.
+//
+// ⚠️ **Not `_tokens.scss`.** That file is the design VOCABULARY: values consumed by DECLARATIONS,
+// in two scheme mixins that `contrast.test.ts` parses key-for-key. A breakpoint is consumed by an
+// AT-RULE and can never be a custom property at all, so it would be a key in a file whose keys
+// mean something else. The same argument keeps `--ct-nav-compress` on `.ct-app__nav`.
+//
+// ## `@container ct-app`, never `@media`
+//
+// One route tree, two mounts: standalone on `climb.kilianmc.com`, and a federated remote inside
+// `portfolio-shell`'s `ProjectViewer`, where the app is a NARROW PANEL in a WIDE window. A
+// `@media (min-width: …)` there reports kilianmc.com's viewport, so a 1400px browser would hand a
+// ~600px panel the big-screen layout. `container: ct-app / inline-size` asks how much room the app
+// actually got — which standalone IS the viewport, so the expectation holds in the case Kilian is
+// looking at while the federated mount stops lying. `designGuard.test.ts` fails the build on any
+// width `@media` in a stylesheet, so this is a guard rather than a promise.
+//
+// ## `rem`, not px
+//
+// Every other length in this design system is `rem`, `_chrome.scss`'s five thresholds and
+// `--ct-measure` included. It also means the layout follows a reader who has raised their
+// browser's default font size: at a 20px root, tablet arrives at 960 real px, which is the width
+// at which that reader's text genuinely needs the tablet arrangement. px would pin the layout to
+// the glass and hand them a desktop grid full of oversized type.
+//
+// ## ⚠️ What is deliberately NOT on this scale — do not "migrate" these
+//
+// A width is a SCREEN SIZE only when the question it answers is "how big a screen is this". A
+// width that came out of measuring what one box needs is a MEASUREMENT, and rounding it onto a
+// scale makes that box wait for room it never needed:
+//
+//  - **`_chrome.scss`'s five nav thresholds.** Each derived from the nav row's content width in
+//    px, rounded up a `rem` plus slack for the estimate error. Kilian's rule, in his words: "make
+//    the buttons appear as soon as they fit, so no 765, if they fit at 600 do it there." A
+//    conventional 768/1024 pair was EXPLICITLY REJECTED. The table lives above `&__nav`.
+//  - **`34rem` (544px), in `_bento.scss`, `_card.scss`, `_profile.scss`, `_plan.scss` and
+//    `_landing.scss`.** The width at which the measure column holds two usable columns, and all
+//    five layouts were signed off at it in a browser. It falls inside the MOBILE band, so moving
+//    it to `$tablet` would delay the two-column bento, the two-up profile choices and the week
+//    table's full exercise names by 224px of app width — a visible regression on five screens in
+//    exchange for tidiness. `_layout.scss` records the viewport it is crossed at.
+//  - **`_card.scss`'s second `34rem` asks `ct-card`, not `ct-app`** — how wide one CARD is, which
+//    is not a screen size in either mount.
+//  - **`_landing.scss`'s `46rem`** is `--ct-measure` spelled as a literal, because a prelude
+//    cannot read the custom property. It means "the app is at least as wide as the reading
+//    measure", which is when the rope-detail tile can sit beside its copy; tied to `$tablet` it
+//    would stop tracking the measure it was derived from.
+//
+// ⚠️ `$tablet` has no consumer yet, and that is not a reason to delete it. The scale is declared
+// as a SET so the next component does not have to invent its own answer to "where does tablet
+// start" — five files sharing one ad-hoc `34rem` is what that looks like.
+
+$tablet: 48rem;
+$desktop: 64rem;
+$big: 75rem;

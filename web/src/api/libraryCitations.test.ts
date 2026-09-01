@@ -69,12 +69,7 @@ const CITATIONS: readonly Citation[] = [
   {
     file: 'mutationCache.js',
     construct: 'find((m) => m.state.status === "pending")',
-    why: '`canRun` is true only for a scope’s FIRST pending mutation, so one scope serialises the requests — a create and an abandon are never on the wire at once.',
-  },
-  {
-    file: 'queryClient.js',
-    construct: 'if (data === void 0) return;',
-    why: '`setQueryData` writes nothing when the updater yields `undefined`, which is how `useAbandonPlan` says “leave the cache alone”.',
+    why: '`canRun` is true only for a scope’s FIRST pending mutation, so one scope serialises the requests — a double-tapped Start cannot put two `POST /api/plans` on the wire at once.',
   },
   {
     file: 'queryClient.js',
@@ -88,7 +83,7 @@ const CITATIONS: readonly Citation[] = [
   },
   {
     file: 'queryObserver.js',
-    construct: 'resolveQueryBoolean(options.enabled, query) !== false',
+    construct: 'resolveQueryValue(options.enabled, query) !== false',
     why: 'Every fetch decision gates on `enabled`, which is what stops a cleared cache refetching after logout — a 401, a refresh POST, and a Postgres write.',
   },
   {

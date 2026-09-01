@@ -1,7 +1,7 @@
-"""`POST /api/plans`, `GET /api/plans/active`, `POST /api/plans/{id}/abandon` — the WRITE path.
+"""`POST /api/plans` and `GET /api/plans/active` — the WRITE path.
 
 The half of PR #11b that can lose data: it inserts a ~2,400-row tree in one transaction and is
-the only way a plan comes into existence.
+the only way a plan comes into existence, or leaves the active set.
 
 `tests/test_plans_api.py` covers `/preview` and owns the mirror-image assertion — that a preview
 writes NOTHING. Nothing here asserts which exercise landed in which block: that is the domain's,
@@ -62,7 +62,6 @@ from server.security_headers import _FALLBACK_CACHE_CONTROL
 from server.seed import DEMO_USER_ID
 
 _EMAIL = "persist@example.com"
-_OTHER_EMAIL = "persist-other@example.com"
 _PASSWORD = "a-long-enough-passphrase"
 
 # Monday, Wednesday, Saturday — bits 0, 2 and 5.
@@ -582,83 +581,32 @@ def test_no_plan_yet_is_a_200_with_a_NULL_plan(
     assert response.json() == {"plan": None}
 
 
-def test_abandon_sets_the_timestamp_and_is_IDEMPOTENT(
-    api_client: TestClient, auth: dict[str, str], db_session: Session
-) -> None:
-    """Marks, never deletes — and a second press keeps the ORIGINAL timestamp.
-
-    *When* a plan was stood down is the fact the diary wants. Afterwards `GET /active` has nothing
-    to return and every row is still there: `activity.planned_session_id` is the only link from a
-    logged activity to the plan it satisfied, so a delete would destroy the adherence record.
-    """
-    _complete_profile(api_client, auth, db_session)
-    created = _persist(api_client, auth)
-    assert created.status_code == 201, created.text
-    plan_id = created.json()["id"]
-    before = _counts(db_session)
-
-    first = api_client.post(f"/api/plans/{plan_id}/abandon", headers=auth)
-    second = api_client.post(f"/api/plans/{plan_id}/abandon", headers=auth)
-
-    assert first.status_code == 200, first.text
-    assert second.status_code == 200, second.text
-    assert datetime.fromisoformat(first.json()["abandoned_at"]) == datetime.fromisoformat(
-        second.json()["abandoned_at"]
-    ), "a second abandon overwrote the timestamp"
-    assert api_client.get("/api/plans/active", headers=auth).json() == {"plan": None}
-    assert _counts(db_session) == before, "abandoning deleted rows; it must only mark"
-
-
-def test_abandon_404s_on_ANOTHER_USERS_plan_and_does_not_leak_that_it_exists(
-    api_client: TestClient, auth: dict[str, str], db_session: Session, invite_code: str
-) -> None:
-    """The scoping IS the security property, so the two answers must be identical.
-
-    A 403 on someone else's plan against a 404 on one that never existed would let a caller
-    enumerate plan ids — the IDOR read this project treats as its real extraction risk. Status
-    *and* message are compared.
-    """
-    _complete_profile(api_client, auth, db_session)
-    created = _persist(api_client, auth)
-    assert created.status_code == 201, created.text
-    plan_id = created.json()["id"]
-    stranger = _register(api_client, invite_code, _OTHER_EMAIL)
-
-    theirs = api_client.post(f"/api/plans/{plan_id}/abandon", headers=stranger)
-    nonexistent = api_client.post("/api/plans/99999999/abandon", headers=stranger)
-
-    assert theirs.status_code == 404, theirs.text
-    assert theirs.json() == nonexistent.json()
-    assert db_session.scalar(select(Plan.abandoned_at).where(Plan.id == plan_id)) is None
-
-
 # ---------------------------------------------------------------------------------
 # The demo mount
 # ---------------------------------------------------------------------------------
 
 
-def test_a_DEMO_TOKEN_cannot_reach_either_of_the_two_WRITE_routes(
+def test_a_DEMO_TOKEN_cannot_reach_the_WRITE_route(
     api_client: TestClient, demo_auth: dict[str, str]
 ) -> None:
-    """403 on both POSTs, with no new code — and the reason there are two, not three.
+    """403 on the POST, with no new code — and the reason there is one, not two.
 
     ⚠️ `GET /api/plans/active` is deliberately NOT refused: `enforce_auth` gates on
     `MUTATING_METHODS`, and refusing a read that writes nothing would break the demo mount's
-    `/plan` screen for no gain. Both refusals come from `enforce_auth` before any handler runs,
+    `/plan` screen for no gain. The refusal comes from `enforce_auth` before any handler runs,
     with `SET LOCAL transaction_read_only` as the second layer.
     """
     assert api_client.post("/api/plans", json={}, headers=demo_auth).status_code == 403
-    assert api_client.post("/api/plans/1/abandon", headers=demo_auth).status_code == 403
 
     readback = api_client.get("/api/plans/active", headers=demo_auth)
     assert readback.status_code == 200, readback.text
     assert readback.json() == {"plan": None}
 
 
-def test_the_WRITE_routes_are_ABSENT_from_DEMO_WRITE_EXEMPT_ROUTES() -> None:
-    """The exemption list is the hole in "demo mode is read-only"; these must not join it.
+def test_the_WRITE_ROUTE_is_ABSENT_from_DEMO_WRITE_EXEMPT_ROUTES() -> None:
+    """The exemption list is the hole in "demo mode is read-only"; this must not join it.
 
-    `/preview` is in it because it writes nothing. These write ~2,400 rows to a shared demo
+    `/preview` is in it because it writes nothing. This writes ~2,400 rows to a shared demo
     account, and one entry would remove BOTH layers of the refusal, because the same list gates
     the 403 and the read-only transaction.
     """
@@ -995,7 +943,7 @@ def test_the_routes_own_directive_and_the_middleware_fallback_AGREE() -> None:
     assert _CACHE_CONTROL == _FALLBACK_CACHE_CONTROL == "private, no-store"
 
 
-def test_ALL_THREE_ROUTES_are_uncacheable_on_SUCCESS(
+def test_BOTH_ROUTES_are_uncacheable_on_SUCCESS(
     api_client: TestClient, auth: dict[str, str], db_session: Session
 ) -> None:
     _complete_profile(api_client, auth, db_session)
@@ -1003,13 +951,11 @@ def test_ALL_THREE_ROUTES_are_uncacheable_on_SUCCESS(
     assert created.status_code == 201, created.text
     active = api_client.get("/api/plans/active", headers=auth)
     assert active.status_code == 200, active.text
-    abandoned = api_client.post(f"/api/plans/{created.json()['id']}/abandon", headers=auth)
-    assert abandoned.status_code == 200, abandoned.text
-    for response in (created, active, abandoned):
+    for response in (created, active):
         assert response.headers.get("cache-control") == _CACHE_CONTROL
 
 
-def test_ALL_THREE_ROUTES_are_uncacheable_on_401_404_and_422(
+def test_BOTH_ROUTES_are_uncacheable_on_401_and_422(
     api_client: TestClient, auth: dict[str, str], db_session: Session
 ) -> None:
     """The paths the routes' own header never reaches, one per route."""
@@ -1022,9 +968,7 @@ def test_ALL_THREE_ROUTES_are_uncacheable_on_401_404_and_422(
         headers=auth,
     )
     assert unprocessable.status_code == 422, unprocessable.text
-    missing = api_client.post("/api/plans/999999999/abandon", headers=auth)
-    assert missing.status_code == 404, missing.text
-    for response in (unauthenticated, unprocessable, missing):
+    for response in (unauthenticated, unprocessable):
         assert response.headers.get("cache-control") == _FALLBACK_CACHE_CONTROL, (
             f"{response.status_code} carried {response.headers.get('cache-control')!r}"
         )

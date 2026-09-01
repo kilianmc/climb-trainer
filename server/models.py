@@ -56,11 +56,8 @@ NAMING_CONVENTION = {
     "pk": "pk_%(table_name)s",
 }
 
-# Native Postgres enum. Closed vocabularies get a real type: it is type-safe and cheap,
-# and the price (an `ALTER TYPE ... ADD VALUE` migration to extend it) is acceptable for
-# a genuinely closed set. `values_callable` stores the enum's *values* ('boulder'), not
-# its Python member names ('BOULDER') — the default would put SCREAMING_CASE in the
-# database and in every JSON payload.
+# Native Postgres enum: type-safe and cheap, and the price of extending one (an
+# `ALTER TYPE ... ADD VALUE` migration) is acceptable for a genuinely closed set.
 discipline_enum = Enum(
     Discipline,
     name="discipline",
@@ -103,31 +100,30 @@ session_status_enum = Enum(
 # The `func.` forms compile to `true()` and `false()`, which are not Postgres functions —
 # the DDL would fail outright. Nothing notices today because this repo never calls
 # `create_all()` and `compare_server_default` is off in `migrations/env.py`, so the only
-# reader of these is Alembic's renderer. That makes it a trap rather than a bug: adding a
-# `create_all()` test fixture is a *tempting* move on a machine with no local Postgres,
-# and it would fail on three columns for a reason that looks nothing like the cause.
+# reader of these is Alembic's renderer. That makes it a trap rather than a bug: a
+# `create_all()` fixture is a *tempting* shortcut past `alembic upgrade head`, and it would
+# fail on three columns for a reason that looks nothing like the cause.
 TRUE = text("true")
 FALSE = text("false")
 
-# Kilograms, to two decimals: added load on a hang, a weight-belt figure, a body weight.
-# `Numeric`, never float — a load is money-like, and 0.1 + 0.2 arithmetic on someone's
-# training numbers is both wrong and visibly wrong. Five digits total caps it at 999.99,
-# which is past any plausible barbell.
+# `Numeric`, never float: a load is money-like, and 0.1 + 0.2 arithmetic on someone's
+# training numbers is both wrong and visibly wrong.
 KILOGRAMS = Numeric(5, 2)
 
-# Free-text bounds. They are here rather than inline because the Pydantic schemas in
-# PR #9 must use the SAME numbers — a request model that allows 4000 characters into a
-# 2000-character column is a 500, not a 422.
+# Here rather than inline because the Pydantic schemas must use the SAME numbers: a
+# request model allowing 4000 characters into a 2000-character column is a 500, not a 422.
 NOTES_MAX = 2000
 SET_NOTE_MAX = 500
+# `logged_session.location`. The same 120 `ascent.name` uses: a gym or crag name is a short
+# label, and `server/fields.py::SessionLocation` mirrors this number rather than repeating it.
+LOCATION_MAX = 120
 ASCENT_NOTES_MAX = 1000
 JOURNAL_BODY_MAX = 4000
 # `user_profile.display_name`. 64 rather than 120: it is a name on a screen, not a route
 # name, and it is the same bound `invite.label` uses for the same kind of short label.
 DISPLAY_NAME_MAX = 64
-# `exercise.substitution_hint` (revision `0007`). Authored content, not user input, so it
-# has no Pydantic request bound — the same 255 the lookup tables' `description` uses,
-# because it is the same kind of thing: one sentence of display text.
+# `exercise.substitution_hint`. Authored content, not user input, so it has no Pydantic
+# request bound — the same 255 the lookup tables' `description` uses, for the same reason.
 SUBSTITUTION_HINT_MAX = 255
 
 
@@ -174,13 +170,8 @@ class GradeSystem(Base):
 
 
 class Grade(Base):
-    """One rung of one scale.
-
-    `ordinal` is the shared integer ladder — see `server/domain/grades.py`. It is the
-    *comparable* half of a grade; `label` is display only. Never persist a grade as a
-    label alone, and never accept an `ordinal` from a client: the API takes a
-    `grade_id` that must resolve against this table.
-    """
+    """One rung of one scale: `ordinal` compares (see `server/domain/grades.py`), `label`
+    displays. The API takes a `grade_id` and reads the ordinal from here, never the reverse."""
 
     __tablename__ = "grade"
 
@@ -201,11 +192,8 @@ class Grade(Base):
         # Cross-scale lookup ("what is ordinal 1009 called in the V-scale?") and the
         # send pyramid's `(user_id, grade_ordinal)` joins both come in on ordinal.
         Index("ix_grade_ordinal", "ordinal"),
-        # Redundant next to the primary key, and NOT hygiene: it is the target of
-        # `ascent`'s composite foreign key on (grade_id, grade_ordinal), which is what
-        # makes the denormalised ordinal on an ascent *safe* rather than merely intended.
-        # A composite FK needs a unique constraint on exactly those columns. Dropping
-        # this lets a wrong ordinal silently reclassify an ascent's discipline.
+        # NOT hygiene: the target of `ascent`'s composite FK on (grade_id, grade_ordinal).
+        # Drop it and a wrong ordinal silently reclassifies an ascent's discipline.
         UniqueConstraint("id", "ordinal"),
     )
 
@@ -235,16 +223,13 @@ class AppUser(Base):
     # profile in server/auth/passwords.py. 255 leaves room for a future parameter bump.
     password_hash: Mapped[str | None] = mapped_column(String(255), nullable=True)
     is_demo: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=FALSE)
-    # NULLABLE because the demo account and every account predating the gate have no invite.
-    # RESTRICT, not SET NULL or CASCADE: an invite that was used must not be deletable, or a
-    # tidy-up erases the attribution this column exists for. Revoking is the supported
-    # operation on a spent invite; deleting is not.
+    # NULLABLE: the demo account and every account predating the gate have no invite. RESTRICT,
+    # not SET NULL or CASCADE — a tidy-up must not erase the attribution this column exists for.
     invite_id: Mapped[int | None] = mapped_column(
         ForeignKey("invite.id", ondelete="RESTRICT"), nullable=True
     )
-    # `Mapped[datetime]` picks up TIMESTAMPTZ from `type_annotation_map` above. The
-    # default is a SERVER default so the timestamp is the database's clock, not a
-    # serverless function's — the two disagree often enough to matter for ordering.
+    # A SERVER default, so the timestamp is the database's clock rather than a serverless
+    # function's — the two disagree often enough to matter for ordering.
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
 
@@ -352,18 +337,12 @@ class RateLimit(Base):
     count: Mapped[int] = mapped_column(Integer, nullable=False)
 
 
-# ---------------------------------------------------------------------------------
-# Reference: the exercise library and the vocabularies that carry display text
-# ---------------------------------------------------------------------------------
+# --- Reference: the exercise library and the vocabularies that carry display text ---
 
 
 class ClimbingAspect(Base):
-    """What an exercise trains. A lookup table, not an enum: it carries display text.
-
-    Seeded from `server.domain.vocabulary.CLIMBING_ASPECTS`, upserted on `key`, which is
-    therefore the data contract — `user_aspect_rating` and `exercise` both point here by
-    id, so retiring an aspect is a migration, not a tuple edit.
-    """
+    """What an exercise trains. A lookup table because it carries display text; upserted by the
+    seed on `key`, so `key` is a data contract and retiring an aspect is a migration."""
 
     __tablename__ = "climbing_aspect"
 
@@ -375,12 +354,8 @@ class ClimbingAspect(Base):
 
 
 class Equipment(Base):
-    """Something a user has access to, and an exercise may require.
-
-    The plan generator filters the library on this, so an unseeded row means a
-    prescription nobody can perform. Same key/name/sort_order contract as
-    `ClimbingAspect`.
-    """
+    """Something a user has access to, and an exercise may require. The generator filters the
+    library on this, so an unseeded row is a prescription nobody can perform."""
 
     __tablename__ = "equipment"
 
@@ -392,12 +367,8 @@ class Equipment(Base):
 
 
 class InjuryArea(Base):
-    """A body area an injury can sit in. Coarse on purpose — see the vocabulary module.
-
-    The only decision the app makes from an injury flag is which exercises to withhold
-    (`exercise_contraindication`). It is not a diagnosis, and this table must not grow
-    into one.
-    """
+    """A body area an injury can sit in. Coarse on purpose: the only decision made from a flag
+    is which exercises to withhold, so this is not a diagnosis and must not grow into one."""
 
     __tablename__ = "injury_area"
 
@@ -409,16 +380,8 @@ class InjuryArea(Base):
 
 
 class AscentTag(Base):
-    """A taggable fact about a climb: hold type, angle, style, conditions.
-
-    ⚠️ **This replaced `ascent.tags text[]` + a GIN index — reversed 2026-08-21, Kilian's
-    call.** The reasoning is in `server/domain/vocabulary.py::ASCENT_TAGS`, and it is
-    there rather than here because that is where a future agent editing the tag list will
-    be looking. Short version: a free-typed tag list fragments into 'crimp' / 'crimps' /
-    'Crimpy' and defeats the aggregate it exists for, and CLAUDE.md prefers CLOSED inputs.
-    A lookup table rather than a native enum because a tag carries a label and a grouping,
-    so adding one is a seed insert instead of an `ALTER TYPE` migration.
-    """
+    """A taggable fact about a climb. ⚠️ Replaced `ascent.tags text[]` + GIN, reversed 2026-08-21.
+    Reasoning in `server/domain/vocabulary.py::ASCENT_TAGS`, where the tag list is edited."""
 
     __tablename__ = "ascent_tag"
 
@@ -462,17 +425,12 @@ class Exercise(Base):
     name: Mapped[str] = mapped_column(String(96))
     climbing_aspect_id: Mapped[int] = mapped_column(ForeignKey("climbing_aspect.id"))
     protocol_kind: Mapped[ProtocolKind] = mapped_column(protocol_kind_enum)
-    # NULL = discipline-agnostic (a hangboard protocol serves boulderers and rope
-    # climbers alike). Most of the library is NULL here; the exceptions are the ones
-    # that only make sense on a rope or only on a boulder.
+    # NULL = discipline-agnostic (a hangboard protocol serves both). Most of the library is
+    # NULL here; the exceptions only make sense on a rope, or only on a boulder.
     discipline: Mapped[Discipline | None] = mapped_column(discipline_enum, nullable=True)
     instructions: Mapped[str] = mapped_column(String(2000))
-    # "No dumbbell? A packed backpack." Lives on the exercise, next to the movement it
-    # applies to, rather than in a vocabulary — CLAUDE.md, "There is deliberately no
-    # `bodyweight` equipment row". NULL where there is nothing honest to suggest, which
-    # ⚠️ INCLUDES EVERY FINGER-LOADING PROTOCOL: a hangboard, campus or no-hang exercise
-    # must never carry one, because the only substitutes are improvised edges. Never
-    # rendered as HTML (see the output-escaping rules in CLAUDE.md).
+    # "No dumbbell? A packed backpack." ⚠️ NULL FOR EVERY FINGER-LOADING PROTOCOL: hangboard,
+    # campus and no-hang have no honest substitute, only improvised edges.
     substitution_hint: Mapped[str | None] = mapped_column(
         String(SUBSTITUTION_HINT_MAX), nullable=True
     )
@@ -502,12 +460,8 @@ class Exercise(Base):
 
 
 class ExerciseEquipment(Base):
-    """What an exercise requires. Every row is a requirement, so the set is an AND.
-
-    A pure join table: the composite primary key is the whole row, which also makes the
-    "does this user have everything?" anti-join cheap and makes a duplicate row
-    impossible.
-    """
+    """What an exercise requires. Every row is a requirement, so the set is an AND, and the
+    composite primary key being the whole row makes the "has everything?" anti-join cheap."""
 
     __tablename__ = "exercise_equipment"
 
@@ -519,24 +473,15 @@ class ExerciseEquipment(Base):
     )
 
     __table_args__ = (
-        # The composite PK leads with `exercise_id`, so that CASCADE is covered; this one
-        # covers the CASCADE from `equipment`, whose FK column leads nothing. Same rule as
-        # every `SET NULL`/`CASCADE` in this file — Postgres does not index the referencing
-        # side for you. Tiny table, negligible cost, and the rule is stated absolutely a
-        # few classes down: violating it in the PR that introduces it is how a rule stops
-        # being believed.
+        # Covers the CASCADE from `equipment`, whose FK column leads no index; the composite PK
+        # already covers `exercise`. Postgres does not index the referencing side for you.
         Index("ix_exercise_equipment_equipment_id", "equipment_id"),
     )
 
 
 class ExerciseContraindication(Base):
-    """ "Do not prescribe this exercise while this area is injured."
-
-    This table is the only consumer of `user_injury`, and it is why injury flags are
-    worth storing at all: without it the flags are decoration. The generator withholds
-    rather than substitutes — an exercise is dropped from the candidate pool, and the
-    slot is filled by whatever else scores highest for that aspect.
-    """
+    """ "Do not prescribe this exercise while this area is injured." The generator WITHHOLDS
+    rather than substitutes: the slot goes to whatever else scores highest for that aspect."""
 
     __tablename__ = "exercise_contraindication"
 
@@ -576,9 +521,8 @@ class PrescriptionTemplate(Base):
     exercise_id: Mapped[int] = mapped_column(ForeignKey("exercise.id", ondelete="CASCADE"))
     phase: Mapped[Phase] = mapped_column(phase_enum)
     sets: Mapped[int] = mapped_column(SmallInteger)
-    # Reps OR seconds, depending on the protocol. Both nullable, neither derived: a
-    # repeater set has seconds and no reps, a pull-up set has reps and no seconds, and a
-    # circuit legitimately has neither.
+    # Reps OR seconds, depending on the protocol. Neither is derived: a repeater set has
+    # seconds and no reps, a pull-up reps and no seconds, and a circuit legitimately neither.
     reps: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
     work_seconds: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
     rest_seconds: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
@@ -599,9 +543,7 @@ class PrescriptionTemplate(Base):
     )
 
 
-# ---------------------------------------------------------------------------------
-# The user's profile
-# ---------------------------------------------------------------------------------
+# --- The user's profile ---
 
 
 class UserProfile(Base):
@@ -658,42 +600,28 @@ class UserProfile(Base):
     # NULL until a target grade is chosen: this is DERIVED from that grade's system, so
     # the two can never disagree. See the class docstring.
     primary_discipline: Mapped[Discipline | None] = mapped_column(discipline_enum, nullable=True)
-    # The grade being trained for. NULL until onboarding asks. RESTRICT by default (no
-    # ondelete): the seed never deletes a grade, and a cascade here would silently erase
-    # somebody's goal if one were ever retired.
+    # The grade being trained for; NULL until onboarding asks. RESTRICT by default: a cascade
+    # here would silently erase somebody's goal if a grade were ever retired.
     target_grade_id: Mapped[int | None] = mapped_column(ForeignKey("grade.id"), nullable=True)
-    # What they climb NOW, on the same ladder as the target. NULL until asked. Same
-    # RESTRICT-by-default reasoning as `target_grade_id`.
-    #
-    # ⚠️ It must sit on the same DISCIPLINE as the target, and `server/profile/routes.py`
-    # enforces that at the edge: the ordinal ladders are disjoint per discipline and
-    # `server.domain.grades.convert` raises `CrossDisciplineError` rather than compare
-    # across them, so a Font current grade under a French target is a row the plan
-    # generator can do nothing with.
+    # ⚠️ Must sit on the same DISCIPLINE as the target (`server/profile/routes.py` enforces it):
+    # the ladders are disjoint, so a Font grade under a French target is a row nothing can use.
     current_grade_id: Mapped[int | None] = mapped_column(ForeignKey("grade.id"), nullable=True)
     sessions_per_week: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
     available_weekdays: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
-    # The headline answer about their climbing: one strength, one weakness, chosen from the
-    # eight aspects. NULL until asked. See `UserAspectRating` for why these exist alongside
-    # the eight scores rather than instead of them.
+    # The headline: one strength, one weakness, from the eight aspects. NULL until asked. See
+    # `UserAspectRating` for why these exist alongside the eight scores, not instead of them.
     strength_aspect_id: Mapped[int | None] = mapped_column(
         ForeignKey("climbing_aspect.id"), nullable=True
     )
     weakness_aspect_id: Mapped[int | None] = mapped_column(
         ForeignKey("climbing_aspect.id"), nullable=True
     )
-    # Free text, and the ELEVENTH row on CLAUDE.md's free-text inventory — the table there
-    # is updated in the same PR, as that section demands. NULL means "never set", and the
+    # Free text, and the ELEVENTH row on CLAUDE.md's free-text inventory. NULL = never set; the
     # client offers the account's email as a starting value without persisting it.
     display_name: Mapped[str | None] = mapped_column(String(DISPLAY_NAME_MAX), nullable=True)
     show_body_metrics: Mapped[bool] = mapped_column(Boolean, server_default=TRUE)
-    # ⚠️ **`equipment_reviewed_at` is RETIRED and is deliberately still here.** Issue #54
-    # removed the equipment step from onboarding, so nothing reads or writes this column any
-    # more — it is absent from `ProfileResponse` and from the completion maths. It is not
-    # dropped because this repo migrates **expand -> deploy -> contract** and a `DROP COLUMN`
-    # on `user_profile` is exactly what `tests/test_migrations_additive.py` exists to refuse:
-    # the table holds real user rows. The contract half is a later revision, once a
-    # deployed-and-verified `0006` has proved nothing reads it.
+    # ⚠️ RETIRED (issue #54), deliberately still here: nothing reads or writes it. `DROP COLUMN`
+    # on a table of real user rows is what expand -> deploy -> contract forbids; that is a later PR.
     equipment_reviewed_at: Mapped[datetime | None] = mapped_column(nullable=True)
     # When the injuries step was last answered. NULL = never asked; a value with no rows in
     # `user_injury` = asked, nothing to record. Nothing else can express the second.
@@ -705,9 +633,8 @@ class UserProfile(Base):
     # false to a CHECK, so it passes both without either constraint having to mention it.
     __table_args__ = (
         CheckConstraint("sessions_per_week BETWEEN 1 AND 7", name="sessions_per_week_in_range"),
-        # 7 bits, Monday = bit 0. 0 is a legal mask and REACHABLE through the API
-        # ("answered, no days"); "not answered" is NULL, a different thing, and the one the
-        # progress bar reads.
+        # 7 bits, Monday = bit 0. 0 is a legal mask, REACHABLE through the API ("answered, no
+        # days"); "not answered" is NULL, a different thing, and the one the progress bar reads.
         CheckConstraint(
             "available_weekdays BETWEEN 0 AND 127", name="available_weekdays_is_7_bits"
         ),
@@ -819,14 +746,8 @@ class UserInjury(Base):
     )
 
 
-# ---------------------------------------------------------------------------------
-# The plan tree — prescription. NEVER mutated by logging.
-# ---------------------------------------------------------------------------------
-#
-# Fully relational, a row per prescribed set, as settled in CLAUDE.md: a 24-week plan is
-# roughly 290 KB against a 0.5 GB database, so denormalising the tree into `jsonb` would
-# save nothing that matters and would cost every query that wants "this week's sessions"
-# or "every set of this exercise I have ever been prescribed".
+# --- The plan tree: prescription, NEVER mutated by logging. Fully relational, a row per set:
+# a 24-week plan is ~290 KB of a 0.5 GB budget, so `jsonb` would save nothing and cost queries.
 
 
 class Plan(Base):
@@ -911,13 +832,8 @@ class Plan(Base):
 
 
 class Mesocycle(Base):
-    """A phase block spanning whole weeks of a plan.
-
-    `start_week` / `end_week` are 1-based and inclusive, and the unique constraint on
-    `(plan_id, start_week)` is what stops two blocks claiming the same opening week. The
-    extra `UNIQUE (id, plan_id)` is not redundant hygiene — it is the target of
-    `microcycle`'s composite foreign key; see that class.
-    """
+    """A phase block spanning whole weeks. `start_week` / `end_week` are 1-based and inclusive;
+    `UNIQUE (id, plan_id)` is not hygiene but the target of `microcycle`'s composite FK."""
 
     __tablename__ = "mesocycle"
 
@@ -1075,12 +991,8 @@ class SessionBlock(Base):
     order_index: Mapped[int] = mapped_column(SmallInteger)
     exercise_id: Mapped[int] = mapped_column(ForeignKey("exercise.id"))
     protocol_kind: Mapped[ProtocolKind] = mapped_column(protocol_kind_enum)
-    # ⚠️ THREE distinct rests live in this tree and none may absorb another:
-    # `prescribed_set.target_rest_seconds` is rest *within* a set (between reps on a
-    # repeater), this column is rest *between* sets of the block, and `rest_after_seconds`
-    # is rest *after* the whole block. Mirrors `prescription_template
-    # .rest_between_sets_seconds`, which is where the generator reads the value from
-    # (`0008`; see `server/domain/planner/blueprint.py`'s departure 4).
+    # ⚠️ THREE distinct rests, none may absorb another: `prescribed_set.target_rest_seconds` is
+    # within a set, this is between sets of the block, `rest_after_seconds` is after the block.
     rest_between_sets_seconds: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
     rest_after_seconds: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
 
@@ -1095,17 +1007,8 @@ class SessionBlock(Base):
 
 
 class PrescribedSet(Base):
-    """One set the user is asked to do. The leaf of the plan tree.
-
-    Every target is nullable except `set_index`, because the protocols genuinely differ:
-    a repeater set has seconds and no reps, a weighted pull-up set has reps and load, a
-    limit-boulder set has a target grade and neither. Encoding that variation as
-    nullable columns on one table beats a table per protocol — the session player reads
-    them all through the same loop.
-
-    `target_load_kg` is **added** load (the weight on the belt), never a bodyweight
-    figure. Bodyweight enters the picture only as the snapshot on `logged_set`.
-    """
+    """The leaf of the plan tree. `target_load_kg` is ADDED load (belt weight), never bodyweight;
+    nullable targets throughout beat a table per protocol, read through one player loop."""
 
     __tablename__ = "prescribed_set"
 
@@ -1130,9 +1033,8 @@ class PrescribedSet(Base):
         CheckConstraint(
             "target_rpe IS NULL OR (target_rpe BETWEEN 1 AND 10)", name="target_rpe_in_range"
         ),
-        # Matches `prescription_template.intensity_pct`, which this column is generated
-        # from: a bound on the template and none on the generated row would let the
-        # generator write a value the template could never have held.
+        # Matches `prescription_template.intensity_pct`, which this is generated from: a bound
+        # on the template alone would let the generator write a value it could never hold.
         CheckConstraint(
             "target_intensity_pct IS NULL OR (target_intensity_pct BETWEEN 1 AND 200)",
             name="target_intensity_pct_sane",
@@ -1140,9 +1042,7 @@ class PrescribedSet(Base):
     )
 
 
-# ---------------------------------------------------------------------------------
-# Logging — kept strictly distinct from prescription
-# ---------------------------------------------------------------------------------
+# --- Logging — kept strictly distinct from prescription ---
 
 
 class Activity(Base):
@@ -1190,9 +1090,8 @@ class Activity(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("app_user.id", ondelete="CASCADE"))
     activity_kind: Mapped[ActivityKind] = mapped_column(activity_kind_enum)
-    # The training *day*, which is what the diary and every rolling window group by. A
-    # date, not a timestamp: a session that starts at 23:30 belongs to the day the
-    # climber says it does, and `started_at` below keeps the instant when it matters.
+    # The training *day*, which every rolling window groups by. A date, not a timestamp: a
+    # session starting at 23:30 belongs to the day the climber says it does.
     occurred_on: Mapped[date] = mapped_column(Date)
     started_at: Mapped[datetime | None] = mapped_column(nullable=True)
     duration_minutes: Mapped[int] = mapped_column(SmallInteger)
@@ -1260,10 +1159,8 @@ class Activity(Base):
         # indexing them — that is a dozen indexes bought with write cost and storage against
         # a 0.5 GB budget, for lookups nothing performs.
         Index("ix_activity_planned_session_id", "planned_session_id"),
-        # 1..1440 = one minute to twenty-four hours. An activity is ONE session, so a
-        # value outside that is a unit error, not a long day. The bound is also what keeps
-        # `srpe_load` inside int4 (10 * 1440 = 14400) and what stops an absurd duration
-        # from dominating the ACWR window later.
+        # 1..1440 = one minute to twenty-four hours: outside that is a unit error, not a long
+        # day. It is also what keeps `srpe_load` inside int4 (10 * 1440 = 14400).
         CheckConstraint("duration_minutes BETWEEN 1 AND 1440", name="duration_in_range"),
         CheckConstraint("rpe IS NULL OR (rpe BETWEEN 1 AND 10)", name="rpe_in_range"),
     )
@@ -1305,7 +1202,7 @@ class LoggedSession(Base):
         activity_kind_enum, server_default=text("'climbing'")
     )
     discipline: Mapped[Discipline] = mapped_column(discipline_enum)
-    location: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    location: Mapped[str | None] = mapped_column(String(LOCATION_MAX), nullable=True)
     notes: Mapped[str | None] = mapped_column(String(NOTES_MAX), nullable=True)
 
     activity: Mapped[Activity] = relationship(back_populates="climbing_session")
@@ -1323,11 +1220,8 @@ class LoggedSession(Base):
             ondelete="CASCADE",
         ),
         CheckConstraint("activity_kind = 'climbing'", name="activity_kind_is_climbing"),
-        # Free-text search over session notes. An expression index, so Alembic skips it
-        # on both sides of the comparison rather than reporting a phantom diff.
-        # `simple` rather than `english`: no stemming and no stopword list, which is the
-        # right call for short mixed-language notes full of proper nouns ('Cafe Kraft',
-        # 'Font') where English stemming would do more harm than good.
+        # `simple`, not `english`: no stemming or stopwords, right for short mixed-language
+        # notes full of proper nouns ('Cafe Kraft', 'Font'). Expression index, so no phantom diff.
         Index(
             "ix_logged_session_notes_tsv",
             text("to_tsvector('simple', notes)"),
@@ -1360,8 +1254,8 @@ class LoggedSet(Base):
 
     With `prescribed_set_id` set, `exercise_id` should equal
     `prescribed_set -> session_block.exercise_id`. Nothing in the database enforces it: **it is
-    a write-path invariant (issue #62)**, and the endpoint accepting a flush must assert it
-    rather than trust the client. Making it structural was rejected on cost — the composite-FK
+    a write-path invariant (issue #62), asserted with a 422 by `server/sessions/routes.py`**,
+    which refuses the whole flush. Making it structural was rejected on cost — the composite-FK
     technique needs the parent to expose the column, so it would mean denormalising `exercise_id`
     onto `prescribed_set` plus a `UNIQUE (id, exercise_id)` on both, two columns and three
     constraints across a tree that exists to hold prescriptions. The damage is milder than the
@@ -1466,13 +1360,11 @@ class Ascent(Base):
         ForeignKey("logged_session.activity_id", ondelete="SET NULL"), nullable=True
     )
     climbed_on: Mapped[date] = mapped_column(Date)
-    # The route or problem name. Free text, and one of the few fields here that is:
-    # a climb log without names is not a climb log. Bounded, escaped on output, and
-    # never used to build SQL.
+    # The route or problem name. Free text because a climb log without names is not a climb
+    # log; bounded, escaped on output, never used to build SQL.
     name: Mapped[str | None] = mapped_column(String(120), nullable=True)
-    # No single-column ForeignKey: both grade columns are covered by the composite
-    # constraint below, and a second path to `grade` would be a second ON DELETE policy
-    # to keep in step.
+    # No single-column ForeignKey: the composite constraint below covers both grade columns,
+    # and a second path to `grade` would be a second ON DELETE policy to keep in step.
     grade_id: Mapped[int] = mapped_column(Integer)
     grade_ordinal: Mapped[int] = mapped_column(SmallInteger)
     style: Mapped[AscentStyle] = mapped_column(ascent_style_enum)
@@ -1497,10 +1389,8 @@ class Ascent(Base):
         Index("ix_ascent_user_id_climbed_on", "user_id", "climbed_on"),
         # The send pyramid, and the discipline filter that rides on the same index.
         Index("ix_ascent_user_id_grade_ordinal", "user_id", "grade_ordinal"),
-        # ⚠️ Required by the `ON DELETE SET NULL` above. Postgres does NOT index the
-        # referencing side of a foreign key, and it has to find these rows to null them —
-        # so without this, deleting one logged session sequentially scans every ascent the
-        # database holds. See Activity's matching index for the full reasoning.
+        # ⚠️ Required by the `ON DELETE SET NULL` above: without it, deleting one logged session
+        # sequentially scans every ascent in the database. See `Activity`'s index for the why.
         Index("ix_ascent_logged_session_id", "logged_session_id"),
         Index(
             "ix_ascent_notes_tsv",
@@ -1517,13 +1407,8 @@ class Ascent(Base):
 
 
 class AscentTagLink(Base):
-    """Which tags a climb carries. A pure join: the composite PK is the whole row.
-
-    `ascent_id` cascades — deleting a climb takes its tags with it. `ascent_tag_id`
-    deliberately does NOT: the seed never deletes a vocabulary row (see
-    `server/seed.py`), so a tag that somebody has used must not be removable out from
-    under their history. That asymmetry is the same one `app_user.invite_id` uses.
-    """
+    """Which tags a climb carries. `ascent_id` cascades; `ascent_tag_id` deliberately does NOT —
+    a tag somebody has used must not be removable out from under their history."""
 
     __tablename__ = "ascent_tag_link"
 

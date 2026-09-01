@@ -10,6 +10,81 @@ $confetti-tints: (
   var(--ct-border-strong)
 );
 
+// ## The completion badge (#85, #92): a pill whose SHAPE is shared and whose COLOURS are not
+//
+// LIGHT: every badge — a phase's and a session's alike — is a PALE filled pill with a dark ink
+// ring, and the card's border tint goes away. The ring owes the 3:1 boundary, so the fill owes
+// the surface nothing and only the word on it owes 4.5:1 — that is what lets `partial` be a
+// real yellow rather than #8f5000's brown (`_tokens.scss::light-only-values` has the arithmetic).
+//
+// DARK: the PHASE badge is the same pill with a neutral `--ct-surface-2` fill and the band
+// colour on BOTH the ring and the word, because `--ct-completion-outline` is near-black and
+// would be invisible there. ⚠️ The session ("day") badges inside a week keep the bare coloured
+// word they were signed off with — untouched (Kilian, 2026-08-30: "for the days inside the week
+// is perfect, dont touch that for dark, only for the phases"). `markupCss.test.ts::gives the
+// pill to the PHASE badge alone in dark` fails the build if a pill rule stops being gated.
+//
+// So the geometry is a mixin included twice, never written twice, and the schemes differ in
+// colour alone.
+@mixin completion-pill {
+  padding-inline: var(--ct-space-2);
+  padding-block: var(--ct-space-1);
+  // `currentColor` is the band colour the `&__completion[data-completion]` rules set, which is
+  // exactly dark's ring; light overrides `border-color` alone.
+  border: 1px solid currentColor;
+  border-radius: var(--ct-radius-pill);
+}
+
+// The LIGHT scheme's half, and colour is all it contributes.
+//
+// Included TWICE, which is the mechanism `_tokens.scss::overrides` documents rather than a
+// second idea: the OS query for anyone following the system, the attribute for a manual
+// override, and `:not([data-theme='dark'])` inside the query so a manual DARK under a light OS
+// is not caught by it. The token file has no `prefers-color-scheme: light` half to hang this on
+// — light is its unconditional default — so the scoping has to live here. And it has to be
+// scoping rather than "style everywhere, undo it in dark": an undo is a change to dark in
+// everything but name, and dark's day badges are the half nobody is allowed to touch.
+//
+// `$scope` is interpolated onto `&`, i.e. onto `.ct-app`, so every selector here is one
+// compound deeper than the unscoped band rules (0,3,1 against 0,2,1) and wins wherever it
+// applies, in either source order. `&__x` under a MODIFIED `&` would emit
+// `.ct-app[data-theme='light']__x`, which is why the scope is a parameter and not a nesting.
+@mixin completion-light-pills($scope) {
+  // The border tint goes away. `--ct-border-2` is the value `&__disclosure` itself sets, so an
+  // unbanded and a banded session card have the same edge again.
+  &#{$scope} &__disclosure[data-completion] {
+    border-color: var(--ct-border-2);
+  }
+
+  // ⚠️ Keyed on the BADGE's OWN `data-completion`, never on an ancestor's — see
+  // `&__completion` below for the bug the descendant form caused and why no ancestor may
+  // appear in any of these selectors.
+  //
+  // One ring on all three bands, and it is the ring rather than the pale fill that carries the
+  // 3:1 edge against the card. Only `border-color`: the width, the style and the geometry are
+  // `completion-pill`'s, shared with dark.
+  &#{$scope} &__completion[data-completion] {
+    @include completion-pill;
+
+    border-color: var(--ct-completion-outline);
+  }
+
+  &#{$scope} &__completion[data-completion='full'] {
+    background: var(--ct-completion-full-fill);
+    color: var(--ct-completion-full-fg);
+  }
+
+  &#{$scope} &__completion[data-completion='partial'] {
+    background: var(--ct-completion-partial-fill);
+    color: var(--ct-completion-partial-fg);
+  }
+
+  &#{$scope} &__completion[data-completion='low'] {
+    background: var(--ct-completion-low-fill);
+    color: var(--ct-completion-low-fg);
+  }
+}
+
 // The onboarding wizard and the profile editor: the completion bar and its numbered rail, and the
 // closed-input controls (checkbox grids and 1-5 scales) that both screens are built from.
 //
@@ -485,6 +560,145 @@ $confetti-tints: (
     > * + * {
       margin-block-start: var(--ct-space-3);
     }
+  }
+
+  // ## The PHASE disclosure (#92), and why it must not look like the one inside it
+  //
+  // An expanded phase contains "Why this phase", i.e. a disclosure inside a disclosure. This one
+  // is the SECTION rather than a panel: no surface, no box, one hairline, its own heading as the
+  // label. The inner note keeps the surface, so the two read as heading and panel.
+  &__disclosure--phase {
+    padding-inline: 0;
+    padding-block: var(--ct-space-2);
+    border-width: 0 0 1px;
+    border-radius: 0;
+    background: none;
+
+    > summary > h2 {
+      margin: 0;
+    }
+  }
+
+  // ## Completion (#85): three bands of the PERCENTAGE, not two session states
+  //
+  // `data-completion`, not `data-state`: the player's `data-state` in `_session.scss` says what
+  // happened to a row, this says how much of the session got done — and only the percentage
+  // decides it, so `Completed · 33%` cannot be green (Kilian, 2026-08-30). An attribute either
+  // way, never an interpolated class name, which would trip `markupCss.test.ts` in both
+  // directions at once. The WORD in `&__completion` carries the same fact at body weight, so the
+  // hue is added to it rather than replacing it; `contrast.test.ts` sweeps all three tones
+  // against all four card surfaces in both schemes, and names the dark phase pill's own pair
+  // (band on `--ct-surface-2`, as text AND as a ring) separately.
+  &__disclosure[data-completion='full'] {
+    border-color: var(--ct-success);
+  }
+
+  &__disclosure[data-completion='partial'] {
+    border-color: var(--ct-warning);
+  }
+
+  &__disclosure[data-completion='low'] {
+    border-color: var(--ct-danger);
+  }
+
+  &__completion {
+    flex: none;
+    margin-inline-start: auto;
+    font-weight: 600;
+    font-size: var(--ct-text-sm);
+  }
+
+  // ## ⚠️ EVERY badge carries its OWN band. No ancestor is ever in one of these selectors.
+  //
+  // These were written as `&__disclosure[data-completion='x'] &__completion`, and a phase
+  // `<details>` is ALSO a `ct-app__disclosure`. The moment the phase gained an aggregate band
+  // (#92) its attribute matched as an ANCESTOR of every session badge inside it: the two rules
+  // tie on specificity, source order decides, and a 100% session inside a 75% phase went amber.
+  //
+  // The fix is not more specificity, a reorder or a `:not()` — each of those leaves the same
+  // trap for the next element that gains a band. The BADGE carries `data-completion` itself, so
+  // nothing above it in the tree can reach it and the rendered element alone decides its colour.
+  // The containers keep their own attribute for their own border tint (below), and a container
+  // rule that ever needs to reach its own badge must use `>` and say so.
+  //
+  // `markupCss.test.ts::the completion band cannot leak from an ancestor` fails the build if the
+  // descendant shape comes back; `planCompletionBands.test.tsx` fails if the markup stops
+  // carrying it. Flat rather than nested, for the reason `_session.scss` records: under a
+  // complex parent Sass would emit `.ct-app__disclosure…__completion`.
+  &__completion[data-completion='full'] {
+    color: var(--ct-success);
+  }
+
+  &__completion[data-completion='partial'] {
+    color: var(--ct-warning);
+  }
+
+  &__completion[data-completion='low'] {
+    color: var(--ct-danger);
+  }
+
+  // ## The PHASE badge's pill, which in DARK is the only one there is
+  //
+  // A modifier ON THE BADGE, never `[data-completion] &__completion`: the descendant form is
+  // the leak above, and a phase `<details>` is a `ct-app__disclosure` exactly like a session's,
+  // so there is no ancestor that distinguishes them safely. The element says what it is instead.
+  //
+  // Colour comes from the band rules above — `currentColor` rings it in its own hue — so the
+  // only thing added here is the neutral fill Kilian asked for. In light the scoped rules below
+  // win on specificity (0,4,0 over 0,2,0) and repaint fill, ring and word.
+  &__completion--phase[data-completion] {
+    @include completion-pill;
+
+    background: var(--ct-surface-2);
+  }
+
+  // ## The blocks INSIDE a past session (#95): which PART got done, and which was missed
+  //
+  // Kilian: *"i can see that thursday i did 33% done, but i cant see which part of it i missed"*.
+  // The row carries the WORD (`&__mark`, from `completion.ts::BLOCK_MARK_LABEL`) and its edge
+  // repeats it in colour, so neither channel is alone — the rule for every band in this file.
+  //
+  // ⚠️ Each rule is keyed on the ELEMENT'S OWN `data-done`, never on an ancestor's, for the
+  // reason `&__completion` above records at length: a session `<details>` sits inside a phase
+  // `<details>`, and an ancestor-keyed band is what shipped the amber-100% bug. `data-done`
+  // rather than a second `data-completion`, because a block is done or missed — it has no
+  // percentage and therefore no band. `--ct-success` and `--ct-danger` are the tones
+  // `contrast.test.ts` already sweeps against all four card surfaces in BOTH schemes, so this
+  // treatment adds no token to either.
+  &__part[data-done] {
+    padding-inline-start: var(--ct-space-2);
+    border-inline-start: 2px solid;
+  }
+
+  &__part[data-done='done'] {
+    border-inline-start-color: var(--ct-success);
+  }
+
+  &__part[data-done='missed'] {
+    border-inline-start-color: var(--ct-danger);
+  }
+
+  &__mark {
+    margin-inline-end: var(--ct-space-1);
+    font-weight: 600;
+    font-size: var(--ct-text-xs);
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+
+  &__mark[data-done='done'] {
+    color: var(--ct-success);
+  }
+
+  &__mark[data-done='missed'] {
+    color: var(--ct-danger);
+  }
+
+  // …and in LIGHT, the border tint goes away and EVERY badge becomes a pale filled pill.
+  @include completion-light-pills("[data-theme='light']");
+
+  @media (prefers-color-scheme: light) {
+    @include completion-light-pills(":not([data-theme='dark'])");
   }
 
   &__scale {

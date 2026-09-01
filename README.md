@@ -90,7 +90,7 @@ migrations/             Alembic env.py + versions/
 server/                 the FastAPI application
   app.py  settings.py  db.py  models.py  fields.py  openapi_schema.py  security_headers.py
   seed.py  contentseed.py  devseed.py  admin.py
-  auth/  domain/  library/  plans/  profile/  vocabulary/
+  auth/  domain/  library/  plans/  profile/  sessions/  vocabulary/
 tests/                  backend tests (pytest)
 web/                    the Vite SPA, built to web/dist
   src/

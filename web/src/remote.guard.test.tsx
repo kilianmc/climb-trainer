@@ -206,7 +206,7 @@ describe('the federated entry', () => {
     // vacuous route-enumeration walk recorded in CLAUDE.md, so it gets the same
     // treatment: prove the detector fires before trusting that it stayed silent.
     //
-    // The service-worker arm imports the same specifier `pwa/updatePrompt.ts` does, so it
+    // The service-worker arm imports the same specifier `pwa/register.ts` does, so it
     // exercises the module graph a stray import from the route tree would create. It is a STAND-IN
     // for the real registration, not the real thing: `vitest.config.ts` aliases the specifier to
     // `test/pwaRegisterStub.ts` (nothing resolves the virtual module without the plugin). The

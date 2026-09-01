@@ -15,27 +15,6 @@
 # the comment is the intended way to interact with this file.
 
 [[exception]]
-path = "migrations/env.py"
-kind = "docstring"
-anchor = "migrations.env"
-limit = 26
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
-
-[[exception]]
-path = "migrations/env.py"
-kind = "docstring"
-anchor = "migrations.env._require_url"
-limit = 9
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
-
-[[exception]]
-path = "migrations/env.py"
-kind = "hash_run"
-anchor = "note on compare type true set in"
-limit = 5
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
-
-[[exception]]
 path = "server/admin.py"
 kind = "docstring"
 anchor = "server.admin"
@@ -1102,6 +1081,20 @@ reason = "The four invariants are priority-ordered and the fourth exists only be
 [[exception]]
 path = "server/domain/planner/generate.py"
 kind = "docstring"
+anchor = "server.domain.planner.generate._share_allows"
+limit = 11
+reason = "Four arms say yes regardless of the band's allowance and every one of them is a measured failure of saying no - a three-minute deload session, an emptied gearless session, a session under its type's window floor, and a week the per-session allowance cannot see."
+
+[[exception]]
+path = "server/domain/planner/generate.py"
+kind = "docstring"
+anchor = "server.domain.planner.generate._block_ceiling"
+limit = 5
+reason = "A fixed per-session block budget cannot express either reason a session may take a fourth block, and both are measured failures: a limit-bouldering session ten minutes short of its own window floor, and a two-session week with nowhere else to put the supplementary work."
+
+[[exception]]
+path = "server/domain/planner/generate.py"
+kind = "docstring"
 anchor = "server.domain.planner.generate._intended_aspect"
 limit = 13
 reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
@@ -1117,8 +1110,8 @@ reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
 path = "server/domain/planner/generate.py"
 kind = "docstring"
 anchor = "server.domain.planner.generate._fill_slot"
-limit = 5
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
+limit = 12
+reason = "Records that eligibility is prescribable() and that on-the-wall is only a preference - the one line that made six library exercises unreachable by every profile, with 762 tests green."
 
 [[exception]]
 path = "server/domain/planner/generate.py"
@@ -1438,212 +1431,72 @@ reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
 [[exception]]
 path = "server/models.py"
 kind = "hash_run"
-anchor = "native postgres enum closed vocabularies"
-limit = 5
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
-
-[[exception]]
-path = "server/models.py"
-kind = "hash_run"
 anchor = "the rest of the closed vocabularies"
 limit = 6
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
+reason = "Names the SQLAlchemy default that `values_callable` exists to defeat - without it Postgres stores 'MAX_HANG' while every query, payload and TypeScript union says 'max_hang' - and why a shared helper was rejected as exactly as easy to bypass."
 
 [[exception]]
 path = "server/models.py"
 kind = "hash_run"
 anchor = "sa text true sa text false never"
 limit = 7
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
-
-[[exception]]
-path = "server/models.py"
-kind = "hash_run"
-anchor = "kilograms to two decimals added"
-limit = 4
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
-
-[[exception]]
-path = "server/models.py"
-kind = "hash_run"
-anchor = "free text bounds they are here"
-limit = 3
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
-
-[[exception]]
-path = "server/models.py"
-kind = "hash_run"
-anchor = "exercise substitution hint revision"
-limit = 3
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
+reason = "A trap rather than a bug: `func.true()` compiles to a non-Postgres function that only Alembic's renderer reads today, so a tempting `create_all()` fixture would fail on three columns for a reason that looks nothing like the cause."
 
 [[exception]]
 path = "server/models.py"
 kind = "docstring"
 anchor = "server.models.GradeSystem"
 limit = 21
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
-
-[[exception]]
-path = "server/models.py"
-kind = "docstring"
-anchor = "server.models.Grade"
-limit = 7
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
-
-[[exception]]
-path = "server/models.py"
-kind = "hash_run"
-anchor = "redundant next to the primary key"
-limit = 5
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
+reason = "Records the issue #55 latent bug a fresh-database CI can never see: serials follow declaration order in CI but not in dev or production, so ordering by `id` renders a newly inserted system last for real users only."
 
 [[exception]]
 path = "server/models.py"
 kind = "docstring"
 anchor = "server.models.AppUser"
 limit = 15
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
-
-[[exception]]
-path = "server/models.py"
-kind = "hash_run"
-anchor = "nullable because the demo account"
-limit = 4
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
-
-[[exception]]
-path = "server/models.py"
-kind = "hash_run"
-anchor = "mapped datetime picks up timestamptz"
-limit = 3
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
+reason = "Two facts from outside the code: `citext` is not guaranteed on Neon and enabling an extension is privileged, so case-insensitivity is an edge invariant; and the NULL `password_hash` is what makes the demo account structurally unloggable."
 
 [[exception]]
 path = "server/models.py"
 kind = "docstring"
 anchor = "server.models.AuthSession"
 limit = 15
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
+reason = "Explains refresh-token reuse detection and why revoking the whole family - logging the legitimate holder out too - is the correct trade. Nothing in the columns conveys that a second presentation means the token was captured."
 
 [[exception]]
 path = "server/models.py"
 kind = "docstring"
 anchor = "server.models.Invite"
 limit = 21
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
+reason = "Says why sha256 beats argon2 for 128 bits of CSPRNG output, why uses/max_uses is a counter rather than a boolean `used` flag, and how the row lock and the CHECK divide the limit between application and database."
 
 [[exception]]
 path = "server/models.py"
 kind = "docstring"
 anchor = "server.models.RateLimit"
 limit = 10
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
-
-[[exception]]
-path = "server/models.py"
-kind = "hash_run"
-anchor = "reference the exercise library"
-limit = 3
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
-
-[[exception]]
-path = "server/models.py"
-kind = "docstring"
-anchor = "server.models.ClimbingAspect"
-limit = 6
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
-
-[[exception]]
-path = "server/models.py"
-kind = "docstring"
-anchor = "server.models.Equipment"
-limit = 6
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
-
-[[exception]]
-path = "server/models.py"
-kind = "docstring"
-anchor = "server.models.InjuryArea"
-limit = 6
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
-
-[[exception]]
-path = "server/models.py"
-kind = "docstring"
-anchor = "server.models.AscentTag"
-limit = 10
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
+reason = "Explains why the limiter lives in Postgres at all: a serverless function is frozen between requests, so an in-process counter would reset on every cold start and be per-instance even when warm. There is no Redis here."
 
 [[exception]]
 path = "server/models.py"
 kind = "docstring"
 anchor = "server.models.Exercise"
 limit = 21
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
-
-[[exception]]
-path = "server/models.py"
-kind = "hash_run"
-anchor = "null discipline agnostic a hangboard"
-limit = 3
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
-
-[[exception]]
-path = "server/models.py"
-kind = "hash_run"
-anchor = "no dumbbell a packed backpack lives"
-limit = 6
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
+reason = "Carries two rejected designs: a single `parent_id` whose inferred direction is wrong at every branch point, and the `energy_system` column that is a product question rather than an implementation detail."
 
 [[exception]]
 path = "server/models.py"
 kind = "hash_run"
 anchor = "logical retirement is the fallback"
 limit = 11
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
-
-[[exception]]
-path = "server/models.py"
-kind = "docstring"
-anchor = "server.models.ExerciseEquipment"
-limit = 6
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
-
-[[exception]]
-path = "server/models.py"
-kind = "hash_run"
-anchor = "the composite pk leads with exercise"
-limit = 6
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
-
-[[exception]]
-path = "server/models.py"
-kind = "docstring"
-anchor = "server.models.ExerciseContraindication"
-limit = 7
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
+reason = "Kilian's call that an exercise he judged weak is DELETED rather than hidden, plus the NO ACTION that makes Postgres refuse the delete instead of cascading into somebody's training diary. Neither is visible from the column."
 
 [[exception]]
 path = "server/models.py"
 kind = "docstring"
 anchor = "server.models.PrescriptionTemplate"
 limit = 14
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
-
-[[exception]]
-path = "server/models.py"
-kind = "hash_run"
-anchor = "reps or seconds depending on the"
-limit = 3
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
-
-[[exception]]
-path = "server/models.py"
-kind = "hash_run"
-anchor = "the user s profile"
-limit = 3
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
+reason = "Explains the deliberately absent `intensity_anchor` vocabulary - what a percentage is of is already derivable from `protocol_kind` - and names the one condition under which adding it would be right."
 
 [[exception]]
 path = "server/models.py"
@@ -1655,79 +1508,30 @@ reason = "Three nullable columns where NULL means unanswered and must never take
 [[exception]]
 path = "server/models.py"
 kind = "hash_run"
-anchor = "the grade being trained for null"
-limit = 3
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
-
-[[exception]]
-path = "server/models.py"
-kind = "hash_run"
-anchor = "what they climb now on the same"
-limit = 8
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
-
-[[exception]]
-path = "server/models.py"
-kind = "hash_run"
-anchor = "the headline answer about their"
-limit = 3
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
-
-[[exception]]
-path = "server/models.py"
-kind = "hash_run"
-anchor = "free text and the eleventh row"
-limit = 3
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
-
-[[exception]]
-path = "server/models.py"
-kind = "hash_run"
-anchor = "equipment reviewed at is retired"
-limit = 7
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
-
-[[exception]]
-path = "server/models.py"
-kind = "hash_run"
-anchor = "7 bits monday bit 0 0 is a legal"
-limit = 3
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
-
-[[exception]]
-path = "server/models.py"
-kind = "hash_run"
 anchor = "one aspect cannot be both the strongest"
 limit = 4
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
+reason = "Postgres behaviour: `NULL <> NULL` is NULL, so the `<>` spelling would pass this CHECK vacuously in exactly the state these columns spend most of their life in. `IS DISTINCT FROM` is the whole reason it holds."
 
 [[exception]]
 path = "server/models.py"
 kind = "docstring"
 anchor = "server.models.UserAspectRating"
 limit = 24
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
+reason = "Records that issue #54 demoted these eight sliders from the generator's only picture of a weakness to optional detail, and why the profile's single deliberate answer is the one to trust instead."
 
 [[exception]]
 path = "server/models.py"
 kind = "docstring"
 anchor = "server.models.UserInjury"
 limit = 8
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
+reason = "Says why a row per injury beats a boolean per area: 'resolved in March' is information the generator uses to reintroduce withheld exercises, and a flag that gets flipped back loses it."
 
 [[exception]]
 path = "server/models.py"
 kind = "hash_run"
 anchor = "at most one open injury per area"
 limit = 10
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
-
-[[exception]]
-path = "server/models.py"
-kind = "hash_run"
-anchor = "the plan tree prescription never"
-limit = 8
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
+reason = "Names the real read-then-insert race in `PATCH /api/profile` that this partial unique index closes, and why resolved rows sit outside the predicate. Postgres has no partial unique constraint, only an index."
 
 [[exception]]
 path = "server/models.py"
@@ -1741,126 +1545,70 @@ path = "server/models.py"
 kind = "hash_run"
 anchor = "at most one active plan per user"
 limit = 4
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
-
-[[exception]]
-path = "server/models.py"
-kind = "docstring"
-anchor = "server.models.Mesocycle"
-limit = 7
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
+reason = "The `text()` versus `func.text()` trap: the wrong spelling type-checks, lints and passes every local test, then fails against real Postgres. Nothing in the code or the suite reveals that."
 
 [[exception]]
 path = "server/models.py"
 kind = "docstring"
 anchor = "server.models.Microcycle"
 limit = 21
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
+reason = "Explains why `plan_id` is carried down from the parent and how the composite foreign key makes that denormalisation safe rather than merely intended, plus why a second FK straight to `plan` is refused."
 
 [[exception]]
 path = "server/models.py"
 kind = "hash_run"
 anchor = "required by the composite cascade"
 limit = 6
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
+reason = "Corrects the belief that the two unique constraints already cover this foreign key: both lead with other columns, so `mesocycle_id` has no usable index while deleting a plan cascades through every mesocycle in it."
 
 [[exception]]
 path = "server/models.py"
 kind = "docstring"
 anchor = "server.models.PlannedSession"
 limit = 16
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
+reason = "Says why adherence is a query rather than a constraint: the rule is product logic that will be tuned, and a schema that hard-coded it would have to be migrated to tune it."
 
 [[exception]]
 path = "server/models.py"
 kind = "docstring"
 anchor = "server.models.SessionBlock"
 limit = 16
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
-
-[[exception]]
-path = "server/models.py"
-kind = "hash_run"
-anchor = "three distinct rests live in this"
-limit = 6
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
-
-[[exception]]
-path = "server/models.py"
-kind = "docstring"
-anchor = "server.models.PrescribedSet"
-limit = 11
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
-
-[[exception]]
-path = "server/models.py"
-kind = "hash_run"
-anchor = "matches prescription template intensity"
-limit = 3
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
-
-[[exception]]
-path = "server/models.py"
-kind = "hash_run"
-anchor = "logging kept strictly distinct"
-limit = 3
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
+reason = "Records a known, accepted asymmetry: `aspect_key` is read live while `protocol_kind` is snapshotted, so re-authoring an exercise's aspect changes what an already-persisted plan says a block trains."
 
 [[exception]]
 path = "server/models.py"
 kind = "docstring"
 anchor = "server.models.Activity"
 limit = 38
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
-
-[[exception]]
-path = "server/models.py"
-kind = "hash_run"
-anchor = "the training day which is what"
-limit = 3
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
+reason = "Explains why the supertype exists before there is any data to migrate, and the Postgres fact that pins `srpe_load` to this table: `GENERATED ... STORED` can only reference columns of its own table."
 
 [[exception]]
 path = "server/models.py"
 kind = "hash_run"
 anchor = "session rpe x minutes the standard"
 limit = 12
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
+reason = "The `rpe::integer` cast: without it `int2 * int2` raises 'smallint out of range' before the widening cast, and on the outbox path that payload retries forever and can never succeed."
 
 [[exception]]
 path = "server/models.py"
 kind = "hash_run"
 anchor = "this user s training newest first"
 limit = 4
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
+reason = "Two facts a reader would otherwise reverse: a two-column btree is scanned backwards at the same cost, and an explicit DESC would make this an expression index that Alembic compares poorly for no gain."
 
 [[exception]]
 path = "server/models.py"
 kind = "hash_run"
 anchor = "required by the on delete set null on planned"
 limit = 25
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
-
-[[exception]]
-path = "server/models.py"
-kind = "hash_run"
-anchor = "1 1440 one minute to twenty four"
-limit = 4
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
+reason = "The repo's whole index-the-referencing-side rule, in the one place it is stated: Postgres does not index it for you, an omission is invisible to CI and billed as Neon awake time, and the NO ACTION keys are deliberately unindexed."
 
 [[exception]]
 path = "server/models.py"
 kind = "docstring"
 anchor = "server.models.LoggedSession"
 limit = 27
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
-
-[[exception]]
-path = "server/models.py"
-kind = "hash_run"
-anchor = "free text search over session notes"
-limit = 5
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
+reason = "Says why SQLAlchemy joined-table inheritance was rejected - four of the five activity kinds have no subclass - and records that an earlier count of the free-text fields was wrong and which two it left out."
 
 [[exception]]
 path = "server/models.py"
@@ -1874,49 +1622,21 @@ path = "server/models.py"
 kind = "hash_run"
 anchor = "required by the on delete set null on prescribed"
 limit = 4
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
+reason = "Gives the magnitude that makes this the worst of the four to omit: abandoning a 24-week plan deletes ~1000 prescribed sets, each of which would otherwise sequentially scan the largest table in the app."
 
 [[exception]]
 path = "server/models.py"
 kind = "docstring"
 anchor = "server.models.Ascent"
 limit = 31
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
-
-[[exception]]
-path = "server/models.py"
-kind = "hash_run"
-anchor = "the route or problem name free"
-limit = 3
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
-
-[[exception]]
-path = "server/models.py"
-kind = "hash_run"
-anchor = "no single column foreignkey both"
-limit = 3
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
-
-[[exception]]
-path = "server/models.py"
-kind = "hash_run"
-anchor = "required by the on delete set null above"
-limit = 4
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
-
-[[exception]]
-path = "server/models.py"
-kind = "docstring"
-anchor = "server.models.AscentTagLink"
-limit = 7
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
+reason = "Explains why the ordinal is stored twice and how the composite FK makes the copy safe: a transposed bulk-insert argument would otherwise file a French rope send in the boulder pyramid, silently and unrecoverably."
 
 [[exception]]
 path = "server/models.py"
 kind = "docstring"
 anchor = "server.models.JournalEntry"
 limit = 31
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
+reason = "The reasoning behind the no-goal-weight rule - climbing's documented disordered-eating problem - which the guard test can enforce but not explain, and which a well-meaning change would otherwise reverse."
 
 [[exception]]
 path = "server/openapi_schema.py"
@@ -1944,147 +1664,63 @@ path = "server/plans/routes.py"
 kind = "docstring"
 anchor = "server.plans.routes"
 limit = 38
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
+reason = "This file's decision register: why a POST serves a read (the `/api/library` CDN trap read backwards), why `/preview` is the only demo-exempt route of the three, and where each of the six refusals is raised."
 
 [[exception]]
 path = "server/plans/routes.py"
 kind = "hash_run"
 anchor = "a security decision not cache tuning"
 limit = 11
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
-
-[[exception]]
-path = "server/plans/routes.py"
-kind = "hash_run"
-anchor = "how far either side of today s"
-limit = 8
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
+reason = "A shared-cache entry here would hand a stranger a picture of somebody's open injuries and no behavioural test could see it happen; the contrast with `/api/library`'s immutable caching is what stops the two rules being merged."
 
 [[exception]]
 path = "server/plans/routes.py"
 kind = "hash_run"
 anchor = "the full 17 row vocabulary kilian"
 limit = 8
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
+reason = "Kilian's decision 3 (2026-08-24): every real user has zero `user_equipment` rows since issue #54 deleted the step, so reading that table would thin every plan to its bodyweight options. Names the one line that changes later."
 
 [[exception]]
 path = "server/plans/routes.py"
 kind = "docstring"
 anchor = "server.plans.routes._now_utc"
 limit = 10
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
+reason = "Why a Python instant beats the house `func.now()` here: a column set to a SQL function is not readable from the objects just inserted, so it would cost 200+ extra round trips to learn a timestamp already known."
 
 [[exception]]
 path = "server/plans/routes.py"
 kind = "docstring"
 anchor = "server.plans.routes.PlanPreviewRequest._a_bounded_monday"
 limit = 10
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
-
-[[exception]]
-path = "server/plans/routes.py"
-kind = "hash_run"
-anchor = "one wire shape for a plan previewed"
-limit = 15
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
-
-[[exception]]
-path = "server/plans/routes.py"
-kind = "docstring"
-anchor = "server.plans.routes._unprocessable"
-limit = 5
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
-
-[[exception]]
-path = "server/plans/routes.py"
-kind = "docstring"
-anchor = "server.plans.routes._planner_input"
-limit = 10
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
-
-[[exception]]
-path = "server/plans/routes.py"
-kind = "docstring"
-anchor = "server.plans.routes._grade_ids"
-limit = 6
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
-
-[[exception]]
-path = "server/plans/routes.py"
-kind = "hash_run"
-anchor = "the persisted plan the same models"
-limit = 19
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
+reason = "The order of bound-then-normalise IS the correctness argument: the bound judges the client's value, so normalising afterwards may legitimately carry the start past the horizon. Reversing it would refuse valid requests."
 
 [[exception]]
 path = "server/plans/routes.py"
 kind = "hash_run"
 anchor = "a coordinate not a row id and not"
 limit = 10
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
-
-[[exception]]
-path = "server/plans/routes.py"
-kind = "docstring"
-anchor = "server.plans.routes._stored_caveats"
-limit = 6
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
-
-[[exception]]
-path = "server/plans/routes.py"
-kind = "docstring"
-anchor = "server.plans.routes._ReadContext"
-limit = 5
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
+reason = "Says why a caveat key is a natural coordinate rather than a row id or a list index: caveats are written before any `session_block.id` exists, and a list index would mis-attach silently the day an `order_by` changed."
 
 [[exception]]
 path = "server/plans/routes.py"
 kind = "docstring"
 anchor = "server.plans.routes._exercise_reference"
 limit = 10
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
-
-[[exception]]
-path = "server/plans/routes.py"
-kind = "docstring"
-anchor = "server.plans.routes._grade_gap"
-limit = 9
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
-
-[[exception]]
-path = "server/plans/routes.py"
-kind = "hash_run"
-anchor = "a keyerror here would be a fault"
-limit = 3
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
-
-[[exception]]
-path = "server/plans/routes.py"
-kind = "docstring"
-anchor = "server.plans.routes._plan_response"
-limit = 6
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
+reason = "Two decisions a reader would reverse: the whole table is cheaper than building an `IN (...)` by walking the 2,400-node tree twice, and retired exercises are INCLUDED so an old plan still resolves to a name."
 
 [[exception]]
 path = "server/plans/routes.py"
 kind = "hash_run"
 anchor = "active once as criteria rather"
 limit = 9
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
-
-[[exception]]
-path = "server/plans/routes.py"
-kind = "hash_run"
-anchor = "one select per level rather than"
-limit = 3
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
+reason = "This criterion must stay character-identical to the index predicate: the index can only refuse a second active row, so a drift would leave it passing while the app quietly stopped agreeing with it."
 
 [[exception]]
 path = "server/plans/routes.py"
 kind = "docstring"
 anchor = "server.plans.routes._exercise_ids"
 limit = 10
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
+reason = "Says why a missing key is an assertion rather than a fallback: both alternatives are worse than a 500, since skipping the block ships a session missing an exercise the user was told they would do."
 
 [[exception]]
 path = "server/plans/routes.py"
@@ -2095,52 +1731,17 @@ reason = "Six citations of the installed SQLAlchemy 2.0.52 source, plus the back
 
 [[exception]]
 path = "server/plans/routes.py"
-kind = "hash_run"
-anchor = "initialised empty so the collection"
-limit = 3
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
-
-[[exception]]
-path = "server/plans/routes.py"
-kind = "hash_run"
-anchor = "the denormalised column the composite"
-limit = 4
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
-
-[[exception]]
-path = "server/plans/routes.py"
 kind = "docstring"
 anchor = "server.plans.routes._stand_down_active_plan"
 limit = 10
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
-
-[[exception]]
-path = "server/plans/routes.py"
-kind = "docstring"
-anchor = "server.plans.routes._constraint_name"
-limit = 5
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
-
-[[exception]]
-path = "server/plans/routes.py"
-kind = "docstring"
-anchor = "server.plans.routes._is_one_active_conflict"
-limit = 5
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
+reason = "Records the invariant that removes the need for a separate switch endpoint, and the Postgres fact behind the ordering: the index is not deferrable, so the old row must leave the predicate before the new one enters."
 
 [[exception]]
 path = "server/plans/routes.py"
 kind = "hash_run"
 anchor = "never re raised input minimisation"
 limit = 6
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
-
-[[exception]]
-path = "server/plans/routes.py"
-kind = "hash_run"
-anchor = "scoped by id and user deliberately"
-limit = 5
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
+reason = "`str(IntegrityError)` carries the failing statement's bound parameters, which on this INSERT are the climber's open-injury keys; explains both the redaction and why `from None` keeps them out of the renderer."
 
 [[exception]]
 path = "server/profile/routes.py"
@@ -3179,6 +2780,13 @@ limit = 5
 reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
 
 [[exception]]
+path = "tests/test_comment_budget.py"
+kind = "hash_run"
+anchor = "the deadline the ratchet stops the backlog growing"
+limit = 11
+reason = "The INTERLOCK is the whole point and nothing executable can state it: a target capped at BASELINE_RATCHET - MILESTONE_MIN_CUT plus a ratchet that may not sit 25 above reality is why an inflated number cannot buy silence. Unexplained, it reads like two arbitrary constants."
+
+[[exception]]
 path = "tests/test_content_seed.py"
 kind = "docstring"
 anchor = "tests.test_content_seed"
@@ -4202,20 +3810,6 @@ reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
 
 [[exception]]
 path = "tests/test_plans_persist.py"
-kind = "docstring"
-anchor = "tests.test_plans_persist.test_abandon_sets_the_timestamp_and_is_IDEMPOTENT"
-limit = 6
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
-
-[[exception]]
-path = "tests/test_plans_persist.py"
-kind = "docstring"
-anchor = "tests.test_plans_persist.test_abandon_404s_on_ANOTHER_USERS_plan_and_does_not_leak_that_it_exists"
-limit = 6
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
-
-[[exception]]
-path = "tests/test_plans_persist.py"
 kind = "hash_run"
 anchor = "the demo mount"
 limit = 3
@@ -4224,14 +3818,14 @@ reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
 [[exception]]
 path = "tests/test_plans_persist.py"
 kind = "docstring"
-anchor = "tests.test_plans_persist.test_a_DEMO_TOKEN_cannot_reach_either_of_the_two_WRITE_routes"
+anchor = "tests.test_plans_persist.test_a_DEMO_TOKEN_cannot_reach_the_WRITE_route"
 limit = 7
 reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
 
 [[exception]]
 path = "tests/test_plans_persist.py"
 kind = "docstring"
-anchor = "tests.test_plans_persist.test_the_WRITE_routes_are_ABSENT_from_DEMO_WRITE_EXEMPT_ROUTES"
+anchor = "tests.test_plans_persist.test_the_WRITE_ROUTE_is_ABSENT_from_DEMO_WRITE_EXEMPT_ROUTES"
 limit = 6
 reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
 
@@ -5911,20 +5505,6 @@ reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
 [[exception]]
 path = "web/src/plan/api.ts"
 kind = "block"
-anchor = "declared so useactiveplanview can"
-limit = 4
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
-
-[[exception]]
-path = "web/src/plan/api.ts"
-kind = "block"
-anchor = "one scope for both writes creating"
-limit = 6
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
-
-[[exception]]
-path = "web/src/plan/api.ts"
-kind = "block"
 anchor = "ten minutes matching the profile"
 limit = 6
 reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
@@ -5967,29 +5547,8 @@ reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
 [[exception]]
 path = "web/src/plan/api.ts"
 kind = "block"
-anchor = "server truth plus the one optimistic"
-limit = 15
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
-
-[[exception]]
-path = "web/src/plan/api.ts"
-kind = "slash_run"
-anchor = "usemutationstate react query usemutationstate"
-limit = 3
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
-
-[[exception]]
-path = "web/src/plan/api.ts"
-kind = "block"
 anchor = "post api plans generate this climber"
 limit = 24
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
-
-[[exception]]
-path = "web/src/plan/api.ts"
-kind = "block"
-anchor = "post api plans plan id abandon"
-limit = 11
 reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
 
 [[exception]]
@@ -6079,7 +5638,7 @@ reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
 [[exception]]
 path = "web/src/planPersist.test.tsx"
 kind = "block"
-anchor = "the write path on plan start abandon"
+anchor = "the write path on plan start build"
 limit = 23
 reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
 
@@ -6100,43 +5659,8 @@ reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
 [[exception]]
 path = "web/src/planPersist.test.tsx"
 kind = "slash_run"
-anchor = "the screen has already moved on"
-limit = 3
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
-
-[[exception]]
-path = "web/src/planPersist.test.tsx"
-kind = "slash_run"
-anchor = "findby not getby whether the replacement"
-limit = 4
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
-
-[[exception]]
-path = "web/src/planPersist.test.tsx"
-kind = "slash_run"
 anchor = "deliberately a monday that is not"
 limit = 4
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
-
-[[exception]]
-path = "web/src/planPersist.test.tsx"
-kind = "slash_run"
-anchor = "the guard usecreateplan onsuccess"
-limit = 3
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
-
-[[exception]]
-path = "web/src/planPersist.test.tsx"
-kind = "slash_run"
-anchor = "the server s answer names the plan"
-limit = 4
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
-
-[[exception]]
-path = "web/src/planPersist.test.tsx"
-kind = "slash_run"
-anchor = "and with the mutation settled the"
-limit = 3
 reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
 
 [[exception]]
@@ -6260,6 +5784,13 @@ reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
 
 [[exception]]
 path = "web/src/profile/api.ts"
+kind = "slash_run"
+anchor = "usemutationstate react query usemutationstate"
+limit = 4
+reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
+
+[[exception]]
+path = "web/src/profile/api.ts"
 kind = "block"
 anchor = "the two reads and the one write"
 limit = 42
@@ -6291,13 +5822,6 @@ path = "web/src/profile/api.ts"
 kind = "block"
 anchor = "there is nothing to show and the"
 limit = 9
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
-
-[[exception]]
-path = "web/src/profile/api.ts"
-kind = "slash_run"
-anchor = "usemutationstate react query usemutationstate"
-limit = 4
 reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
 
 [[exception]]
@@ -6959,39 +6483,11 @@ limit = 4
 reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
 
 [[exception]]
-path = "web/src/pwa/updatePrompt.ts"
-kind = "block"
-anchor = "service worker registration and"
-limit = 13
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
-
-[[exception]]
-path = "web/src/pwa/updatePrompt.ts"
-kind = "block"
-anchor = "sampled at module scope which is"
-limit = 4
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
-
-[[exception]]
-path = "web/src/pwa/updatePrompt.ts"
-kind = "block"
-anchor = "activates the waiting worker then"
-limit = 12
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
-
-[[exception]]
-path = "web/src/pwa/updatePrompt.ts"
-kind = "block"
-anchor = "closes the prompt without updating"
-limit = 6
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
-
-[[exception]]
 path = "web/src/pwaContract.test.ts"
 kind = "block"
-anchor = "four pwa decisions claude md records"
+anchor = "four pwa properties claude md records"
 limit = 20
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
+reason = "Four config properties whose breach is silent; each bullet names the failure the setting prevents, which is the only place that mapping is written down."
 
 [[exception]]
 path = "web/src/registerSubmit.test.tsx"
@@ -7479,22 +6975,8 @@ reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
 [[exception]]
 path = "web/src/routes/_authed/plan.lazy.tsx"
 kind = "slash_run"
-anchor = "a committed start ends the replacement"
-limit = 4
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
-
-[[exception]]
-path = "web/src/routes/_authed/plan.lazy.tsx"
-kind = "slash_run"
 anchor = "issue 65 s rule and why readonly"
 limit = 4
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
-
-[[exception]]
-path = "web/src/routes/_authed/plan.lazy.tsx"
-kind = "slash_run"
-anchor = "active plan here is the overlaid"
-limit = 3
 reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
 
 [[exception]]
@@ -7509,13 +6991,6 @@ path = "web/src/routes/_authed/plan.lazy.tsx"
 kind = "slash_run"
 anchor = "the precedence a plan the climber"
 limit = 4
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
-
-[[exception]]
-path = "web/src/routes/_authed/plan.lazy.tsx"
-kind = "block"
-anchor = "skipped entirely when a plan is"
-limit = 3
 reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
 
 [[exception]]
@@ -7544,20 +7019,6 @@ path = "web/src/routes/_authed/plan.lazy.tsx"
 kind = "block"
 anchor = "why a start did not land and it"
 limit = 18
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
-
-[[exception]]
-path = "web/src/routes/_authed/plan.lazy.tsx"
-kind = "block"
-anchor = "an alternative was asked for and"
-limit = 5
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
-
-[[exception]]
-path = "web/src/routes/_authed/plan.lazy.tsx"
-kind = "block"
-anchor = "abandon behind a real confirmation"
-limit = 23
 reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
 
 [[exception]]
@@ -7753,8 +7214,8 @@ reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
 path = "web/src/styles/designGuard.test.ts"
 kind = "block"
 anchor = "closed design decisions scanned"
-limit = 37
-reason = "Six scanned decisions, each a closed call, plus the honest statement that a computed viewport unit in a .tsx has no backstop anywhere in the gate."
+limit = 47
+reason = "Seven scanned decisions, each a closed call, plus the honest statement of what neither the computed-unit pattern nor the literal-query matchMedia pattern can see, and the ResizeObserver escape hatch that replaces the latter."
 
 [[exception]]
 path = "web/src/styles/designGuard.test.ts"
@@ -7908,13 +7369,6 @@ path = "web/src/ui/ThemeSwitch.tsx"
 kind = "block"
 anchor = "light dark as a sun and a moon"
 limit = 21
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
-
-[[exception]]
-path = "web/src/ui/UpdateBar.tsx"
-kind = "block"
-anchor = "the registertype prompt half of"
-limit = 14
 reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
 
 [[exception]]
@@ -8098,3 +7552,647 @@ kind = "block"
 anchor = "reset is what tanstack hands an"
 limit = 18
 reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
+
+[[exception]]
+path = "tests/test_sessions_log.py"
+kind = "docstring"
+anchor = "tests.test_sessions_log"
+limit = 56
+reason = "CLAUDE.md requires a guard test to be SHOWN to fail: this carries the eleven sabotages and the exact red output of each, including the three that revealed a guard was weaker than it looked (the replay arm survives replace semantics, the planned-session 404 has a second layer, and the cardio 409 is the same status either way)."
+
+[[exception]]
+path = "web/src/session/api.test.ts"
+kind = "block"
+anchor = "the two decisions in api ts that"
+limit = 12
+reason = "House-style test docstring naming the two pure decisions that can destroy data or spend Neon compute: classifyFailure and writesEnabled."
+
+[[exception]]
+path = "web/src/session/api.ts"
+kind = "block"
+anchor = "the one call site for put api sessions"
+limit = 19
+reason = "The query-cache rule this file is built on, plus the NO-debounce/NO-item-count reasoning that CLAUDE.md asks for beside the flush by name."
+
+[[exception]]
+path = "web/src/session/api.ts"
+kind = "block"
+anchor = "4xx is permanent 5xx is retryable"
+limit = 12
+reason = "Why 4xx is permanent, 5xx is retryable and 401 requeues anyway. Getting the split wrong either loses a session or retries forever."
+
+[[exception]]
+path = "web/src/session/clock.test.ts"
+kind = "block"
+anchor = "the clock is what a backgrounded"
+limit = 13
+reason = "House-style test docstring naming the defects guarded: advance-while-overdue, the skipped count, the no-rewind rule and the duration clamp."
+
+[[exception]]
+path = "web/src/session/clock.ts"
+kind = "block"
+anchor = "elapsed minutes so far floored"
+limit = 9
+reason = "The GREATEST/estimated_minutes trap: srpe_load is a generated column, so a wrong duration_minutes is permanent and issue #12's editor cannot repair it."
+
+[[exception]]
+path = "web/src/session/outbox.test.ts"
+kind = "block"
+anchor = "the outbox is the only thing standing"
+limit = 14
+reason = "House-style test docstring naming the data-loss paths guarded: quarantine versus requeue, ack-by-uuid and the mint refusal."
+
+[[exception]]
+path = "web/src/session/outbox.ts"
+kind = "block"
+anchor = "the tier 2 outbox mint a set hold"
+limit = 14
+reason = "Why sets is a DELTA and why a set stays in pending until an outcome. Both are data-loss paths that read as harmless refactors otherwise."
+
+[[exception]]
+path = "web/src/session/outbox.ts"
+kind = "block"
+anchor = "a 4xx refused this batch move it"
+limit = 8
+reason = "Why a 4xx is quarantined permanently: a 422 rejects the whole flush by design, so retrying is the payload that can never succeed."
+
+[[exception]]
+path = "web/src/session/outbox.ts"
+kind = "block"
+anchor = "the body of one put api sessions"
+limit = 12
+reason = "Every request carries the full envelope, and rpe is omitted until picked because an explicit null means clear on this route."
+
+[[exception]]
+path = "web/src/session/protocol.test.ts"
+kind = "block"
+anchor = "the compiler is the one place a"
+limit = 14
+reason = "House-style test docstring naming the defects guarded: the three rests, session-wide set_index, the exhaustive switch and completesSet."
+
+[[exception]]
+path = "web/src/session/protocol.ts"
+kind = "block"
+anchor = "the protocol compiler a planned"
+limit = 17
+reason = "The three rests that must not absorb one another, and why set_index is session-wide 1..N. Both are server 422s or wrong workouts, and neither is visible in the code."
+
+[[exception]]
+path = "web/src/session/runStore.test.ts"
+kind = "block"
+anchor = "the persisted run is the only copy"
+limit = 10
+reason = "House-style test docstring naming the defects guarded: every corrupt-record path, a throwing localStorage and the no-token rule."
+
+[[exception]]
+path = "web/src/session/runStore.ts"
+kind = "block"
+anchor = "the persisted run under ct run"
+limit = 14
+reason = "Why the timeline is frozen into the record and why nothing sensitive may be written: in the federated mount localStorage belongs to the shell."
+
+[[exception]]
+path = "web/src/session/today.test.ts"
+kind = "block"
+anchor = "date handling and the rest day"
+limit = 10
+reason = "House-style test docstring naming the defects guarded: the local-date trap behind occurred_on and the previewed-plan unloggable case."
+
+[[exception]]
+path = "web/src/session/today.ts"
+kind = "block"
+anchor = "today in the browser s own timezone"
+limit = 9
+reason = "Why toISOString().slice(0,10) is wrong for occurred_on. The failure is silent and timezone-dependent, so the reason cannot live in a name."
+
+[[exception]]
+path = "web/src/session/writePath.test.ts"
+kind = "block"
+anchor = "one whole run driven by hand asserting"
+limit = 15
+reason = "House-style test docstring for the whole-run contract test: the four PUT bodies and every clause of the envelope they must carry."
+
+[[exception]]
+path = "web/src/session/cues.test.ts"
+kind = "block"
+anchor = "the cue bus and the four ways it"
+limit = 9
+reason = "House-style test docstring naming the defects guarded: a context built outside the Start gesture, a second context per session, and every no-op path."
+
+[[exception]]
+path = "web/src/session/cues.ts"
+kind = "block"
+anchor = "the cue bus synthesized tones and"
+limit = 19
+reason = "Why audio is never load-bearing, why the AudioContext must be built inside the Start click, and that the iOS silent switch has no workaround."
+
+[[exception]]
+path = "web/src/session/cues.ts"
+kind = "block"
+anchor = "three cues and deliberately only"
+limit = 10
+reason = "The cue vocabulary itself and why it is only three tones. No doc specifies it, so the reasoning has nowhere else to live."
+
+[[exception]]
+path = "web/src/session/cues.ts"
+kind = "block"
+anchor = "one bus per player holds at most"
+limit = 7
+reason = "Why nothing in the bus throws: a cue that does not sound is not a failure worth taking the phase change down with it."
+
+[[exception]]
+path = "web/src/session/useSessionRun.test.ts"
+kind = "block"
+anchor = "the machine driven by a clock the"
+limit = 21
+reason = "House-style test docstring naming the four clock bugs guarded, plus the note that `start` no longer starts a timer - which is why every clock test now enters an item first."
+
+[[exception]]
+path = "web/src/session/useSessionRun.ts"
+kind = "block"
+anchor = "the session machine one hook everything"
+limit = 33
+reason = "The five invariants the machine exists to hold: rAF not setInterval, performance.now for maths, the ref-written countdown, one cue per tick, and that starting the SESSION starts no timer."
+
+[[exception]]
+path = "web/src/session/useSessionRun.ts"
+kind = "block"
+anchor = "a timed set that ran to its boundary"
+limit = 26
+reason = "The five invariants the machine exists to hold: rAF not setInterval, performance.now for maths, the ref-written countdown, one cue per tick, and that starting the SESSION starts no timer."
+
+[[exception]]
+path = "web/src/session/useSessionRun.ts"
+kind = "block"
+anchor = "one flush whatever triggered it"
+limit = 26
+reason = "The five invariants the machine exists to hold: rAF not setInterval, performance.now for maths, the ref-written countdown, one cue per tick, and that starting the SESSION starts no timer."
+
+[[exception]]
+path = "web/src/session/useSessionRun.ts"
+kind = "block"
+anchor = "restart this phase re stamp the"
+limit = 26
+reason = "The five invariants the machine exists to hold: rAF not setInterval, performance.now for maths, the ref-written countdown, one cue per tick, and that starting the SESSION starts no timer."
+
+[[exception]]
+path = "web/src/session/wakeLock.test.ts"
+kind = "block"
+anchor = "the wake lock and the two rules"
+limit = 10
+reason = "House-style test docstring: availability decides whether the control exists at all, and held is read from the sentinel rather than from the click."
+
+[[exception]]
+path = "web/src/session/wakeLock.ts"
+kind = "block"
+anchor = "screen wake lock as a user owned"
+limit = 20
+reason = "Every clause of CLAUDE.md's wake-lock rule that a naive implementation drops: hide when unavailable, reflect the sentinel, never load-bearing."
+
+[[exception]]
+path = "web/src/session/wakeLock.ts"
+kind = "block"
+anchor = "ask for a lock rejection is a normal"
+limit = 11
+reason = "Rejection and a hidden tab are normal outcomes, and the new paragraph is load-bearing: this is safe to call when the preference is already on, which is what makes a press do something after the OS drops the lock."
+
+[[exception]]
+path = "web/src/session/wakeLock.ts"
+kind = "block"
+anchor = "hold a screen wake lock for as"
+limit = 11
+reason = "Rejection and a hidden tab are normal outcomes, and the new paragraph is load-bearing: this is safe to call when the preference is already on, which is what makes a press do something after the OS drops the lock."
+
+[[exception]]
+path = "web/src/test/setup.ts"
+kind = "block"
+anchor = "every stub below is installed configurable"
+limit = 7
+reason = "Why every device stub is configurable: the unavailable branch is the one that ships to Firefox on Android and to an iOS PWA below 18.4."
+
+[[exception]]
+path = "web/src/routes/_authed/session.lazy.tsx"
+kind = "block"
+anchor = "session follow today s session"
+limit = 25
+reason = "Why three screens share one route with no search param, why start is called straight out of the click, and why the finished record is NOT discarded - it is what tells the brief the session is done."
+
+[[exception]]
+path = "web/src/session/KeepScreenOn.tsx"
+kind = "block"
+anchor = "the keep screen on control icon"
+limit = 18
+reason = "Three rules that are each a shipped bug: render NOTHING when the API is missing, render from the sentinel and never from intent, and the ThemeSwitch a11y contract this icon-only two-state button copies (label = what pressing does, state in a separate live region)."
+
+[[exception]]
+path = "web/src/session/SessionPlayer.tsx"
+kind = "block"
+anchor = "the run itself one thing at a time"
+limit = 22
+reason = "Four decisions a rework would undo: the coloured face appears only while an ITEM is running, FOCUS MODE makes the other items absent rather than dimmed (five wrong buttons within reach of a climber mid-hang), the countdown is written through a ref and not state, and the phase is a data attribute rather than an interpolated class name markupCss.test.ts cannot see."
+
+[[exception]]
+path = "web/src/session/SessionSummary.tsx"
+kind = "block"
+anchor = "the last screen of every run and"
+limit = 10
+reason = "Peak-end: why the run always ends here and never on the last set, and why the save state is a sentence rather than a spinner."
+
+[[exception]]
+path = "web/src/sessionPlayer.test.tsx"
+kind = "block"
+anchor = "the session player s write path"
+limit = 21
+reason = "House-style test docstring naming the five defects guarded: the permanent duration_minutes, the zero-request run, the set delta, the 500-versus-422 split and demo scope writing nothing."
+
+[[exception]]
+path = "web/src/sessionResume.test.tsx"
+kind = "block"
+anchor = "coming back to a run that was already"
+limit = 24
+reason = "House-style test docstring naming the four resume defects guarded, including the two halves of the toggle bug Kilian saw and how each was watched to fail."
+
+[[exception]]
+path = "web/src/session/SessionPlayer.tsx"
+kind = "block"
+anchor = "the session as the list of things"
+limit = 9
+reason = "Why no item control is ever disabled: completed and skipped are states the climber moves between freely, and issue #65 refuses a greyed-out control in demo scope."
+
+[[exception]]
+path = "web/src/session/SessionSummary.tsx"
+kind = "block"
+anchor = "its own put rather than part of"
+limit = 8
+reason = "Why the RPE is its own PUT, and why it is a real select on the shared ct-app__select primitive rather than the ten buttons it replaced."
+
+[[exception]]
+path = "web/src/session/outbox.ts"
+kind = "block"
+anchor = "the lowest set index no row in"
+limit = 9
+reason = "logged_set rows cannot be deleted (#81), so a re-run may not reuse an ordinal the server already has a row for; counting quarantined sets too is the deliberate half."
+
+[[exception]]
+path = "web/src/session/protocol.ts"
+kind = "block"
+anchor = "the timeline cut back into the"
+limit = 8
+reason = "Why the block ranges are derived rather than stored, and why the half-open shape matters: slicing the timeline to `end` is how the clock is stopped at an item boundary without teaching clock.ts about blocks."
+
+[[exception]]
+path = "web/src/session/runStore.ts"
+kind = "block"
+anchor = "where one item one block of the"
+limit = 8
+reason = "The timer is per ITEM, not per session, and completed/skipped are reachable without ever running one. Both are Kilian's decisions and both read as bugs without the reason."
+
+[[exception]]
+path = "web/src/session/runStore.ts"
+kind = "block"
+anchor = "added to every setindex this attempt"
+limit = 9
+reason = "Why a restart carries a set-index offset: logged_set rows cannot be deleted (#81) and set_index is unique per session, so reusing an ordinal is a cardinality_violation that quarantines the whole flush."
+
+[[exception]]
+path = "web/src/session/useSessionRun.ts"
+kind = "block"
+anchor = "the phases of the item that is"
+limit = 7
+reason = "Why the item bound is a SLICE (indices unchanged, clock.ts learns nothing about blocks) and why the result is cached on identity: tick() reads it on every animation frame."
+
+[[exception]]
+path = "web/src/session/useSessionRun.ts"
+kind = "block"
+anchor = "forget the sets this attempt minted"
+limit = 9
+reason = "The honest half of a restart: unflushed sets go, acked ones stay, because logged_set rows cannot be deleted and dropping the local copy would make the summary describe a run the diary does not have."
+
+[[exception]]
+path = "web/src/session/useSessionRun.ts"
+kind = "block"
+anchor = "enter an item the deliberate press"
+limit = 9
+reason = "A restart APPENDS and never rewrites, and the set-index offset is what keeps it from colliding with the rows the server already holds."
+
+[[exception]]
+path = "web/src/session/useSessionRun.ts"
+kind = "slash_run"
+anchor = "the ceiling is read before the"
+limit = 4
+reason = "The ceiling is read before the drop, because a dropped set is unacknowledged rather than provably unwritten - a 5xx can arrive after the server committed."
+
+[[exception]]
+path = "web/src/session/useSessionRun.ts"
+kind = "slash_run"
+anchor = "the display loop nothing counts"
+limit = 5
+reason = "Records that the display loop runs only while an ITEM is running, which is the whole difference between starting a session and starting a block."
+
+[[exception]]
+path = "web/src/session/useSessionRun.ts"
+kind = "slash_run"
+anchor = "the intent is read off what is"
+limit = 3
+reason = "The fix for the toggle that looked broken: the intent is read off what is on screen, because `held` and the stored preference are allowed to disagree and a press that only flipped the preference did nothing visible."
+
+[[exception]]
+path = "web/src/session/wakeLock.ts"
+kind = "block"
+anchor = "the cancellation flag for an acquire"
+limit = 9
+reason = "The cancellation flag for an in-flight acquire, and the exact bug it fixes - a resolved sentinel published over a preference nobody set, which the effect could then never release."
+
+[[exception]]
+path = "web/src/sessionResume.test.tsx"
+kind = "slash_run"
+anchor = "the preference is still true and"
+limit = 3
+reason = "Names the state the OS leaves behind on every backgrounding, which is the precondition the regression needs and is invisible from the assertions alone."
+
+[[exception]]
+path = "web/src/ui/icons.tsx"
+kind = "block"
+anchor = "keep the screen on let it sleep"
+limit = 8
+reason = "Why this is not IconMoon: the bare crescent already means dark theme two screens away, and one glyph meaning two things is a collision nobody notices until both are on screen."
+
+[[exception]]
+path = "web/src/session/SessionPlayer.tsx"
+kind = "block"
+anchor = "the two corners neither is a primary"
+limit = 4
+reason = "CLAUDE.md forbids a primary action in a top corner; this records why these two are not one, and why each corner is its own wrapper - a control that renders nothing (no navigator.wakeLock on Firefox for Android) must leave its corner empty rather than pull the other across the screen."
+
+
+[[exception]]
+path = "web/src/session/ItemRow.tsx"
+kind = "block"
+anchor = "no attempt count a climber restarting"
+limit = 3
+reason = "Kilian removed the attempt counter deliberately; without the reason the next reader restores it from RunItem.runs, which still exists because the set-index offset needs it."
+
+
+[[exception]]
+path = "web/src/session/SessionPlayer.tsx"
+kind = "block"
+anchor = "one icon only control ui themeswitch"
+limit = 5
+reason = "The icon-only contract every control on this screen owes - name says what pressing does, matching title, the 44px tap floor - stated once at the component that enforces it instead of six times at the call sites."
+
+
+[[exception]]
+path = "web/src/session/SessionPlayer.tsx"
+kind = "block"
+anchor = "an item s controls icon only and"
+limit = 12
+reason = "Why one component serves the list and focus mode, why every label names its own item (as many rows as blocks, so three buttons reading 'Completed' would be three identical accessible names), and why next-set is hidden on the last set and on a single-set item."
+
+
+[[exception]]
+path = "web/src/session/SoundToggle.tsx"
+kind = "block"
+anchor = "the cue mute icon only in the player"
+limit = 17
+reason = "Why this replaced the 'Test sound' button rather than sitting beside it - the iOS silent switch is unreportable, so unmuting plays the cue and the test becomes the press - plus the render-nothing rule and the ThemeSwitch a11y contract, both of which read as optional without it."
+
+
+[[exception]]
+path = "web/src/session/cues.ts"
+kind = "block"
+anchor = "the mute preference ct namespaced"
+limit = 11
+reason = "Why the toggle gates BOTH channels rather than only audio (a phone buzzing through a muted session is the same complaint), why the key is ct:-namespaced, and why absent means ON."
+
+
+[[exception]]
+path = "web/src/session/runStore.ts"
+kind = "block"
+anchor = "the wall clock instant the running"
+limit = 13
+reason = "Why the pause is stored as an INSTANT rather than a remaining-time number - the second form is a disagreeing source of truth the moment a reload lands between the two - and that persisting it is what carries a pause through a reload and a backgrounding."
+
+
+[[exception]]
+path = "web/src/session/useSessionRun.ts"
+kind = "block"
+anchor = "the index of the first phase of"
+limit = 12
+reason = "A between-sets rest carries no setOfBlock, so the set in play has to be read BACKWARDS from the cursor. Read forwards, 'next set' from the rest after set 1 lands on set 3 - the exact bug, and invisible from the code."
+
+
+[[exception]]
+path = "web/src/session/useSessionRun.ts"
+kind = "block"
+anchor = "call this straight out of the click"
+limit = 3
+reason = "Unmuting plays a cue, so the toggle needs an AudioContext, so it can only be called inside a gesture. The same iOS rule as `start`, restated where the second caller is."
+
+
+[[exception]]
+path = "web/src/session/useSessionRun.ts"
+kind = "block"
+anchor = "pause the running item or resume it sometimes"
+limit = 9
+reason = "Why resuming SHIFTS phaseStartedAtEpochMs rather than re-stamping it to now: re-stamping silently restarts the phase and hands back time the climber already spent. Kilian's own words for the feature are quoted because they are the requirement."
+
+
+[[exception]]
+path = "web/src/session/useSessionRun.ts"
+kind = "block"
+anchor = "i did the first set but i have"
+limit = 9
+reason = "Why the sets a next-set jump crosses are LOGGED rather than dropped - the usual case is a climber cutting the rest short after a hang they really did - and why nothing is double-minted."
+
+
+[[exception]]
+path = "web/src/session/useSessionRun.ts"
+kind = "slash_run"
+anchor = "paused repaint the frozen number"
+limit = 3
+reason = "The pause guard is in tick() rather than only in the effect that owns the loop, because the visibilitychange re-anchor calls tick() directly - which is exactly the ten-minute backgrounding case."
+
+
+[[exception]]
+path = "web/src/session/useSessionRun.ts"
+kind = "slash_run"
+anchor = "measured at the frozen instant"
+limit = 3
+reason = "An open phase's actual_work_seconds must be measured at the frozen instant: a climber who paused mid-circuit and tapped Done ten minutes later did not hang for ten minutes."
+
+
+[[exception]]
+path = "web/src/ui/icons.tsx"
+kind = "block"
+anchor = "the session player s control set"
+limit = 11
+reason = "This is the place the file's own 'icon-only controls are deferred to the session player' note was pointing at, so it names the price of admission and records that the seven glyphs were chosen for SILHOUETTE - they sit in a label-less row read at arm's length."
+
+
+[[exception]]
+path = "web/src/ui/icons.tsx"
+kind = "block"
+anchor = "restart a ring with an arrowhead"
+limit = 7
+reason = "Why restart is not a second play triangle: a running item offers Resume and Restart side by side, and two triangles there means 'carry on' and 'throw that away' look identical."
+
+[[exception]]
+path = "server/domain/planner/climbing.py"
+kind = "hash_run"
+anchor = "any block whose exercise needs one of these is wall time everything else is supplementary auto belay is in the set although issue 84 s own measurement omitted it it is a wall you climb without a partner and leaving it out would have the app tell an auto belay only climber to go and get somewhere to climb"
+limit = 4
+reason = "auto_belay is in the wall set although issue #84's own measurement left it out; the deviation and its consequence for the shortfall message have to travel with the set."
+
+[[exception]]
+path = "server/domain/planner/climbing.py"
+kind = "hash_run"
+anchor = "minutes of prescribed work in a session led by a block of this protocol kind warm up excluded because the warm up is not a block the maximum binds always the minimum is only pursued and only in a loading phase phase in server domain vocabulary py is explicit that a deload has its own prescriptions rather than being a scaled block so topping one back up to a loading week s length would contradict the schema s own definition of it"
+limit = 5
+reason = "The table's two bounds are enforced differently and the asymmetry is a schema fact: padding a deload back up would contradict Phase's own definition in vocabulary.py."
+
+[[exception]]
+path = "server/domain/planner/generate.py"
+kind = "docstring"
+anchor = "server.domain.planner.generate._wall_picks"
+limit = 6
+reason = "The second pass over the same aspects looks redundant and is not: the strength phase has only two wall-led aspects, measured ten minutes short of the window with one block each."
+
+[[exception]]
+path = "tests/test_planner_climbing_floor.py"
+kind = "hash_run"
+anchor = "the plan document s own table restated independently of climbing py on purpose a guard that asks is expandable whether a block may expand agrees with any answer that function gives including a wrong one measured sabotaging it to return true left that arm green"
+limit = 3
+reason = "Records the measured vacuity this duplication fixes: asking is_expandable() left the arm green when that function was sabotaged to return True."
+
+[[exception]]
+path = "tests/test_planner_climbing_floor.py"
+kind = "hash_run"
+anchor = "one climber per band by current grade spanning both ladders so neither discipline s threshold constant can be wrong without a red test the gap is 3 by default the shortest plan covering all five training phases plus deload and taper the band range test sweeps it"
+limit = 3
+reason = "Why six climbers rather than three, why the gap DEFAULT is 3, and the pointer that the band-range test varies it - the three facts a reader needs before adding a case."
+
+[[exception]]
+path = "tests/test_planner_gearless.py"
+kind = "docstring"
+anchor = "tests.test_planner_gearless.test_a_gearless_plan_is_complete_and_every_thin_slot_is_explained"
+limit = 6
+reason = "The one session-level shortfall a gearless session now carries is issue #61's naming half, not the thin plan this test exists to forbid; the two read identically without the note."
+
+[[exception]]
+path = "server/domain/planner/climbing.py"
+kind = "hash_run"
+anchor = "a spray wall is climbing too which"
+limit = 5
+reason = "Kilian's campus_board ruling and the rule behind it - movement versus apparatus, not the word 'board' - so the next reader does not 'fix' the set membership."
+
+[[exception]]
+path = "server/domain/planner/climbing.py"
+kind = "hash_run"
+anchor = "the aspects a climbing session"
+limit = 5
+reason = "Separates 'do these minutes count as climbing?' from 'may this quality name the session?'; conflating the two is what made three wall core drills unprescribable."
+
+[[exception]]
+path = "server/domain/planner/generate.py"
+kind = "docstring"
+anchor = "server.domain.planner.generate._try_supplementary"
+limit = 9
+reason = "Names the ledger this pass reads and the six exercises that reading `used` instead made structurally unreachable - nothing in the signature hints at the distinction."
+
+[[exception]]
+path = "server/domain/planner/generate.py"
+kind = "docstring"
+anchor = "server.domain.planner.generate._spread"
+limit = 10
+reason = "Why the candidate rotation cannot reuse the aspect rotation's offset AND why its stride must not be the session count - the second cost the monotonicity invariant, both measured."
+
+[[exception]]
+path = "tests/test_planner_library_reach.py"
+kind = "docstring"
+anchor = "tests.test_planner_library_reach"
+limit = 14
+reason = "The six unreachable exercises, why no other test could see them, and that the register being empty is a measurement rather than an aspiration."
+
+[[exception]]
+path = "tests/test_planner_library_reach.py"
+kind = "docstring"
+anchor = "tests.test_planner_library_reach.test_every_exercise_the_library_authors_is_reachable_by_some_profile"
+limit = 3
+reason = "An orphaned exercise leaves every other assertion green, so the docstring has to say what the failure looks like from outside."
+
+[[exception]]
+path = "tests/test_planner_library_reach.py"
+kind = "docstring"
+anchor = "tests.test_planner_library_reach.test_one_plan_draws_on_the_breadth_of_the_library"
+limit = 3
+reason = "Why reach across a sweep is not the same claim as breadth within one plan - the distinction is the whole reason this second guard exists."
+
+[[exception]]
+path = "tests/test_planner_library_reach.py"
+kind = "hash_run"
+anchor = "key why no profile can ever be"
+limit = 4
+reason = "The register's editing rule plus the three keys origin/dev carried, which is the only record of what the baseline actually was."
+
+[[exception]]
+path = "tests/test_planner_library_reach.py"
+kind = "hash_run"
+anchor = "both disciplines x all three bands"
+limit = 4
+reason = "Why six profiles and why these six - the measured coverage and runtime are what make the guard cheap enough for the local gate."
+
+[[exception]]
+path = "tests/test_planner_library_reach.py"
+kind = "hash_run"
+anchor = "kilian s requirement and the floor"
+limit = 6
+reason = "Why the floor is a share rather than a count, the per-band measurements behind it, and why beginner is lowest by arithmetic rather than by defect."
+
+[[exception]]
+path = "server/domain/planner/generate.py"
+kind = "docstring"
+anchor = "server.domain.planner.generate._wall_pref"
+limit = 10
+reason = "Three states with three different measured failures behind them - a 63% advanced band, a 37-minute session against a 40-minute floor, and six unreachable exercises - none of which is visible from the signature."
+
+[[exception]]
+path = "server/domain/planner/generate.py"
+kind = "docstring"
+anchor = "server.domain.planner.generate._pick"
+limit = 8
+reason = "Why a length-driven slot abandons the rotation, and why it takes the longest candidate that CLOSES the gap rather than simply the longest - the second cost four exercises their only reachable slot."
+
+[[exception]]
+path = "tests/test_planner_climbing_floor.py"
+kind = "hash_run"
+anchor = "the dimension this sweeps is plan length and it is the one the gate was missing round 3 reordered wall pref to put a session s own length ahead of the week s share and this test stayed green at the gap of 3 every other test here uses that moves the advanced band from 57 58 to 59 61 still inside 50 62 measured over gap 0 7 four weekday masks 2 7 sessions the sabotage breaches only the short plans gap 0 8 weeks and gap 1 12 reach 62 1 64 8 against the 62 ceiling because a short plan is mostly base where preferring the wall buys the most so gap is sampled at both ends of periodisation s week count table 0 8 weeks 6 32 plus the 3 the rest of the file uses sessions per week runs the full 2 7 for completeness but it is not the exposing dimension and neither is the weekday mask all four masks measured identical to a tenth of a point because a mask moves which weekday a session lands on and never how many blocks it gets"
+limit = 11
+reason = "Records the MEASUREMENT that chose this parametrisation: which dimension exposes the _wall_pref sabotage (plan length), the numbers at each gap, and the two dimensions measured NOT to expose it - without which the next reader trims the gaps back and re-blinds the gate."
+
+[[exception]]
+path = "web/src/planCompletionBands.test.tsx"
+kind = "block"
+anchor = "the completion band must be a property of the badge not of anything above it"
+limit = 20
+reason = "The amber-100% regression in full: what a DOM guard can see that the compiled-CSS guard cannot, and why a phase and a session disclosure are indistinguishable from above."
+
+[[exception]]
+path = "web/src/planCompletionBands.test.tsx"
+kind = "block"
+anchor = "100 and 50 over two equally weighted sessions is a phase mean of 75 partial"
+limit = 4
+reason = "Kilian's equal-weight-per-session arithmetic worked through on this fixture, so the expected 75 is checkable without rederiving the mean from the tree."
+
+[[exception]]
+path = "web/src/styles/markupCss.test.ts"
+kind = "block"
+anchor = "the completion band must not be reachable from an ancestor the regression this pins"
+limit = 22
+reason = "The bug this pins, why more specificity or a reorder is not the fix, and why the child combinator stays deliberately allowed - none of which is recoverable from the regex."
+
+[[exception]]
+path = "web/src/styles/markupCss.test.ts"
+kind = "block"
+anchor = "in dark the pill belongs to the phase badge alone the day badges inside a week"
+limit = 14
+reason = "Kilian signed dark's day badges off as they stand, so the guard must say which rules may carry pill geometry, that nothing else in the suite can see an ungated one, and why the gate is read off selector text rather than at-rule context."

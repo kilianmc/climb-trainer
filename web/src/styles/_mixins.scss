@@ -45,27 +45,3 @@
 @mixin safe-inset-block-end($floor: var(--ct-space-3)) {
   padding-block-end: max($floor, env(safe-area-inset-bottom));
 }
-
-// The update bar's own metrics, as custom properties, because TWO stylesheets need the same
-// number and neither can measure the other's boxes: `update-bar.scss` BUILDS the bar, and
-// `global.scss` has to RESERVE exactly that much room at the end of the document (the bar is
-// `fixed`, so it pushes nothing).
-//
-// ⚠️ It is a mixin rather than two hand-written `calc()`s because hand-writing it went wrong
-// once already: the reservation omitted the panel's 2x1px hairline and came out 72px against a
-// 74px bar. Every term now appears exactly once, the panel is SIZED from the same expression the
-// reservation uses, and `box-sizing: border-box` on the panel makes "sized" mean the same thing
-// on both sides of that equality.
-@mixin update-bar-metrics {
-  --ct-update-bar-hairline: 1px;
-  --ct-update-bar-pad: var(--ct-space-2);
-  --ct-update-bar-floor: var(--ct-space-3);
-  // The panel: one `--ct-tap` control, its padding on both sides, its border on both sides.
-  --ct-update-bar-panel: calc(
-    var(--ct-tap) + 2 * var(--ct-update-bar-pad) + 2 * var(--ct-update-bar-hairline)
-  );
-  // …plus the wrapper's safe-area floor beneath it. This is the document's reservation.
-  --ct-update-bar-total: calc(
-    var(--ct-update-bar-panel) + max(var(--ct-update-bar-floor), env(safe-area-inset-bottom))
-  );
-}

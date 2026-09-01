@@ -20,6 +20,8 @@
 @use 'layout';
 @use 'primitives';
 @use 'card';
+@use 'session';
+@use 'plan';
 @use 'bento';
 @use 'chrome';
 @use 'profile';
@@ -89,6 +91,8 @@
   @include layout.styles;
   @include primitives.styles;
   @include card.styles;
+  @include session.styles;
+  @include plan.styles;
   @include bento.styles;
   @include chrome.styles;
   @include profile.styles;

@@ -1,0 +1,530 @@
+@use 'mixins';
+
+// The plan screen's two calendar components: the phase TIMELINE and the phase WEEK TABLE. Both
+// were signed off from a static preview after five rounds, and every value below is that
+// preview's — several of them measured. Read this file before retuning any of it.
+//
+// ## ⚠️ THE TIMELINE'S X AXIS IS DAYS, NOT WEEKS-TIMES-A-CONSTANT
+//
+// `--tl-day` is one day of bar, the grid's inline size is `<plan days> * --tl-day`, and every
+// track is `<delta days>fr`. The tracks are cut at the UNION of the phase boundaries and the
+// REAL month boundaries (`plan/timeline.ts`), so a phase segment and a month band are measured
+// off one ruler: a 3-week phase lands on exactly 21/28 of a 28-day February, and a partial month
+// at either end is a partial band. `weeks * a constant` is the obvious alternative and it is
+// wrong — it makes February and March the same width, so every band edge after the first is a
+// lie. Nothing here is rounded to a week, and there are no quarters.
+//
+// ## MONTH BANDS ARE ONE GREY
+//
+// Every band is the same `--ct-bg`; there is no alternating second tone. The
+// `--ct-border-strong` hairline at each band start is the whole separation, which it can carry:
+// 4.11:1 light and 5.80:1 dark against that one grey.
+//
+// ## ⚠️ WHAT MARKS THE PHASE BEING TRAINED, once the bar itself is green in light
+//
+// The obvious lever — `--ct-accent-pressed` for the current segment against `--ct-accent` for
+// the rest — MEASURES 1.45:1 (1.28:1 in dark). It fails 3:1 and it is not close, and no other
+// green in the light scheme is 3:1 from `--ct-accent` either. So "the bar is green" is built as
+// the bar's LINES going green — the segment ring, the connector, the dots, all of which were
+// neutral before — while the FILL of an ordinary segment stays `--ct-surface-3` and the current
+// phase remains the only segment with a green fill. That reads 6.48:1 against its neighbours'
+// fill, and it keeps `--ct-accent`-as-a-fill meaning exactly one thing. Dark keeps the neutral
+// ring on the inline edges and greens only the block edges.
+//
+// ## ⚠️ EVERY RULE KEYS ON THE ELEMENT'S OWN ATTRIBUTE
+//
+// `data-current` and `data-side` are repeated onto the segment, the dot, the callout and the
+// connector rather than read from the `&__tlphase` above them. Per PR #95's own bug and
+// `markupCss.test.ts`, a mark reachable from an ancestor is a mark another instance can repaint;
+// the only ancestor attribute any rule here reads is the theme's, on `.ct-app` itself.
+
+// LIGHT — green type and green lines. Included TWICE, which is the mechanism `_tokens.scss`
+// documents: the OS query for anyone following the system, the attribute for a manual override,
+// and `:not([data-theme='dark'])` inside the query so a manual dark under a light OS is not
+// caught by it. `$scope` is a parameter and not a nesting because `&__x` under a modified `&`
+// would emit `.ct-app[data-theme='light']__x`.
+@mixin timeline-light($scope) {
+  &#{$scope} &__tlname {
+    color: var(--ct-accent);
+  }
+
+  &#{$scope} &__tlseg,
+  &#{$scope} &__tlseg[data-edge='end'] {
+    border-color: var(--ct-accent);
+  }
+
+  &#{$scope} &__tlconnector {
+    background: var(--ct-accent);
+  }
+
+  &#{$scope} &__tldot {
+    background: var(--ct-accent);
+  }
+
+  &#{$scope} &__tldot[data-current='true'] {
+    background: var(--ct-accent-fg);
+  }
+}
+
+// DARK — green SMALL PRINT instead: the duration and the year go green, the connector matches
+// the phase name in `--ct-fg`, and only the bar's block edges are green. The two themes differ
+// deliberately (the precedent is #95's light pills against dark's bare words); this is not an
+// inconsistency to tidy up.
+@mixin timeline-dark($scope) {
+  &#{$scope} &__tldur {
+    color: var(--ct-accent);
+  }
+
+  &#{$scope} &__tlconnector {
+    background: var(--ct-fg);
+  }
+
+  &#{$scope} &__tlseg {
+    border-block-color: var(--ct-accent);
+  }
+
+  &#{$scope} &__tlyear {
+    color: var(--ct-accent);
+  }
+}
+
+@mixin styles {
+  &__tlscroll {
+    @include mixins.focus-ring;
+
+    // Nothing at route level puts vertical space between siblings, so with no margin here the
+    // bar touched the notes above it and the phase controls below it.
+    margin-block: var(--ct-space-5);
+    overflow-x: auto;
+    // The scroller must not hand its overscroll to the page — or, in the federated mount, to
+    // kilianmc.com's own scroller.
+    overscroll-behavior-inline: contain;
+    padding: var(--ct-space-2);
+    border: 1px solid var(--ct-border-2);
+    border-radius: var(--ct-radius-2);
+    background: var(--ct-surface-1);
+  }
+
+  &__timeline {
+    // 2.1rem a week, ~9.1rem a month. One horizontal bar at every width, in a scroller: it
+    // never wraps and never becomes a vertical rail.
+    --tl-day: 0.3rem;
+
+    display: grid;
+    grid-template-columns: var(--tracks);
+    // 1 callouts above · 2 bands + bar · 3 callouts below · 4 the year labels. Row 2 is 3.8rem,
+    // not 2.6rem, purely to buy the centred month name clear air above the bar: the label sits
+    // at the band's top and the bar is centred, so the row's height IS the gap.
+    grid-template-rows: auto 3.8rem auto auto;
+    inline-size: calc(var(--days) * var(--tl-day));
+    min-inline-size: 100%;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  &__tlphase {
+    display: contents;
+  }
+
+  // CENTRED in its own band and pulled well clear of the bar. `line-height: 1` so the gap is
+  // measured from the glyphs and not from the leading. ONE tone for every month.
+  &__tlmonth {
+    grid-row: 2;
+    grid-column: var(--from) / var(--to);
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+    overflow: hidden;
+    padding-inline: var(--ct-space-2);
+    padding-block-start: var(--ct-space-1);
+    border-inline-start: 1px solid var(--ct-border-strong);
+    background: var(--ct-bg);
+    color: var(--ct-fg-muted);
+    font-size: var(--ct-text-xs);
+    line-height: 1;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    white-space: nowrap;
+  }
+
+  &__tlseg {
+    grid-row: 2;
+    grid-column: var(--from) / var(--to);
+    z-index: 1;
+    align-self: center;
+    block-size: 0.8rem;
+    background: var(--ct-surface-3);
+    border-block: 1px solid var(--ct-border-strong);
+    border-inline-start: 1px solid var(--ct-border-strong);
+  }
+
+  &__tlseg[data-current='true'] {
+    background: var(--ct-accent);
+  }
+
+  &__tlseg[data-edge='start'] {
+    border-start-start-radius: var(--ct-radius-pill);
+    border-end-start-radius: var(--ct-radius-pill);
+  }
+
+  &__tlseg[data-edge='end'] {
+    border-inline-end: 1px solid var(--ct-border-strong);
+    border-start-end-radius: var(--ct-radius-pill);
+    border-end-end-radius: var(--ct-radius-pill);
+  }
+
+  // The bead on the bar. Presentational — the CALLOUT is the control, which is what lets this be
+  // 0.4rem inside a 1-week segment only 2.1rem wide.
+  &__tldot {
+    grid-row: 2;
+    grid-column: var(--from) / var(--to);
+    z-index: 2;
+    place-self: center;
+    inline-size: 0.4rem;
+    block-size: 0.4rem;
+    border-radius: var(--ct-radius-pill);
+    background: var(--ct-fg);
+  }
+
+  &__tldot[data-current='true'] {
+    background: var(--ct-accent-fg);
+  }
+
+  // The callout IS the button, so a 1-week phase keeps a 44px target on both axes without its
+  // segment having to be 44px wide.
+  &__tlmark {
+    @include mixins.tap;
+    @include mixins.focus-ring;
+
+    grid-column: var(--from) / var(--to);
+    inline-size: max-content;
+    max-inline-size: 5.5rem;
+    justify-self: center;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+    padding: var(--ct-space-1);
+    border: 0;
+    border-radius: var(--ct-radius-1);
+    background: none;
+    color: var(--ct-fg);
+    font: inherit;
+    text-align: center;
+    cursor: pointer;
+    transition: background-color var(--ct-fast) ease;
+
+    &:hover {
+      background: var(--ct-surface-2);
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      transition: none;
+    }
+  }
+
+  &__tlmark[data-side='above'] {
+    grid-row: 1;
+    align-self: end;
+  }
+
+  &__tlmark[data-side='below'] {
+    grid-row: 3;
+    align-self: start;
+  }
+
+  &__tlconnector {
+    flex: none;
+    inline-size: 1px;
+    block-size: var(--ct-space-3);
+    background: var(--ct-border-strong);
+  }
+
+  &__tlconnector[data-side='above'] {
+    order: 1;
+  }
+
+  &__tlconnector[data-side='below'] {
+    order: -1;
+  }
+
+  &__tlname {
+    font-size: var(--ct-text-sm);
+    font-weight: 600;
+  }
+
+  // the smallest font in the component, which is what the duration was asked to be
+  &__tldur {
+    color: var(--ct-fg-muted);
+    font-size: var(--ct-text-xs);
+  }
+
+  // Two different things, both small print at the bottom: a rule at each 1 January inside the
+  // plan, and the year beside it. The plan's OPENING year sits at the far left with no rule —
+  // and is omitted outright on a December start, where it would fight the January label a few
+  // days later for the same space (`plan/timeline.ts` decides that; there is no rule for it
+  // here, because "no year at all" is an absent element rather than a hidden one).
+  &__tlrule {
+    grid-row: 2 / 5;
+    grid-column: var(--at);
+    z-index: 3;
+    justify-self: start;
+    inline-size: 1px;
+    background: var(--ct-border-strong);
+  }
+
+  &__tlyear {
+    grid-row: 4;
+    grid-column: var(--at);
+    justify-self: start;
+    padding-inline-start: var(--ct-space-1);
+    padding-block-start: var(--ct-space-1);
+    color: var(--ct-fg-muted);
+    font-size: var(--ct-text-xs);
+    font-weight: 600;
+    letter-spacing: 0.06em;
+  }
+
+  @include timeline-light("[data-theme='light']");
+
+  @media (prefers-color-scheme: light) {
+    @include timeline-light(":not([data-theme='dark'])");
+  }
+
+  @include timeline-dark("[data-theme='dark']");
+
+  @media (prefers-color-scheme: dark) {
+    @include timeline-dark(":not([data-theme='light'])");
+  }
+
+  // ## The phase WEEK TABLE
+  //
+  // 7 weekday columns x one row per week, AT EVERY WIDTH. It does not transpose: narrow keeps
+  // the same grid and shrinks instead — smaller type, 1px gutters, tighter padding, a narrower
+  // week column — so the seven days always use the full width.
+  //
+  // A real `<table>` with `<th scope>`; `display: grid` + `display: contents` lay it out and the
+  // explicit ARIA roles in the markup keep the semantics `display: contents` would strip. No
+  // corner cell: the dead top-left `<th>` is not rendered at all.
+  //
+  // ⚠️ ONE BLOCK PER DAY, not one per activity: the day is one block carrying its activities as
+  // lines of text. NO GREEN FILL BEHIND THE TEXT — the day block is a neutral raised surface in
+  // normal ink, a REST day is the sunken `--ct-bg` in muted ink, and the green is spent on the
+  // two HEADERS: the weekday names and the week numbers.
+  //
+  // ⚠️ EVERY CELL IN A VIEW IS THE SAME SIZE, and `--cellh` is DERIVED from its own parts rather
+  // than guessed: lines x leading x font + the gaps between those lines + the block padding.
+  // The parts are all custom properties and the SAME ones the cell actually uses, so the height
+  // cannot drift from what is inside it. `block-size` on the `<td>` (rather than
+  // `grid-auto-rows`) is what fixes it, which leaves the caption's row free to be short.
+  //
+  // ⚠️ These sizing properties are COMPONENT-SCOPED and must not move into `_tokens.scss` — the
+  // precedent and the reasoning are `--ct-nav-compress` in `_chrome.scss`: that file is the
+  // design system's vocabulary, every entry in it is consumed by many components and
+  // `contrast.test.ts` parses its two scheme mixins key-for-key, whereas these are one
+  // component's parameters. They are deliberately without the `--ct-` prefix, so nothing here
+  // can be mistaken for a design token.
+  &__weekgrid {
+    --celllines: 3;
+    --cellline: 1.25;
+    --cellfont: 0.7rem;
+    --cellgap: 1px;
+    --cellpad: var(--ct-space-1);
+    --cellh: calc(
+      var(--celllines) * var(--cellline) * var(--cellfont) + (var(--celllines) - 1) *
+        var(--cellgap) + 2 * var(--cellpad)
+    );
+
+    display: grid;
+    grid-template-columns: minmax(2.6rem, auto) repeat(7, minmax(0, 1fr));
+    gap: 1px;
+    inline-size: 100%;
+    margin: 0;
+
+    > thead,
+    > tbody,
+    tr {
+      display: contents;
+    }
+
+    // ⚠️ NO `justify-content` here. It used to say `stretch`, which in a flex container means
+    // `flex-start`, and at (0,1,1) it out-specified the `center` on `&__weekrow` at (0,1,0) —
+    // that is why "Week 5" sat at the top of its row instead of the middle of it.
+    th,
+    td {
+      grid-row: var(--rw);
+      grid-column: var(--cw);
+      display: flex;
+      flex-direction: column;
+      min-block-size: 0;
+      overflow: hidden;
+      padding: 0;
+      margin: 0;
+      text-align: center;
+    }
+
+    // the one place the uniform row height is set; every other cell in the row stretches to it
+    td {
+      block-size: var(--cellh);
+    }
+
+    // ⚠️ THE LEGEND IS THE TABLE'S OWN `<caption>`, placed LAST (`caption-side: bottom`, and the
+    // grid puts it on the row after the final week). That is the whole point: a caption is not a
+    // component sitting under the table, it IS the table, so it cannot read as unrelated — and
+    // it costs one wrapped line of muted small print instead of a disclosure and eight list
+    // items. Mobile only: the wide view spells every aspect out in the cells.
+    > caption {
+      grid-row: var(--rw);
+      grid-column: 1 / -1;
+      caption-side: bottom;
+      margin-block-start: var(--ct-space-1);
+      color: var(--ct-fg-muted);
+      font-size: var(--cellfont);
+      line-height: 1.35;
+      text-align: start;
+
+      // the codes are emphasised by WEIGHT, not colour, so the line stays one muted tone
+      strong {
+        font-weight: 700;
+      }
+    }
+  }
+
+  // column flex box: `justify-content` is the BLOCK axis and `align-items` the inline one, so
+  // this is the vertical centring — over the row's full height, which for a week row is `--cellh`.
+  &__weekhead,
+  &__weekrow {
+    justify-content: center;
+    align-items: center;
+    padding: var(--ct-space-1);
+    border-radius: var(--ct-radius-1);
+    font-size: var(--cellfont);
+    // the green, in both themes
+    color: var(--ct-accent);
+  }
+
+  // ⚠️ NO BORDER: the sunken `--ct-bg` against the raised day blocks is the whole separation,
+  // and seven boxed cells above seven boxed cells read as two tables.
+  &__weekhead {
+    background: var(--ct-bg);
+    font-weight: 700;
+    text-transform: uppercase;
+  }
+
+  // no box at all — just the green week number, centred on both axes of a tall row
+  &__weekrow {
+    border: 0;
+    background: none;
+    font-weight: 600;
+  }
+
+  // ⚠️ (0,2,0), so it beats `_profile.scss`'s `&__disclosure > * + *` (0,1,0) whatever the
+  // include order — and `plan` is `@use`d BEFORE `profile` in `app.scss`.
+  &__weekgrid + &__stack {
+    margin-block-start: var(--ct-space-5);
+  }
+
+  // The badge sits at the row's inline end: an `auto` margin on a flex row, never absolute
+  // positioning. ⚠️ `flex: 1` is what makes it work in the phase `<summary>`, which is itself the
+  // flex row — a heading sized to its content has no spare space for an `auto` margin to eat.
+  // `flex-wrap` is what keeps it right at 350px, where a long name wraps rather than squeezing it.
+  &__titlerow {
+    display: flex;
+    flex: 1;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--ct-space-2);
+    min-inline-size: 0;
+  }
+
+  &__titlerow > &__badge {
+    margin-inline-start: auto;
+  }
+
+  &__day,
+  &__rest {
+    position: relative;
+    flex: 1;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: var(--cellgap);
+    padding: var(--cellpad) var(--ct-space-1);
+    border: 1px solid var(--ct-border-2);
+    border-radius: var(--ct-radius-1);
+    font-size: var(--cellfont);
+    line-height: var(--cellline);
+  }
+
+  &__day {
+    background: var(--ct-surface-3);
+    color: var(--ct-fg);
+    font-weight: 600;
+  }
+
+  &__rest {
+    background: var(--ct-bg);
+    color: var(--ct-fg-muted);
+    font-weight: 500;
+    text-transform: uppercase;
+  }
+
+  &__line {
+    display: block;
+  }
+
+  // Compact is the default. The full name is CLIPPED, never `display: none`, so it stays in the
+  // accessible name at every width; the short form is `aria-hidden` in the markup.
+  &__full {
+    position: absolute;
+    inline-size: 1px;
+    block-size: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  // a code must never wrap, or the derived line count is a lie
+  &__abbr {
+    white-space: nowrap;
+  }
+
+  // Wide: four lines of full names, and nothing left to explain, so the caption goes.
+  @container ct-app (min-inline-size: 34rem) {
+    &__weekgrid {
+      --celllines: 4;
+      --cellline: var(--ct-leading);
+      --cellfont: var(--ct-text-xs);
+      --cellgap: 2px;
+      --cellpad: var(--ct-space-2);
+
+      grid-template-columns: minmax(4.6rem, auto) repeat(7, minmax(0, 1fr));
+      gap: 2px;
+
+      > caption {
+        display: none;
+      }
+    }
+
+    &__weekhead,
+    &__rest {
+      letter-spacing: 0.06em;
+    }
+
+    &__full {
+      position: static;
+      inline-size: auto;
+      block-size: auto;
+      overflow: visible;
+      clip-path: none;
+      white-space: normal;
+    }
+
+    &__abbr {
+      display: none;
+    }
+  }
+}

@@ -21,6 +21,7 @@ from server.library.routes import router as library_router
 from server.plans.routes import router as plans_router
 from server.profile.routes import router as profile_router
 from server.security_headers import SecurityHeadersMiddleware
+from server.sessions.routes import router as sessions_router
 from server.settings import app_version, get_settings
 from server.vocabulary.routes import router as vocabulary_router
 
@@ -108,6 +109,7 @@ app.include_router(auth_router)
 app.include_router(library_router)
 app.include_router(plans_router)
 app.include_router(profile_router)
+app.include_router(sessions_router)
 app.include_router(vocabulary_router)
 
 

@@ -16,9 +16,9 @@ import { ACTIVE_PLAN_KEY } from './plan/api';
 import { createAppRouter, createQueryClient } from './router';
 
 /**
- * **The write path on `/plan`: Start, Abandon, and the four ways it can look like it worked when
- * it did not.** Core-user-path and data-losing under CLAUDE.md's testing policy — a plan is up to
- * 2,421 prescribed rows and abandoning one discards weeks of a climber's training.
+ * **The write path on `/plan`: Start, "Build a different plan", and the ways either can look like
+ * it worked when it did not.** Core-user-path and data-losing under CLAUDE.md's testing policy —
+ * a plan is up to 2,421 prescribed rows, and the second control clears every setup answer.
  *
  * Every test here is a guard against a specific defect, and each was **shown to fail** against a
  * deliberately broken version before being trusted (the failures are in PR #11b's notes):
@@ -56,6 +56,9 @@ const VOCABULARY: Vocabulary = {
   ],
   equipment: [{ id: 5, key: 'hangboard', name: 'Hangboard', description: 'Edges.' }],
   injury_areas: [{ id: 8, key: 'elbow', name: 'Elbow', description: 'Tendons.' }],
+  // Irrelevant to this fixture; the phase copy is covered by tests/test_phase_guide.py.
+  plan_goal: '',
+  phase_guide: [],
   enums: {
     disciplines: ['boulder', 'sport'],
     activity_kinds: ['climbing'],
@@ -80,6 +83,21 @@ const PLANNABLE: Profile = {
   show_body_metrics: true,
   injuries_reviewed_at: '2026-08-20T00:00:00Z',
   aspect_ratings: [{ climbing_aspect_id: FINGERS_ID, score: 5, rated_at: '2026-08-21T00:00:00Z' }],
+  injuries: [],
+};
+
+/** What `POST /api/profile/reset` answers with: the four steps un-answered, the account kept. */
+const UNANSWERED: Profile = {
+  ...PLANNABLE,
+  target_grade_id: null,
+  current_grade_id: null,
+  primary_discipline: null,
+  sessions_per_week: null,
+  available_weekdays: null,
+  strength_aspect_id: null,
+  weakness_aspect_id: null,
+  injuries_reviewed_at: null,
+  aspect_ratings: [],
   injuries: [],
 };
 
@@ -116,6 +134,9 @@ function planTree(ids: { readonly persisted: boolean }): PlanTree {
   const id = (value: number) => (ids.persisted ? value : null);
   return {
     id: id(PERSISTED_PLAN_ID),
+    // Derived on serialisation from `generator_input`; this fixture carries no ordinal, so the
+    // server would send `null`. `plan/explain.test.ts` is where the derived figures are read.
+    climbing_band: null,
     name: 'Road to 6B',
     start_date: '2026-08-31',
     week_count: 1,
@@ -209,7 +230,7 @@ const json = (body: unknown, status = 200) =>
 interface Routes {
   active?: () => Promise<Response>;
   create?: () => Promise<Response>;
-  abandon?: () => Promise<Response>;
+  reset?: () => Promise<Response>;
   preview?: () => Promise<Response>;
 }
 
@@ -231,12 +252,8 @@ function stubFetch(routes: Routes) {
       if (path === '/api/plans' && method === 'POST') {
         return (routes.create ?? (() => Promise.resolve(json(PERSISTED, 201))))();
       }
-      if (path === `/api/plans/${String(PERSISTED_PLAN_ID)}/abandon`) {
-        return (
-          routes.abandon ??
-          (() =>
-            Promise.resolve(json({ id: PERSISTED_PLAN_ID, abandoned_at: '2026-08-25T09:00:00Z' })))
-        )();
+      if (path === '/api/profile/reset' && method === 'POST') {
+        return (routes.reset ?? (() => Promise.resolve(json(UNANSWERED))))();
       }
       return Promise.reject(new Error(`unexpected request: ${method} ${path}`));
     }),
@@ -290,7 +307,7 @@ function renderPlan(scope: 'user' | 'demo' = 'user') {
       </QueryClientProvider>
     </AuthProvider>,
   );
-  return { queryClient };
+  return { queryClient, router };
 }
 
 /** What the cache holds for `GET /api/plans/active` — the envelope, exactly as the server sends it. */
@@ -313,7 +330,7 @@ it('renders {plan: null} as "no plan yet" and offers Start, not an error', async
   // The whole point: a 200 carrying no plan is not a failure, so nothing on screen says so.
   expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   // …and the plan itself renders, through the same renderer a persisted plan uses.
-  expect(screen.getByText(/Road to 6B/)).toBeInTheDocument();
+  expect(screen.getByRole('heading', { level: 2, name: /Base/ })).toBeInTheDocument();
 });
 
 it('writes NO optimistic plan into the query cache while a Start is in flight', async () => {
@@ -341,7 +358,7 @@ it('writes NO optimistic plan into the query cache while a Start is in flight', 
 
   // Only now, and it is the server's own 201 body.
   expect(cachedEnvelope(queryClient)?.plan).toEqual(PERSISTED);
-  expect(await screen.findByRole('button', { name: 'Abandon this plan' })).toBeInTheDocument();
+  expect(await screen.findByRole('button', { name: 'Build a different plan' })).toBeInTheDocument();
 });
 
 it('treats a 409 as "you already have one": it reads the plan and renders it', async () => {
@@ -363,69 +380,67 @@ it('treats a 409 as "you already have one": it reads the plan and renders it', a
 
   // The 409 sent the client back to read, and what came back is on screen as the climber's plan.
   expect(requests().filter((call) => call === 'GET /api/plans/active')).toHaveLength(2);
-  expect(await screen.findByRole('button', { name: 'Abandon this plan' })).toBeInTheDocument();
-  expect(screen.getByText(/This is the plan you're on/)).toBeInTheDocument();
+  expect(await screen.findByRole('button', { name: 'Build a different plan' })).toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: /^Start/ })).toBeNull();
   // Not a failure at any layer: no alert, and the cache holds the plan rather than an error.
   expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   expect(cachedEnvelope(queryClient)?.plan).toEqual(PERSISTED);
 });
 
-it('needs a confirmation before it abandons anything', async () => {
+it('needs a confirmation before it clears a single setup answer', async () => {
+  // ⚠️ `POST /api/profile/reset` clears both grades, the training days, both aspect picks, every
+  // rating row and every open injury, with no undo. One tap must not be able to do that.
   stubFetch({ active: () => Promise.resolve(json({ plan: PERSISTED })) });
   renderPlan();
 
-  fireEvent.click(await screen.findByRole('button', { name: 'Abandon this plan' }));
+  fireEvent.click(await screen.findByRole('button', { name: 'Build a different plan' }));
   await settle();
 
-  // One click abandons nothing. The panel has a real accessible name and focus is on the
+  // One click writes nothing. The panel has a real accessible name and focus is on the
   // destructive choice, not on the safe one.
-  expect(requests().some((call) => call.includes('/abandon'))).toBe(false);
-  const confirm = screen.getByRole('group', { name: 'Abandon this plan?' });
-  expect(confirm).toBeInTheDocument();
-  const yes = screen.getByRole('button', { name: 'Yes, abandon it' });
+  expect(requests().some((call) => call.includes('/profile/reset'))).toBe(false);
+  expect(screen.getByRole('group', { name: 'Build a different plan?' })).toBeInTheDocument();
+  const yes = screen.getByRole('button', { name: 'Yes, set up again' });
   expect(yes).toHaveFocus();
 
-  // Escape dismisses it and the plan is untouched.
+  // Escape dismisses it and the profile is untouched.
   fireEvent.keyDown(yes, { key: 'Escape' });
   await settle();
-  expect(screen.queryByRole('group', { name: 'Abandon this plan?' })).not.toBeInTheDocument();
-  expect(requests().some((call) => call.includes('/abandon'))).toBe(false);
+  expect(screen.queryByRole('group', { name: 'Build a different plan?' })).not.toBeInTheDocument();
+  expect(requests().some((call) => call.includes('/profile/reset'))).toBe(false);
 });
 
-it('derives the abandoned view at render time and writes nothing to the cache in flight', async () => {
-  let release: ((response: Response) => void) | undefined;
+it('resets the profile and goes to the wizard, but ONLY after the server agrees', async () => {
+  stubFetch({ active: () => Promise.resolve(json({ plan: PERSISTED })) });
+  const { router } = renderPlan();
+
+  fireEvent.click(await screen.findByRole('button', { name: 'Build a different plan' }));
+  await settle();
+  fireEvent.click(screen.getByRole('button', { name: 'Yes, set up again' }));
+  await settle();
+
+  expect(requests()).toContain('POST /api/profile/reset');
+  expect(router.state.location.pathname).toBe('/onboarding');
+});
+
+it('does NOT navigate when the reset fails, and says nothing has changed', async () => {
+  // ⚠️ The round-1 onboarding bug: an unawaited navigate lands the wizard on whatever the cache
+  // still held — here, a fully answered profile it would call complete.
   stubFetch({
     active: () => Promise.resolve(json({ plan: PERSISTED })),
-    abandon: () =>
-      new Promise<Response>((resolve) => {
-        release = resolve;
-      }),
+    reset: () => Promise.resolve(json({ detail: 'nope' }, 500)),
   });
-  const { queryClient } = renderPlan();
+  const { router } = renderPlan();
 
-  fireEvent.click(await screen.findByRole('button', { name: 'Abandon this plan' }));
+  fireEvent.click(await screen.findByRole('button', { name: 'Build a different plan' }));
   await settle();
-  fireEvent.click(screen.getByRole('button', { name: 'Yes, abandon it' }));
-  await settle();
-
-  // The screen has already moved on — the overlay comes from the pending mutation's own
-  // variables, so the click does not wait on Postgres. The plan is gone and the screen is
-  // already generating the replacement it will offer next.
-  expect(screen.queryByText(/This is the plan you're on/)).toBeNull();
-  expect(screen.queryByRole('button', { name: 'Abandon this plan' })).toBeNull();
-  // ⚠️ `findBy`, not `getBy`: whether the replacement preview has landed by this tick is a
-  // timing detail (it had not when this file ran alone and had when it ran with the suite), and
-  // an assertion that depends on it is a flake. What is deterministic is that the empty state
-  // arrives while the abandon is still in flight — the mutation is unreleased below.
-  expect(await screen.findByRole('button', { name: 'Start this plan' })).toBeInTheDocument();
-  // …and the cache still holds the plan the server last confirmed. Nothing was rolled back,
-  // because nothing was written.
-  expect(cachedEnvelope(queryClient)?.plan).toEqual(PERSISTED);
-
-  release?.(json({ id: PERSISTED_PLAN_ID, abandoned_at: '2026-08-25T09:00:00Z' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Yes, set up again' }));
   await settle();
 
-  expect(cachedEnvelope(queryClient)).toEqual({ plan: null });
+  expect(router.state.location.pathname).toBe('/plan');
+  const alert = screen.getByRole('alert');
+  expect(alert).toHaveTextContent(/could not be cleared/i);
+  expect(alert).toHaveTextContent(/nothing has changed/i);
 });
 
 it('keeps a plan on screen when a background refetch of it fails', async () => {
@@ -436,7 +451,7 @@ it('keeps a plan on screen when a background refetch of it fails', async () => {
   });
   const { queryClient } = renderPlan();
 
-  expect(await screen.findByRole('button', { name: 'Abandon this plan' })).toBeInTheDocument();
+  expect(await screen.findByRole('button', { name: 'Build a different plan' })).toBeInTheDocument();
 
   fail = true;
   await act(async () => {
@@ -446,8 +461,8 @@ it('keeps a plan on screen when a background refetch of it fails', async () => {
 
   // `query.js`'s error reducer sets `status: "error"` even with data present, so a screen gated
   // on `isError` would have replaced itself here. There is something to show, so it is shown.
-  expect(screen.getByText(/This is the plan you're on/)).toBeInTheDocument();
-  expect(screen.getByRole('button', { name: 'Abandon this plan' })).toBeInTheDocument();
+  expect(screen.getByRole('heading', { level: 2, name: /Base/ })).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Build a different plan' })).toBeInTheDocument();
   expect(screen.queryByText(/could not check whether you already have a plan/i)).toBeNull();
 });
 
@@ -456,34 +471,31 @@ it('HIDES the write affordances in demo scope rather than disabling them', async
   // `MUTATING_METHODS` — so the demo mount really does land here and really does read a plan.
   renderPlan('demo');
 
-  expect(await screen.findByText(/Road to 6B/)).toBeInTheDocument();
+  expect(await screen.findByRole('heading', { level: 2, name: /Base/ })).toBeInTheDocument();
 
   // Absent, not disabled. Issue #65: the UI never offers an action the principal cannot take,
   // and a greyed-out control reads as broken software rather than as a demo.
   const buttons = screen.queryAllByRole('button');
   expect(buttons.map((button) => button.textContent)).not.toContain('Start this plan');
   expect(buttons.filter((button) => button.hasAttribute('disabled'))).toEqual([]);
-  expect(screen.queryByRole('button', { name: /abandon/i })).toBeNull();
+  expect(screen.queryByRole('button', { name: /build a different plan/i })).toBeNull();
   expect(screen.queryByRole('button', { name: /start/i })).toBeNull();
-  expect(
-    screen.getByText(/demo account is read-only, so it cannot be started/i),
-  ).toBeInTheDocument();
 });
 
-it('does not generate a preview for a climber who already has a plan', async () => {
+it('NEVER generates a preview for a climber who already has a plan', async () => {
+  // ⚠️ There is no path from a running plan to the most expensive read in the app — including
+  // through the confirmation panel, which is why this clicks it.
   stubFetch({
     active: () => Promise.resolve(json({ plan: PERSISTED })),
     preview: () => Promise.reject(new Error('the preview must not be generated unasked')),
   });
   renderPlan();
 
-  expect(await screen.findByRole('button', { name: 'Abandon this plan' })).toBeInTheDocument();
-  expect(requests()).not.toContain('POST /api/plans/preview');
-
-  // …and asking for one is what pays for it.
-  fireEvent.click(screen.getByRole('button', { name: 'Build a different plan' }));
+  fireEvent.click(await screen.findByRole('button', { name: 'Build a different plan' }));
   await settle();
-  expect(requests()).toContain('POST /api/plans/preview');
+
+  expect(screen.getByRole('group', { name: 'Build a different plan?' })).toBeInTheDocument();
+  expect(requests()).not.toContain('POST /api/plans/preview');
 });
 
 it('POSTs the start_date THAT WAS ON SCREEN, not a freshly recomputed Monday', async () => {
@@ -506,57 +518,6 @@ it('POSTs the start_date THAT WAS ON SCREEN, not a freshly recomputed Monday', a
   // The preview asked for the recomputed Monday — that is its key — so the two really are
   // different values and the create used the right one.
   expect(bodyOf('POST', '/api/plans/preview')).toEqual({ start_date: nextMonday(new Date()) });
-});
-
-it('ENDS the replacement flow on a successful Start, so a second click cannot make a THIRD plan', async () => {
-  const REPLACEMENT: PlanTree = { ...PERSISTED, id: 88, name: 'Road to 6C' };
-  stubFetch({
-    active: () => Promise.resolve(json({ plan: PERSISTED })),
-    create: () => Promise.resolve(json(REPLACEMENT, 201)),
-  });
-  const { queryClient } = renderPlan();
-
-  // A plan is running. Ask for an alternative; the preview lands and outranks it (`shown`).
-  fireEvent.click(await screen.findByRole('button', { name: 'Build a different plan' }));
-  const start = await screen.findByRole('button', { name: 'Start this instead' });
-
-  fireEvent.click(start);
-  await settle();
-
-  // ⚠️ THE GUARD: `useCreatePlan({ onSuccess: () => setReplacing(false) })`. Without it
-  // `replacing` stays true, `shown` keeps preferring the now-superseded proposal, and the screen
-  // keeps offering "Start this instead" against it — a second click persists a THIRD plan.
-  expect(screen.queryByRole('button', { name: 'Start this instead' })).toBeNull();
-  expect(screen.queryByRole('button', { name: 'Keep my current plan' })).toBeNull();
-  expect(await screen.findByRole('button', { name: 'Abandon this plan' })).toBeInTheDocument();
-  expect(screen.getByText(/This is the plan you're on/)).toBeInTheDocument();
-  expect(cachedEnvelope(queryClient)?.plan).toEqual(REPLACEMENT);
-  expect(requests().filter((call) => call === 'POST /api/plans')).toHaveLength(1);
-});
-
-it('leaves the cached plan ALONE when an abandon names a DIFFERENT plan', async () => {
-  // The server's answer names the plan it stood down. A second tab, or a stale screen, can
-  // abandon a plan that is not the one cached here — and clearing the entry then would hide a
-  // plan the climber still has. `current?.plan?.id === abandoned.id` is that check, and this is
-  // the only test of its negative branch.
-  stubFetch({
-    active: () => Promise.resolve(json({ plan: PERSISTED })),
-    abandon: () => Promise.resolve(json({ id: 999, abandoned_at: '2026-08-25T09:00:00Z' })),
-  });
-  const { queryClient } = renderPlan();
-
-  fireEvent.click(await screen.findByRole('button', { name: 'Abandon this plan' }));
-  await settle();
-  fireEvent.click(screen.getByRole('button', { name: 'Yes, abandon it' }));
-  await settle();
-
-  // Not `{plan: null}`: the entry was never about plan 999.
-  expect(cachedEnvelope(queryClient)?.plan).toEqual(PERSISTED);
-  // …and with the mutation settled the derived overlay is gone, so the plan is back on screen.
-  // (The confirmation panel is still open — nothing closes it on success, because on the normal
-  // path the whole branch unmounts. That is why this asserts the plan and not the trigger.)
-  expect(screen.getByText(/This is the plan you're on/)).toBeInTheDocument();
-  expect(screen.queryByRole('button', { name: 'Start this plan' })).toBeNull();
 });
 
 it('never claims a failed Start saved nothing, and names a STALE PAGE when that is the cause', async () => {

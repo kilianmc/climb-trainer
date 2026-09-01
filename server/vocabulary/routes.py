@@ -29,16 +29,16 @@ read from (PR #10 onward), which is why it ships as data rather than as a commen
 
 The payload is user-independent and changes only when the seed does, i.e. per deploy —
 which is CLAUDE.md's argument for serving `/api/library?v=<buildId>` as
-`public, s-maxage=31536000, immutable`. Two differences here: there is no build id in the
-URL, so an immutable year-long cache would pin a stale vocabulary for a year after a seed
-edit; and this response requires a bearer token, so it has no business in a shared CDN
-cache even though its body would be identical for everyone. `private` keeps it in the
-one browser that asked, and an hour is long enough that a reload costs no database time.
+`public, s-maxage=31536000, immutable`. The difference here is the bearer token: this
+response requires one, so it has no business in a shared CDN cache even though its body
+would be identical for everyone. `private` keeps it in the one browser that asked, and an
+hour bounds the staleness inside one deploy. `?v=<buildId>` carries the rest: a new bundle
+asks a new URL, so it can never be answered out of a cache filled before its own deploy.
 """
 
-from typing import Final
+from typing import Annotated, Final
 
-from fastapi import APIRouter, Response
+from fastapi import APIRouter, Query, Response
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -46,6 +46,8 @@ from sqlalchemy.orm import Session
 from server.auth.deps import RequestSession
 from server.domain.grades import Discipline
 from server.domain.vocabulary import (
+    PHASE_GUIDE,
+    PLAN_GOAL,
     ActivityKind,
     AscentStyle,
     Phase,
@@ -66,6 +68,10 @@ router = APIRouter(prefix="/api/vocabulary", tags=["vocabulary"])
 # in the same commit, or drop the caching. Nothing enforces this but the comment and
 # `tests/test_vocabulary_api.py`, which pins the header so a change to it is deliberate.
 _CACHE_CONTROL: Final = "private, max-age=3600"
+
+# `?v=` is a cache-buster and nothing else: accepted, documented in the schema, never read.
+# Bounded for the same reason `server/library/routes.py` bounds its own.
+_BUILD_ID_MAX: Final = 64
 
 # The three tables whose columns are `id, key, name, description, sort_order`. Named so
 # `_reference_rows` can be written once instead of three times.
@@ -124,6 +130,36 @@ class ClosedVocabulariesOut(BaseModel):
     session_statuses: list[SessionStatus]
 
 
+class GuideLinkOut(BaseModel):
+    """One further-reading link. A record, not two parallel scalars: a URL with no label
+    renders as bare markup, and only a pair can be `for`-looped without pairing checks."""
+
+    url: str
+    label: str
+
+
+class PhaseGuideOut(BaseModel):
+    """What this phase IS and how it is trained — universal, identical for every climber.
+
+    Authored copy from `server/domain/vocabulary.py`, not a database row: a phase is a
+    native enum on `mesocycle`, so there is nothing to seed and nothing to migrate.
+
+    Sent **once per response, keyed by `phase`** rather than on the plan payload, which
+    repeats a mesocycle up to sixteen times and is already 583 KiB at its worst. The plan
+    screen already reads this endpoint, so the copy costs no extra request.
+
+    ⚠️ **The per-plan half is NOT here.** How this phase applies to one climber's plan is
+    derived on `PlanOut.climbing_band` plus the plan's own weeks; this endpoint is cached
+    for an hour and shared by every user, so nothing here may describe the reader.
+    """
+
+    phase: Phase
+    label: str
+    summary: str
+    how_to_train: str
+    links: list[GuideLinkOut]
+
+
 class VocabularyResponse(BaseModel):
     grade_systems: list[GradeSystemOut]
     grades: list[GradeOut]
@@ -131,6 +167,8 @@ class VocabularyResponse(BaseModel):
     equipment: list[ReferenceRowOut]
     injury_areas: list[ReferenceRowOut]
     enums: ClosedVocabulariesOut
+    plan_goal: str
+    phase_guide: list[PhaseGuideOut]
 
 
 def _closed_vocabularies() -> ClosedVocabulariesOut:
@@ -145,6 +183,20 @@ def _closed_vocabularies() -> ClosedVocabulariesOut:
     )
 
 
+def _phase_guide() -> list[PhaseGuideOut]:
+    """Straight from `PHASE_GUIDE`, in `Phase` declaration order. No DB, no seed."""
+    return [
+        PhaseGuideOut(
+            phase=guide.phase,
+            label=guide.label,
+            summary=guide.summary,
+            how_to_train=guide.how_to_train,
+            links=[GuideLinkOut(url=link.url, label=link.label) for link in guide.links],
+        )
+        for guide in PHASE_GUIDE
+    ]
+
+
 def _reference_rows(session: Session, table: _ReferenceTable) -> list[ReferenceRowOut]:
     """One lookup table, in `sort_order`. The three tables are column-identical."""
     rows = session.execute(
@@ -157,12 +209,20 @@ def _reference_rows(session: Session, table: _ReferenceTable) -> list[ReferenceR
 
 
 @router.get("")
-def read_vocabulary(response: Response, session: RequestSession) -> VocabularyResponse:
+def read_vocabulary(
+    response: Response,
+    session: RequestSession,
+    v: Annotated[str | None, Query(max_length=_BUILD_ID_MAX)] = None,
+) -> VocabularyResponse:
     """Everything onboarding and the loggers need to render a closed input.
 
     Authenticated like every other route (deny-by-default), but user-independent: nothing
     here is scoped by `user_id` because nothing here belongs to a user.
+
+    `v` is **declared and deliberately unused**, as on `GET /api/library`: it exists so the
+    client can put a build id in the URL and so the schema documents it.
     """
+    del v  # the cache key is the whole job; see the docstring
     response.headers["cache-control"] = _CACHE_CONTROL
 
     # ⚠️ `sort_order`, not `id` (issue #55, revision `0006`). A serial follows INSERT order,
@@ -198,4 +258,6 @@ def read_vocabulary(response: Response, session: RequestSession) -> VocabularyRe
         equipment=_reference_rows(session, Equipment),
         injury_areas=_reference_rows(session, InjuryArea),
         enums=_closed_vocabularies(),
+        plan_goal=PLAN_GOAL,
+        phase_guide=_phase_guide(),
     )

@@ -11,8 +11,8 @@
  *   openapi-sha256  the OpenAPI document it was generated from
  *   types-sha256    everything below this comment block
  *
- * openapi-sha256: b93ef4d84b6c82e51d30afdb54a7b1f453a7e220896e22d3d59ec685f4675631
- * types-sha256: 22f29ba2fd01d0109205aaedfdca91e97da482f9213da2d2e9ec7b3992bf49d8
+ * openapi-sha256: 434bfbb744851ecafce47b201c3f7c0f779bfb515e55d3093b1b025072f3098b
+ * types-sha256: d3e11d1e6a0a85d850de8423ec69196b3de773a73d630e66f6eaed55de7ce31a
  */
 
 export interface paths {
@@ -340,38 +340,6 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
-  '/api/plans/{plan_id}/abandon': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /**
-     * Abandon Plan
-     * @description Stand a plan down. **Marks, never deletes.** Idempotent, and 404 for anyone else's.
-     *
-     *     **A timestamp and not a delete**, because `activity.planned_session_id` is the only link from a
-     *     logged activity to the plan it satisfied: deleting would cascade through the tree and destroy
-     *     the adherence record of sessions the user really did.
-     *
-     *     **The 404 is scoped, and the scoping is the security property.** The `WHERE` names both the id
-     *     and `principal.user_id`, so another user's plan is indistinguishable from one that never
-     *     existed. A 403 would confirm the row exists — the IDOR read this project treats as its real
-     *     extraction risk.
-     *
-     *     **Idempotent:** an already-abandoned plan keeps its original timestamp, because *when* it was
-     *     stood down is the fact the diary wants. `completed_at` is deliberately untouched.
-     */
-    post: operations['abandon_plan_api_plans__plan_id__abandon_post'];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
   '/api/profile': {
     parameters: {
       query?: never;
@@ -441,6 +409,74 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/sessions/completion': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Session Completion
+     * @description How much of each planned session in `from`..`to` actually got done.
+     *
+     *     **Partial completion is a DERIVED QUERY, not a column.** `planned_session.status` says
+     *     whether Finish was pressed; this counts the blocks with at least one logged set, which is
+     *     the only figure that can say WHICH two of three parts — and the rule behind it will be
+     *     tuned, which is why no `planned_session` column holds it.
+     *
+     *     **Its own endpoint, deliberately.** `GET /api/plans/active` is already the heaviest payload
+     *     in the app and only this screen reads these numbers, so they are fetched beside it rather
+     *     than inside it.
+     *
+     *     **One statement, no per-row N+1**, one Neon wake, and read-only: a demo token may call it.
+     *     `skipped` is inferred from `as_of` — nothing in the app writes that status.
+     */
+    get: operations['session_completion_api_sessions_completion_get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/sessions/{client_uuid}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    /**
+     * Log Session
+     * @description Create or locate this climber's session by the uuid their client minted, and merge. 200.
+     *
+     *     A **Tier-1 write**: one request, one transaction, one Neon wake, and **at most five
+     *     statements whatever the set count**. Called at start (`sets: []`), at every mid-run moment
+     *     that piggybacks the outbox, and at Finish (`finished: true`).
+     *
+     *     **`sets` merges, it never replaces.** A set is replaced whole by its `client_uuid`; a set
+     *     already stored and absent from this payload is untouched, because a piggyback carries only
+     *     the unsent tail. **`duration_minutes` only ever grows** — the client must send elapsed
+     *     minutes so far, never an estimate, and issue #12's "edit a logged session" cannot reuse
+     *     this route because it cannot shorten one.
+     *
+     *     A `planned_session_id` or `prescribed_set_id` outside the caller's own plan tree is a 404
+     *     identical to the missing case. A set whose `exercise_id` disagrees with its prescription is
+     *     a 422 that rejects the **whole flush**, because the rest of that block is then suspect.
+     *     `planned_session.status` advances to `in_progress`, or `completed` when finished, and never
+     *     regresses. Ascents are not loggable here.
+     */
+    put: operations['log_session_api_sessions__client_uuid__put'];
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/vocabulary': {
     parameters: {
       query?: never;
@@ -454,6 +490,9 @@ export interface paths {
      *
      *     Authenticated like every other route (deny-by-default), but user-independent: nothing
      *     here is scoped by `user_id` because nothing here belongs to a user.
+     *
+     *     `v` is **declared and deliberately unused**, as on `GET /api/library`: it exists so the
+     *     client can put a build id in the URL and so the schema documents it.
      */
     get: operations['read_vocabulary_api_vocabulary_get'];
     put?: never;
@@ -573,6 +612,38 @@ export interface components {
       shortfall: components['schemas']['ShortfallOut'] | null;
     };
     /**
+     * ClimbingBandOut
+     * @description The training constants THIS plan was generated under. Derived, never stored.
+     *
+     *     ⚠️ **Keyed off `generator_input.current_ordinal`, never off the profile's grade today.**
+     *     `Level` is not persisted (`server/domain/planner/climbing.py`), and it is what
+     *     `CLIMBING_FLOOR_PCT`, `CLIMBING_TARGET_PCT` and `FINGER_SESSIONS_PER_WEEK` were read
+     *     with when the tree was built. A climber who logs a harder grade tomorrow has not changed
+     *     the plan in front of them, so a band re-derived from the profile would make the payload
+     *     misdescribe its own contents.
+     *
+     *     Sent so **no client re-implements a training constant**: the ordinal thresholds are four
+     *     named ceilings in one Python module, and re-deriving them in TypeScript would put the
+     *     same numbers in two languages with nothing able to see them drift.
+     *
+     *     `finger_phases` is the set those sessions are owed in, so a client can place the figure
+     *     without knowing which phases they are; `finger_sessions_per_week` is **0 for beginner**
+     *     by design, and a renderer must omit the line rather than print a zero.
+     */
+    ClimbingBandOut: {
+      /** Climbing Floor Pct */
+      climbing_floor_pct: number;
+      /** Climbing Target Pct High */
+      climbing_target_pct_high: number;
+      /** Climbing Target Pct Low */
+      climbing_target_pct_low: number;
+      /** Finger Phases */
+      finger_phases: components['schemas']['Phase'][];
+      /** Finger Sessions Per Week */
+      finger_sessions_per_week: number;
+      level: components['schemas']['Level'];
+    };
+    /**
      * ClosedVocabulariesOut
      * @description The native Postgres enums, as their persisted **values** (never member names).
      *
@@ -683,6 +754,17 @@ export interface components {
       /** Name */
       name: string;
     };
+    /**
+     * GuideLinkOut
+     * @description One further-reading link. A record, not two parallel scalars: a URL with no label
+     *     renders as bare markup, and only a pair can be `for`-looped without pairing checks.
+     */
+    GuideLinkOut: {
+      /** Label */
+      label: string;
+      /** Url */
+      url: string;
+    };
     /** HTTPValidationError */
     HTTPValidationError: {
       /** Detail */
@@ -719,6 +801,65 @@ export interface components {
        * Format: date
        */
       started_on: string;
+    };
+    /**
+     * Level
+     * @description The climber's band, by CURRENT grade. Never persisted — derived on every generate.
+     * @enum {string}
+     */
+    Level: 'beginner' | 'intermediate' | 'advanced';
+    /**
+     * LoggedSetAck
+     * @description The server's id for one set, so the client can retire it from the outbox.
+     *
+     *     Nothing the user typed is echoed back; see `SessionLogResponse`.
+     */
+    LoggedSetAck: {
+      /**
+       * Client Uuid
+       * Format: uuid
+       */
+      client_uuid: string;
+      /** Id */
+      id: number;
+      /** Set Index */
+      set_index: number;
+    };
+    /**
+     * LoggedSetIn
+     * @description One set that happened, replaced whole by its `client_uuid`.
+     *
+     *     There is no omitted-versus-null distinction per set: a `logged_set` is minted complete when
+     *     the set finishes, and a multi-row `VALUES` requires identical keys in every row anyway.
+     */
+    LoggedSetIn: {
+      /** Actual Load Kg */
+      actual_load_kg?: number | string | null;
+      /** Actual Reps */
+      actual_reps?: number | null;
+      /** Actual Work Seconds */
+      actual_work_seconds?: number | null;
+      /** Body Weight As Of */
+      body_weight_as_of?: string | null;
+      /** Body Weight Kg */
+      body_weight_kg?: number | string | null;
+      /**
+       * Client Uuid
+       * Format: uuid
+       */
+      client_uuid: string;
+      /** Completed At */
+      completed_at?: string | null;
+      /** Exercise Id */
+      exercise_id: number;
+      /** Note */
+      note?: string | null;
+      /** Prescribed Set Id */
+      prescribed_set_id?: number | null;
+      /** Rpe */
+      rpe?: number | null;
+      /** Set Index */
+      set_index: number;
     };
     /** LoginRequest */
     LoginRequest: {
@@ -820,17 +961,30 @@ export interface components {
      */
     Phase: 'base' | 'strength' | 'power' | 'power_endurance' | 'performance' | 'deload' | 'taper';
     /**
-     * PlanAbandonResponse
-     * @description The timestamp that was set, or the one already there. Idempotent either way.
+     * PhaseGuideOut
+     * @description What this phase IS and how it is trained — universal, identical for every climber.
+     *
+     *     Authored copy from `server/domain/vocabulary.py`, not a database row: a phase is a
+     *     native enum on `mesocycle`, so there is nothing to seed and nothing to migrate.
+     *
+     *     Sent **once per response, keyed by `phase`** rather than on the plan payload, which
+     *     repeats a mesocycle up to sixteen times and is already 583 KiB at its worst. The plan
+     *     screen already reads this endpoint, so the copy costs no extra request.
+     *
+     *     ⚠️ **The per-plan half is NOT here.** How this phase applies to one climber's plan is
+     *     derived on `PlanOut.climbing_band` plus the plan's own weeks; this endpoint is cached
+     *     for an hour and shared by every user, so nothing here may describe the reader.
      */
-    PlanAbandonResponse: {
-      /**
-       * Abandoned At
-       * Format: date-time
-       */
-      abandoned_at: string;
-      /** Id */
-      id: number;
+    PhaseGuideOut: {
+      /** How To Train */
+      how_to_train: string;
+      /** Label */
+      label: string;
+      /** Links */
+      links: components['schemas']['GuideLinkOut'][];
+      phase: components['schemas']['Phase'];
+      /** Summary */
+      summary: string;
     };
     /**
      * PlanOut
@@ -857,6 +1011,11 @@ export interface components {
     PlanOut: {
       /** Activated At */
       activated_at?: string | null;
+      /**
+       * @description Computed on serialisation, on both paths, from fields already on this model —
+       *     which is why a persisted plan and a preview cannot disagree about it.
+       */
+      readonly climbing_band: components['schemas']['ClimbingBandOut'] | null;
       /** Current Grade Id */
       current_grade_id: number | null;
       discipline: components['schemas']['Discipline'];
@@ -1065,6 +1224,147 @@ export interface components {
       password: string;
     };
     /**
+     * SessionCompletionOut
+     * @description How much of ONE planned session got done — **derived**, never a stored column.
+     *
+     *     `done_block_ids` says WHICH blocks got done, over the join
+     *     `logged_set.prescribed_set_id → session_block`: every block with at least one logged set,
+     *     keyed on `session_block.id`, the id `plans.BlockOut` carries for a persisted plan.
+     *     `blocks_done` is its length. A set with null `actual_*` values is a **real** completion —
+     *     the "I did this myself" affordance mints exactly those — so nothing here filters them out.
+     *
+     *     `status` is what the write path stored: `completed` means "pressed Finish", never "did it
+     *     all". `state` is derived from it and from `as_of`: `completed`, `pending` for a session still
+     *     to come, `skipped` for one whose day has passed unfinished.
+     *
+     *     ⚠️ **`skipped` names the OUTCOME, not the cause: "past and not finished, whatever the
+     *     reason".** A past `in_progress` session reads `skipped` and that is CORRECT — unfinished and
+     *     skipped are the same result in real life (Kilian, 2026-08-30), which is why the UI shows only
+     *     the percentage. Never render it as "the climber chose to skip this".
+     *
+     *     `percent` is `null` for a session with no blocks at all: there is nothing to have done, and
+     *     reporting 0% for that would read as a failure nobody had.
+     */
+    SessionCompletionOut: {
+      /** Block Count */
+      block_count: number;
+      /** Blocks Done */
+      blocks_done: number;
+      /** Done Block Ids */
+      done_block_ids: number[];
+      /** Percent */
+      percent: number | null;
+      /** Planned Session Id */
+      planned_session_id: number;
+      /**
+       * Scheduled On
+       * Format: date
+       */
+      scheduled_on: string;
+      /**
+       * State
+       * @enum {string}
+       */
+      state: 'completed' | 'skipped' | 'pending';
+      status: components['schemas']['SessionStatus'];
+    };
+    /**
+     * SessionCompletionResponse
+     * @description Completion for every planned session of this climber's inside the window.
+     *
+     *     `as_of` is the server's own date, i.e. the boundary `state` was decided against, so the
+     *     client never re-derives "past" from a clock of its own.
+     *
+     *     Sessions from a stood-down plan are included when their date falls in the window — the
+     *     response is keyed by `planned_session_id`, so a caller reads the ones it asked about.
+     */
+    SessionCompletionResponse: {
+      /**
+       * As Of
+       * Format: date
+       */
+      as_of: string;
+      /** Sessions */
+      sessions: components['schemas']['SessionCompletionOut'][];
+    };
+    /**
+     * SessionLogRequest
+     * @description The activity/logged_session envelope plus the delta of sets. `extra="forbid"`.
+     *
+     *     An **omitted** envelope field means "no change"; an explicit **`null`** means "clear", read
+     *     through `model_fields_set` — the idiom at `server/profile/routes.py::InjuryIn`.
+     *
+     *     `finished` is a request field and **not a column**: the only server behaviour that depends
+     *     on finish-ness is the `planned_session.status` transition, which is why this endpoint needed
+     *     no Alembic revision. `duration_minutes` must be **elapsed minutes so far**, floored at 1,
+     *     never the plan's `estimated_minutes` — see the handler's `GREATEST` rule.
+     */
+    SessionLogRequest: {
+      discipline: components['schemas']['Discipline'];
+      /** Duration Minutes */
+      duration_minutes: number;
+      /**
+       * Finished
+       * @default false
+       */
+      finished: boolean;
+      /** Location */
+      location?: string | null;
+      /** Notes */
+      notes?: string | null;
+      /**
+       * Occurred On
+       * Format: date
+       */
+      occurred_on: string;
+      /** Planned Session Id */
+      planned_session_id?: number | null;
+      /** Rpe */
+      rpe?: number | null;
+      /**
+       * Sets
+       * @default []
+       */
+      sets: components['schemas']['LoggedSetIn'][];
+      /** Started At */
+      started_at?: string | null;
+    };
+    /**
+     * SessionLogResponse
+     * @description What the server now holds for this session. **Always 200**, never a conditional 201.
+     *
+     *     A replayed PUT must not change the status code, because the outbox does not branch on it.
+     *     `duration_minutes` is the post-`GREATEST` value, so a client can see that a stale retry did
+     *     not shorten the session.
+     *
+     *     **No user free text is echoed** — `notes`, `location` and each set's `note` are all absent.
+     *     So nothing in this body needs escaping downstream, and a mid-run piggyback response stays
+     *     small even when it acknowledges a hundred sets.
+     */
+    SessionLogResponse: {
+      /**
+       * Client Uuid
+       * Format: uuid
+       */
+      client_uuid: string;
+      /** Duration Minutes */
+      duration_minutes: number;
+      /** Id */
+      id: number;
+      /**
+       * Occurred On
+       * Format: date
+       */
+      occurred_on: string;
+      /** Planned Session Id */
+      planned_session_id: number | null;
+      planned_session_status: components['schemas']['SessionStatus'] | null;
+      /** Rpe */
+      rpe: number | null;
+      /** Sets */
+      sets: components['schemas']['LoggedSetAck'][];
+    };
+    /**
      * SessionOut
      * @description One planned session. `estimated_minutes` is `null` for a session with no blocks.
      *
@@ -1204,6 +1504,10 @@ export interface components {
       grades: components['schemas']['GradeOut'][];
       /** Injury Areas */
       injury_areas: components['schemas']['ReferenceRowOut'][];
+      /** Phase Guide */
+      phase_guide: components['schemas']['PhaseGuideOut'][];
+      /** Plan Goal */
+      plan_goal: string;
     };
   };
   responses: never;
@@ -1499,37 +1803,6 @@ export interface operations {
       };
     };
   };
-  abandon_plan_api_plans__plan_id__abandon_post: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        plan_id: number;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['PlanAbandonResponse'];
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
   read_profile_api_profile_get: {
     parameters: {
       query?: never;
@@ -1603,9 +1876,78 @@ export interface operations {
       };
     };
   };
-  read_vocabulary_api_vocabulary_get: {
+  session_completion_api_sessions_completion_get: {
+    parameters: {
+      query: {
+        from: string;
+        to: string;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['SessionCompletionResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  log_session_api_sessions__client_uuid__put: {
     parameters: {
       query?: never;
+      header?: never;
+      path: {
+        client_uuid: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['SessionLogRequest'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['SessionLogResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  read_vocabulary_api_vocabulary_get: {
+    parameters: {
+      query?: {
+        v?: string | null;
+      };
       header?: never;
       path?: never;
       cookie?: never;
@@ -1619,6 +1961,15 @@ export interface operations {
         };
         content: {
           'application/json': components['schemas']['VocabularyResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
         };
       };
     };

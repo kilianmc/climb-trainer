@@ -11,7 +11,8 @@ line numbers; five staleness arms below make an unearned entry a hard failure.
 
 import ast
 import tomllib
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
+from datetime import date
 from pathlib import Path
 from typing import Final
 
@@ -34,15 +35,40 @@ CAPS: Final = {"module": MODULE_DOCSTRING_CAP, "wire": WIRE_CONTRACT_CAP, "plain
 # The ratchet. Entries whose reason starts with BASELINE are the un-reviewed backlog; new
 # comments obey the cap from day one, so this number may only ever go DOWN. Lower it in the
 # same PR that trims the comments — never raise it.
-BASELINE_RATCHET: Final = 1111
+BASELINE_RATCHET: Final = 990
+
+# The DEADLINE. The ratchet stops the backlog GROWING; nothing stops it sitting, and a register
+# where every row still reads "not yet reviewed" a year from now is a freeze, not a cleanup. Each
+# milestone is a date and the most BASELINE rows that may remain once it has passed: green until
+# the date, then hard red until the count is at or below the target. The last target is 0, so the
+# backlog has an end rather than a floor.
+#
+# ⚠️ **Editing a number cannot buy silence, by construction.** A target may never exceed
+# `BASELINE_RATCHET - MILESTONE_MIN_CUT`, the ratchet may only ever go DOWN, and the ratchet may
+# not sit more than 25 above the real count (`test_the_ratchet_is_not_slack`). `MILESTONE_MIN_CUT`
+# is deliberately larger than that 25, so raising a target far enough to matter would mean raising
+# the ratchet further than its own arm allows. The only move left is trimming comments.
+BASELINE_DEADLINE: Final = (
+    (date(2026, 12, 1), 800),
+    (date(2027, 3, 1), 550),
+    (date(2027, 6, 1), 275),
+    (date(2027, 9, 1), 0),
+)
+# Larger than the ratchet's 25 of permitted slack, so the ratchet's own arm is what refuses an
+# inflated target rather than this one having to guess at a motive.
+MILESTONE_MIN_CUT: Final = 150
 
 # Minimum characters of a real reason. "legacy" is not a register entry.
 MIN_REASON_LENGTH: Final = 40
 # Minimum characters of an anchor, so a short phrase cannot match half the file.
 MIN_ANCHOR_LENGTH: Final = 30
 
-SCOPE: Final = ("server", "migrations", "tests", "web/src")
+SCOPE: Final = ("server", "migrations", "tests", "web/src", ".github")
 KINDS: Final = ("hash_run", "docstring", "slash_run", "block")
+# `.github/` is in scope for its workflows: a `#` run there is prose nothing else in the gate
+# reads, which is how 15- and 28-line runs grew in two files no cap applied to.
+YAML_SUFFIXES: Final = {".yml", ".yaml"}
+SCOPED_SUFFIXES: Final = {".py", ".ts", ".tsx"} | YAML_SUFFIXES
 
 # Detected by MARKER, not by path: a path list rots the moment a generator's output moves,
 # whereas the marker travels with the file. Two generators, two spellings — TanStack Router
@@ -127,11 +153,7 @@ def _candidates() -> list[Path]:
         for path in sorted((ROOT / root).rglob("*")):
             if not path.is_file() or "__pycache__" in path.parts:
                 continue
-            if path.suffix not in {".py", ".ts", ".tsx"}:
-                continue
-            # A shipped revision is frozen history: its prose describes the day it ran and
-            # rewriting it would be a lie. `migrations/env.py` is live code and stays in scope.
-            if path.parent == ROOT / "migrations" / "versions":
+            if path.suffix not in SCOPED_SUFFIXES:
                 continue
             found.append(path)
     return found
@@ -271,6 +293,12 @@ def _own_line_runs(
     return comments
 
 
+def _yaml_runs(path: Path, lines: list[str]) -> list[Comment]:
+    """Line 1 starts the FILE HEADER, which takes the module cap; every other run is plain."""
+    runs = _own_line_runs(path, lines, "#", "hash_run", [])
+    return [replace(run, tier="module") if run.line == 1 else run for run in runs]
+
+
 def _block_comments(path: Path, source: str) -> tuple[list[Comment], list[range]]:
     """`/* ... */`, JSDoc included. Span is newlines + 1.
 
@@ -306,6 +334,8 @@ def collect() -> list[Comment]:
             comments.extend(docstrings)
             excluded = docstring_ranges + _multiline_string_ranges(tree)
             comments.extend(_own_line_runs(path, lines, "#", "hash_run", excluded))
+        elif path.suffix in YAML_SUFFIXES:
+            comments.extend(_yaml_runs(path, lines))
         else:
             blocks, block_ranges = _block_comments(path, source)
             comments.extend(blocks)
@@ -507,6 +537,51 @@ def test_the_ratchet_is_not_slack(allowlist: list[Entry]) -> None:
     )
 
 
+def _milestones_due(count: int, today: date) -> list[tuple[date, int]]:
+    """Milestones whose date has arrived and whose target `count` still exceeds."""
+    return [(due, target) for due, target in BASELINE_DEADLINE if today >= due and count > target]
+
+
+def test_the_baseline_backlog_is_burned_down_on_schedule(allowlist: list[Entry]) -> None:
+    """The deadline. A backlog the ratchet has merely frozen is not a backlog being cleared."""
+    baseline = [entry for entry in allowlist if entry.reason.startswith("BASELINE")]
+    due = _milestones_due(len(baseline), date.today())
+    formatted = "\n".join(
+        f"  by {when.isoformat()}: at most {target} BASELINE rows — "
+        f"trim or justify {len(baseline) - target} more"
+        for when, target in due
+    )
+    assert not due, (
+        f"{len(baseline)} BASELINE rows remain and a burn-down milestone has passed. Trim the "
+        f"comments, or replace the BASELINE reason with a real one, until the count fits:\n"
+        f"{formatted}"
+    )
+
+
+def test_the_deadline_schedule_demands_a_real_cut() -> None:
+    """The deadline's anti-slack arm: a target nobody has to meet is a date, not a deadline."""
+    dates = [due for due, _ in BASELINE_DEADLINE]
+    targets = [target for _, target in BASELINE_DEADLINE]
+    assert dates == sorted(set(dates)), "milestones must be in strictly increasing date order"
+    assert targets == sorted(set(targets), reverse=True), "each target must be below the last"
+    assert targets[-1] == 0, "the final milestone must retire the backlog, not park it"
+    assert targets[0] <= BASELINE_RATCHET - MILESTONE_MIN_CUT, (
+        f"the first target is {targets[0]}, which is not {MILESTONE_MIN_CUT} below the ratchet "
+        f"({BASELINE_RATCHET}). Raising a target only works by raising the ratchet, which "
+        f"test_the_ratchet_is_not_slack refuses — lower the target instead."
+    )
+
+
+def test_the_deadline_arm_goes_red_once_a_milestone_has_passed() -> None:
+    """Positive control. A deadline nobody has watched fire is a deadline nobody should trust."""
+    first_due, first_target = BASELINE_DEADLINE[0]
+    assert _milestones_due(first_target + 1, first_due) == [(first_due, first_target)]
+    assert _milestones_due(first_target, first_due) == []
+    last_due, _ = BASELINE_DEADLINE[-1]
+    assert _milestones_due(1, last_due) == [BASELINE_DEADLINE[-1]]
+    assert _milestones_due(0, last_due) == []
+
+
 # ---------------------------------------------------------------------------------
 # Meta-guards: the detectors and the scope, positive-controlled
 # ---------------------------------------------------------------------------------
@@ -537,6 +612,23 @@ def test_the_slash_and_block_detectors_do_not_double_count_or_eat_a_url() -> Non
     assert [comment.span for comment in blocks] == [4]
     slashes = _own_line_runs(Path("sample.ts"), source.splitlines(), "//", "slash_run", ranges)
     assert [comment.span for comment in slashes] == [2]
+
+
+def test_the_yaml_header_takes_the_module_cap_and_a_later_run_does_not(tmp_path: Path) -> None:
+    """Positive control on the two YAML tiers — a header is a file's decisions, a run is a why."""
+    lines = ["# one", "# two", "", "jobs:", "  # three", "  # four"]
+    found = _yaml_runs(tmp_path / "sample.yml", lines)
+    assert [(comment.tier, comment.cap, comment.span) for comment in found] == [
+        ("module", MODULE_DOCSTRING_CAP, 2),
+        ("plain", CAP, 2),
+    ]
+
+
+def test_the_workflows_are_in_scope_so_a_regrown_comment_run_is_caught() -> None:
+    """`.github/` was out of scope twice over, by root and by suffix — hence two long runs."""
+    scoped = {_relative(path) for path in scoped_files()}
+    assert ".github/workflows/ci.yml" in scoped
+    assert ".github/workflows/migrate.yml" in scoped
 
 
 def test_the_docstring_detector_counts_the_lines_a_reader_sees() -> None:
@@ -585,11 +677,12 @@ def test_exactly_the_known_generated_files_are_skipped() -> None:
     )
 
 
-def test_shipped_migrations_are_out_of_scope_but_migration_env_is_not() -> None:
-    """The one wholesale path skip, and the live file inside it that must NOT inherit it."""
+def test_every_migration_revision_is_in_scope_alongside_migration_env() -> None:
+    """There is no wholesale path skip left: a future revision is born budgeted, not exempt."""
     scoped = {_relative(path) for path in scoped_files()}
     assert "migrations/env.py" in scoped, "migrations/env.py is live code and stays in scope"
-    assert not any(path.startswith("migrations/versions/") for path in scoped)
+    revisions = sorted(path for path in scoped if path.startswith("migrations/versions/"))
+    assert len(revisions) >= 8, f"only {len(revisions)} revision(s) in scope: {revisions}"
 
 
 def test_the_allowlist_declares_only_known_kinds(allowlist: list[Entry]) -> None:

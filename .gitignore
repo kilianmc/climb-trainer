@@ -21,7 +21,8 @@ __pycache__/
 coverage/
 .DS_Store
 
-# working notes for the in-flight PR — a round-to-round handoff and its draft PR body,
-# neither of them a deliverable
-.claude/pr-*-state.md
-.claude/pr-*-body.md
+# local-only scratch: per-PR working notes, review aids, and the scripts that seed a local
+# database for a visual review — tooling for the review, never a deliverable
+.claude/pr-*.md
+.claude/*.py
+.claude/exercise-classification.md
