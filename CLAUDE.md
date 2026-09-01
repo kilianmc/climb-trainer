@@ -3231,8 +3231,9 @@ weakness**, the editor became sections rather than a second wizard, and there is
     hygiene.** Clearing the cache while a screen is still mounted makes its observer refetch:
     measured on the real logout path, **one extra `GET /api/profile`** issued after the token
     was dropped, which is a 401, which `refresh.ts` answers with a refresh POST — a **Postgres
-    write** on a path that previously did none. `queryObserver.js:445/451/461` gate every fetch
-    decision on `enabled`, so this closes it at the source. Re-measured after: zero.
+    write** on a path that previously did none. `queryObserver.js` gates every fetch decision on
+    `resolveQueryValue(options.enabled, query) !== false`, so this closes it at the source.
+    Re-measured after: zero.
 - **⚠️ Anything touching mutations, the query cache or a route-level query guard must be
   VERIFIED against `web/node_modules/@tanstack/query-core/` for the installed version** —
   not from memory, not from the docs, not from reasoning about what would be sensible. Three

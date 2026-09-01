@@ -83,7 +83,7 @@ const CITATIONS: readonly Citation[] = [
   },
   {
     file: 'queryObserver.js',
-    construct: 'resolveQueryBoolean(options.enabled, query) !== false',
+    construct: 'resolveQueryValue(options.enabled, query) !== false',
     why: 'Every fetch decision gates on `enabled`, which is what stops a cleared cache refetching after logout — a 401, a refresh POST, and a Postgres write.',
   },
   {

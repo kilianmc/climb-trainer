@@ -66,7 +66,7 @@ const PROFILE_STALE_TIME_MS = 10 * 60_000;
  * `GET /api/profile`**, issued after the token was dropped. In production that is a 401,
  * which `auth/refresh.ts` answers with a refresh POST, which is a **Postgres write** on a
  * path that previously did none. `queryObserver.js` gates every fetch decision on
- * `resolveQueryBoolean(options.enabled, query) !== false`, so this closes it at the source.
+ * `resolveQueryValue(options.enabled, query) !== false`, so this closes it at the source.
  *
  * The `_authed` guard means an authenticated screen never renders without a session anyway;
  * this covers the tick between the token going and the navigation landing.
