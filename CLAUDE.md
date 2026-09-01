@@ -87,7 +87,8 @@ Dependabot can never bump" · "Quality gate" · "Versioning".
 **Styling, the landing page or anything visual** — "UI design direction" · "Glassmorphism:
 considered and REJECTED" · "Accessibility is part of the design, not a later pass" · "The
 reading measure is a GRID COLUMN" · "Landing imagery — self-hosted, generated out-of-band, and
-URL-resolved at runtime" · "Container queries, not media queries" · "The full-height chain" ·
+URL-resolved at runtime" · "Container queries, not media queries" ·
+"The four screen sizes are NAMED, and they are container sizes" · "The full-height chain" ·
 "The plan timeline is measured in DAYS" · "The phase week table" ·
 "⚠️ The nav's thresholds are MEASUREMENTS, not breakpoints" · "Light and dark: the `data-theme`
 override" · "PWA — only the decisions a reader would otherwise reverse".
@@ -2750,6 +2751,33 @@ Both of these are structural, not stylistic. Do not "simplify" either.
     outside `.ct-app` and inherits nothing. `_tokens.scss` therefore exposes
     `@mixin declare`, included by both `.ct-app` and `.ct-update-bar`. A second `.ct-app`
     element is **not** the fix: that element's padding, max-width and background would apply.
+
+### The four screen sizes are NAMED, and they are container sizes
+
+`web/src/styles/_sizes.scss` carries **the table** — four names, four numbers, the px-to-rem
+arithmetic, and the widths that are deliberately NOT on the scale. **Read it there rather than
+duplicating it here**, exactly as with the nav's thresholds below: a table in two places is a
+table that disagrees with itself. What belongs in this file:
+
+- **They are `@container ct-app` sizes, not `@media` ones**, for the reason the section above
+  gives — in the federated mount the viewport is kilianmc.com's, so a 1400px browser would hand a
+  ~600px panel the big-screen layout. `designGuard.test.ts` now fails on any width `@media` in a
+  stylesheet **and on any width `matchMedia` in a shipped `.ts`/`.tsx`**, so that is a guard
+  rather than a promise.
+- **A Sass module, not a token.** A query prelude is parsed before custom properties are
+  substituted, so `min-inline-size: var(--ct-bp-tablet)` is invalid CSS and lightningcss rejects
+  it outright. Consumers interpolate `#{sizes.$desktop}`, as `_chrome.scss` already does with
+  `#{$icons}`.
+- **A width is a screen size only when it answers "how big a screen is this".** The nav's five
+  thresholds, and the `34rem` five files share, are MEASUREMENTS and stay where they are;
+  `_sizes.scss` names each exemption and its reason, so nobody "finishes the migration" later.
+- **`.ct-app__wide` is what layout-shaped content uses** — the plan timeline and the phase week
+  table, which are tables rather than prose. It lives in `_layout.scss` beside the measure and the
+  bleed column, and it is deliberately NOT a third grid column: `&__bleed` is a direct-child rule,
+  and the week table sits inside a `<details>`, whose light children are behind a shadow slot and
+  can never be grid items of anything. So it is intrinsic — `100cqi` against `.ct-app`, capped at
+  the big-screen size, and applied only from the desktop size up. `cqi` is the app's own width in
+  both mounts, which is why it is allowed where `50% - 50vw` is banned.
 
 ### ⚠️ The nav's thresholds are MEASUREMENTS, not breakpoints
 
