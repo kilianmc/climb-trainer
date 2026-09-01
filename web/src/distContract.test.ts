@@ -142,8 +142,8 @@ describe('the stylesheet the federated mount loads', () => {
 
   it('positive control: each detector sees its own violation, and the scope check is not vacuous', () => {
     // Every assertion above passes on an empty list, which is indistinguishable from a broken
-    // parser. These are the exact emissions that `@use 'global';` or `@use 'update-bar';` in
-    // `app.scss` would add to the file under test.
+    // parser. These are the exact emissions that `@use 'global';` in `app.scss` would add to
+    // the file under test.
     expect(hasRootSelector(':root{color-scheme:light dark}')).toBe(true);
     expect(hasFixedPosition('.x{position:fixed;inset:auto 0 0}')).toBe(true);
     expect(unscopedSelectors('body{margin:0}')).toEqual(['body']);

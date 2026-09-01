@@ -8,8 +8,7 @@ import { describe, expect, it } from 'vitest';
 import { stripComments } from './test/sourceScan';
 
 /**
- * Four PWA decisions CLAUDE.md records as non-negotiable, none of which anything else in the gate
- * could see. Modelled on `mf-contract.test.ts`, and for the same reason it gives: this is not
+ * Four PWA properties CLAUDE.md records, none of which anything else in the gate could see. Modelled on `mf-contract.test.ts`, and for the same reason it gives: this is not
  * config restated, it is a contract whose breach is **silent** — every check stays green and the
  * damage lands on a visitor's phone.
  *
@@ -18,8 +17,8 @@ import { stripComments } from './test/sourceScan';
  * - **Dropping the `/api` `navigateFallbackDenylist`** recreates deployment trap 2 inside the
  *   browser: the worker answers an API request with `index.html`, `res.ok` is true and
  *   `apiFetch` throws `NotJsonError` far from the cause.
- * - **`registerType: 'autoUpdate'`** calls `skipWaiting`, deleting the outdated precache while a
- *   tab is still open on it — that tab then 404s on its next lazily-loaded route chunk.
+ * - **`registerType: 'prompt'`** waits for the page to ask for the new worker, and nothing in the
+ *   app asks: there is no update prompt, so a precached build would never be taken up.
  * - **`injectRegister` other than `null`** either double-registers (we register from `main.tsx`)
  *   or emits an inline script the production CSP's `script-src 'self'` blocks outright.
  *
@@ -46,9 +45,9 @@ describe('the PWA contract in vite.config.ts', () => {
     expect(CONFIG).toContain('navigateFallback:');
   });
 
-  it('prompts for updates rather than swapping them in under an open tab', () => {
-    expect(hasPromptRegisterType(CONFIG)).toBe(true);
-    expect(hasAutoUpdate(CONFIG)).toBe(false);
+  it('activates a new worker itself rather than waiting to be asked', () => {
+    expect(hasAutoUpdate(CONFIG)).toBe(true);
+    expect(hasPromptRegisterType(CONFIG)).toBe(false);
   });
 
   it('injects no registration of its own, so `main.tsx` stays the only one', () => {
@@ -83,15 +82,15 @@ describe('positive control', () => {
     // This repo's stylesheets and this very config explain these rules in prose, so a detector
     // that read comments would report the explanation as the violation.
     const commented = [
-      "// registerType: 'autoUpdate',",
+      "// registerType: 'prompt',",
       '// runtimeCaching: [{ urlPattern: /^\\/api\\// }],',
       '/* runtimeCaching is forbidden */',
     ].join('\n');
 
-    expect(hasAutoUpdate(stripComments(commented))).toBe(false);
+    expect(hasPromptRegisterType(stripComments(commented))).toBe(false);
     expect(hasRuntimeCaching(stripComments(commented))).toBe(false);
-    // …and the real config's own prose is exactly that case: it names `runtimeCaching` and
-    // `autoUpdate` in comments explaining why neither is used.
+    // …and the real config's own prose is exactly that case: it names `runtimeCaching` in a
+    // comment explaining why it is not used.
     const raw = readFileSync(fileURLToPath(new URL('../vite.config.ts', import.meta.url)), 'utf8');
     expect(hasRuntimeCaching(raw)).toBe(true);
     expect(hasRuntimeCaching(stripComments(raw))).toBe(false);

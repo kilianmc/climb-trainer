@@ -47,8 +47,8 @@ import { stripComments } from '../test/sourceScan';
  *   `.ct-app` with a `ResizeObserver`; that is the app's own box in both mounts.
  * - **Inline `position: 'fixed'` in a component** — positioned against kilianmc.com's viewport in
  *   the federated mount, and structurally invisible to `distContract.test.ts`. `position: fixed`
- *   in a *stylesheet* is deliberately NOT scanned: it is legitimate in `update-bar.scss` and
- *   illegitimate only once it reaches the remote bundle, which is a question about the bundle.
+ *   in a *stylesheet* is deliberately NOT scanned: it is illegitimate only once it reaches the
+ *   remote bundle, which is a question about the bundle, not about a source file.
  *
  * `process.cwd()`, not `import.meta.url`: under jsdom the latter is an `http://localhost` URL.
  */
@@ -323,7 +323,7 @@ describe('positive control', () => {
   it('sees a violation in a NESTED source file, not just a top-level one', () => {
     // The recursion is the fix for a real blind spot, so it gets its own control: the scanned
     // set must contain something from a subdirectory of `src/`.
-    expect(components.map(([name]) => name)).toContain('ui/UpdateBar.tsx');
+    expect(components.map(([name]) => name)).toContain('ui/ThemeSwitch.tsx');
     expect(components.some(([name]) => name.includes('/'))).toBe(true);
   });
 });

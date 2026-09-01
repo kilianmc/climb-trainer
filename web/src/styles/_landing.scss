@@ -175,8 +175,8 @@
   // ── Iconography ───────────────────────────────────────────────────────────────────────────
   //
   // Sized in `em` so an icon tracks the label it sits beside; `flex-shrink: 0` because a squashed
-  // icon is worse than no icon. Icons here are always accompanied by text — `ui/icons.tsx` and
-  // CLAUDE.md's note on the update bar's "Later" button cover why icon-only is deferred.
+  // icon is worse than no icon. Icons here are always accompanied by text: a word carries an
+  // accessible name and a hittable width on its own, so icon-only controls stay deferred.
   &__icon {
     flex-shrink: 0;
     inline-size: 1.15em;

@@ -2,7 +2,6 @@
 // mount must not restyle kilianmc.com, so everything else lives in `app.scss` under `.ct-app`,
 // and this file is the ONLY one allowed `:root`, `html` or `body` selectors.
 @use 'tokens';
-@use 'mixins';
 
 :root {
   color-scheme: light dark;
@@ -13,8 +12,8 @@
 // background propagates to the canvas, which fixes it for the whole viewport.
 //
 // The token mixin is included rather than the hex repeated: `.ct-app` stays the declaration
-// site that matters, and this is the same standalone-only pattern `update-bar.scss` uses. Do
-// NOT read this as licence to declare tokens globally — this file cannot reach the shell.
+// site that matters, and this file is standalone-only. Do NOT read this as licence to declare
+// tokens globally — nothing here can reach the shell.
 body {
   @include tokens.declare;
 
@@ -36,8 +35,7 @@ body {
 //
 // `flex`, not `block-size: 100%` down the chain: a flexed item's resolved main size IS definite
 // for its children's percentages, so the app can still grow past the window without the
-// always-on scrollbar that a hard `100%` on `body` produces once the update bar reserves its
-// strip below it.
+// always-on scrollbar a hard `100%` on `body` produces.
 html {
   block-size: 100%;
 }
@@ -81,20 +79,4 @@ body:has(.ct-app[data-theme='dark']) {
   @include tokens.dark-values;
 
   color-scheme: dark;
-}
-
-// The update bar is `position: fixed`, so it does not push content: measured, it covered 32.5px
-// of the 44px "Open the demo" button at the bottom of the landing page, and `elementFromPoint` at
-// the button's centre returned the bar. This reserves exactly the bar's height while it is
-// showing, from the SAME expression the bar is built from — see `update-bar-metrics`, and note
-// that hand-deriving this is what left it 2px short of the bar's real 74px.
-//
-// `:has()` is inside the project's browser baseline (Chrome 105, Safari 15.4, Firefox 121; Vite
-// 8's `baseline-widely-available` target is above all three), and it keeps this JS-free — no
-// resize observer, no measured height in state. Safe here because `global.scss` is
-// standalone-only, which is also the only place `.ct-update-bar` can exist.
-body:has(.ct-update-bar__panel) {
-  @include mixins.update-bar-metrics;
-
-  padding-block-end: var(--ct-update-bar-total);
 }

@@ -29,16 +29,16 @@ read from (PR #10 onward), which is why it ships as data rather than as a commen
 
 The payload is user-independent and changes only when the seed does, i.e. per deploy —
 which is CLAUDE.md's argument for serving `/api/library?v=<buildId>` as
-`public, s-maxage=31536000, immutable`. Two differences here: there is no build id in the
-URL, so an immutable year-long cache would pin a stale vocabulary for a year after a seed
-edit; and this response requires a bearer token, so it has no business in a shared CDN
-cache even though its body would be identical for everyone. `private` keeps it in the
-one browser that asked, and an hour is long enough that a reload costs no database time.
+`public, s-maxage=31536000, immutable`. The difference here is the bearer token: this
+response requires one, so it has no business in a shared CDN cache even though its body
+would be identical for everyone. `private` keeps it in the one browser that asked, and an
+hour bounds the staleness inside one deploy. `?v=<buildId>` carries the rest: a new bundle
+asks a new URL, so it can never be answered out of a cache filled before its own deploy.
 """
 
-from typing import Final
+from typing import Annotated, Final
 
-from fastapi import APIRouter, Response
+from fastapi import APIRouter, Query, Response
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -68,6 +68,10 @@ router = APIRouter(prefix="/api/vocabulary", tags=["vocabulary"])
 # in the same commit, or drop the caching. Nothing enforces this but the comment and
 # `tests/test_vocabulary_api.py`, which pins the header so a change to it is deliberate.
 _CACHE_CONTROL: Final = "private, max-age=3600"
+
+# `?v=` is a cache-buster and nothing else: accepted, documented in the schema, never read.
+# Bounded for the same reason `server/library/routes.py` bounds its own.
+_BUILD_ID_MAX: Final = 64
 
 # The three tables whose columns are `id, key, name, description, sort_order`. Named so
 # `_reference_rows` can be written once instead of three times.
@@ -205,12 +209,20 @@ def _reference_rows(session: Session, table: _ReferenceTable) -> list[ReferenceR
 
 
 @router.get("")
-def read_vocabulary(response: Response, session: RequestSession) -> VocabularyResponse:
+def read_vocabulary(
+    response: Response,
+    session: RequestSession,
+    v: Annotated[str | None, Query(max_length=_BUILD_ID_MAX)] = None,
+) -> VocabularyResponse:
     """Everything onboarding and the loggers need to render a closed input.
 
     Authenticated like every other route (deny-by-default), but user-independent: nothing
     here is scoped by `user_id` because nothing here belongs to a user.
+
+    `v` is **declared and deliberately unused**, as on `GET /api/library`: it exists so the
+    client can put a build id in the URL and so the schema documents it.
     """
+    del v  # the cache key is the whole job; see the docstring
     response.headers["cache-control"] = _CACHE_CONTROL
 
     # ⚠️ `sort_order`, not `id` (issue #55, revision `0006`). A serial follows INSERT order,

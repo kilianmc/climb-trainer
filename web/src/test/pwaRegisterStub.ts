@@ -20,7 +20,7 @@
  * and two tests then asserted a deferral production does not have.
  *
  * This stub is NOT the real registration path: it is a stand-in for it. What it buys is that the
- * module graph under test is the real one (`pwa/updatePrompt.ts` → `virtual:pwa-register`) and
+ * module graph under test is the real one (`pwa/register.ts` → `virtual:pwa-register`) and
  * that the spy sees a call. The emitted service-worker URL, scope and plugin options are
  * asserted from the config and the built output instead — see `pwaContract.test.ts` and
  * `distContract.test.ts` — because the literals below are this file's, not the app's.

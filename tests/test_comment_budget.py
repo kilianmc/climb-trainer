@@ -35,7 +35,7 @@ CAPS: Final = {"module": MODULE_DOCSTRING_CAP, "wire": WIRE_CONTRACT_CAP, "plain
 # The ratchet. Entries whose reason starts with BASELINE are the un-reviewed backlog; new
 # comments obey the cap from day one, so this number may only ever go DOWN. Lower it in the
 # same PR that trims the comments — never raise it.
-BASELINE_RATCHET: Final = 996
+BASELINE_RATCHET: Final = 990
 
 # The DEADLINE. The ratchet stops the backlog GROWING; nothing stops it sitting, and a register
 # where every row still reads "not yet reviewed" a year from now is a freeze, not a cleanup. Each

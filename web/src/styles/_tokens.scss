@@ -1,10 +1,8 @@
 // Every design token, and it is a MIXIN rather than a rule on purpose.
 //
-// Two elements need the tokens and only one of them is `.ct-app`: the update prompt is
-// rendered from `main.tsx`, as a SIBLING of the router (it has to be — the module that
-// registers the service worker may never be reachable from the route tree, see
-// `pwa/updatePrompt.ts`), so it sits OUTSIDE `.ct-app` and inherits nothing. The two
-// alternatives are both wrong: a second `.ct-app` element would apply that element's
+// Two elements need the tokens and only one of them is `.ct-app`: `global.scss` paints the
+// standalone document canvas from `body`, which is outside `.ct-app` and inherits nothing. The
+// two alternatives are both wrong: a second `.ct-app` element would apply that element's
 // padding, max-width and background, and `:root` would land in kilianmc.com's document
 // in the federated mount.
 //
@@ -173,12 +171,10 @@
  * (`light-dark()` and a bare `color-scheme` would avoid it and are outside this project's
  * `baseline-widely-available` target — Chrome 123 against a Chrome 111 floor.)
  *
- * ⚠️ **Included by `.ct-app` ONLY, never by `.ct-update-bar`.** `declare` is shared with the
- * update bar because that element sits outside `.ct-app` and inherits nothing; this is not,
- * because nothing sets `data-theme` on it — it is rendered from `main.tsx`, outside the router.
- * So the update prompt keeps following the OS, and a user on a manual override would see it in
- * the other scheme. Deliberate: the alternative is threading app state into the one subtree
- * that must not depend on the route tree (see `pwa/updatePrompt.ts`).
+ * ⚠️ **Included by `.ct-app` ONLY, never by `global.scss`'s `body`.** `declare` is shared with
+ * that rule because the document canvas sits outside `.ct-app` and inherits nothing; this is
+ * not, because nothing sets `data-theme` there. `global.scss` bridges the canvas itself with
+ * `body:has(.ct-app[data-theme…])`, which is legal only in that standalone-only file.
  */
 @mixin overrides {
   &[data-theme='light'] {
@@ -203,7 +199,7 @@
 
   // Honest depth: three steps, each saying which surface is above which. No fourth "hero" step
   // and nothing decorative — a shadow here means real elevation. Step 1 is the card, step 2 the
-  // persistent nav above it, step 3 the floating update bar.
+  // persistent nav above it, step 3 the nav's burger panel.
   //
   // The alphas are MEASURED, not guessed: composited over `--ct-bg`, step 1 is 1.22:1 against
   // the bare page, so the edge of a card is actually visible. At the 0.06 it started with it was
@@ -220,8 +216,8 @@
     // three GPU-costing steps that rendered as nothing.
     //
     // Dark elevation therefore rests entirely on the surface scale and the hairlines, which is
-    // decidable and measurable: surface-1 over bg is a real step, and the floating bar carries
-    // `--ct-border-strong` (4.2:1 non-text) instead of a shadow nobody can see.
+    // decidable and measurable: surface-1 over bg is a real step, and a floating surface leans
+    // on a hairline (`--ct-border-strong` is 4.2:1 non-text) rather than a shadow nobody sees.
     --ct-shadow-1: none;
     --ct-shadow-2: none;
     --ct-shadow-3: none;
