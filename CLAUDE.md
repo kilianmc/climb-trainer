@@ -2505,7 +2505,7 @@ Two notes for whoever touches it:
 | `_card.scss` | the card surface and its `@container` rules |
 | `_bento.scss` | the bento grid's named areas |
 | `_chrome.scss` | nav (the brand, the three regimes and their measured thresholds), status renders, the action bar that GROUPS but anchors nothing |
-| `_session.scss` | the session player: the height chain's app half, the phase fills, the item list |
+| `_session.scss` | the session player: the height chain's app half, the phase fills, the item list; plus the brief's sections and this week's strip, which reuses `_plan.scss`'s week table |
 | `_plan.scss` | the plan calendar: the phase timeline's day ruler and the phase week table |
 | `_landing.scss` | the landing page's photographic bands, detail split and icon rules |
 | `app.scss` | the `@use` entry and the `.ct-app` root; imported from `routes/__root.tsx` |
@@ -3668,15 +3668,38 @@ proves it against real Postgres, with every guard sabotaged and recorded;
   tap that said it would not happen.
 - **Partial completion is a DERIVED QUERY, not a column.** `status = 'completed'` means "the
   user pressed Finish", not "everything got done"; "I did 2 of 3 parts" is a join from
-  `logged_set.prescribed_set_id` to `session_block`, counting blocks with at least one logged
-  set. No column, because the adherence rule will be tuned — the same argument
-  `PlannedSession`'s own docstring already makes.
+  `logged_set.prescribed_set_id` to `session_block`, counting the blocks whose **every**
+  prescribed set has a logged set. No column, because the adherence rule gets tuned — it already
+  was, below — the same argument `PlannedSession`'s own docstring already makes.
+  - ⚠️ **AN ITEM IS DONE OR NOT** (Kilian, #82: *"if they skipped an item it is not done, if they
+    didn't start it is not done"*, and *"I don't care if the user skipped, or didn't complete
+    something, it is the same to me"*). One logged set used to carry its whole block, so a block
+    entered, flushed once and then **skipped** read done for good — `logged_set` rows cannot be
+    deleted (#81). **It still needs no column and no item state on the server**: the client cannot
+    mark an item done without logging every set it prescribes (`useSessionRun.completeItem` mints
+    them all, the clock mints them as the phases run, and `skipItem` drops only what was never
+    sent), so "all its sets are logged" IS "the item is done".
+  - **Blocks that cannot be logged are out of the DENOMINATOR** — otherwise one of them pins its
+    session under 100% for ever, and 100% is what closes a session. ⚠️ Measured 2026-09-02:
+    `session_block.exercise_id` is **NOT NULL**, so on a persisted plan the only such shape is a
+    block with no `prescribed_set` rows at all, and there are none. The exclusion is defensive
+    here and load-bearing on the CLIENT, where a previewed plan really has no `exercise_id` and
+    `session/today.ts::loggableSets` is the same rule.
 - **`GET /api/sessions/completion` is where that query lives (#85), and a SEPARATE endpoint is
   the point.** `GET /api/plans/active` is already the heaviest payload in the app and only
   `/plan` reads these numbers, so they are fetched beside it rather than added to it. **One
   statement for the whole window whatever the plan's length**, `from`/`to` both required with
   the span capped, and the same ten-minute `staleTime` as the plan read — so it cannot wake Neon
   more often than the screen already does. `tests/test_sessions_completion.py` pins all three.
+  - ⚠️ **`plan_id` is OPTIONAL, and omitting it is the DOCUMENTED behaviour rather than a
+    fallback**: no plan named, every plan of this climber's with a session in the window comes
+    back, which is safe because the response is keyed by `planned_session_id`. Named, only that
+    plan's. The reason it exists is the ROW CAP — the cap counts *block* rows and `_fold_sessions`
+    drops the last session when it is hit, so rows from plans the climber regenerated away can
+    push live sessions out of the answer, which reads as a real session inexplicably reporting no
+    completion. ⚠️ **`Plan.user_id` is ANDed with it, never replaced by it**, so a stranger's
+    `plan_id` yields nothing rather than leaking; and the client's **query key carries the id**
+    (`plan/completion.ts`), or a response cached for one plan is served for the next.
   - ⚠️ **A logged set with null `actual_*` values is a REAL completion** — PR #15a's "I did this
     myself" mints exactly those — so nothing on this path may filter them out. `percent` is
     `null`, never 0, for a session with no blocks: there was nothing to have done.
@@ -3861,7 +3884,7 @@ Recorded here because each is a specific bug that a naive implementation ships:
   directions at once — the truncated stem reads as a class with no rule, the four real modifiers
   as rules with no markup — for a decision worth no allowlist row.
 - **`ct:run` IS the run record**, and which of brief/player/summary shows is read off it rather
-  than off a URL or component state. Versioned by `RUN_VERSION` (**4**) and **discarded on a bump,
+  than off a URL or component state. Versioned by `RUN_VERSION` (**5**) and **discarded on a bump,
   never migrated**: a run lives for one session, so decoding a stale shape buys a day at most and
   risks a wrong clock. Two more keys, both preferences: `ct:sound`, `ct:keepScreenOn`.
 - **Pause FREEZES the clock rather than stopping it** — `clockAt(run, now)` is
@@ -3877,6 +3900,14 @@ Recorded here because each is a specific bug that a naive implementation ships:
   that quarantines the whole flush. ⚠️ Deriving the offset from an attempt counter was a **real
   bug**: marking an item done by hand issues ordinals without incrementing it, so a *first* start
   walked straight into used ones.
+- **⚠️ Which sets a block OWNS is `prescribed_set_id` membership, never an ordinal window.**
+  Because that ceiling is global, a block worked out of order holds ordinals inside another
+  block's natural range: press Done by hand on block 3 of an untouched session and its sets are
+  numbered 1..4, so `dropUnflushed` — which filtered `pending` on a `firstSetIndex`..`lastSetIndex`
+  range — deleted them the moment the climber restarted or skipped **block 1**. Sets the climber
+  really recorded, discarded with no message, and only while they were unsent, i.e. offline or on
+  a slow network. The ordinal machinery is not the bug and must not change; identification is.
+  Acked sets are still left alone, and a set with a null `prescribed_set_id` is nobody's block.
 - **Marking an item done by hand LOGS its prescribed sets, with null measurements** —
   `client_uuid`, `exercise_id`, `prescribed_set_id`, `set_index`, `completed_at` and nothing else,
   because inventing numbers nobody measured is worse than recording none. Partial completion is the
@@ -3885,6 +3916,35 @@ Recorded here because each is a specific bug that a naive implementation ships:
 - **The finish is not reversible SERVER-side.** "Go back" on the summary restores the local run and
   issues **zero** requests: `planned_session.status` never moves backwards, so `finished: false`
   would be a Neon wake bought to pretend otherwise. Re-finishing is idempotent.
+- **⚠️ COMPLETION IS THE BLOCKS AT 100%, NEVER THE FINISH BUTTON** (#82, Kilian: *"Finish just
+  finishes. What says it is completed is the inside items"*). So an offer on the brief closes only
+  at 100%, **the same gate whichever day it sits on — past, today or still to come** — and
+  `session/week.ts::offerView` gates Start and the card's badge on that one figure. **At 100% the
+  offer is GONE, card included** (Kilian: *"does not appear in past / current / next session and
+  does not let you restart"*): `week.ts::sessionClosed` is the ONE predicate, the pending list and
+  the next-session search skip over a closed session, and today's leaves the `SessionDone` note in
+  its card's place. ⚠️ **The week strip is the exception and keeps every day**, finished ones
+  included, with its own percentage and word — it is the calendar, not an offer.
+  It reads the **run record** (`session/runStore.ts::sessionCompletion`) ahead of
+  the server badge, which is ten minutes stale between Finish and the refetch; the badge itself
+  comes from `week.ts::sessionReport`, which reads a day still in reach for **progress** —
+  `done_block_ids` and `percent`, so a reload keeps today's logged parts on screen — and a settled
+  day for **misses**. ⚠️ **No user-facing word may come from `status` or the response's `state`**:
+  a session finished with every part skipped read as a result in the week calendar, which is the
+  defect. `plan/completion.ts::hasResult` is where that split lives, once. The one thing that
+  closes Start *below* 100% is **unsent sets**: `start` mints a run under a new key and REPLACES
+  the record, so that offer routes to `UnsavedRun` instead. A restart needs no server change — a
+  fresh `client_uuid` is a second `activity`, and a block's prescribed sets count as covered
+  across all of them.
+  ⚠️ **A restart SEEDS its items from `done_block_ids`** — `plan/completion.ts::doneBlockIndexes`
+  maps them onto `RunRecord.preDoneBlockIndexes`, and those items start **`completed`**, because a
+  session three-quarters logged used to come back presented as untouched. They **mint no set**:
+  the rows are already written under the earlier `client_uuid`, and faking `LoggedSetInput`s to
+  make the arithmetic work would show sets carrying no measured value as logged in *this* attempt.
+  So `sessionCompletion` counts them separately — without that, a restart that finished the last
+  part would report a quarter of the session while the server reported all of it, and since
+  `offerView` prefers the record to the badge the card would keep a finished session on screen as
+  unfinished. A pre-done item stays **re-enterable**, on the same ordinal rules as any restart.
 - **The summary acknowledgement is on the RECORD** (`summaryClosedAtEpochMs`), not in React state:
   a route component unmounts on every navigation, and as a `useState` flag it resurrected the RPE
   prompt.

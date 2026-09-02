@@ -272,11 +272,17 @@ function urlOf(input: unknown): string {
   return input instanceof Request ? input.url : '';
 }
 
+/** Every completion read the screen issued, so the PLAN it asked about is assertable. */
+let completionAsks: URL[] = [];
+
 function stubFetch() {
+  completionAsks = [];
   vi.stubGlobal(
     'fetch',
     vi.fn((input: unknown) => {
-      const path = new URL(urlOf(input), 'http://localhost').pathname;
+      const url = new URL(urlOf(input), 'http://localhost');
+      const path = url.pathname;
+      if (path === '/api/sessions/completion') completionAsks.push(url);
       if (path === '/api/vocabulary') return Promise.resolve(json(VOCABULARY));
       if (path === '/api/profile') return Promise.resolve(json(PLANNABLE));
       if (path === '/api/library') return Promise.resolve(json(LIBRARY));
@@ -341,6 +347,16 @@ afterEach(() => {
 beforeEach(() => {
   localStorage.removeItem(PHASE_STORAGE_KEY);
   stubFetch();
+});
+
+it('asks the completion read for the ACTIVE PLAN by id, not for its dates alone', async () => {
+  renderPlan();
+  expect(await screen.findByRole('button', { name: 'Build a different plan' })).toBeInTheDocument();
+  await settle();
+
+  // ⚠️ Without it, every plan the climber ever regenerated inside these dates comes back and
+  // spends the response's row cap, which can push live sessions out of the answer entirely.
+  expect(completionAsks.map((url) => url.searchParams.get('plan_id'))).toEqual([String(PLAN_ID)]);
 });
 
 it('gives a 100% session badge its OWN full band inside a 75% phase', async () => {

@@ -74,6 +74,7 @@ function emptyRun(): RunRecord {
     plannedSessionId: 5001,
     startedAtEpochMs: START,
     timeline: [phase(1)],
+    preDoneBlockIndexes: [],
   });
 }
 

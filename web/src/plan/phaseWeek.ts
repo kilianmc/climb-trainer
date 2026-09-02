@@ -73,14 +73,17 @@ export const WEEKDAY_LABELS: readonly string[] = Array.from({ length: WEEKDAY_CO
 
 /* One LINE per block, in `order_index` order — the same blocks in the same order as the week
    card below it. Dropping a repeated aspect would make the two disagree about the day. */
+export function sessionAspects(sessions: readonly PlanSession[]): PhaseWeekAspect[] {
+  return sessions.flatMap((session) =>
+    [...session.blocks]
+      .sort((a, b) => a.order_index - b.order_index)
+      .map((block) => aspect(block.aspect_key)),
+  );
+}
+
+/* Shared with `session/week.ts`, which asks the same question of a DATE rather than a weekday. */
 function dayAspects(weekday: number, sessions: readonly PlanSession[]): PhaseWeekAspect[] {
-  return sessions
-    .filter((session) => session.weekday === weekday)
-    .flatMap((session) =>
-      [...session.blocks]
-        .sort((a, b) => a.order_index - b.order_index)
-        .map((block) => aspect(block.aspect_key)),
-    );
+  return sessionAspects(sessions.filter((session) => session.weekday === weekday));
 }
 
 export function phaseWeeks(mesocycle: PlanMesocycle): PhaseWeek {

@@ -40,6 +40,13 @@ const SECOND = 1000;
 /** A second block, for the focus-mode test only: every other test wants ONE item, so that the
  *  set ordinals it asserts belong to the block it is watching. */
 let blockCount = 1;
+/** `session_block.id` per block, DISTINCT: `done_block_ids` joins on it, so the fixture's
+ *  shared default would mark every part done off one. */
+const BLOCK_IDS = [101, 102, 103] as const;
+/** Which of those blocks the SERVER already holds every set of. Empty for every test but the
+ *  two about a restart, which is the only place the completion read matters here. */
+let doneBlockIds: readonly number[] = [];
+
 /** One UNTIMED item instead — a circuit ends when the climber falls off, so its effort compiles
  *  to an `open` phase, which is the only phase "Didn't finish it" exists for. */
 let openItem = false;
@@ -49,13 +56,20 @@ function plan() {
   if (openItem) {
     return makePlan([
       makeSession(
-        [makeBlock({ protocol_kind: 'circuit', sets: [makeSet({ id: 500, set_index: 1 })] })],
+        [
+          makeBlock({
+            id: BLOCK_IDS[0],
+            protocol_kind: 'circuit',
+            sets: [makeSet({ id: 500, set_index: 1 })],
+          }),
+        ],
         TODAY,
       ),
     ]);
   }
   const blocks = [
     makeBlock({
+      id: BLOCK_IDS[0],
       protocol_kind: 'max_hang',
       exercise_id: 11,
       rest_between_sets_seconds: 20,
@@ -67,6 +81,7 @@ function plan() {
   if (blockCount > 1) {
     blocks.push(
       makeBlock({
+        id: BLOCK_IDS[1],
         order_index: 1,
         exercise_key: 'front_lever',
         exercise_id: 12,
@@ -77,6 +92,7 @@ function plan() {
   if (blockCount > 2) {
     blocks.push(
       makeBlock({
+        id: BLOCK_IDS[2],
         order_index: 2,
         exercise_key: 'lock_offs',
         exercise_id: 13,
@@ -124,6 +140,10 @@ function stubFetch(answers: PutAnswer[] = []) {
       if (path === '/api/library') return Promise.resolve(json(LIBRARY));
       if (path === '/api/vocabulary') return Promise.resolve(json(makeVocabulary()));
       if (path === '/api/plans/active') return Promise.resolve(json({ plan: plan() }));
+      // #82: the brief's week strip and pending list read this, and a restart seeds its items
+      // from `done_block_ids`. Empty unless a test set one — one session, on today.
+      if (path === '/api/sessions/completion')
+        return Promise.resolve(json({ as_of: TODAY, sessions: completionRows() }));
       if (path.startsWith('/api/sessions/') && method === 'PUT') {
         const uuid = path.slice('/api/sessions/'.length);
         const body = JSON.parse(bodyText(init)) as SessionLogRequest;
@@ -134,6 +154,24 @@ function stubFetch(answers: PutAnswer[] = []) {
       return Promise.reject(new Error(`unexpected request: ${method} ${path}`));
     }),
   );
+}
+
+/** ⚠️ `percent` stays UNDER 100 whatever is pre-done: at 100% the offer closes and there is no
+ *  Start button left to press (`week.ts::sessionClosed`). */
+function completionRows() {
+  if (doneBlockIds.length === 0) return [];
+  return [
+    {
+      block_count: blockCount,
+      blocks_done: doneBlockIds.length,
+      done_block_ids: doneBlockIds,
+      percent: Math.round((doneBlockIds.length * 100) / blockCount),
+      planned_session_id: 5001,
+      scheduled_on: TODAY,
+      state: 'pending',
+      status: 'planned',
+    },
+  ];
 }
 
 /** A request body as the client actually serialised it. */
@@ -209,6 +247,16 @@ async function startedSession(scope: 'user' | 'demo' = 'user') {
   return view;
 }
 
+/** ⚠️ Started only ONCE the completion read has landed: the brief renders before it, and a
+ *  Start pressed first would seed the run from no marks at all — see `doneBlockIds`. */
+async function startedSessionWithServerParts() {
+  const view = renderSession();
+  await until(() => document.querySelector('.ct-app__terms > li[data-done="done"]') !== null);
+  fireEvent.click(screen.getByRole('button', { name: 'Start session' }));
+  await settle();
+  return view;
+}
+
 /** …plus the one item entered, which is what puts a clock on the screen. */
 async function started(scope: 'user' | 'demo' = 'user') {
   const view = await startedSession(scope);
@@ -226,6 +274,7 @@ const THIRD = 'Lock offs';
 beforeEach(() => {
   clock = START;
   blockCount = 1;
+  doneBlockIds = [];
   openItem = false;
   window.localStorage.clear();
   setRun(null);
@@ -413,7 +462,7 @@ it('shows the completion percentage, and a skipped part does not count toward it
   // ⚠️ Kilian: "if i skipped one part, it should not be 100%." Two of three blocks logged a set,
   // which is the server's own join — so #64's plan-screen figure will agree with this one.
   expect(screen.getByText(/67% of the session/i)).toBeInTheDocument();
-  expect(screen.getByText(/2 of 3 parts logged at least one set/i)).toBeInTheDocument();
+  expect(screen.getByText(/2 of 3 parts fully logged/i)).toBeInTheDocument();
   // The skipped item logged nothing at all, which is what keeps the number honest.
   expect(puts().flatMap((body) => body.sets.map((set) => set.prescribed_set_id))).toEqual([
     501, 502, 503, 600,
@@ -447,25 +496,86 @@ it('never reuses a set ordinal across a manual completion and a restart', async 
   expect(new Set(sent).size).toBe(6);
 });
 
-it('turns the whole session card green once the session is finished', async () => {
+/** ⚠️ #82's last defect, in Kilian's words: "when I click on start again, it shows all 4 of them
+ *  as 'not started'. That is wrong — the first 3 should be shown in green and as 'completed'." */
+it('SEEDS an item the server already holds as COMPLETED, and the summary counts it', async () => {
+  blockCount = 3;
+  doneBlockIds = [BLOCK_IDS[0]];
+  await startedSessionWithServerParts();
+
+  const rows = [...document.querySelectorAll<HTMLElement>('.ct-app__item')];
+  // The tone is `data-state`'s, and the WORD is the same `STATE_LABEL` a live completion reads.
+  expect(rows.map((row) => row.getAttribute('data-state'))).toEqual([
+    'completed',
+    'pending',
+    'pending',
+  ]);
+  expect(within(rows[0] as HTMLElement).getByText('Completed')).toBeInTheDocument();
+  // Nothing was fabricated to make that state: the sets are on the server under an earlier run.
+  expect(getRun()?.logged).toEqual([]);
+  expect(getRun()?.pending).toEqual([]);
+
+  fireEvent.click(screen.getByRole('button', { name: `I did ${THIRD} myself` }));
+  await settle();
+  fireEvent.click(screen.getByRole('button', { name: 'Finish' }));
+  await settle();
+
+  // ⚠️ The WHOLE session, not this attempt: one part logged here plus the one already held.
+  expect(screen.getByText(/67% of the session/i)).toBeInTheDocument();
+  expect(screen.getByText(/2 of 3 parts fully logged/i)).toBeInTheDocument();
+  expect(puts().flatMap((body) => body.sets.map((set) => set.prescribed_set_id))).toEqual([700]);
+});
+
+/** A pre-done part stays RE-ENTERABLE — redoing one is fine (Kilian) — and behaves exactly as a
+ *  restart does: `runs` is still 0 on it, so the offset has to come off the CEILING alone. */
+it('RE-ENTERS a pre-done item, minting an ordinal no set in the run holds', async () => {
+  blockCount = 3;
+  doneBlockIds = [BLOCK_IDS[0]];
+  await startedSessionWithServerParts();
+
+  // An ordinal is minted BEFORE the redo, so a first entry that walked the block's own 1..N
+  // would collide with it — the bug `setIndexOffset` exists for.
+  fireEvent.click(screen.getByRole('button', { name: `I did ${THIRD} myself` }));
+  await settle();
+  // ⚠️ …and that ordinal, 1, sits inside the FIRST block's own natural range, which is exactly
+  // the set an ordinal window deleted on this press. `prescribed_set_id` is what says whose.
+  fireEvent.click(screen.getByRole('button', { name: `Restart ${ITEM}` }));
+  await settle();
+  expect(getRun()?.items[0]?.status).toBe('running');
+  // Past all three of its hangs, which is what puts the session-level Finish back on screen.
+  await at(90);
+  fireEvent.click(screen.getByRole('button', { name: 'Finish' }));
+  await settle();
+
+  const sent = puts().flatMap((body) => body.sets.map((set) => set.set_index));
+  expect(sent).toEqual([1, 2, 3, 4]);
+  expect(new Set(sent).size).toBe(4);
+  // Two parts of three: the one re-run (which the server already held) and the one done by
+  // hand. The redo re-sent nothing the server has.
+  expect(screen.getByText(/2 of 3 parts fully logged/i)).toBeInTheDocument();
+});
+
+it('⚠️ takes the whole session card away once every item is done, and says to rest', async () => {
   renderSession();
   await until(() => screen.queryByRole('button', { name: 'Start session' }) !== null);
   const card = () => document.querySelector('.ct-app__card');
-  expect(card()).not.toHaveAttribute('data-state');
+  expect(card()).not.toBeNull();
 
   fireEvent.click(screen.getByRole('button', { name: 'Start session' }));
   await settle();
   fireEvent.click(screen.getByRole('button', { name: `Start ${ITEM}` }));
   await settle();
+  // Past the whole block: the clock logs all three sets, which is what makes the item DONE.
   await at(90);
   fireEvent.click(screen.getByRole('button', { name: 'Finish' }));
   await settle();
   fireEvent.click(screen.getByRole('button', { name: 'Done' }));
   await settle();
 
-  // Off `data-*` like the item rows, never an interpolated class name — and the sentence beside
-  // it carries the same fact, because colour is never the only channel.
-  expect(card()).toHaveAttribute('data-state', 'completed');
+  // Kilian, #82: a session done in full "does not appear in past / current / next session and
+  // does not let you restart". The note in its place says what to do instead.
+  expect(card()).toBeNull();
+  expect(screen.queryByRole('button', { name: 'Start session' })).toBeNull();
   expect(screen.getByText(/already finished this session/i)).toBeInTheDocument();
 });
 
@@ -511,12 +621,13 @@ it('shows the completion percentage on the FINISHED CARD, matching the summary',
   expect(summary).toBe('67');
   expect(screen.queryByRole('heading', { name: 'Session done' })).toBeNull();
   expect(percent()).toBe(summary);
-  expect(sessionCard()).toHaveTextContent(/2 of 3 parts logged at least one set/);
-  // One `sessionCompletion`, so #64's plan-screen figure agrees with both of these too.
-  expect(sessionCard()).toHaveAttribute('data-state', 'completed');
+  expect(sessionCard()).toHaveTextContent(/2 of 3 parts fully logged/);
+  // ⚠️ …and 67% is NOT finished (#82): the card is still on screen, still startable. Only 100%
+  // takes it away, so a card can never look done over two thirds nobody did.
+  expect(screen.getByRole('button', { name: 'Start it again' })).toBeInTheDocument();
 });
 
-it('lists every item with its final state on the finished card, and starts nothing', async () => {
+it('lists every item with its final state on the finished card, and offers it again', async () => {
   await finishedSession();
 
   const rows = [...sessionCard().querySelectorAll('.ct-app__item')];
@@ -531,11 +642,14 @@ it('lists every item with its final state on the finished card, and starts nothi
   expect(rows[2]).toHaveTextContent(new RegExp(`${THIRD}.*Skipped`, 's'));
   expect(rows[2]?.getAttribute('data-state')).not.toBe(rows[0]?.getAttribute('data-state'));
 
-  // Read-only, all of it: the session is over and stays over, so there is nothing to press.
+  // Read-only INSIDE the card: the rows are a record of the run, not controls on it, and the
+  // run itself is over. Whether the SESSION is over is a different question — see below.
   expect(within(sessionCard()).queryAllByRole('button')).toEqual([]);
   for (const name of ['Start session', `Start ${THIRD}`, `Restart ${ITEM}`, 'Finish']) {
     expect(screen.queryByRole('button', { name })).toBeNull();
   }
+  // ⚠️ The one control that IS there: at 67% the session is still owed, so it can be run again.
+  expect(screen.getByRole('button', { name: 'Start it again' })).toBeInTheDocument();
 });
 
 it('marks an item skipped, and a skipped item logs no sets at all', async () => {

@@ -75,6 +75,9 @@ function stubFetch(plan: PlanTree, vocabulary: Vocabulary | null) {
         .pathname;
       if (path === '/api/library') return Promise.resolve(json(LIBRARY));
       if (path === '/api/plans/active') return Promise.resolve(json({ plan }));
+      // #82: the week strip's figures. Empty, so no day is tinted and nothing is owed.
+      if (path === '/api/sessions/completion')
+        return Promise.resolve(json({ as_of: TODAY, sessions: [] }));
       if (path === '/api/vocabulary') {
         return vocabulary === null
           ? new Promise(() => undefined)
@@ -126,11 +129,19 @@ it('names the week and the block of today’s session, with the phase copy discl
   renderSession();
 
   expect(await screen.findByRole('heading', { name: /Week 6/ })).toBeTruthy();
-  expect(badges()).toEqual(['Week: 6 of 28', 'Block: Max strength · wk 5–7']);
-  expect(screen.getByText('Why this phase')).toBeTruthy();
-  expect(screen.getByText('what max strength is')).toBeTruthy();
+  // Four badges, not two, since #82: the Next session card is offered on a training day too, so
+  // week 7's reminder is on screen under it — today's is still FIRST and still today's.
+  expect(badges()).toEqual([
+    'Week: 6 of 28',
+    'Block: Max strength · wk 5–7',
+    'Week: 7 of 28',
+    'Block: Max strength · wk 5–7',
+  ]);
+  // One per card offered, for the same reason. TODAY's is the first, and it is the one asserted.
+  const disclosures = screen.getAllByText('Why this phase');
+  expect(screen.getAllByText('what max strength is')).toHaveLength(disclosures.length);
   // Collapsed: 600 characters of prose do not belong above the Start button.
-  expect(screen.getByText('Why this phase').closest('details')?.open).toBe(false);
+  expect(disclosures[0]?.closest('details')?.open).toBe(false);
 });
 
 it('⚠️ on a rest day describes the NEXT session’s block, not the deload week today is in', async () => {

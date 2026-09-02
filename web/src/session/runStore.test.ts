@@ -54,6 +54,7 @@ function seeded() {
     plannedSessionId: 5001,
     startedAtEpochMs: START,
     timeline: [phase],
+    preDoneBlockIndexes: [],
   });
 }
 
@@ -76,9 +77,10 @@ describe('parseRun', () => {
     expect(parseRun('[]')).toBeNull();
   });
 
-  it('yields no run for a record written by another version', () => {
-    const record = { ...seeded(), v: RUN_VERSION + 1 };
-    expect(parseRun(JSON.stringify(record))).toBeNull();
+  it('yields no run for a record written by another version, the PREVIOUS one included', () => {
+    for (const v of [RUN_VERSION + 1, RUN_VERSION - 1]) {
+      expect(parseRun(JSON.stringify({ ...seeded(), v }))).toBeNull();
+    }
   });
 
   it.each([
@@ -89,6 +91,9 @@ describe('parseRun', () => {
     ['a cursor that is not numbers', { cursor: { phaseIndex: 'first', phaseStartedAtEpochMs: 0 } }],
     ['a pending entry with no uuid', { pending: [{ set_index: 1 }] }],
     ['a non-finite start', { startedAtEpochMs: Number.NaN }],
+    // The v4 shape, which had no such field: `JSON.stringify` drops it, as a v4 record does.
+    ['no pre-done list at all', { preDoneBlockIndexes: undefined }],
+    ['a pre-done list of junk', { preDoneBlockIndexes: ['first'] }],
   ])('yields no run for %s', (_label, override) => {
     expect(parseRun(JSON.stringify({ ...seeded(), ...override }))).toBeNull();
   });
@@ -162,8 +167,8 @@ describe('the store', () => {
   });
 });
 
-/** The SERVER's derived query, reproduced here so the two can never disagree: the join
- *  `logged_set.prescribed_set_id → session_block`, counting blocks with at least one set. */
+/** The SERVER's derived query, reproduced here so the two can never disagree — a block counts
+ *  once EVERY prescribed set of it has a logged set (#82). Them disagreeing IS that issue. */
 describe('sessionCompletion', () => {
   /** Three one-set blocks, so each block's share of the session is a clean third. */
   function threeBlocks() {
@@ -188,6 +193,7 @@ describe('sessionCompletion', () => {
       plannedSessionId: 5001,
       startedAtEpochMs: START,
       timeline: compileProtocol(plan, makeLibrary()),
+      preDoneBlockIndexes: [],
     });
   }
 
@@ -216,9 +222,129 @@ describe('sessionCompletion', () => {
     expect(sessionCompletion(run)).toEqual({ blocksDone: 2, blockCount: 3, percent: 67 });
   });
 
-  it('counts a block ONCE however many of its sets landed', () => {
+  it('counts a block ONCE however many rows landed against its one set', () => {
     const run = { ...threeBlocks(), logged: [loggedSet(501, 1), loggedSet(501, 2)] };
     expect(sessionCompletion(run)).toEqual({ blocksDone: 1, blockCount: 3, percent: 33 });
+  });
+
+  /** One three-set block: the shape "entered, one set flushed, then skipped" needs. */
+  function oneBlockOfThree() {
+    const plan = makeSession([
+      makeBlock({
+        exercise_id: 11,
+        rest_between_sets_seconds: 20,
+        sets: [1, 2, 3].map((index) =>
+          makeSet({ id: 500 + index, set_index: index, target_work_seconds: 10 }),
+        ),
+      }),
+    ]);
+    return createRun({
+      occurredOn: '2026-08-28',
+      discipline: 'sport',
+      plannedSessionId: 5001,
+      startedAtEpochMs: START,
+      timeline: compileProtocol(plan, makeLibrary()),
+      preDoneBlockIndexes: [],
+    });
+  }
+
+  it('⚠️ does NOT count a block with only SOME of its sets logged — the #82 defect', () => {
+    // Kilian entered this block, let one set flush and then skipped it. `logged_set` rows cannot
+    // be deleted (#81), so under the old rule that one row read done for good.
+    const run = { ...oneBlockOfThree(), logged: [loggedSet(501, 1)] };
+    expect(sessionCompletion(run)).toEqual({ blocksDone: 0, blockCount: 1, percent: 0 });
+  });
+
+  it('counts it once its LAST set lands, which is what pressing Done logs', () => {
+    const run = {
+      ...oneBlockOfThree(),
+      logged: [loggedSet(501, 1), loggedSet(502, 2)],
+      pending: [loggedSet(503, 3)],
+    };
+    expect(sessionCompletion(run)).toEqual({ blocksDone: 1, blockCount: 1, percent: 100 });
+  });
+
+  it('⚠️ leaves a block that cannot be logged OUT of both figures, not stuck under 100%', () => {
+    // A previewed plan names no exercise, so `mintSet` refuses every phase of the block: counting
+    // it would pin the session below 100% however much of it the climber did.
+    const plan = makeSession([
+      makeBlock({ exercise_id: 11, sets: [makeSet({ id: 501, target_work_seconds: 10 })] }),
+      makeBlock({
+        order_index: 1,
+        exercise_key: 'front_lever',
+        exercise_id: null,
+        sets: [makeSet({ id: null, target_work_seconds: 10 })],
+      }),
+    ]);
+    const run = {
+      ...createRun({
+        occurredOn: '2026-08-28',
+        discipline: 'sport' as const,
+        plannedSessionId: 5001,
+        startedAtEpochMs: START,
+        timeline: compileProtocol(plan, makeLibrary()),
+        preDoneBlockIndexes: [],
+      }),
+      logged: [loggedSet(501, 1)],
+    };
+
+    expect(sessionCompletion(run)).toEqual({ blocksDone: 1, blockCount: 1, percent: 100 });
+  });
+
+  /** Four one-set blocks, `preDone` of them already logged on the SERVER at Start. */
+  function fourBlocks(preDone: readonly number[]) {
+    const plan = makeSession(
+      [501, 601, 701, 801].map((id, index) =>
+        makeBlock({
+          order_index: index,
+          exercise_key: `block_${String(index)}`,
+          exercise_id: 11 + index,
+          sets: [makeSet({ id, target_work_seconds: 10 })],
+        }),
+      ),
+    );
+    return createRun({
+      occurredOn: '2026-09-02',
+      discipline: 'sport',
+      plannedSessionId: 5001,
+      startedAtEpochMs: START,
+      timeline: compileProtocol(plan, makeLibrary()),
+      preDoneBlockIndexes: preDone,
+    });
+  }
+
+  /** ⚠️ #82's last defect, in Kilian's words: "when I click on start again, it shows all 4 of
+   *  them as 'not started'. That is wrong — the first 3 should be shown as 'completed'." */
+  it('SEEDS the items the server already holds as completed, and counts them at 75%', () => {
+    const run = fourBlocks([0, 1, 2]);
+
+    expect(run.items.map((item) => item.status)).toEqual([
+      'completed',
+      'completed',
+      'completed',
+      'pending',
+    ]);
+    // ⚠️ No set is FABRICATED for the three: those rows are on the server already, and entries
+    // with no measured reps or load would read in the summary as logged in this attempt.
+    expect(run.logged).toEqual([]);
+    expect(run.pending).toEqual([]);
+    expect(sessionCompletion(run)).toEqual({ blocksDone: 3, blockCount: 4, percent: 75 });
+  });
+
+  it('reaches 100% once the FOURTH block’s sets land, and never counts one twice', () => {
+    const run = fourBlocks([0, 1, 2]);
+
+    expect(sessionCompletion({ ...run, pending: [loggedSet(801, 1)] })).toEqual({
+      blocksDone: 4,
+      blockCount: 4,
+      percent: 100,
+    });
+    // A pre-done block re-entered and logged again is still ONE block of the four.
+    expect(sessionCompletion({ ...run, logged: [loggedSet(501, 1)] })).toEqual({
+      blocksDone: 3,
+      blockCount: 4,
+      percent: 75,
+    });
   });
 
   it('does not count a quarantined set: a 4xx means the server has no row to join to', () => {

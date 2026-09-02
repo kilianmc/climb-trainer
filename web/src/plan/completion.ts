@@ -61,37 +61,84 @@ export interface CompletionBadge {
   readonly band: CompletionBand;
 }
 
-/** ⚠️ `status` is NOT consulted — "unfinished and skipped is the same result in real life"
- *  (Kilian) — so a past session is only its percentage. `null` when it has no percentage. */
-export function completionBadge(row: SessionCompletion | undefined): CompletionBadge | null {
-  if (row === undefined || row.state === 'pending' || row.percent === null) return null;
-  const percent = row.percent;
+/** The word and the band for a percentage, WHEREVER it came from: a server row, or the run
+ *  record the session screen trusts ahead of one. ONE definition, so a card cannot word it twice. */
+export function completionWord(percent: number): CompletionBadge {
   const band = completionBand(percent);
   if (percent === 0) return { label: 'Skipped', band };
   return { label: band === 'full' ? 'Completed' : `${String(percent)}% done`, band };
 }
 
-/** One block row's mark on a past session's card. */
+/** What a row may be read FOR: `settled` is a day that is OVER — 0% is a real result and an
+ *  unreached block is a miss — and `progress` is today or later, where only LOGGED work is. */
+export type CompletionScope = 'settled' | 'progress';
+
+/** ⚠️ ONE decision, and on a day still in reach `state` decides NOTHING of it: `completed` means
+ *  Finish was pressed, and #82 was that reading as a result — the items are what complete. */
+function hasResult(
+  row: SessionCompletion | undefined,
+  scope: CompletionScope,
+): row is SessionCompletion {
+  if (row === undefined) return false;
+  return scope === 'settled' ? row.state !== 'pending' : row.blocks_done > 0;
+}
+
+/** ⚠️ `status` is NOT consulted — "unfinished and skipped is the same result in real life"
+ *  (Kilian) — so a session is only its percentage. `null` when it has none to report. */
+export function completionBadge(
+  row: SessionCompletion | undefined,
+  scope: CompletionScope = 'settled',
+): CompletionBadge | null {
+  if (!hasResult(row, scope) || row.percent === null) return null;
+  return completionWord(row.percent);
+}
+
+/** One block row's mark on a session's card. */
 export type BlockOutcome = 'done' | 'missed';
 
 /** The WORD beside the tint, from the same decision — colour is never the only channel. */
 export const BLOCK_MARK_LABEL: Record<BlockOutcome, string> = { done: 'Done', missed: 'Missed' };
 
-/** The blocks a session got done — `null` while its rows must stay unmarked: only a PAST session
- *  is marked, on the server's own `pending`, since an unreached block is not a missed one. */
-export function doneBlocks(row: SessionCompletion | undefined): ReadonlySet<number> | null {
-  if (row === undefined || row.state === 'pending') return null;
-  return new Set(row.done_block_ids);
+/** Which blocks are done, and whether the others may be called missed. */
+export interface BlockMarks {
+  readonly done: ReadonlySet<number>;
+  /** ⚠️ A block outside `done` is a MISS only on a settled day: while the day can still be
+   *  reached, an unreached block is "not yet" and carries no mark at all. */
+  readonly marksMisses: boolean;
+}
+
+/** The blocks a session got done, from the server's own `done_block_ids` — so a card can say
+ *  which parts are logged without a local run record. `null` when there is nothing to report. */
+export function doneBlocks(
+  row: SessionCompletion | undefined,
+  scope: CompletionScope = 'settled',
+): BlockMarks | null {
+  if (!hasResult(row, scope)) return null;
+  return { done: new Set(row.done_block_ids), marksMisses: scope === 'settled' };
 }
 
 /** ONE block's mark. Keyed on `session_block.id`, which is what `done_block_ids` names and what
  *  a PERSISTED block carries; `null` for a preview block, whose id does not exist yet. */
 export function blockOutcome(
-  done: ReadonlySet<number> | null,
+  marks: BlockMarks | null,
   blockId: number | null | undefined,
 ): BlockOutcome | null {
-  if (done === null || blockId == null) return null;
-  return done.has(blockId) ? 'done' : 'missed';
+  if (marks === null || blockId == null) return null;
+  if (marks.done.has(blockId)) return 'done';
+  return marks.marksMisses ? 'missed' : null;
+}
+
+/** The `blockIndex` positions of the blocks a session is already DONE — the seed a new run's
+ *  items start `completed` from (`session/runStore.ts::createRun`). `null` marks nothing. */
+export function doneBlockIndexes(
+  session: PlanSession,
+  marks: BlockMarks | null,
+): readonly number[] {
+  // The position IS the index: `session/protocol.ts::compileProtocol` stamps `blockIndex` off
+  // this same array, which is what makes a `session_block.id` addressable as a timeline block.
+  return session.blocks.flatMap((block, blockIndex) =>
+    blockOutcome(marks, block.id) === 'done' ? [blockIndex] : [],
+  );
 }
 
 /** A PHASE's aggregate, for the badge a COLLAPSED phase carries: the same three bands, over the
@@ -147,13 +194,16 @@ export function phaseCompletionBadge(
  *  on `isAuthenticated`, for the measured reason in `profile/api.ts`: a 401 costs a PG write. */
 export function useSessionCompletion(plan: PlanTree | null) {
   const { request, isAuthenticated } = useAuth();
-  const window = plan === null || plan.id == null ? null : planWindow(plan);
+  const planId = plan === null ? null : plan.id;
+  const window = plan === null || planId == null ? null : planWindow(plan);
 
   return useQuery({
-    queryKey: [...SESSION_COMPLETION_KEY, window],
+    // ⚠️ `planId` is part of the KEY as well as of the URL: without it a response cached for one
+    // plan is served for the next, which is the very mixing the parameter exists to stop.
+    queryKey: [...SESSION_COMPLETION_KEY, planId, window],
     queryFn: () =>
       request<SessionCompletionResponse>(
-        `/api/sessions/completion?from=${encodeURIComponent(window?.from ?? '')}&to=${encodeURIComponent(window?.to ?? '')}`,
+        `/api/sessions/completion?plan_id=${encodeURIComponent(String(planId))}&from=${encodeURIComponent(window?.from ?? '')}&to=${encodeURIComponent(window?.to ?? '')}`,
       ),
     staleTime: COMPLETION_STALE_TIME_MS,
     enabled: isAuthenticated && window !== null,
