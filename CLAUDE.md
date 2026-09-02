@@ -118,21 +118,17 @@ grows".
 say the same thing this file wins and README links to it, because this is the file an agent is
 told to read before editing.
 
-- **`README.md`**, by section: *What it does* · *Stack* (the version list, and its only home) ·
-  *Design direction* (the visual pitch — bento, opaque surfaces, why not glassmorphism) · *Repo
-  layout* (a short orienting tree; the load-bearing one is here) · *Getting started* (clone to
-  running, commands only) · *Tests and quality gate* (the three commands and the codegen step) ·
-  *Signing in* · *Dual mount* · *Deployment*.
+- **`README.md`** — the pitch only, and deliberately nothing more: *What it does* and *Stack*
+  (the version list, and its only home). It is a shop window, not documentation; everything
+  operational lives here instead, so do not restore a section to it.
 - **Module docstrings, which carry their own reasoning in more detail than this file does** —
   `server/db.py` (engine and session wiring), `server/auth/*.py` (one per auth concern),
   `server/domain/grades.py` (the ordinal ladder), `web/src/styles/_layout.scss` (the reading
   measure as a grid column). `web/src/profile/api.ts` and `server/plans/routes.py` carry the
   library-source citations their claims rest on.
-- **Kilian's private notes** (local only, never in this repo) — the approved delivery plan and
-  the unshipped schema/generator design; a per-project memory covering live infrastructure,
-  deployment history and process lessons; plus topic notes on the signup-gating decision and the
-  landing redesign. Ask him if you need the plan for an unshipped PR; nothing in them is required
-  to work inside this repo.
+- **Kilian's private notes** (local only, never in this repo) — **nothing in them is required to
+  work inside this repo**, so this file does not catalogue them; a catalogue of files it cannot
+  see is duplication that goes stale invisibly. Ask him if you need the plan for an unshipped PR.
 - **Issue #71** — moving the security control map, the thresholds and the infra topology into a
   private file. Anything moved was **already public**, so it must be rotated, not merely moved.
 - **Registers that are files rather than prose** — `tests/comment_budget_allowlist.toml` (every
@@ -143,8 +139,8 @@ told to read before editing.
 ## Repo layout — do not rearrange it
 
 Spike S0 verified this exact layout end-to-end on a real deployment. It is load-bearing.
-**The tree itself lives in [`README.md`](README.md), *Repo layout* — one copy, there.** What
-follows is only the part that is a rule rather than a description.
+**No copy of the tree is kept in prose** — `ls` regenerates a description, and a checked-in one
+only goes stale. What follows is only the part that is a rule rather than a description.
 
 `server/` being importable from `api/index.py` was genuinely uncertain before S0 — it
 works because `api/index.py` inserts the deployment root onto `sys.path`. Don't move
@@ -2085,7 +2081,19 @@ opt-out flag.
 ## Local development
 
 Two processes — the API on 8000, the SPA on 5173 with Vite proxying `/api` to it.
-**The commands live in [`README.md`](README.md), *Getting started*.** The rules are here.
+
+```bash
+# once, in a fresh clone
+npm --prefix web ci
+uv sync --all-groups
+cp .env.example .env      # every variable is documented inline in the file
+
+# then, one per terminal
+npm run dev:api           # uvicorn, against LOCAL Postgres
+npm --prefix web run dev  # http://localhost:5173
+```
+
+The rules behind those commands are here.
 
 **`dev:api` is what makes "local" mean local, and it is not optional.** `.env`'s
 `DATABASE_URL` is **dev Neon**, so a bare `uv run uvicorn server.app:app` serves *dev* data
@@ -2430,13 +2438,15 @@ it breaks on every refactor and catches nothing.
   (`tests/test_library_contract.py`), whose failure mode is invisible to every behavioural
   test *by construction*: a shared-cache leak happens between two requests in an intermediary
   this repo does not run, so a literal list going red on the diff is the only guard available.
-  **Three more of the same shape guard the PROSE**, which nothing else in the gate reads:
+  **Four more of the same shape guard the PROSE**, which nothing else in the gate reads:
   `tests/test_comment_budget.py` (no comment outgrows its tier's cap without a registered
   reason), `tests/test_claude_md_claims.py` (every path, script, revision, heading and env
-  var `CLAUDE.md` names still resolves, and the index resolves in both directions), and
-  `web/src/api/libraryCitations.test.ts` (every construct our comments quote out of the
+  var `CLAUDE.md` names still resolves, the index resolves in both directions, and every
+  README section it cites is a real README heading), `tests/test_docs_layout.py` (README
+  carries the two pitch sections and nothing else, and no ten-word run of prose appears in
+  both README and this file), and `web/src/api/libraryCitations.test.ts` (every construct our comments quote out of the
   installed TanStack source is still there — it lives in the WEB suite because CI's `server`
-  job installs no web dependencies, where it would pass vacuously). All three are named here
+  job installs no web dependencies, where it would pass vacuously). All four are named here
   because a guard nobody lists is a guard the next reader deletes — see "⚠️ Prose is capped,
   and an executable claim must not be prose" for what none of them can catch.
 

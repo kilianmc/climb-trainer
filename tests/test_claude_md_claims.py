@@ -448,3 +448,30 @@ def test_the_normaliser_ignores_emphasis_and_dashes() -> None:
     assert normalise("⚠️ **The free-text** inventory — ELEVEN fields") == (
         "the free text inventory eleven fields"
     )
+
+
+# The index arms prove pointers into THIS file resolve; one into README fails the same way and
+# was invisible — the trim to 46 lines left three sentences citing sections it no longer has.
+
+
+def test_every_readme_section_this_file_cites_resolves(lines: list[str]) -> None:
+    """Every italicised section name next to a `README.md` mention must be a README heading."""
+    readme_headings = {
+        normalise(text) for _, text in _headings((ROOT / "README.md").read_text().splitlines())
+    }
+    text = "\n".join(lines)
+    dangling: list[str] = []
+    for mention in re.finditer(r"README\.md", text):
+        # Bold stripped first, or `**Module docstrings**` reads as one italic run.
+        window = text[mention.end() : mention.end() + 200].replace("**", "")
+        dangling += [
+            name
+            for match in re.finditer(r"\*([^*\n]+)\*", window)
+            if normalise(name := match.group(1).strip()) not in readme_headings
+        ]
+    assert not dangling, (
+        f"This file cites README.md sections that do not exist: {sorted(set(dangling))}. "
+        f"README.md has only {sorted(readme_headings)} and is deliberately just the pitch. "
+        "Either the content moved here and the pointer should be replaced by the content, or "
+        "the citation is stale — see 'What lives outside this file — the master map'."
+    )
