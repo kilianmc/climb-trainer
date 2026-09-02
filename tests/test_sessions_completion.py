@@ -1,9 +1,9 @@
 """`GET /api/sessions/completion` — the DERIVED percentage, against real Postgres.
 
-Partial completion is a query, never a column, so the cases that matter are the ones a column
-would get wrong: 2 of 3 parts under `status = 'completed'`, a set with **null `actual_*`
-values** (a real completion, from "I did this myself"), a session with no blocks at all, and
-the date boundary that makes an unfinished past session `skipped`.
+⚠️ **An item is DONE OR NOT** (Kilian, #82): a block counts once EVERY prescribed set of it has a
+logged set, and one with nothing loggable is out of the denominator. The cases that matter are the
+ones a stored column would get wrong: a partly logged block, 2 of 3 parts under `completed`, a set
+with **null `actual_*`** (a real completion), a session with no blocks, and the `skipped` boundary.
 
 `tests/test_sessions_log.py` owns the write path; the only rows written through the ORM here
 are the two states the passage of time would otherwise have to produce. Skips with no
@@ -24,8 +24,8 @@ from sqlalchemy.orm import Session
 from server.auth.tokens import issue_access_token
 from server.domain.grades import Discipline, GradeSystemKey
 from server.domain.planner.selection import BLOCKS_PER_SESSION
-from server.domain.vocabulary import ActivityKind, SessionStatus
-from server.models import ClimbingAspect, Grade, GradeSystem, PlannedSession
+from server.domain.vocabulary import ActivityKind, ProtocolKind, SessionStatus
+from server.models import ClimbingAspect, Grade, GradeSystem, PlannedSession, SessionBlock
 from server.seed import DEMO_USER_ID
 from server.sessions.routes import _CACHE_CONTROL, _COMPLETION_SPAN_DAYS
 
@@ -125,6 +125,15 @@ def _three_block_session(plan: dict[str, Any]) -> dict[str, Any]:
     return found[0]
 
 
+def _several_set_session(plan: dict[str, Any]) -> dict[str, Any]:
+    """A three-block session whose LAST block prescribes more than one set: with a single set
+    per block, "some of them logged" is not expressible at all."""
+    for planned in _three_block_sessions(plan):
+        if len(planned["blocks"][-1]["sets"]) > 1:
+            return planned
+    raise AssertionError("no three-block session whose last block prescribes several sets")
+
+
 def _block_ids(planned: dict[str, Any]) -> set[int]:
     """The tree's OWN block ids, which is the key the plan screen joins completion on."""
     return {block["id"] for block in planned["blocks"]}
@@ -135,9 +144,12 @@ def _log(
     headers: dict[str, str],
     planned: dict[str, Any],
     blocks: list[dict[str, Any]],
+    sets_per_block: int | None = None,
     **overrides: Any,
 ) -> Any:
-    """Finish `planned`, logging the first prescribed set of each block in `blocks`."""
+    """Finish `planned`, logging EVERY prescribed set of each block — an item is done or it is
+    not (#82), so `sets_per_block` is how a test leaves a block one short on purpose."""
+    ordinals = itertools.count(1)
     payload: dict[str, Any] = {
         "occurred_on": _TODAY.isoformat(),
         "duration_minutes": 45,
@@ -148,22 +160,28 @@ def _log(
             {
                 "client_uuid": str(uuid.uuid4()),
                 "exercise_id": block["exercise_id"],
-                "prescribed_set_id": block["sets"][0]["id"],
-                "set_index": index,
+                "prescribed_set_id": prescribed["id"],
+                "set_index": next(ordinals),
             }
             | overrides
-            for index, block in enumerate(blocks, start=1)
+            for block in blocks
+            for prescribed in block["sets"][:sets_per_block]
         ],
     }
     return client.put(f"/api/sessions/{uuid.uuid4()}", json=payload, headers=headers)
 
 
-def _read(client: TestClient, headers: dict[str, str], start: Any, end: Any) -> Any:
-    return client.get(
-        "/api/sessions/completion",
-        params={"from": str(start), "to": str(end)},
-        headers=headers,
-    )
+def _read(
+    client: TestClient,
+    headers: dict[str, str],
+    start: Any,
+    end: Any,
+    plan_id: int | None = None,
+) -> Any:
+    params: dict[str, str] = {"from": str(start), "to": str(end)}
+    if plan_id is not None:
+        params["plan_id"] = str(plan_id)
+    return client.get("/api/sessions/completion", params=params, headers=headers)
 
 
 def _window(plan: dict[str, Any]) -> tuple[str, str]:
@@ -222,6 +240,69 @@ def test_TWO_OF_THREE_PARTS_reads_67_PERCENT_while_STATUS_READS_COMPLETED(
     assert (row["status"], row["state"]) == (SessionStatus.COMPLETED.value, "completed")
 
 
+def test_a_block_with_SOME_of_its_sets_logged_IS_NOT_DONE(
+    api_client: TestClient, auth: dict[str, str], db_session: Session
+) -> None:
+    """⚠️ The #82 defect itself: one flushed set carried the whole block, so a block entered,
+    flushed once and then SKIPPED read done for good — `logged_set` rows cannot be deleted."""
+    plan = _plan(api_client, auth, db_session)
+    planned = _several_set_session(plan)
+    blocks = planned["blocks"]
+    # Two parts done in full; the third entered, one set flushed, then skipped.
+    assert _log(api_client, auth, planned, blocks[:2]).status_code == 200
+    assert _log(api_client, auth, planned, blocks[2:], sets_per_block=1).status_code == 200
+
+    start, end = _window(plan)
+    row = _row(_read(api_client, auth, start, end).json(), planned["id"])
+
+    assert (row["blocks_done"], row["block_count"], row["percent"]) == (2, BLOCKS_PER_SESSION, 67)
+    assert blocks[2]["id"] not in row["done_block_ids"]
+
+
+def test_EVERY_SET_OF_EVERY_BLOCK_logged_reads_100_PERCENT(
+    api_client: TestClient, auth: dict[str, str], db_session: Session
+) -> None:
+    """The one state that CLOSES a session: at 100% it leaves the three offer sections for good,
+    so the figure has to be reachable at all — a session stuck at 99% could never be finished."""
+    plan = _plan(api_client, auth, db_session)
+    planned = _several_set_session(plan)
+    assert _log(api_client, auth, planned, planned["blocks"]).status_code == 200
+
+    start, end = _window(plan)
+    row = _row(_read(api_client, auth, start, end).json(), planned["id"])
+
+    assert (row["blocks_done"], row["block_count"], row["percent"]) == (
+        BLOCKS_PER_SESSION,
+        BLOCKS_PER_SESSION,
+        100,
+    )
+    assert set(row["done_block_ids"]) == _block_ids(planned)
+
+
+def test_a_BLOCK_WITH_NOTHING_TO_LOG_is_OUT_OF_THE_DENOMINATOR(
+    api_client: TestClient, auth: dict[str, str], db_session: Session
+) -> None:
+    """It could never be done, so counting it would strand its session under 100% for good.
+    ⚠️ `session_block.exercise_id` is NOT NULL, so no-prescribed-sets is the only such shape."""
+    plan = _plan(api_client, auth, db_session)
+    planned = _several_set_session(plan)
+    db_session.add(
+        SessionBlock(
+            planned_session_id=planned["id"],
+            order_index=max(block["order_index"] for block in planned["blocks"]) + 1,
+            exercise_id=planned["blocks"][0]["exercise_id"],
+            protocol_kind=ProtocolKind(planned["blocks"][0]["protocol_kind"]),
+        )
+    )
+    db_session.flush()
+    assert _log(api_client, auth, planned, planned["blocks"]).status_code == 200
+
+    start, end = _window(plan)
+    row = _row(_read(api_client, auth, start, end).json(), planned["id"])
+
+    assert (row["block_count"], row["percent"]) == (BLOCKS_PER_SESSION, 100)
+
+
 def test_WHICH_BLOCKS_GOT_DONE_comes_back_not_only_HOW_MANY(
     api_client: TestClient, auth: dict[str, str], db_session: Session
 ) -> None:
@@ -242,6 +323,7 @@ def test_WHICH_BLOCKS_GOT_DONE_comes_back_not_only_HOW_MANY(
         partial["blocks"][2]["id"]
     }
     assert set(_row(body, whole["id"])["done_block_ids"]) == _block_ids(whole)
+    assert _row(body, whole["id"])["percent"] == 100
     assert _row(body, untouched["id"])["done_block_ids"] == []
     for row in body["sessions"]:
         assert row["blocks_done"] == len(row["done_block_ids"]), row
@@ -364,6 +446,44 @@ def test_ANOTHER_CLIMBERS_SESSIONS_ARE_ABSENT(
     body = _read(api_client, other, start, end).json()
 
     assert body["sessions"] == []
+
+
+def test_PLAN_ID_EXCLUDES_A_STOOD_DOWN_PLANS_SESSIONS_IN_THE_SAME_WINDOW(
+    api_client: TestClient, auth: dict[str, str], db_session: Session
+) -> None:
+    """⚠️ The client asks for the ACTIVE plan's own span, so every plan regenerated inside those
+    dates answered too — and those rows spend the row cap, which drops live sessions."""
+    stood_down = _plan(api_client, auth, db_session)
+    active = _plan(api_client, auth, db_session)
+    assert active["id"] != stood_down["id"]
+    live = {planned["id"] for planned in _sessions(active)}
+    dead = {planned["id"] for planned in _sessions(stood_down)}
+    assert live and live.isdisjoint(dead)
+
+    start, end = _window(active)
+    # Absent, the documented behaviour is UNCHANGED: every plan of theirs in the window.
+    unscoped = _read(api_client, auth, start, end)
+    assert unscoped.status_code == 200, unscoped.text
+    assert {row["planned_session_id"] for row in unscoped.json()["sessions"]} == live | dead
+
+    scoped = _read(api_client, auth, start, end, plan_id=active["id"])
+    assert scoped.status_code == 200, scoped.text
+    assert {row["planned_session_id"] for row in scoped.json()["sessions"]} == live
+
+
+def test_ANOTHER_CLIMBERS_PLAN_ID_YIELDS_NO_ROWS(
+    api_client: TestClient, auth: dict[str, str], invite_code: str, db_session: Session
+) -> None:
+    """The plan is ANDed with the token's own user, never substituted for it: naming a stranger's
+    plan is the IDOR this parameter would otherwise open."""
+    plan = _plan(api_client, auth, db_session)
+    start, end = _window(plan)
+    other = _register(api_client, invite_code, _OTHER_EMAIL)
+
+    response = _read(api_client, other, start, end, plan_id=plan["id"])
+
+    assert response.status_code == 200, response.text
+    assert response.json()["sessions"] == []
 
 
 def test_a_DEMO_TOKEN_MAY_READ_THIS(api_client: TestClient) -> None:

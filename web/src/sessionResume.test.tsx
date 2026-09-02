@@ -75,6 +75,7 @@ function persistRun(overrides: Partial<RunRecord>): RunRecord {
     plannedSessionId: 5001,
     startedAtEpochMs: START,
     timeline: compileProtocol(session(), new Map()),
+    preDoneBlockIndexes: [],
   });
   // Item one entered: a resumed run is a run that was RUNNING something, and since the
   // rework a session with no active item has no clock to resync.
@@ -115,6 +116,9 @@ function stubFetch() {
       if (path === '/api/vocabulary') return Promise.resolve(json(makeVocabulary()));
       if (path === '/api/plans/active')
         return Promise.resolve(json({ plan: makePlan([session()]) }));
+      // #82, and BEFORE the PUT answer below, whose prefix would otherwise swallow it.
+      if (path === '/api/sessions/completion')
+        return Promise.resolve(json({ as_of: TODAY, sessions: [] }));
       if (path.startsWith('/api/sessions/'))
         return Promise.resolve(json({ client_uuid: 'x', sets: [] }));
       return Promise.reject(new Error(`unexpected request: ${path}`));

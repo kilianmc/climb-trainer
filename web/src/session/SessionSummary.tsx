@@ -44,12 +44,12 @@ export function SessionSummary({
         {String(done)} set{done === 1 ? '' : 's'} in {String(minutes)} minute
         {minutes === 1 ? '' : 's'} — {String(completion.percent)}% of the session.
       </p>
-      {/* ⚠️ The SERVER's definition, so the plan screen reads the same number later: blocks with
-          at least one logged set over total blocks. Finish is not completeness. */}
+      {/* ⚠️ The SERVER's definition, so the plan screen reads the same number later: a part
+          counts once EVERY set of it is logged. Finish is not completeness. */}
       <p className="ct-app__muted">
         {String(completion.blocksDone)} of {String(completion.blockCount)} part
-        {completion.blockCount === 1 ? '' : 's'} logged at least one set. Pressing Finish is what
-        ends a session; it does not mean everything got done.
+        {completion.blockCount === 1 ? '' : 's'} fully logged. Pressing Finish is what ends a
+        session; it does not mean everything got done.
       </p>
 
       <SessionRpe run={run} />

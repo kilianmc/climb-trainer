@@ -11,8 +11,8 @@
  *   openapi-sha256  the OpenAPI document it was generated from
  *   types-sha256    everything below this comment block
  *
- * openapi-sha256: 434bfbb744851ecafce47b201c3f7c0f779bfb515e55d3093b1b025072f3098b
- * types-sha256: d3e11d1e6a0a85d850de8423ec69196b3de773a73d630e66f6eaed55de7ce31a
+ * openapi-sha256: e104b0fbd8a823010cb19d78c1f4b44b079b4277f542721487a392666ab7c3ff
+ * types-sha256: f045220fe647576fa5e77cd3d6448dba26a288435e08690a03cfc32a3fa4fd32
  */
 
 export interface paths {
@@ -421,9 +421,15 @@ export interface paths {
      * @description How much of each planned session in `from`..`to` actually got done.
      *
      *     **Partial completion is a DERIVED QUERY, not a column.** `planned_session.status` says
-     *     whether Finish was pressed; this counts the blocks with at least one logged set, which is
-     *     the only figure that can say WHICH two of three parts — and the rule behind it will be
-     *     tuned, which is why no `planned_session` column holds it.
+     *     whether Finish was pressed; this counts the blocks whose every prescribed set is logged,
+     *     which is the only figure that can say WHICH two of three parts — and the rule behind it has
+     *     already been tuned once, which is why no `planned_session` column holds it.
+     *
+     *     ⚠️ **An item is DONE OR NOT** (Kilian, #82) — skipped and never-started are the same result —
+     *     so ONE logged set no longer carries a block. That needs no stored item state: the client
+     *     cannot mark an item done without logging its sets (`completeItem` mints every one the block
+     *     prescribes, the clock mints them as the phases run, a skip drops only what was never sent).
+     *     A block that cannot be logged is out of `block_count`, or one would strand its session.
      *
      *     **Its own endpoint, deliberately.** `GET /api/plans/active` is already the heaviest payload
      *     in the app and only this screen reads these numbers, so they are fetched beside it rather
@@ -1228,10 +1234,10 @@ export interface components {
      * @description How much of ONE planned session got done — **derived**, never a stored column.
      *
      *     `done_block_ids` says WHICH blocks got done, over the join
-     *     `logged_set.prescribed_set_id → session_block`: every block with at least one logged set,
-     *     keyed on `session_block.id`, the id `plans.BlockOut` carries for a persisted plan.
-     *     `blocks_done` is its length. A set with null `actual_*` values is a **real** completion —
-     *     the "I did this myself" affordance mints exactly those — so nothing here filters them out.
+     *     `logged_set.prescribed_set_id → session_block`: a block with EVERY prescribed set of it
+     *     logged, keyed on `session_block.id`, the id `plans.BlockOut` carries for a persisted plan.
+     *     `blocks_done` is its length; `block_count` counts only blocks that CAN be logged. A set with
+     *     null `actual_*` values is a **real** completion — "I did this myself" mints exactly those.
      *
      *     `status` is what the write path stored: `completed` means "pressed Finish", never "did it
      *     all". `state` is derived from it and from `as_of`: `completed`, `pending` for a session still
@@ -1242,8 +1248,8 @@ export interface components {
      *     skipped are the same result in real life (Kilian, 2026-08-30), which is why the UI shows only
      *     the percentage. Never render it as "the climber chose to skip this".
      *
-     *     `percent` is `null` for a session with no blocks at all: there is nothing to have done, and
-     *     reporting 0% for that would read as a failure nobody had.
+     *     `percent` is `null` for a session with nothing loggable in it: there is nothing to have
+     *     done, and reporting 0% for that would read as a failure nobody had.
      */
     SessionCompletionOut: {
       /** Block Count */
@@ -1275,8 +1281,9 @@ export interface components {
      *     `as_of` is the server's own date, i.e. the boundary `state` was decided against, so the
      *     client never re-derives "past" from a clock of its own.
      *
-     *     Sessions from a stood-down plan are included when their date falls in the window — the
-     *     response is keyed by `planned_session_id`, so a caller reads the ones it asked about.
+     *     Sessions from a stood-down plan are included when their date falls in the window and no
+     *     `plan_id` was named — the response is keyed by `planned_session_id`, so a caller reads the
+     *     ones it asked about.
      */
     SessionCompletionResponse: {
       /**
@@ -1881,6 +1888,7 @@ export interface operations {
       query: {
         from: string;
         to: string;
+        plan_id?: number | null;
       };
       header?: never;
       path?: never;
