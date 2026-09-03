@@ -20,8 +20,8 @@ from server.settings import ROOT
 README: Final = ROOT / "README.md"
 CLAUDE: Final = ROOT / "CLAUDE.md"
 
-# Every other section was deleted because CLAUDE.md carried the same facts WITH the reasons.
-# Adding a row is a decision about where docs live, not a formatting tweak.
+# Every other section was deleted because CLAUDE.md carries the rule and the archive the
+# reasons. Adding a row is a decision about where docs live, not a formatting tweak.
 ALLOWED_SECTIONS: Final = ("What it does", "Stack")
 
 # A cap, not a target: 46 lines when written. The slack is for editing the pitch, never for a
