@@ -1,12 +1,12 @@
 """Every mechanically checkable claim in `CLAUDE.md` must resolve against what it describes.
-`CLAUDE.md` is the map every agent reads before touching this repo, and nothing else in the gate
-reads it back. A renamed script, a moved file or a reworded heading leaves it wrong, silently, and
-a wrong map is worse than no map.
+`CLAUDE.md` is the tripwire list every agent reads before touching this repo, and nothing else in
+the gate reads it back. A renamed script, a moved file or a dropped env var leaves it wrong,
+silently, and a wrong map is worse than no map.
 
-**What it CANNOT catch:** a wrong *reason*, an obsolete threshold, a measured number that has
-moved, or prose that is accurate and no longer wise. It proves the paths, scripts, revisions,
-headings and env vars still exist — never that the advice attached to them is right. The
-highest-value arm is index integrity, and it runs in BOTH directions.
+**What it CANNOT catch:** a wrong *reason*, an obsolete threshold, or prose that is accurate and
+no longer wise. It proves the paths, scripts, env vars, CI job names and README citations still
+exist — never that the advice is right. The reasoning now lives in the frozen archive, which
+nothing reads back at all: treat anything quoted from it as unverified until checked.
 """
 
 import json
@@ -36,14 +36,15 @@ PATH_PREFIXES: Final = ("server/", "web/", "tests/", "migrations/", "api/", "scr
 ABSENT_PATHS: Final = {
     "web/src/api/vocabularies.ts": (
         "documented as GONE — the hand-written vocabulary mirror retired by PR #9's codegen. "
-        "The section exists to stop somebody recreating it."
+        "The tripwire exists to stop somebody recreating it."
     ),
 }
 
-# The ten env vars this project actually has, written out as LITERALS. A regex over backticked
-# `[A-Z_]{4,}` yields sixty-plus tokens including `SELECT`, `EXISTS`, `PATCH`, `NULL`,
-# `ERESOLVE` and Python constants like `PUBLIC_ROUTES` — so the arm would be measuring markdown
-# capitalisation, not configuration. Each name declares where it is expected to resolve.
+# 19 paths are extracted today; the floor only has to be high enough to catch a broken regex.
+PATH_FLOOR: Final = 15
+
+# Curated LITERALS, not a regex: backticked `[A-Z_]{4,}` also yields `NULL`, `TIMESTAMPTZ` and
+# `PUBLIC_ROUTE_IDS`, so the arm would measure markdown capitalisation, not configuration.
 ENV_VARS: Final = {
     "DATABASE_URL": ("server/settings.py", ".env.example", ".github/workflows/ci.yml"),
     "DATABASE_URL_UNPOOLED": (
@@ -53,30 +54,15 @@ ENV_VARS: Final = {
     ),
     "CT_TEST_DATABASE_URL": ("package.json", ".env.example", "tests/conftest.py"),
     "AUTH_SECRET": ("server/settings.py", ".env.example"),
-    "COOKIE_SECURE": ("server/settings.py", ".env.example"),
-    "CORS_ORIGINS": ("server/settings.py", ".env.example", ".github/workflows/ci.yml"),
-    "VERCEL": ("server/settings.py", "server/devseed.py"),
-    "VERCEL_ENV": ("server/settings.py", "server/devseed.py"),
-    "CLIMB_DEV_SEED": ("server/devseed.py",),
 }
-# The tenth, and it is the odd one out: it is the SHELL's variable, read by `portfolio-shell`,
-# and this repo only documents the constraint on its value. Asserted ABSENT here, so the day it
-# does appear in this repo the entry has to be re-read rather than quietly satisfied.
+# The odd one out: it is the SHELL's variable, read by `portfolio-shell`, and this repo only
+# documents the constraint on its value. Asserted ABSENT here, so it cannot be quietly satisfied.
 EXTERNAL_ENV_VAR: Final = "VITE_CLIMB_REMOTE_URL"
-
-# Only these two can never be indexed. `Stack` and the docs-clean TODO were DELETED rather than
-# exempted, and `Repo layout` now has an entry — so a third exemption is a decision, not a habit.
-UNINDEXED_SECTIONS: Final = {
-    "Overview": "the preamble — it describes the product, it carries no rule to look up",
-    "Index — find the rule before you write the code": "the index cannot point at itself",
-}
 
 CI_JOBS: Final = ("web", "server", "secrets")
 
 
-# ---------------------------------------------------------------------------------
-# Reading the document
-# ---------------------------------------------------------------------------------
+# Reading the document.
 
 
 @pytest.fixture(scope="module")
@@ -117,12 +103,6 @@ def _headings(lines: list[str]) -> list[tuple[int, str]]:
     return found
 
 
-def _index_bounds(lines: list[str]) -> tuple[int, int]:
-    start = next(i for i, line in enumerate(lines) if line.startswith("## Index"))
-    end = next(i for i, line in enumerate(lines[start + 1 :], start + 1) if line.startswith("## "))
-    return start, end
-
-
 def _scripts() -> dict[str, str]:
     merged: dict[str, str] = {}
     for manifest in (ROOT / "package.json", ROOT / "web" / "package.json"):
@@ -131,9 +111,7 @@ def _scripts() -> dict[str, str]:
     return merged
 
 
-# ---------------------------------------------------------------------------------
-# The eight arms
-# ---------------------------------------------------------------------------------
+# The arms.
 
 
 def test_every_npm_script_it_tells_you_to_run_exists(source: str) -> None:
@@ -200,7 +178,7 @@ def _is_gitignored(path: str) -> bool:
 
 
 def test_every_repo_rooted_path_it_names_resolves(lines: list[str]) -> None:
-    """86-odd backticked paths. A moved file leaves the map pointing at a hole."""
+    """Backticked repo-rooted paths. A moved file leaves a tripwire pointing at a hole."""
     named: set[str] = set()
     for line in _unfenced(lines):
         for span in BACKTICKED.findall(line):
@@ -208,7 +186,9 @@ def test_every_repo_rooted_path_it_names_resolves(lines: list[str]) -> None:
                 token = token.rstrip(".,")
                 if token.startswith(PATH_PREFIXES):
                     named.add(token)
-    assert len(named) > 50, f"only {len(named)} paths extracted — the token regex is too narrow"
+    assert len(named) > PATH_FLOOR, (
+        f"only {len(named)} paths extracted — the token regex is too narrow"
+    )
 
     missing: list[str] = []
     for path in sorted(named):
@@ -226,40 +206,12 @@ def test_every_repo_rooted_path_it_names_resolves(lines: list[str]) -> None:
 
 
 def test_every_deliberately_absent_path_is_still_absent() -> None:
-    """The other direction. A recreated file makes its "this is GONE" section a lie."""
+    """The other direction. A recreated file makes its "this is GONE" tripwire a lie."""
     resurrected = [path for path in ABSENT_PATHS if (ROOT / path).exists()]
     assert not resurrected, (
         f"{resurrected} exist(s) again, but CLAUDE.md documents them as gone. Either the "
-        f"section is stale or somebody recreated exactly the file it warns against."
+        f"tripwire is stale or somebody recreated exactly the file it warns against."
     )
-
-
-def test_every_test_function_name_it_cites_exists(source: str) -> None:
-    """Mixed case deliberately: this repo's guard tests SHOUT the invariant in their names."""
-    cited = set(re.findall(r"\btest_[A-Za-z0-9_]+\b(?!\.py)", source))
-    assert cited, "no test function names were cited — check the regex before trusting the green"
-    defined: set[str] = set()
-    for module in (ROOT / "tests").glob("*.py"):
-        defined.update(re.findall(r"def (test_[A-Za-z0-9_]+)", module.read_text(encoding="utf-8")))
-    missing = sorted(name for name in cited if name not in defined)
-    assert not missing, (
-        f"CLAUDE.md cites {missing}, which no test in `tests/` defines. A citation of a "
-        f"renamed test is how a documented guarantee stops being checkable."
-    )
-
-
-def test_every_alembic_revision_id_it_names_exists(source: str) -> None:
-    """A revision id in prose is a promise about what the database has run."""
-    named = {
-        token
-        for span in BACKTICKED.findall(source)
-        for token in TOKEN.findall(span)
-        if re.fullmatch(r"0\d{3}", token)
-    }
-    assert named, "no revision ids extracted"
-    files = [path.name for path in (ROOT / "migrations" / "versions").glob("*.py")]
-    missing = sorted(rev for rev in named if not any(name.startswith(f"{rev}_") for name in files))
-    assert not missing, f"CLAUDE.md names revision(s) {missing} with no file in migrations/versions"
 
 
 def test_the_ci_job_names_it_pins_are_the_real_ones() -> None:
@@ -278,8 +230,10 @@ def test_the_ci_job_names_it_pins_are_the_real_ones() -> None:
     )
 
 
-def test_the_environment_variables_it_documents_all_resolve() -> None:
+def test_the_environment_variables_it_documents_all_resolve(source: str) -> None:
     """A curated literal list — see ENV_VARS for why this arm is not regex-driven."""
+    unnamed = sorted(name for name in ENV_VARS if name not in source)
+    assert not unnamed, f"ENV_VARS lists {unnamed}, which CLAUDE.md no longer names. Drop them."
     unresolved: list[str] = []
     for name, homes in ENV_VARS.items():
         if not any(name in (ROOT / home).read_text(encoding="utf-8") for home in homes):
@@ -293,7 +247,7 @@ def test_the_environment_variables_it_documents_all_resolve() -> None:
 def test_the_shell_owned_variable_is_still_not_read_by_this_repo() -> None:
     """`VITE_CLIMB_REMOTE_URL` belongs to `portfolio-shell`; here it is documentation only.
 
-    If it ever appears in this repo's code, the CLAUDE.md paragraph describing it as the
+    If it ever appears in this repo's code, the CLAUDE.md tripwire describing it as the
     shell's setting is no longer the whole story and needs re-reading.
     """
     # `tests/` is excluded: this file names the variable in order to assert its absence.
@@ -307,107 +261,46 @@ def test_the_shell_owned_variable_is_still_not_read_by_this_repo() -> None:
     ]
     assert not found, (
         f"{EXTERNAL_ENV_VAR} is now read by {found}, but CLAUDE.md describes it as a variable "
-        f"set in the SHELL. Update that paragraph and move it into ENV_VARS."
+        f"set in the SHELL. Update that tripwire and move it into ENV_VARS."
     )
     assert EXTERNAL_ENV_VAR in CLAUDE_MD.read_text(encoding="utf-8"), (
         f"{EXTERNAL_ENV_VAR} is no longer documented, so this exemption guards nothing"
     )
 
 
-# ---------------------------------------------------------------------------------
-# Index integrity — both directions, and the highest-value arm here
-# ---------------------------------------------------------------------------------
-#
-# The index is the file's only navigation, and it is anchored by HEADING TEXT rather than by
-# line number precisely so that it survives edits. What it does not survive is a REWORDED
-# heading, which leaves an entry quoting a section that no longer exists under that name — and
-# a reader who cannot find the quoted heading concludes the rule was deleted.
-#
-# The reverse direction matters just as much: a section nothing points at is a section nobody
-# reads, which is the same as not having written it.
+# Pointers into README fail the same way a path does, and were invisible until PR #72: the trim
+# to 46 lines left three sentences citing sections README no longer has.
 
 
-def _index_quotes(lines: list[str]) -> list[str]:
-    start, end = _index_bounds(lines)
-    # Joined with spaces: several entries wrap across lines mid-quote.
-    return re.findall(r'"([^"]+)"', " ".join(lines[start:end]))
-
-
-def test_every_heading_the_index_quotes_resolves(lines: list[str]) -> None:
-    """Forward direction. Every quoted string in the index must be a real heading.
-
-    **No prose fallback.** An earlier version also accepted a quote matching verbatim prose
-    elsewhere, because the index used to quote bullet openings too. The index is now PURE
-    POINTERS, so that case is gone — and a loosening kept past its reason only hides the next
-    reworded heading.
-    """
-    headings = [normalise(text) for _, text in _headings(lines)]
-    quotes = _index_quotes(lines)
-    assert len(quotes) > 40, f"only {len(quotes)} index quotes extracted — check the bounds"
-
-    unresolved = [
-        quote
-        for quote in quotes
-        if not any(heading.startswith(normalise(quote)) for heading in headings)
-    ]
-    formatted = "\n".join(f"  {quote!r}" for quote in unresolved)
-    assert not unresolved, (
-        f"{len(unresolved)} index entry(ies) quote text that is not a heading in this file. "
-        f"Either the target was reworded and the index was left behind — re-quote it from the "
-        f"section as it now reads — or the entry stopped being a pure pointer:\n{formatted}"
+def test_every_readme_section_this_file_cites_resolves(lines: list[str]) -> None:
+    """Every italicised section name next to a `README.md` mention must be a README heading."""
+    readme_headings = {
+        normalise(text) for _, text in _headings((ROOT / "README.md").read_text().splitlines())
+    }
+    text = "\n".join(lines)
+    cited: list[str] = []
+    dangling: list[str] = []
+    for mention in re.finditer(r"README\.md", text):
+        # Bold stripped first, or `**Module docstrings**` reads as one italic run.
+        window = text[mention.end() : mention.end() + 200].replace("**", "")
+        for match in re.finditer(r"\*([^*\n]+)\*", window):
+            name = match.group(1).strip()
+            cited.append(name)
+            if normalise(name) not in readme_headings:
+                dangling.append(name)
+    assert cited, (
+        "CLAUDE.md cites no README section at all, so this arm is green over an empty set. "
+        "Either name the pitch sections next to the `README.md` mention, or delete this arm."
+    )
+    assert not dangling, (
+        f"This file cites README.md sections that do not exist: {sorted(set(dangling))}. "
+        f"README.md has only {sorted(readme_headings)} and is deliberately just the pitch. "
+        "Either the content moved here and the pointer should be replaced by the content, or "
+        "the citation is stale — see 'Where things live'."
     )
 
 
-def test_every_section_has_an_index_entry_pointing_into_it(lines: list[str]) -> None:
-    """Reverse direction. A `##` section nothing points at is a section nobody finds.
-
-    A section counts as reached when the index quotes it OR any heading nested under it — the
-    index deliberately points at the specific rule rather than at the container.
-    """
-    headings = _headings(lines)
-    start, end = _index_bounds(lines)
-    outside = normalise(" ".join(lines[:start] + lines[end:]))
-    normalised_quotes = [normalise(quote) for quote in _index_quotes(lines)]
-
-    def reached(text: str) -> bool:
-        target = normalise(text)
-        return any(target.startswith(quote) for quote in normalised_quotes)
-
-    orphans: list[str] = []
-    for position, (level, text) in enumerate(headings):
-        if level != 2:
-            continue
-        subtree = headings[position + 1 :]
-        for offset, (nested_level, _) in enumerate(subtree):
-            if nested_level <= 2:
-                subtree = subtree[:offset]
-                break
-        if reached(text) or any(reached(nested) for _, nested in subtree):
-            continue
-        if text in UNINDEXED_SECTIONS:
-            continue
-        orphans.append(text)
-    assert not orphans, (
-        f"{len(orphans)} `##` section(s) have no index entry pointing anywhere inside them: "
-        f"{orphans}. Add an index entry, or record the exemption with a reason in "
-        f"UNINDEXED_SECTIONS."
-    )
-    assert outside, "the document outside the index is empty — the bounds are wrong"
-
-
-def test_every_recorded_index_exemption_is_still_a_real_section(lines: list[str]) -> None:
-    """The exemptions must not outlive the sections they exempt, or the arm silently narrows."""
-    present = {text for level, text in _headings(lines) if level == 2}
-    stale = sorted(set(UNINDEXED_SECTIONS) - present)
-    assert not stale, (
-        f"UNINDEXED_SECTIONS exempts {stale}, which no longer exist as `##` headings. Delete "
-        f"the exemption — a dead exemption is how the reverse arm quietly stops covering things."
-    )
-
-
-# ---------------------------------------------------------------------------------
-# Positive controls — every detector above must be able to see its own violation
-# ---------------------------------------------------------------------------------
+# Positive controls — every detector above must be able to see its own violation.
 
 
 def test_the_token_regex_keeps_hyphens_dots_underscores_and_slashes() -> None:
@@ -423,55 +316,8 @@ def test_the_fence_stripper_hides_shell_snippets_from_the_path_arm() -> None:
     assert stripped == ["prose `server/db.py`", "after"]
 
 
-def test_the_heading_matcher_reads_every_level_the_file_uses() -> None:
-    """`#####` is real in this file. A `#{2,4}` bound invented failures for the deepest ones."""
-    levels = {level for level, _ in _headings(CLAUDE_MD.read_text(encoding="utf-8").splitlines())}
-    assert 5 in levels, "expected `#####` headings — if they are gone, narrow HEADING deliberately"
-    assert HEADING.match("###### deep") is not None
-
-
-def test_the_index_forward_arm_would_notice_a_reworded_heading(lines: list[str]) -> None:
-    """Positive control on the arm that matters most, using the real document.
-
-    A detector that cannot see its own violation is worse than none: this quotes a heading that
-    does not exist and asserts the resolution logic rejects it.
-    """
-    headings = [normalise(text) for _, text in _headings(lines)]
-    invented = "Deployment traps that were renamed by a later PR"
-    assert not any(heading.startswith(normalise(invented)) for heading in headings)
-    # And the control's counterpart: a heading that IS real must resolve.
-    assert any(heading.startswith(normalise("Deployment traps")) for heading in headings)
-
-
 def test_the_normaliser_ignores_emphasis_and_dashes() -> None:
-    """The index writes `**bold**` and em-dashes; the headings do not always agree."""
+    """The citations write `**bold**` and em-dashes; the headings do not always agree."""
     assert normalise("⚠️ **The free-text** inventory — ELEVEN fields") == (
         "the free text inventory eleven fields"
-    )
-
-
-# The index arms prove pointers into THIS file resolve; one into README fails the same way and
-# was invisible — the trim to 46 lines left three sentences citing sections it no longer has.
-
-
-def test_every_readme_section_this_file_cites_resolves(lines: list[str]) -> None:
-    """Every italicised section name next to a `README.md` mention must be a README heading."""
-    readme_headings = {
-        normalise(text) for _, text in _headings((ROOT / "README.md").read_text().splitlines())
-    }
-    text = "\n".join(lines)
-    dangling: list[str] = []
-    for mention in re.finditer(r"README\.md", text):
-        # Bold stripped first, or `**Module docstrings**` reads as one italic run.
-        window = text[mention.end() : mention.end() + 200].replace("**", "")
-        dangling += [
-            name
-            for match in re.finditer(r"\*([^*\n]+)\*", window)
-            if normalise(name := match.group(1).strip()) not in readme_headings
-        ]
-    assert not dangling, (
-        f"This file cites README.md sections that do not exist: {sorted(set(dangling))}. "
-        f"README.md has only {sorted(readme_headings)} and is deliberately just the pitch. "
-        "Either the content moved here and the pointer should be replaced by the content, or "
-        "the citation is stale — see 'What lives outside this file — the master map'."
     )

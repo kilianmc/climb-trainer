@@ -2592,34 +2592,6 @@ reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
 
 [[exception]]
 path = "tests/test_claude_md_claims.py"
-kind = "hash_run"
-anchor = "the ten env vars this project actually"
-limit = 4
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
-
-[[exception]]
-path = "tests/test_claude_md_claims.py"
-kind = "hash_run"
-anchor = "the tenth and it is the odd one"
-limit = 3
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
-
-[[exception]]
-path = "tests/test_claude_md_claims.py"
-kind = "hash_run"
-anchor = "reading the document"
-limit = 3
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
-
-[[exception]]
-path = "tests/test_claude_md_claims.py"
-kind = "hash_run"
-anchor = "the eight arms"
-limit = 3
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
-
-[[exception]]
-path = "tests/test_claude_md_claims.py"
 kind = "docstring"
 anchor = "tests.test_claude_md_claims.test_the_quality_gate_chain_claims_match_the_real_scripts"
 limit = 5
@@ -2638,41 +2610,6 @@ kind = "docstring"
 anchor = "tests.test_claude_md_claims.test_the_shell_owned_variable_is_still_not_read_by_this_repo"
 limit = 5
 reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
-
-[[exception]]
-path = "tests/test_claude_md_claims.py"
-kind = "hash_run"
-anchor = "index integrity both directions"
-limit = 11
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
-
-[[exception]]
-path = "tests/test_claude_md_claims.py"
-kind = "docstring"
-anchor = "tests.test_claude_md_claims.test_every_heading_the_index_quotes_resolves"
-limit = 7
-reason = "Records that the prose fallback was REMOVED when the index became pure pointers. A loosening whose reason is gone is exactly what this arm must not quietly carry again."
-
-[[exception]]
-path = "tests/test_claude_md_claims.py"
-kind = "docstring"
-anchor = "tests.test_claude_md_claims.test_every_section_has_an_index_entry_pointing_into_it"
-limit = 5
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
-
-[[exception]]
-path = "tests/test_claude_md_claims.py"
-kind = "hash_run"
-anchor = "positive controls every detector"
-limit = 3
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
-
-[[exception]]
-path = "tests/test_claude_md_claims.py"
-kind = "docstring"
-anchor = "tests.test_claude_md_claims.test_the_index_forward_arm_would_notice_a_reworded_heading"
-limit = 5
-reason = "Names what the control proves and why the arm it controls is the highest-value one here: a reworded heading leaves a reader concluding the rule was deleted."
 
 [[exception]]
 path = "tests/test_comment_budget.py"
