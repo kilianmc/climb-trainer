@@ -39,7 +39,7 @@ One line each; `→` names the archive heading that holds the reasoning.
 - `web/scripts/gen-landing-images.mjs` is an authoring tool and must never enter `build` → *Landing imagery*
 - Icons are SVG components, never `<img src="…svg">`, and an icon-only control owes its own `aria-label` → *Landing imagery* · *The nav's thresholds are MEASUREMENTS*
 - Generated API types are COMMITTED: regenerate with `npm run codegen:api`, never loosen the `openapi-sha256` digest header, and never recreate `web/src/api/vocabularies.ts`; a FastAPI or Pydantic bump fails that test and Dependabot cannot fix it → *OpenAPI codegen*
-- PWA: `registerType: 'autoUpdate'` with `injectRegister: null`, and `dist/index.html` plus the icons must not be excluded from precache; the asset generator is deliberately not a devDependency and its config stays plain JS → *PWA — only the decisions a reader would otherwise reverse*
+- PWA: `registerType: 'autoUpdate'` with `injectRegister: null`; the asset generator is deliberately not a devDependency and its config stays plain JS → *PWA — only the decisions a reader would otherwise reverse*
 - `&__prose` is `56ch` and the number is MEASURED — do not "fix" it up to the usual `65ch` → *The reading measure is a GRID COLUMN*
 - The four screen sizes are NAMED container sizes and some widths are deliberately not on the scale; read them out of `web/src/styles/_tokens.scss` rather than inventing one → *The four screen sizes are NAMED*
 - The phase week table never transposes, its short codes are applied by CLIPPING rather than `display: none`, and its sizing custom properties are component-scoped and must not move into the token file → *The phase week table*
