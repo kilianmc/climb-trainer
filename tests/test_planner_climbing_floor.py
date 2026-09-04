@@ -153,11 +153,11 @@ _TAPER_HARD_PER_WEEK: tuple[str, ...] = ("power", "power_endurance")
 # it inflates the ratio by a session-count-dependent amount: the beginner 2x/week taper read
 # 9.8% excluding and 35.6% including before this PR, which would have let a 7-minute taper week
 # pass as a third of a loading week.
-# ⚠️ The 60% CEILING is deliberately NOT asserted, and it is an OPEN DECISION FOR KILIAN rather
-# than an accepted exception. Measured after C2's top-up, 52 of 96 deload weeks (to 85.5%) and
-# 8 of 24 taper weeks (to 68.1%) sit above it, because a deload week's length comes from its own
-# prescriptions and its own session types and so does not know which block it closes. Turning it
-# on needs either a per-block unload target or a third re-baseline of `_TARGET_BAND[ADVANCED]`.
+# ⚠️ The 60% CEILING is deliberately NOT asserted and is SETTLED, not owed (Kilian, 2026-09-05):
+# on a recovery week the plan would rather leave work in than take too much out. Measured, 52 of
+# 96 deload weeks run to 85.5% and taper weeks 49-68%. Do not add a ceiling arm here, and do not
+# file it as a finding — a divergence from both sources normally is one, and this is the ruled
+# exception. `PHASE_GUIDE` promises only this floor for the same reason.
 _UNLOAD_FLOOR_PCT = 40
 
 # One climber per band, by CURRENT grade, spanning both ladders so neither discipline's
@@ -1000,7 +1000,7 @@ def test_an_UNLOAD_WEEK_KEEPS_at_least_forty_percent_of_its_own_blocks_volume(
     sessions: int,
 ) -> None:
     """⚠️ GUARD. Per week, per climber, DELOAD and TAPER apart: an unload week keeps at least
-    `_UNLOAD_FLOOR_PCT` of its own block's loading mean. On the ceiling, see that comment."""
+    `_UNLOAD_FLOOR_PCT` of its own block's loading mean. There is no ceiling, by ruling."""
     del level
     rows = _unload_ratio(_plan(discipline, system, label, sessions, 0b111_1111), phase)
     assert rows, f"a {label} climber at {sessions}x a week has no {phase.value} week to measure."
