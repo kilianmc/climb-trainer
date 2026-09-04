@@ -99,6 +99,8 @@ _CLIMBERS: tuple[tuple[Level, Discipline, GradeSystemKey, str], ...] = (
 
 # Kilian's authored order for a base block, restated independently of `selection.py` for
 # `_MAY_EXPAND`'s reason, and quoted almost verbatim in `PHASE_GUIDE[Phase.BASE]`.
+# ⚠️ `anaerobic_capacity` is deliberately not here although #98 put it in the base row: base
+# prescribes no ON-WALL anaerobic capacity exercise, so it takes no wall turns (PR C's content).
 _BASE_WALL_EMPHASIS: tuple[str, ...] = ("endurance", "technique", "power_endurance", "power")
 
 # What the two qualities that order ranks last may take of a base block's prescribed minutes.
@@ -483,6 +485,32 @@ def test_a_beginners_base_block_keeps_the_qualities_it_ranks_last_last(
         f"a base block's prescribed minutes on {' and '.join(_BASE_WALL_EMPHASIS[-2:])}, "
         f"against a ceiling of {_BASE_TAIL_CEILING_PCT}%: {tail // 60} min of "
         f"{total // 60}. Base ranks both of them last and PHASE_GUIDE[base] says so in prose."
+    )
+
+
+@pytest.mark.parametrize(("level", "discipline", "system", "label"), _BEGINNERS)
+@pytest.mark.parametrize("sessions", [1, 2, 3, 5, 7])
+def test_the_quality_a_base_block_ranks_FIRST_takes_the_most_wall_time(
+    level: Level, discipline: Discipline, system: GradeSystemKey, label: str, sessions: int
+) -> None:
+    """⚠️ GUARD, the head. A ceiling on the tail says nothing about which quality LEADS, and
+    `PHASE_GUIDE[base]` publishes that endurance does. Issue #98 added two aspects to this row
+    and one of them, anaerobic capacity, is high priority in base — Kilian's 2026-09-04 call was
+    that endurance keeps the wall lead anyway, and this is where that decision is measured.
+    ⚠️ Measured slack: endurance survives a demotion to the row's SEVENTH position because its
+    exercises are long, and only goes red when it reaches the tail. It proves the lead, not the
+    rank."""
+    del level
+    _every, wall = _base_aspect_seconds(
+        generate(_input(discipline, system, label, sessions, 0b111_1111))
+    )
+    lead = _BASE_WALL_EMPHASIS[0]
+    behind = {key: seconds for key, seconds in wall.items() if key != lead}
+    assert all(wall.get(lead, 0) >= seconds for seconds in behind.values()), (
+        f"a {label} beginner training {sessions}x a week gets {wall.get(lead, 0) // 60} min of "
+        f"{lead} on a wall in a base block, against "
+        f"{ {key: seconds // 60 for key, seconds in behind.items()} }. The quality base ranks "
+        f"first has to take the most wall time, and PHASE_GUIDE[base] says so in prose."
     )
 
 

@@ -9,11 +9,13 @@ import { weekdayName } from './blueprint';
 /** Monday first, matching `planned_session.weekday` and `blueprint.ts::weekdayName`. */
 export const WEEKDAY_COUNT = 7;
 
-/* ⚠️ 1 to 3 characters, and `strength` is deliberately absent: there is no general strength
-   aspect yet, so a strength day reads `P`. That is issue #98, sequenced after this table. */
+/* ⚠️ 1 to 3 characters, and unique in BOTH directions — `aspectOfCode` reverses this map, so a
+   duplicate code would silently resolve to whichever key is listed first. Seed order (#98). */
 const ASPECT_CODES: Readonly<Record<string, string>> = {
   finger_strength: 'FS',
+  general_strength: 'GS',
   power: 'P',
+  anaerobic_capacity: 'AC',
   power_endurance: 'PE',
   endurance: 'E',
   technique: 'T',
@@ -22,7 +24,7 @@ const ASPECT_CODES: Readonly<Record<string, string>> = {
   mobility: 'M',
 };
 
-/** The eight seeded aspect keys, in legend order. */
+/** The seeded aspect keys, in legend order. */
 export const ASPECT_KEYS: readonly string[] = Object.keys(ASPECT_CODES);
 
 export interface PhaseWeekAspect {

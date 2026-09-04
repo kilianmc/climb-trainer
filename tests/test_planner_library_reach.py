@@ -1,11 +1,11 @@
 """⚠️ GUARD. Every exercise in the library is reachable by some profile, and one plan is varied.
 
 DB-free. Nothing in the gate could see an exercise no plan can prescribe: 762 tests passed while
-six of 85 were structurally unreachable — three wall `core_tension` drills that fell between the
-climbing pass's on-the-wall filter and the supplementary pass's off-the-wall one, and three
-off-the-wall `power` exercises whose aspect the climbing pass had already spent. This is the
-"compute the invariant from the data" shape (PR #63: 20 exercises in the wrong tuple, ruff, mypy
-and 266 tests blind), so reach is MEASURED off `generate()` rather than reasoned about.
+six of the then-85 were structurally unreachable — three wall `core_tension` drills that fell
+between the climbing pass's on-the-wall filter and the supplementary pass's off-the-wall one,
+and three off-the-wall `power` exercises whose aspect the climbing pass had already spent. This
+is the "compute the invariant from the data" shape (PR #63: 20 exercises in the wrong tuple,
+ruff, mypy and 266 tests blind), so reach is MEASURED off `generate()` rather than reasoned.
 
 `_ACCEPTABLY_UNREACHABLE` is the register, asserted in BOTH directions on the idiom of
 `DELIBERATELY_UNPRESCRIBED` and `CELLS_WITH_NO_GEARLESS_OPTION`: an orphan not listed is a
@@ -46,10 +46,10 @@ _PROFILES: tuple[tuple[Discipline, GradeSystemKey, str, str, int], ...] = (
 )
 
 # Kilian's requirement, and the floor is a SHARE of what the discipline can see rather than a
-# count: 4 of 85 exercises are boulder-only and 13 rope-only, so a sport plan tops out at 81 and
-# a boulder plan at 72, and a count would ask the two for different things. Measured today:
-# beginner 59/81 and 51/72 (73%, 71%), intermediate 76/81 and 68/72 (94%), advanced 81/81 and
-# 69/72 (100%, 96%). Beginner is lowest by arithmetic, not by defect — the band puts 85-90% of
+# count: 4 of 87 exercises are boulder-only and 13 rope-only, so a sport plan tops out at 83 and
+# a boulder plan at 74, and a count would ask the two for different things. Measured today:
+# beginner 58/83 and 51/74 (69%, 68%), intermediate 77/83 and 69/74 (92%, 93%), advanced 81/83
+# and 73/74 (97%, 98%). Beginner is lowest by arithmetic, not by defect — the band puts 85-90% of
 # its minutes on a wall, so there is little room left for the off-the-wall half of the library.
 _DISTINCT_SHARE_FLOOR_PCT = 68
 

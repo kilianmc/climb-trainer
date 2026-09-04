@@ -11,7 +11,7 @@
  *   openapi-sha256  the OpenAPI document it was generated from
  *   types-sha256    everything below this comment block
  *
- * openapi-sha256: e104b0fbd8a823010cb19d78c1f4b44b079b4277f542721487a392666ab7c3ff
+ * openapi-sha256: 1a2df4e36fdd5fcd82ec95d4066930ee2630f4dad7f4b061786d130f624eda9c
  * types-sha256: f045220fe647576fa5e77cd3d6448dba26a288435e08690a03cfc32a3fa4fd32
  */
 

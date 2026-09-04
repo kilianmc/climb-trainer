@@ -38,17 +38,17 @@ WALL_EQUIPMENT: Final[frozenset[str]] = frozenset(
     }
 )
 
-# The aspects a climbing session can be *about* — i.e. that may DEFINE its type and therefore
-# its window. `core_tension` is absent because a tension drill cannot define a session, NOT
-# because its minutes are supplementary: wall-based core work counts as climbing (Kilian,
-# 2026-08-29). `requires_wall()` answers "do these minutes count?" and this set answers "may
-# this quality name the session?"; conflating them is what made three wall drills unprescribable.
+# The aspects a climbing session can be *about* — i.e. that may DEFINE its type and therefore its
+# window. `requires_wall()` answers "do these minutes count?" and this answers "may this quality
+# name the session?"; conflating them made three wall drills unprescribable. `core_tension` is out
+# because a tension drill cannot define a session (Kilian, 2026-08-29). Both #98 aspects are IN:
+# `wall_led_aspects()` filters this to on-wall candidates, so no gym lift can lead a session.
 WALL_LED_ASPECTS: Final[frozenset[str]] = frozenset(
-    {"endurance", "technique", "power", "power_endurance"}
+    {"endurance", "technique", "power", "general_strength", "power_endurance", "anaerobic_capacity"}
 )
 
-# Extra time becomes extra volume only here, and only in a loading phase. Everywhere else the
-# low volume *is* the protocol, so padding a max hang makes it worse rather than longer.
+# Extra time becomes extra volume only here, and only in a loading phase. Everywhere else the low
+# volume *is* the protocol, so neither #98 aspect joins: padding them makes another quality.
 EXPANDABLE_ASPECTS: Final[frozenset[str]] = frozenset({"endurance", "technique"})
 
 # And even there, at most this multiple of the AUTHORED set count: without the cap a 4-minute

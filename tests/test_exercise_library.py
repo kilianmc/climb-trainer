@@ -99,7 +99,7 @@ def test_every_aspect_has_an_exercise_that_needs_no_equipment() -> None:
 
 
 def test_every_phase_and_aspect_pair_is_prescribable_or_deliberately_not() -> None:
-    """The coverage contract: no silent holes in the 56-cell grid.
+    """The coverage contract: no silent holes in the 70-cell grid.
 
     An exercise with no `prescription_template` row for a phase cannot be prescribed in that
     phase, so a cell with no candidate is a block the generator cannot fill for that aspect.

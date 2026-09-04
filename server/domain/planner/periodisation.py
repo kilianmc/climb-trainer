@@ -31,7 +31,7 @@ in this package and adding one would contradict the schema.
 ends removed, which is exactly the cycle `server/domain/exercises.py` authored its
 prescriptions against. Because it matches, "a quality is maintained after its own block,
 never previewed before it" holds by construction rather than by a test — and
-`DELIBERATELY_UNPRESCRIBED`'s four exemptions stay correct.
+`DELIBERATELY_UNPRESCRIBED`'s exemptions stay correct.
 """
 
 from dataclasses import dataclass

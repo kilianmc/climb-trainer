@@ -177,7 +177,7 @@ def test_an_abandoned_onboarding_resumes_rather_than_restarting(
     a profile that reads as 20% complete.
 
     ⚠️ Step 3 is the one issue #54 rebuilt: a current grade, a strength and a weakness, plus
-    the eight ratings that ride along with them. All three are `0006` columns.
+    the per-aspect ratings that ride along with them. All three are `0006` columns.
     """
     grade_id = _first_grade_id(db_session, "boulder")
     current_id = _second_grade_id(db_session, "boulder")

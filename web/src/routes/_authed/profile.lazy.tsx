@@ -35,7 +35,7 @@ import { IconUser } from '../../ui/icons';
  * set when one of its own fields reports a change. It used to be the set of steps that had been
  * SHOWN, which was the same thing while one card was visible at a time and is not now: every
  * section is shown, so "shown" would mean "all of them", and pressing Save after editing a target
- * grade would stamp `injuries_reviewed_at` and write eight default aspect ratings for questions
+ * grade would stamp `injuries_reviewed_at` and write a default aspect rating for questions
  * the user never looked at. The bar may only ever report answers a user gave.
  *
  * The Account section is a PLACEHOLDER and says so. It marks the space for a display name and a

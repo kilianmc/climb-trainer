@@ -719,7 +719,7 @@ def _intended_aspect(
     prescribes that aspect at all), deliberately not the climber's gear — a weakness that needs
     a hangboard should surface as "here is what you would need", not vanish. Slot 2 on rotate.
 
-    `UserAspectRating`'s eight scores are never read: since issue #54 they sit behind a
+    `UserAspectRating`'s per-aspect scores are never read: since issue #54 they sit behind a
     disclosure and may be untouched defaults, while `weakness_aspect_id` is the answer to a
     direct question.
     """
