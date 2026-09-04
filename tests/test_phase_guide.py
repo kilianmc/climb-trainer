@@ -11,9 +11,41 @@ never checked — seventeen fetches would redden the gate on a flaky network.
 
 from dataclasses import replace
 
+from server.domain.exercises import DELIBERATELY_UNPRESCRIBED
+from server.domain.planner.selection import ASPECT_EMPHASIS
 from server.domain.vocabulary import PHASE_GUIDE, PLAN_GOAL, GuideLink, Phase, PhaseGuide
 
 _KEYS = tuple(guide.phase.value for guide in PHASE_GUIDE)
+
+# What each phase's authored `how_to_train` CLAIMS about the order, restated independently of
+# `selection.py` — the idiom `_BASE_WALL_EMPHASIS` uses in tests/test_planner_climbing_floor.py.
+# Since PR A (#116) the emphasis order drives what the user is shown, so every one of these
+# sentences is now a claim about generator behaviour rather than decoration.
+COPY_CLAIMS_LEAD: dict[Phase, tuple[str, ...]] = {
+    Phase.BASE: ("endurance", "technique"),
+    Phase.STRENGTH: ("finger_strength",),
+    Phase.POWER: ("power", "finger_strength"),
+    Phase.POWER_ENDURANCE: ("power_endurance", "endurance"),
+    Phase.PERFORMANCE: ("power", "power_endurance"),
+    Phase.DELOAD: ("technique", "mobility"),
+}
+
+# "power sits last on purpose", `PHASE_GUIDE[base]`. The share ceiling in
+# tests/test_planner_climbing_floor.py measures the consequence; this pins the row itself.
+COPY_CLAIMS_LAST: dict[Phase, str] = {Phase.BASE: "power"}
+
+# Every aspect a phase's copy tells the reader is NOT prescribed there.
+COPY_CLAIMS_ABSENT: dict[Phase, tuple[str, ...]] = {
+    Phase.POWER: ("power_endurance",),
+    Phase.POWER_ENDURANCE: ("general_strength",),
+    Phase.PERFORMANCE: ("anaerobic_capacity",),
+    Phase.TAPER: (
+        "finger_strength",
+        "power_endurance",
+        "anaerobic_capacity",
+        "general_strength",
+    ),
+}
 
 # 2-3 per phase is the authored range: one source cannot show a contested claim from both
 # sides, and more than three is a reading list rather than a pointer.
@@ -46,6 +78,34 @@ def test_the_order_is_the_ENUM_declaration_order() -> None:
 def test_no_phase_appears_twice() -> None:
     """A duplicate would pass the set comparison above while shadowing one of the two."""
     assert len(_KEYS) == len(set(_KEYS))
+
+
+def test_the_copys_ORDER_CLAIMS_match_the_emphasis_row() -> None:
+    """⚠️ GUARD. A reordered row silently makes published copy false, which is the defect
+    #116 fixed, in reverse. Reword the sentence or reorder the row — never the table alone."""
+    for phase, claimed in COPY_CLAIMS_LEAD.items():
+        row = ASPECT_EMPHASIS[phase]
+        assert row[: len(claimed)] == claimed, (
+            f"PHASE_GUIDE[{phase.value}] tells the reader {claimed} lead, but "
+            f"ASPECT_EMPHASIS[{phase.value}] starts {row[: len(claimed)]}."
+        )
+    for phase, last in COPY_CLAIMS_LAST.items():
+        assert ASPECT_EMPHASIS[phase][-1] == last, (
+            f"PHASE_GUIDE[{phase.value}] says {last} sits last, but the row ends "
+            f"{ASPECT_EMPHASIS[phase][-1]}."
+        )
+
+
+def test_the_copys_ABSENCE_CLAIMS_match_the_library() -> None:
+    """⚠️ GUARD, the other half. Copy naming a quality as deliberately absent is a claim about
+    `DELIBERATELY_UNPRESCRIBED`, and filling one of those cells would make it a lie."""
+    unprescribed = {(cell.phase, cell.aspect_key) for cell in DELIBERATELY_UNPRESCRIBED}
+    for phase, absent in COPY_CLAIMS_ABSENT.items():
+        for aspect in absent:
+            assert (phase, aspect) in unprescribed, (
+                f"PHASE_GUIDE[{phase.value}] tells the reader {aspect} is deliberately absent, "
+                f"but the library prescribes it there."
+            )
 
 
 def test_no_field_the_screen_renders_is_blank() -> None:

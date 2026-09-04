@@ -593,6 +593,164 @@ EXERCISES: Final[tuple[ExerciseSpec, ...]] = (
             ),
         ),
     ),
+    # ------------------------------------------------------------ general_strength
+    ExerciseSpec(
+        key="weighted_pull_ups",
+        name="Weighted pull-ups",
+        aspect_key="general_strength",
+        protocol_kind=ProtocolKind.STRAIGHT_SETS,
+        equipment_keys=("pull_up_bar", "weight_belt"),
+        contraindication_keys=("elbow", "shoulder"),
+        instructions=(
+            "Low reps with enough added weight that the last one is slow but never ugly. "
+            "Full hang at the bottom with the shoulders engaged, chin past the bar at the "
+            "top, and no kick — the point is force through a locked-in shoulder, which is "
+            "what a hard first move off the ground actually asks for."
+        ),
+        substitution_hint="No belt? A packed backpack carries the same load.",
+        prescriptions=(
+            PrescriptionSpec(
+                Phase.STRENGTH, sets=5, reps=5, rest_between_sets_seconds=180, target_rpe=9
+            ),
+            PrescriptionSpec(
+                Phase.POWER, sets=4, reps=3, rest_between_sets_seconds=180, target_rpe=9
+            ),
+        ),
+    ),
+    ExerciseSpec(
+        key="system_board_limit_moves",
+        name="System board limit moves",
+        aspect_key="general_strength",
+        protocol_kind=ProtocolKind.LIMIT_BOULDER,
+        equipment_keys=("system_board",),
+        contraindication_keys=("fingers", "shoulder", "elbow"),
+        instructions=(
+            "Two or three moves at your absolute limit on a steep board, tried until they "
+            "stop improving. The board removes the reading and the footwork puzzle, so "
+            "every attempt is a pure force effort — which is the appeal and also why the "
+            "session is short."
+        ),
+        substitution_hint="No board? A two-move limit boulder on the steepest wall you have.",
+        prescriptions=(
+            PrescriptionSpec(
+                Phase.POWER, sets=8, reps=1, rest_between_sets_seconds=240, target_rpe=10
+            ),
+            PrescriptionSpec(
+                Phase.PERFORMANCE, sets=6, reps=1, rest_between_sets_seconds=240, target_rpe=10
+            ),
+        ),
+    ),
+    ExerciseSpec(
+        key="split_squats",
+        name="Split squats",
+        aspect_key="general_strength",
+        protocol_kind=ProtocolKind.STRAIGHT_SETS,
+        # The general-strength floor: no gear at all. See the module docstring.
+        contraindication_keys=("knee", "hip"),
+        instructions=(
+            "Long stance, back knee tracking down towards the floor, front foot flat, and "
+            "stand back up through the front leg. Reps are per leg, so a set of five is five "
+            "each side. Every hard step-through in climbing is loaded on one leg with the hips "
+            "off-centre and a two-legged squat never trains that. Depth first, load second: "
+            "put the rear foot on a step when bodyweight alone stops being hard, and only add "
+            "weight once the full range is easy."
+        ),
+        substitution_hint="Bodyweight too easy? A packed backpack adds load with no kit at all.",
+        prescriptions=(
+            PrescriptionSpec(
+                Phase.BASE, sets=3, reps=8, rest_between_sets_seconds=90, target_rpe=7
+            ),
+            PrescriptionSpec(
+                Phase.STRENGTH, sets=3, reps=5, rest_between_sets_seconds=120, target_rpe=8
+            ),
+            # Maintenance from here: low volume is the protocol, not a shortfall, and heavy
+            # legs inside a power or performance week cost more than they return.
+            PrescriptionSpec(
+                Phase.POWER, sets=2, reps=5, rest_between_sets_seconds=120, target_rpe=6
+            ),
+            PrescriptionSpec(
+                Phase.PERFORMANCE, sets=2, reps=5, rest_between_sets_seconds=120, target_rpe=6
+            ),
+            PrescriptionSpec(
+                Phase.DELOAD, sets=2, reps=8, rest_between_sets_seconds=90, target_rpe=5
+            ),
+        ),
+    ),
+    ExerciseSpec(
+        key="one_arm_lockoff_negatives",
+        name="One-arm lock-offs and negatives",
+        aspect_key="general_strength",
+        protocol_kind=ProtocolKind.HOLD,
+        equipment_keys=("pull_up_bar",),
+        contraindication_keys=("elbow", "shoulder"),
+        instructions=(
+            "Hold a one-arm lock-off at the top with the other hand assisting as little as "
+            "it must, then lower under control for the count. The slow half is the point: "
+            "most people can pull past a hold they cannot stop at, and the moves that get "
+            "dropped are the ones that need stopping."
+        ),
+        substitution_hint="No bar? Rings work, with the shoulder free to rotate.",
+        progression_of_key="weighted_pull_ups",
+        prescriptions=(
+            PrescriptionSpec(
+                Phase.STRENGTH, sets=5, work_seconds=8, rest_between_sets_seconds=150, target_rpe=9
+            ),
+            PrescriptionSpec(
+                Phase.POWER, sets=4, work_seconds=5, rest_between_sets_seconds=180, target_rpe=9
+            ),
+        ),
+    ),
+    ExerciseSpec(
+        key="outdoor_route_crux_repeats",
+        name="Outdoor crux repeats",
+        aspect_key="general_strength",
+        protocol_kind=ProtocolKind.STRAIGHT_SETS,
+        discipline=Discipline.SPORT,
+        equipment_keys=("outdoor_routes",),
+        contraindication_keys=("fingers", "elbow", "shoulder"),
+        instructions=(
+            "On a rope, work the two or three hardest moves of a route in isolation, hanging "
+            "the bolt between attempts and doing them again. It is the strength session a "
+            "rock-only climber actually has access to: the movement is the real thing, the "
+            "rests are as long as you make them, and the volume stays low."
+        ),
+        substitution_hint="Nothing outdoors? Hard linked moves on a steep indoor route.",
+        prescriptions=(
+            PrescriptionSpec(
+                Phase.STRENGTH, sets=6, reps=2, rest_between_sets_seconds=240, target_rpe=9
+            ),
+            PrescriptionSpec(
+                Phase.POWER, sets=6, reps=1, rest_between_sets_seconds=300, target_rpe=10
+            ),
+            PrescriptionSpec(
+                Phase.PERFORMANCE, sets=5, reps=1, rest_between_sets_seconds=300, target_rpe=10
+            ),
+        ),
+    ),
+    ExerciseSpec(
+        key="outdoor_boulder_move_repeats",
+        name="Outdoor single-move repeats",
+        aspect_key="general_strength",
+        protocol_kind=ProtocolKind.STRAIGHT_SETS,
+        discipline=Discipline.BOULDER,
+        equipment_keys=("outdoor_boulders",),
+        contraindication_keys=("fingers", "shoulder", "ankle"),
+        instructions=(
+            "One hard move on rock, repeated from the same start with a full rest between "
+            "attempts. Rock holds do not give a second chance at a bad body position, which "
+            "is why repeating a single move outdoors teaches more per attempt than a whole "
+            "problem does — and why the strength block does not have to move indoors."
+        ),
+        substitution_hint="Nothing dry? The same single-move repeats on a wall.",
+        prescriptions=(
+            PrescriptionSpec(
+                Phase.STRENGTH, sets=6, reps=2, rest_between_sets_seconds=240, target_rpe=9
+            ),
+            PrescriptionSpec(
+                Phase.POWER, sets=8, reps=1, rest_between_sets_seconds=300, target_rpe=10
+            ),
+        ),
+    ),
     # ------------------------------------------------------------------------ power
     ExerciseSpec(
         key="limit_boulders",
@@ -690,34 +848,6 @@ EXERCISES: Final[tuple[ExerciseSpec, ...]] = (
         ),
     ),
     ExerciseSpec(
-        key="weighted_pull_ups",
-        name="Weighted pull-ups",
-        aspect_key="power",
-        protocol_kind=ProtocolKind.STRAIGHT_SETS,
-        equipment_keys=("pull_up_bar", "weight_belt"),
-        contraindication_keys=("elbow", "shoulder"),
-        instructions=(
-            "Low reps with enough added weight that the last one is slow but never ugly. "
-            "Full hang at the bottom with the shoulders engaged, chin past the bar at the "
-            "top, and no kick — the point is force through a locked-in shoulder, which is "
-            "what a hard first move off the ground actually asks for."
-        ),
-        substitution_hint="No belt? A packed backpack carries the same load.",
-        prescriptions=(
-            PrescriptionSpec(
-                Phase.STRENGTH, sets=5, reps=5, rest_between_sets_seconds=180, target_rpe=9
-            ),
-            PrescriptionSpec(
-                Phase.POWER, sets=4, reps=3, rest_between_sets_seconds=180, target_rpe=9
-            ),
-            # A maintenance dose through the power-endurance block: pulling force is kept
-            # after its own block rather than rebuilt after it.
-            PrescriptionSpec(
-                Phase.POWER_ENDURANCE, sets=3, reps=3, rest_between_sets_seconds=180, target_rpe=8
-            ),
-        ),
-    ),
-    ExerciseSpec(
         key="explosive_ring_pull_ups",
         name="Explosive ring pull-ups",
         aspect_key="power",
@@ -766,29 +896,6 @@ EXERCISES: Final[tuple[ExerciseSpec, ...]] = (
             ),
             PrescriptionSpec(
                 Phase.PERFORMANCE, sets=4, reps=2, rest_between_sets_seconds=240, target_rpe=9
-            ),
-        ),
-    ),
-    ExerciseSpec(
-        key="system_board_limit_moves",
-        name="System board limit moves",
-        aspect_key="power",
-        protocol_kind=ProtocolKind.LIMIT_BOULDER,
-        equipment_keys=("system_board",),
-        contraindication_keys=("fingers", "shoulder", "elbow"),
-        instructions=(
-            "Two or three moves at your absolute limit on a steep board, tried until they "
-            "stop improving. The board removes the reading and the footwork puzzle, so "
-            "every attempt is a pure force effort — which is the appeal and also why the "
-            "session is short."
-        ),
-        substitution_hint="No board? A two-move limit boulder on the steepest wall you have.",
-        prescriptions=(
-            PrescriptionSpec(
-                Phase.POWER, sets=8, reps=1, rest_between_sets_seconds=240, target_rpe=10
-            ),
-            PrescriptionSpec(
-                Phase.PERFORMANCE, sets=6, reps=1, rest_between_sets_seconds=240, target_rpe=10
             ),
         ),
     ),
@@ -874,37 +981,6 @@ EXERCISES: Final[tuple[ExerciseSpec, ...]] = (
         ),
     ),
     ExerciseSpec(
-        key="one_arm_lockoff_negatives",
-        name="One-arm lock-offs and negatives",
-        aspect_key="power",
-        protocol_kind=ProtocolKind.HOLD,
-        equipment_keys=("pull_up_bar",),
-        contraindication_keys=("elbow", "shoulder"),
-        instructions=(
-            "Hold a one-arm lock-off at the top with the other hand assisting as little as "
-            "it must, then lower under control for the count. The slow half is the point: "
-            "most people can pull past a hold they cannot stop at, and the moves that get "
-            "dropped are the ones that need stopping."
-        ),
-        substitution_hint="No bar? Rings work, with the shoulder free to rotate.",
-        progression_of_key="weighted_pull_ups",
-        prescriptions=(
-            PrescriptionSpec(
-                Phase.STRENGTH, sets=5, work_seconds=8, rest_between_sets_seconds=150, target_rpe=9
-            ),
-            PrescriptionSpec(
-                Phase.POWER, sets=4, work_seconds=5, rest_between_sets_seconds=180, target_rpe=9
-            ),
-            PrescriptionSpec(
-                Phase.POWER_ENDURANCE,
-                sets=3,
-                work_seconds=6,
-                rest_between_sets_seconds=150,
-                target_rpe=8,
-            ),
-        ),
-    ),
-    ExerciseSpec(
         key="loaded_jump_squats",
         name="Loaded jump squats",
         aspect_key="power",
@@ -926,54 +1002,147 @@ EXERCISES: Final[tuple[ExerciseSpec, ...]] = (
             ),
         ),
     ),
+    # ---------------------------------------------------------- anaerobic_capacity
     ExerciseSpec(
-        key="outdoor_route_crux_repeats",
-        name="Outdoor crux repeats",
-        aspect_key="power",
-        protocol_kind=ProtocolKind.STRAIGHT_SETS,
+        key="route_intervals",
+        name="On-the-minute route intervals",
+        aspect_key="anaerobic_capacity",
+        protocol_kind=ProtocolKind.INTERVALS,
         discipline=Discipline.SPORT,
-        equipment_keys=("outdoor_routes",),
-        contraindication_keys=("fingers", "elbow", "shoulder"),
+        equipment_keys=("lead_wall",),
+        contraindication_keys=("fingers", "elbow"),
         instructions=(
-            "On a rope, work the two or three hardest moves of a route in isolation, hanging "
-            "the bolt between attempts and doing them again. It is the strength session a "
-            "rock-only climber actually has access to: the movement is the real thing, the "
-            "rests are as long as you make them, and the volume stays low."
+            "Climb hard for a minute, lower, take the prescribed rest, repeat. The rest is "
+            "twice the work: long enough to start the next interval able to climb it, short "
+            "enough that the burn from the last one is still there. The timer is the "
+            "authority, not how recovered you feel. Choose a route sustained enough "
+            "that you are pumped at the end of the first interval and have to fight "
+            "through the last one."
         ),
-        substitution_hint="Nothing outdoors? Hard linked moves on a steep indoor route.",
         prescriptions=(
             PrescriptionSpec(
-                Phase.STRENGTH, sets=6, reps=2, rest_between_sets_seconds=240, target_rpe=9
-            ),
-            PrescriptionSpec(
-                Phase.POWER, sets=6, reps=1, rest_between_sets_seconds=300, target_rpe=10
-            ),
-            PrescriptionSpec(
-                Phase.PERFORMANCE, sets=5, reps=1, rest_between_sets_seconds=300, target_rpe=10
+                Phase.POWER_ENDURANCE,
+                sets=6,
+                work_seconds=60,
+                rest_between_sets_seconds=120,
+                target_rpe=8,
             ),
         ),
     ),
     ExerciseSpec(
-        key="outdoor_boulder_move_repeats",
-        name="Outdoor single-move repeats",
-        aspect_key="power",
-        protocol_kind=ProtocolKind.STRAIGHT_SETS,
-        discipline=Discipline.BOULDER,
-        equipment_keys=("outdoor_boulders",),
-        contraindication_keys=("fingers", "shoulder", "ankle"),
+        key="linked_board_circuit",
+        name="Linked board circuit",
+        aspect_key="anaerobic_capacity",
+        protocol_kind=ProtocolKind.CIRCUIT,
+        equipment_keys=("system_board",),
+        contraindication_keys=("fingers", "elbow"),
         instructions=(
-            "One hard move on rock, repeated from the same start with a full rest between "
-            "attempts. Rock holds do not give a second chance at a bad body position, which "
-            "is why repeating a single move outdoors teaches more per attempt than a whole "
-            "problem does — and why the strength block does not have to move indoors."
+            "Link two or three moderate board problems back to back without coming off, "
+            "then rest and repeat. The board's steepness makes the forearms the limit "
+            "quickly, so pick problems you could climb twice over on a fresh day."
         ),
-        substitution_hint="Nothing dry? The same single-move repeats on a wall.",
+        substitution_hint="No board? Four boulders climbed back to back are the same circuit.",
         prescriptions=(
             PrescriptionSpec(
-                Phase.STRENGTH, sets=6, reps=2, rest_between_sets_seconds=240, target_rpe=9
+                Phase.POWER_ENDURANCE, sets=4, reps=3, rest_between_sets_seconds=300, target_rpe=9
+            ),
+        ),
+    ),
+    ExerciseSpec(
+        key="self_resisted_forearm_intervals",
+        name="Self-resisted forearm intervals",
+        aspect_key="anaerobic_capacity",
+        protocol_kind=ProtocolKind.INTERVALS,
+        # The anaerobic-capacity floor: no gear at all. See the module docstring.
+        contraindication_keys=("fingers",),
+        instructions=(
+            "Press the fingertips of one hand into the palm of the other and pull as if "
+            "closing a crimp, holding that effort for the whole work interval and taking the "
+            "rest exactly on the clock. Sets are per hand: run them on one, then repeat on the "
+            "other. The opposing hand is the load, so it can never spike — and there is nothing "
+            "external to add, so this progresses by holding the same effort for one more "
+            "interval and never by loading it heavier. It is a floor for weeks with no wall and "
+            "no board, not a replacement for either: this capacity is trained by climbing, and "
+            "improvising an edge from a door frame or a towel is how pulleys get injured."
+        ),
+        prescriptions=(
+            PrescriptionSpec(
+                Phase.BASE, sets=6, work_seconds=40, rest_between_sets_seconds=120, target_rpe=7
             ),
             PrescriptionSpec(
-                Phase.POWER, sets=8, reps=1, rest_between_sets_seconds=300, target_rpe=10
+                Phase.STRENGTH,
+                sets=6,
+                work_seconds=40,
+                rest_between_sets_seconds=120,
+                target_rpe=7,
+            ),
+            # One a week through the power and power-endurance blocks: 16 weeks or more of work
+            # is what this quality asks for, so it is maintained rather than rebuilt.
+            PrescriptionSpec(
+                Phase.POWER, sets=4, work_seconds=40, rest_between_sets_seconds=120, target_rpe=6
+            ),
+            PrescriptionSpec(
+                Phase.POWER_ENDURANCE,
+                sets=8,
+                work_seconds=40,
+                rest_between_sets_seconds=120,
+                target_rpe=8,
+            ),
+            PrescriptionSpec(
+                Phase.DELOAD, sets=3, work_seconds=40, rest_between_sets_seconds=120, target_rpe=5
+            ),
+        ),
+    ),
+    ExerciseSpec(
+        key="auto_belay_interval_laps",
+        name="Auto belay interval laps",
+        aspect_key="anaerobic_capacity",
+        protocol_kind=ProtocolKind.INTERVALS,
+        discipline=Discipline.SPORT,
+        equipment_keys=("auto_belay",),
+        contraindication_keys=("fingers", "elbow"),
+        instructions=(
+            "Climb a sustained route, ride the device down, and go again on the clock. With "
+            "nobody to wait for, the rest is exactly what the timer says — which is what "
+            "makes an auto belay the most honest interval tool in the building."
+        ),
+        prescriptions=(
+            PrescriptionSpec(
+                Phase.POWER_ENDURANCE,
+                sets=6,
+                work_seconds=90,
+                rest_between_sets_seconds=180,
+                target_rpe=8,
+            ),
+        ),
+    ),
+    ExerciseSpec(
+        key="machine_anaerobic_intervals",
+        name="Machine anaerobic intervals",
+        aspect_key="anaerobic_capacity",
+        protocol_kind=ProtocolKind.INTERVALS,
+        equipment_keys=("cardio_machine",),
+        contraindication_keys=("knee", "lower_back"),
+        instructions=(
+            "Hard forty-second efforts on a bike, rower or treadmill with a short rest "
+            "between them, until the last one is a fight. It trains the anaerobic system "
+            "without touching the fingers, which is exactly what a week with tired forearms "
+            "and a scheduled capacity session needs."
+        ),
+        substitution_hint="No machine? The same intervals work on a hill or a stairwell.",
+        prescriptions=(
+            PrescriptionSpec(
+                Phase.BASE, sets=6, work_seconds=40, rest_between_sets_seconds=80, target_rpe=7
+            ),
+            PrescriptionSpec(
+                Phase.POWER_ENDURANCE,
+                sets=8,
+                work_seconds=40,
+                rest_between_sets_seconds=60,
+                target_rpe=9,
+            ),
+            PrescriptionSpec(
+                Phase.DELOAD, sets=4, work_seconds=40, rest_between_sets_seconds=80, target_rpe=6
             ),
         ),
     ),
@@ -1000,39 +1169,6 @@ EXERCISES: Final[tuple[ExerciseSpec, ...]] = (
             ),
             PrescriptionSpec(
                 Phase.PERFORMANCE, sets=4, reps=4, rest_between_sets_seconds=180, target_rpe=9
-            ),
-        ),
-    ),
-    ExerciseSpec(
-        key="route_intervals",
-        name="On-the-minute route intervals",
-        aspect_key="power_endurance",
-        protocol_kind=ProtocolKind.INTERVALS,
-        discipline=Discipline.SPORT,
-        equipment_keys=("lead_wall",),
-        contraindication_keys=("fingers", "elbow"),
-        instructions=(
-            "Climb hard for a minute, lower, take the prescribed rest, repeat. The rest is "
-            "twice the work in a power-endurance block and shorter than that in a "
-            "performance one, so the same interval bites harder as the peak approaches — "
-            "the timer is the authority, not the ratio. Choose a route sustained enough "
-            "that you are pumped at the end of the first interval and have to fight "
-            "through the last one."
-        ),
-        prescriptions=(
-            PrescriptionSpec(
-                Phase.POWER_ENDURANCE,
-                sets=6,
-                work_seconds=60,
-                rest_between_sets_seconds=120,
-                target_rpe=8,
-            ),
-            PrescriptionSpec(
-                Phase.PERFORMANCE,
-                sets=5,
-                work_seconds=60,
-                rest_between_sets_seconds=90,
-                target_rpe=9,
             ),
         ),
     ),
@@ -1082,28 +1218,6 @@ EXERCISES: Final[tuple[ExerciseSpec, ...]] = (
         ),
     ),
     ExerciseSpec(
-        key="linked_board_circuit",
-        name="Linked board circuit",
-        aspect_key="power_endurance",
-        protocol_kind=ProtocolKind.CIRCUIT,
-        equipment_keys=("system_board",),
-        contraindication_keys=("fingers", "elbow"),
-        instructions=(
-            "Link two or three moderate board problems back to back without coming off, "
-            "then rest and repeat. The board's steepness makes the forearms the limit "
-            "quickly, so pick problems you could climb twice over on a fresh day."
-        ),
-        substitution_hint="No board? Four boulders climbed back to back are the same circuit.",
-        prescriptions=(
-            PrescriptionSpec(
-                Phase.POWER_ENDURANCE, sets=4, reps=3, rest_between_sets_seconds=300, target_rpe=9
-            ),
-            PrescriptionSpec(
-                Phase.PERFORMANCE, sets=3, reps=3, rest_between_sets_seconds=300, target_rpe=9
-            ),
-        ),
-    ),
-    ExerciseSpec(
         key="up_down_boulder_laps",
         name="Up-down boulder laps",
         aspect_key="power_endurance",
@@ -1148,36 +1262,6 @@ EXERCISES: Final[tuple[ExerciseSpec, ...]] = (
         ),
     ),
     ExerciseSpec(
-        key="auto_belay_interval_laps",
-        name="Auto belay interval laps",
-        aspect_key="power_endurance",
-        protocol_kind=ProtocolKind.INTERVALS,
-        discipline=Discipline.SPORT,
-        equipment_keys=("auto_belay",),
-        contraindication_keys=("fingers", "elbow"),
-        instructions=(
-            "Climb a sustained route, ride the device down, and go again on the clock. With "
-            "nobody to wait for, the rest is exactly what the timer says — which is what "
-            "makes an auto belay the most honest interval tool in the building."
-        ),
-        prescriptions=(
-            PrescriptionSpec(
-                Phase.POWER_ENDURANCE,
-                sets=6,
-                work_seconds=90,
-                rest_between_sets_seconds=180,
-                target_rpe=8,
-            ),
-            PrescriptionSpec(
-                Phase.PERFORMANCE,
-                sets=5,
-                work_seconds=90,
-                rest_between_sets_seconds=150,
-                target_rpe=9,
-            ),
-        ),
-    ),
-    ExerciseSpec(
         key="outdoor_redpoint_burns",
         name="Outdoor redpoint burns",
         aspect_key="power_endurance",
@@ -1198,36 +1282,6 @@ EXERCISES: Final[tuple[ExerciseSpec, ...]] = (
             ),
             PrescriptionSpec(
                 Phase.PERFORMANCE, sets=3, reps=1, rest_between_sets_seconds=1200, target_rpe=10
-            ),
-        ),
-    ),
-    ExerciseSpec(
-        key="machine_anaerobic_intervals",
-        name="Machine anaerobic intervals",
-        aspect_key="power_endurance",
-        protocol_kind=ProtocolKind.INTERVALS,
-        equipment_keys=("cardio_machine",),
-        contraindication_keys=("knee", "lower_back"),
-        instructions=(
-            "Hard forty-second efforts on a bike, rower or treadmill with a short rest "
-            "between them, until the last one is a fight. It trains the anaerobic system "
-            "without touching the fingers, which is exactly what a week with tired forearms "
-            "and a scheduled power-endurance session needs."
-        ),
-        substitution_hint="No machine? The same intervals work on a hill or a stairwell.",
-        prescriptions=(
-            PrescriptionSpec(
-                Phase.BASE, sets=6, work_seconds=40, rest_between_sets_seconds=80, target_rpe=7
-            ),
-            PrescriptionSpec(
-                Phase.POWER_ENDURANCE,
-                sets=8,
-                work_seconds=40,
-                rest_between_sets_seconds=60,
-                target_rpe=9,
-            ),
-            PrescriptionSpec(
-                Phase.DELOAD, sets=4, work_seconds=40, rest_between_sets_seconds=80, target_rpe=6
             ),
         ),
     ),
@@ -2550,9 +2604,9 @@ EXERCISES: Final[tuple[ExerciseSpec, ...]] = (
     ),
 )
 
-# The four (phase, aspect) pairs the library deliberately leaves unprescribable. The guard
-# test asserts the empty cells are EXACTLY these, so a hole opened by accident fails and an
-# exemption for a cell somebody has since filled fails too.
+# The (phase, aspect) pairs the library deliberately leaves unprescribable. The guard test asserts
+# the empty cells are EXACTLY these, so a hole opened by accident fails and an exemption for a cell
+# somebody has since filled fails too. `ASPECT_EMPHASIS` is the other half of every row here.
 DELIBERATELY_UNPRESCRIBED: Final[tuple[UnprescribedCell, ...]] = (
     UnprescribedCell(
         Phase.TAPER,
@@ -2592,6 +2646,46 @@ DELIBERATELY_UNPRESCRIBED: Final[tuple[UnprescribedCell, ...]] = (
             "arrive at the trip flat: the pump comes back long before the freshness does. "
             "Note the contrast with `power` in the same phase, which IS prescribed — "
             "short maximal efforts with complete rest cost almost nothing to recover."
+        ),
+    ),
+    UnprescribedCell(
+        Phase.POWER_ENDURANCE,
+        "general_strength",
+        (
+            "Strength is the quality that persists: it holds comfortably across the one to "
+            "four weeks a power-endurance block lasts, so there is nothing to lose by "
+            "leaving it out. A heavy hinge or squat inside these weeks competes for exactly "
+            "the recovery the interval sessions need, and the trade is one-sided."
+        ),
+    ),
+    UnprescribedCell(
+        Phase.TAPER,
+        "general_strength",
+        (
+            "Same reason, and the taper's own: nothing added in the last week can arrive in "
+            "time, while a heavy leg session leaves fatigue that hides the fitness the whole "
+            "plan built. Short maximal efforts stay because they cost almost nothing to "
+            "recover from; a heavy strength session is not one of those."
+        ),
+    ),
+    UnprescribedCell(
+        Phase.PERFORMANCE,
+        "anaerobic_capacity",
+        (
+            "Anaerobic capacity is dropped from four weeks out, and the performance block is "
+            "always the final four weeks — so that rule covers all of it. It takes sixteen "
+            "weeks or more to build and the weeks before the objective are for converting "
+            "what is already there, not for the burn work that costs the most to recover."
+        ),
+    ),
+    UnprescribedCell(
+        Phase.TAPER,
+        "anaerobic_capacity",
+        (
+            "The same four-week rule, at its sharpest end. This is the capacity work that "
+            "leaves you pumped, and a taper's whole job is to arrive fresh — so it sits at "
+            "the tail of the deload row alongside `power` and `power_endurance`, and out of "
+            "the taper entirely."
         ),
     ),
 )

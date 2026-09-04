@@ -13,7 +13,7 @@ import type { Profile } from '../api/types';
  * Every step's test reads server state, which is only unambiguous because `0005` made the
  * profile able to say "not answered". **Availability needs BOTH `sessions_per_week` and
  * `available_weekdays`** — either alone is a half-answered question. **Aspects = the current
- * grade AND both picks**, deliberately not "at least one rating": since #54 the eight sliders
+ * grade AND both picks**, deliberately not "at least one rating": since #54 the sliders
  * are optional detail behind a disclosure, and a row written from an untouched default would
  * credit a step nobody answered. **Injuries = `injuries_reviewed_at` is set**, never a row
  * count — "nothing is hurting" writes ZERO rows, so ⚠️ **a step needs a `*_reviewed_at` column
@@ -63,7 +63,7 @@ export function stepCompletion(profile: Profile): StepCompletion {
     targetGrade: profile.target_grade_id !== null,
     availability: profile.sessions_per_week !== null && profile.available_weekdays !== null,
     // All three, because all three are the step's question — a current grade, a strength and
-    // a weakness. The eight `aspect_ratings` ride along with them but are no longer the test:
+    // a weakness. The `aspect_ratings` ride along with them but are no longer the test:
     // they are optional detail now (see `UserAspectRating`'s docstring), and an untouched
     // slider left at the default would credit a step nobody answered.
     aspects:

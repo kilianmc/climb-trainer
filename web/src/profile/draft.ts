@@ -7,7 +7,7 @@ import { ONBOARDING_STEPS, type OnboardingStep } from './completion';
  * Two reasons this is not just `Profile` with setters:
  *
  * 1. **The wire shape is not the editable shape.** `aspect_ratings` is a list of rows with
- *    a `rated_at` the client does not own; editing eight sliders wants a map. Same for the
+ *    a `rated_at` the client does not own; editing a row of sliders wants a map. Same for the
  *    injury notes.
  * 2. **`patchFor` is the whole persistence contract, and it is pure.** `ProfilePatchRequest`
  *    is `extra="forbid"`, so an extra key is a 422 rather than a field the server ignores —
@@ -27,7 +27,7 @@ export interface ProfileDraft {
    * and clears this column itself when a new target moves to the other ladder.
    */
   currentGradeId: number | null;
-  /** One strength and one weakness, from the eight aspects. Must differ (the API checks). */
+  /** One strength and one weakness, from the aspect vocabulary. Must differ (the API checks). */
   strengthAspectId: number | null;
   weaknessAspectId: number | null;
   /**
@@ -82,7 +82,7 @@ export interface ProfileDraft {
 }
 
 /**
- * Where the eight sliders sit until something says otherwise, and what the two picks write.
+ * Where the sliders sit until something says otherwise, and what the two picks write.
  *
  * ⚠️ Since issue #54 the sliders are behind a disclosure and are **no longer the step's
  * question** — one strength and one weakness are. Picking one writes that aspect's score
@@ -166,7 +166,7 @@ export function canSubmit(step: OnboardingStep, draft: ProfileDraft): boolean {
       );
     case 'aspects':
       // Every climber has a relative strength and a relative weakness, and the sliders are
-      // behind a disclosure now — so eight untouched 3s is not an answer to this step.
+      // behind a disclosure now — so a row of untouched 3s is not an answer to this step.
       return (
         draft.currentGradeId !== null &&
         draft.strengthAspectId !== null &&
@@ -205,7 +205,7 @@ export function patchFor(step: OnboardingStep, draft: ProfileDraft): ProfilePatc
             available_weekdays: draft.allWeekdays ? ALL_WEEKDAYS : draft.availableWeekdays,
           };
     case 'aspects':
-      // Three answers and the eight scores, in one body. The scores ride along because
+      // Three answers and every score, in one body. The scores ride along because
       // picking a strength or a weakness writes that aspect's score too — see
       // `UserAspectRating`'s docstring for why both exist.
       return draft.currentGradeId === null ||
@@ -257,7 +257,7 @@ export function accountPatch(draft: ProfileDraft): ProfilePatch {
  * Several steps' fields in one body — the editor's single Save (issue #54).
  *
  * ⚠️ **Only the steps named**, and the editor names the ones it actually showed. Folding in
- * every step would stamp `injuries_reviewed_at` and write eight default ratings for someone
+ * every step would stamp `injuries_reviewed_at` and write a default rating per aspect for someone
  * who opened the editor to change their target grade, and the bar would credit two steps
  * they never saw. The bar may only report answers a user gave.
  */

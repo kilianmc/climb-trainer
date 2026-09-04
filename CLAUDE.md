@@ -148,6 +148,7 @@ exactly ONE of these, then leaves the inbox:
   3. the ARCHIVE — reasoning, or history
   4. DELETED     — it did not matter after all  (most lines should end here)
 
+- 2026-09-04 — `wall_aspect_turns()` gives a wall-led aspect `len(row) - index` turns capped at `MAX_WALL_TURNS` (4), so on the ten-aspect rows #98 introduced, positions 0-6 all collapse to the cap and only the last three differentiate. Going 8 -> 10 aspects made rank LESS expressive, not more, which is why the new matrix barely moved the measured base distribution (endurance 64.3% -> 64.1%). The cap is in `server/domain/planner/selection.py` and its own comment justifies it against an EIGHT-aspect row. Found while measuring PR B.
 - 2026-09-03 — the `## Quality gate` chain-claim arm in `tests/test_claude_md_claims.py` tests each documented step with `step in script_value`, i.e. substring membership. It therefore catches a RENAMED step but not a REORDERED chain, and a claim of `ruff format` passes against a script running `ruff format --check`. Its own docstring says the documented order is the only place the gate's order exists (issue #26), so the arm does not currently prove that. Found by rewording the `check:server` line to `pyright` during the PR #72-style trim: the rename went red, dropping `--check` stayed green.
 
 ## Where things live

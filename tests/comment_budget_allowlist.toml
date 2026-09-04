@@ -906,9 +906,9 @@ reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
 [[exception]]
 path = "server/domain/exercises.py"
 kind = "hash_run"
-anchor = "the four phase aspect pairs the"
+anchor = "the phase aspect pairs the library"
 limit = 3
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
+reason = "Names the both-directions contract with ASPECT_EMPHASIS: an empty cell with no row here is an oversight and the guard cannot tell the two apart without being told."
 
 [[exception]]
 path = "server/domain/exercises.py"
@@ -1214,16 +1214,23 @@ reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
 [[exception]]
 path = "server/domain/planner/selection.py"
 kind = "hash_run"
-anchor = "base builds the capacity everything"
-limit = 3
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
+anchor = "position in a row is a turn count"
+limit = 4
+reason = "Position in a row is a TURN COUNT through wall_aspect_turns(), and the MAX_WALL_TURNS cap means only the last three positions of a ten-aspect row differentiate. Nobody re-derives that before reordering a row."
 
 [[exception]]
 path = "server/domain/planner/selection.py"
 kind = "hash_run"
-anchor = "fingers lead their own block it"
+anchor = "base builds the capacity everything"
+limit = 3
+reason = "Records Kilian's 2026-09-04 call that endurance keeps the base block's wall lead over anaerobic capacity, which the priority matrix on its own would reverse."
+
+[[exception]]
+path = "server/domain/planner/selection.py"
+kind = "hash_run"
+anchor = "fingers lead their own block the"
 limit = 4
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
+reason = "Why power endurance is absent from a strength block: it competes for the recovery the heavy sessions need and comes back in weeks. Deleting the row otherwise looks like a fix."
 
 [[exception]]
 path = "server/domain/planner/selection.py"
@@ -1333,9 +1340,9 @@ reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
 [[exception]]
 path = "server/domain/vocabulary.py"
 kind = "hash_run"
-anchor = "the eight things a climbing plan"
+anchor = "what a climbing plan can train in"
 limit = 4
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
+reason = "Order IS display order and adding a row is a seed insert rather than a migration - both are decisions a reader would otherwise undo. The key-collision half is executable and cited."
 
 [[exception]]
 path = "server/domain/vocabulary.py"
@@ -6100,7 +6107,7 @@ reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
 [[exception]]
 path = "web/src/profile/draft.ts"
 kind = "block"
-anchor = "where the eight sliders sit until"
+anchor = "where the sliders sit until something"
 limit = 9
 reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
 
@@ -6135,7 +6142,7 @@ reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
 [[exception]]
 path = "web/src/profile/draft.ts"
 kind = "slash_run"
-anchor = "three answers and the eight scores"
+anchor = "three answers and every score in one"
 limit = 3
 reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
 
@@ -8133,3 +8140,24 @@ kind = "block"
 anchor = "in dark the pill belongs to the phase badge alone the day badges inside a week"
 limit = 14
 reason = "Kilian signed dark's day badges off as they stand, so the guard must say which rules may carry pill geometry, that nothing else in the suite can see an ungated one, and why the gate is read off selector text rather than at-rule context."
+
+[[exception]]
+path = "tests/test_phase_guide.py"
+kind = "hash_run"
+anchor = "what each phase s authored how to train"
+limit = 4
+reason = "Says why the table exists at all: since PR A (#116) the emphasis order drives what the user is shown, so each of these sentences is a claim about generator behaviour rather than decoration."
+
+[[exception]]
+path = "tests/test_planner_climbing_floor.py"
+kind = "hash_run"
+anchor = "kilian s authored order for a base"
+limit = 4
+reason = "Records why anaerobic_capacity is NOT in this tuple although issue #98 put it in the base row: base prescribes no on-wall anaerobic capacity exercise, so it takes no wall turns."
+
+[[exception]]
+path = "tests/test_planner_climbing_floor.py"
+kind = "docstring"
+anchor = "tests.test_planner_climbing_floor.test_the_quality_a_base_block_ranks_FIRST_takes_the_most_wall_time"
+limit = 7
+reason = "Carries the guard's MEASURED slack: endurance survives a demotion to seventh because its exercises are long, and only goes red at the tail. Without that sentence the guard reads stronger than it is."

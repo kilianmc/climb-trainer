@@ -56,86 +56,100 @@ MAX_WALL_TURNS: Final = BLOCKS_PER_SESSION + 1
 # for the first two slots.
 SUPPORT_ASPECTS: Final[tuple[str, ...]] = ("antagonist_prehab", "mobility", "core_tension")
 
+# ⚠️ **Position in a row is a TURN COUNT, not a label**: `wall_aspect_turns()` gives a wall-led
+# aspect `len(row) - index` turns capped at `MAX_WALL_TURNS`, so on a ten-aspect row only the last
+# three positions differentiate. The TAIL is where a wall quality is deliberately given fewer
+# turns; the support rotation sits mid-row because it never leads a block.
 ASPECT_EMPHASIS: Final[Mapping[Phase, tuple[str, ...]]] = MappingProxyType(
     {
-        # Base builds the capacity everything later spends: time on the wall first, then
-        # the movement quality that makes that time useful, then tissue tolerance. Power
-        # sits last because a base block is the one place it is genuinely not the point.
+        # Base builds the capacity everything later spends: wall time first, then the movement
+        # quality that makes it useful. General strength and anaerobic capacity start here as the
+        # slowest qualities to arrive; endurance keeps the wall lead (Kilian, 2026-09-04).
         Phase.BASE: (
             "endurance",
             "technique",
-            "core_tension",
+            "general_strength",
+            "anaerobic_capacity",
             "finger_strength",
+            "core_tension",
             "antagonist_prehab",
             "mobility",
             "power_endurance",
             "power",
         ),
-        # Fingers lead their own block — it is the slowest quality to build and the one the
-        # rest of the plan is scheduled around. Power endurance is absent by authored
-        # decision (`DELIBERATELY_UNPRESCRIBED`): it competes for the recovery the heavy
-        # sessions need and comes back in weeks, where strength takes months.
+        # Fingers lead their own block — the slowest quality to build — with general strength and
+        # anaerobic capacity behind them, and aerobic work high alongside: `PHASE_GUIDE` carries
+        # why. Power endurance is absent by authored decision (`DELIBERATELY_UNPRESCRIBED`): it
+        # competes for the recovery the heavy sessions need and comes back in weeks.
         Phase.STRENGTH: (
             "finger_strength",
-            "core_tension",
+            "general_strength",
+            "anaerobic_capacity",
+            "endurance",
             "power",
             "technique",
-            "endurance",
+            "core_tension",
             "antagonist_prehab",
             "mobility",
         ),
         # Power leads, with fingers second because contact strength is what a power block
-        # actually expresses. Power endurance is absent for the same one-sided-trade reason.
+        # expresses. Power endurance is absent; anaerobic capacity is maintained, off the wall.
         Phase.POWER: (
             "power",
             "finger_strength",
+            "general_strength",
+            "anaerobic_capacity",
             "core_tension",
             "technique",
             "endurance",
             "antagonist_prehab",
             "mobility",
         ),
-        # Its own block, with aerobic endurance right behind it: the capacity underneath a
-        # power-endurance session is what lets the next one happen two days later.
+        # Its own block, with aerobic endurance behind it and anaerobic capacity behind that —
+        # the systems directly underneath. General strength is absent; power sits at the tail.
         Phase.POWER_ENDURANCE: (
             "power_endurance",
             "endurance",
             "technique",
+            "anaerobic_capacity",
             "core_tension",
             "finger_strength",
-            "power",
             "antagonist_prehab",
             "mobility",
+            "power",
         ),
-        # Performance is about performing, and the library expresses that as limit attempts
-        # and redpoint burns — `power` first, `power_endurance` immediately after so a rope
-        # climber whose weakness is stamina still leads with it through the weakness bias.
+        # Performance is about performing: limit attempts and redpoint burns, `power_endurance`
+        # right after so a rope climber whose weakness is stamina still leads with it. Anaerobic
+        # capacity is absent here; general strength and endurance sit at the tail, maintained.
         Phase.PERFORMANCE: (
             "power",
             "power_endurance",
             "technique",
             "finger_strength",
             "core_tension",
-            "endurance",
             "antagonist_prehab",
             "mobility",
+            "general_strength",
+            "endurance",
         ),
-        # A deload is a block with its own prescriptions, not a scaled one. What it is for
-        # is movement quality and range at low load, so technique and mobility lead and the
-        # maximal qualities sit at the end.
+        # A deload is a block with its own prescriptions, not a scaled one. What it is for is
+        # movement quality and range at low load, so technique and mobility lead and the
+        # qualities that cost the most to recover from sit at the end.
         Phase.DELOAD: (
             "technique",
             "mobility",
             "antagonist_prehab",
             "core_tension",
+            "general_strength",
             "finger_strength",
             "endurance",
+            "anaerobic_capacity",
             "power_endurance",
             "power",
         ),
-        # Sharpness comes from climbing on the target style, not from a board — the same
-        # reasoning `DELIBERATELY_UNPRESCRIBED` gives for leaving isolated finger loading
-        # and full power-endurance sessions out of a taper entirely.
+        # Sharpness comes from climbing on the target style, not from a board — the same reasoning
+        # `DELIBERATELY_UNPRESCRIBED` gives for leaving isolated fingers, full power-endurance
+        # sessions, heavy general strength and anaerobic capacity out of a taper entirely.
         Phase.TAPER: (
             "technique",
             "power",

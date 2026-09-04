@@ -145,10 +145,10 @@ class ReferenceSpec:
     description: str
 
 
-# The eight things a climbing plan can train. Order IS the display order, and it runs
-# roughly finger-strength-first because that is the order the plan generator presents
-# self-ratings in. A lookup table rather than an enum: each row carries a name and a
-# description that appear in the UI, and adding a ninth aspect must not be a migration.
+# What a climbing plan can train, in display order: finger strength first, then down the energy
+# systems, because that is the order the plan generator presents self-ratings in. A lookup table
+# rather than an enum so a row carries display text, and so adding one is a seed insert (#98).
+# ⚠️ No key here may collide with a `Phase` value — `tests/test_equipment_vocabulary.py` proves it.
 CLIMBING_ASPECTS: Final[tuple[ReferenceSpec, ...]] = (
     ReferenceSpec(
         "finger_strength",
@@ -156,14 +156,26 @@ CLIMBING_ASPECTS: Final[tuple[ReferenceSpec, ...]] = (
         "Maximum force the fingers can hold, trained with near-maximal short efforts.",
     ),
     ReferenceSpec(
+        "general_strength",
+        "General strength",
+        "Maximum force from the legs, hips and pulling muscles, trained slow and heavy.",
+    ),
+    ReferenceSpec(
         "power",
         "Power",
-        "Force produced fast — single hard moves, jumps and cuts.",
+        "Force produced fast — the single hard move, and the short burst that ends the "
+        "moment you are powered out.",
+    ),
+    ReferenceSpec(
+        "anaerobic_capacity",
+        "Anaerobic capacity",
+        "Tolerating the burn and clearing it: half-minute bursts, repeated on long rests.",
     ),
     ReferenceSpec(
         "power_endurance",
         "Power endurance",
-        "Sustaining hard moves for 20-60 seconds before failing.",
+        "Making hard moves while already pumped — around thirty of them, on rests no "
+        "longer than the work.",
     ),
     ReferenceSpec(
         "endurance",
@@ -363,9 +375,16 @@ PHASE_GUIDE: Final[tuple[PhaseGuide, ...]] = (
         "week, progressing by adding time before adding difficulty. Finish able to do more than "
         "you did, because climbing a base block to failure costs you the plan, not just the week. "
         "Whether maximum strength belongs inside a base phase is genuinely contested; this plan "
-        "gives strength its own block so these weeks stay spent on capacity. Endurance leads "
-        "every session here, then technique, then the tissue work that keeps the pulling "
-        "durable — power sits last on purpose.",
+        "gives strength its own block so these weeks stay spent on capacity. Whether a climber "
+        "needs heavy lower-body strength at all is contested three ways: one position calls the "
+        "deadlift close to the best strength exercise a climber can do, a second caps it low and "
+        "would rather you spent the effort on the climbing that mimics it, and a third holds "
+        "that its specificity is low and the fatigue it leaves subtracts from climbing. The "
+        "squat is the most disputed exercise of the three, so this plan prescribes unilateral "
+        "leg work at low volume and asks you to add depth before you add load. Endurance leads "
+        "every session here, with technique behind it; general strength and anaerobic capacity "
+        "start in this block because they are the two slowest qualities in the plan to "
+        "arrive — and power sits last on purpose.",
         (
             GuideLink(
                 "https://www.climbstrong.com/resource-posts/third-gear-the-aerobic-energy-system",
@@ -397,7 +416,10 @@ PHASE_GUIDE: Final[tuple[PhaseGuide, ...]] = (
         "others hold that you should hangboard only if fingers are your identified weakness. "
         "Fingers lead here — depending on your current grade the plan owes one or two real "
         "hangboard sessions a week, scheduled first in the session rather than behind the "
-        "climbing.",
+        "climbing. General strength and anaerobic capacity are high priority through this block "
+        "too, and the aerobic work stays high alongside them on purpose: raising your tolerance "
+        "for the burn without also raising your ability to clear it is worse than doing "
+        "neither.",
         (
             GuideLink(
                 "https://strengthclimbing.com/eric-horst-7-53-hangboard-routine/",
@@ -425,7 +447,9 @@ PHASE_GUIDE: Final[tuple[PhaseGuide, ...]] = (
         "of pushing on: one all-out effort does more for power than a pile of moderate attempts. "
         "Getting sweaty and pumped means you have quietly switched to training something else. "
         "Limit boulders lead the session and contact strength sits right behind them, and power "
-        "endurance is deliberately absent so the attempts stay maximal.",
+        "endurance is deliberately absent so the attempts stay maximal. Anaerobic capacity is "
+        "kept alive at roughly one session a week rather than dropped, because it takes months "
+        "to build and only weeks to lose.",
         (
             GuideLink(
                 "https://www.trainingbeta.com/4-keys-to-limit-bouldering/",
@@ -451,7 +475,10 @@ PHASE_GUIDE: Final[tuple[PhaseGuide, ...]] = (
         "contested — one school argues that training to a searing pump is too intense to build "
         "repeatable capacity, and that the aerobic work underneath matters more. Power endurance "
         "leads here with aerobic endurance immediately behind it, because the capacity underneath "
-        "is what lets the next hard session happen two days later.",
+        "is what lets the next hard session happen two days later. Heavy general strength is "
+        "deliberately absent: strength is the quality that holds longest, so it keeps across a "
+        "block this short while a heavy session would compete for exactly the recovery these "
+        "ones need.",
         (
             GuideLink(
                 "https://www.climbing.com/skills/winter-endurance-training/",
@@ -478,7 +505,8 @@ PHASE_GUIDE: Final[tuple[PhaseGuide, ...]] = (
         "bigger pieces. The attempts are the training, so protect them — over-projecting "
         "produces the same flat, declining performance that over-training does. Limit attempts "
         "and redpoint burns lead this block, with power endurance right behind so stamina is "
-        "still trained if that is your weakness.",
+        "still trained if that is your weakness. Anaerobic capacity is deliberately absent: the "
+        "burn work is the first thing to go once the objective is inside four weeks.",
         (
             GuideLink(
                 "https://www.climbing.com/skills/learn-this-redpoint-smarter-to-redpoint-harder/",
@@ -506,7 +534,8 @@ PHASE_GUIDE: Final[tuple[PhaseGuide, ...]] = (
         "third week to every eighth, and some would judge it by feel rather than schedule it at "
         "all. This plan fixes it at every fourth week, because a cadence you do not have to judge "
         "is the one you actually take. It is a block in its own right rather than a scaled-down "
-        "one: technique and mobility lead at low load, and the maximal qualities sit last.",
+        "one: technique and mobility lead at low load, and the qualities that cost the most to "
+        "recover from sit last.",
         (
             GuideLink(
                 "https://gripped.com/indoor-climbing/training-hard-heres-why-you-need-a-deload-week/",
@@ -532,8 +561,8 @@ PHASE_GUIDE: Final[tuple[PhaseGuide, ...]] = (
         "sharp, maximal efforts — they cost almost nothing to recover from — and drop the "
         "capacity work that leaves you pumped. Climb on your target style, on ground you already "
         "move well on, and stop before you are tired. There is no isolated finger loading at all "
-        "this week and no full power-endurance session, but short maximal efforts are still "
-        "prescribed.",
+        "this week, no full power-endurance session, no anaerobic capacity work and no heavy "
+        "general strength session — but short maximal efforts are still prescribed.",
         (
             GuideLink(
                 "https://www.trainingbeta.com/wp-content/uploads/2015/05/1.-Alex-Barrows-Training-Doc-V2-for-training-beta.pdf",
