@@ -381,8 +381,8 @@ PHASE_GUIDE: Final[tuple[PhaseGuide, ...]] = (
         "would rather you spent the effort on the climbing that mimics it, and a third holds "
         "that its specificity is low and the fatigue it leaves subtracts from climbing. The "
         "squat is the most disputed exercise of the three, so this plan prescribes unilateral "
-        "leg work at low volume and asks you to add depth before you add load. Endurance opens "
-        "more of these sessions than any other quality, with technique next; general strength "
+        "leg work at low volume and asks you to add depth before you add load. Endurance takes "
+        "more of these weeks' time on the wall than any other quality; general strength "
         "and anaerobic capacity both start here, anaerobic capacity because it is the slowest "
         "quality in the plan to arrive (Barrows §3.1) — and power sits last on purpose.",
         (
@@ -533,7 +533,10 @@ PHASE_GUIDE: Final[tuple[PhaseGuide, ...]] = (
         "The fourth week of every block, and the week in which the previous three actually become "
         "fitness. Training is only the stimulus; the adaptation happens in the recovery. A block "
         "with no unload week ends up as accumulated fatigue that looks exactly like a plateau.",
-        "Cut the volume roughly in half and keep the intensity honest. Same number of sessions, "
+        "Cut the volume and keep the intensity honest — a deload week never drops below 40 "
+        "percent of the weeks around it. Both sources would put it at 40 to 60 percent, and "
+        "where this plan sits above that range it is deliberate: on a week meant for recovery "
+        "it would rather leave work in than take too much out. Same number of sessions, "
         "shorter, on ground you move well on — a deload is not a week off and not a week to climb "
         "through. How often a climber needs one is contested: sources put it anywhere from every "
         "third week to every eighth, and some would judge it by feel rather than schedule it at "
@@ -562,12 +565,18 @@ PHASE_GUIDE: Final[tuple[PhaseGuide, ...]] = (
         "The final week of the plan, pointed at one thing: arriving fresh. Fatigue hides fitness, "
         "so the taper's whole job is to let the previous months show up on the day. Nothing you "
         "add this week can make you stronger, and plenty can make you tired.",
-        "Volume down to roughly half, intensity unchanged or even a touch higher. Keep the short, "
-        "sharp, maximal efforts — they cost almost nothing to recover from — and drop the "
-        "capacity work that leaves you pumped. Climb on your target style, on ground you already "
-        "move well on, and stop before you are tired. There is no isolated finger loading at all "
-        "this week, no full power-endurance session, no anaerobic capacity work and no heavy "
-        "general strength session — but short maximal efforts are still prescribed.",
+        "Volume down — never below 40 percent of a loading week — with the intensity unchanged "
+        "or even a touch higher. What stays is "
+        "the work that is short, hard and fully rested: maximal efforts and hard route-like "
+        "circuits, plus a short upper-body pulling session in the weeks with room for one. "
+        "What goes is the capacity work that leaves "
+        "you pumped — no anaerobic capacity, and no aerobic capacity or ARC either, because "
+        "another week of long easy volume can only add fatigue to fitness the previous months "
+        "already bought. Climb on your target style, on ground you already move well on, and "
+        "stop before you are tired. One thing here is ours rather than the sources': they would "
+        "keep hard finger work this week, and we prescribe no isolated finger loading at all, "
+        "because the fingers are the slowest tissue to recover and the most expensive to "
+        "overreach on this close to a peak.",
         (
             GuideLink(
                 "https://www.trainingbeta.com/wp-content/uploads/2015/05/1.-Alex-Barrows-Training-Doc-V2-for-training-beta.pdf",

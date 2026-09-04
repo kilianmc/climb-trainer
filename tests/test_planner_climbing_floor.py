@@ -9,6 +9,7 @@ the protocol — and WHICH climbing is the third: a phase's authored emphasis ha
 minutes go. Shown to fail before being trusted; captures in `.claude/pr-a-state.md`.
 """
 
+from collections import Counter
 from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import date
@@ -18,7 +19,12 @@ import pytest
 
 from server.domain.exercises import EXERCISES
 from server.domain.grades import Discipline, GradeSystemKey, ordinal_of
-from server.domain.planner.blueprint import BlockBlueprint, PlanBlueprint
+from server.domain.planner.blueprint import (
+    BlockBlueprint,
+    MicrocycleBlueprint,
+    PlanBlueprint,
+    SessionBlueprint,
+)
 from server.domain.planner.climbing import (
     EXPANDABLE_ASPECTS,
     EXPANDABLE_PROTOCOLS,
@@ -58,7 +64,7 @@ _MAY_EXPAND: frozenset[tuple[str, ProtocolKind]] = frozenset(
 _TARGET_BAND: Mapping[Level, tuple[int, int]] = {
     Level.BEGINNER: (85, 90),
     Level.INTERMEDIATE: (75, 82),
-    Level.ADVANCED: (50, 64),
+    Level.ADVANCED: (50, 65),
 }
 
 # Real max-hang / repeater sessions a LOADING week owes, per band. Beginner is zero by decision:
@@ -84,24 +90,9 @@ class _AcceptedFingerGap:
     reason: str
 
 
-# Kilian, 2026-09-04: registered as data rather than answered by lowering the band's floor.
-_NO_SLOT_LEFT_FOR_A_HANG = (
-    "`_fill_finger_strength` skips any session already holding `BLOCKS_PER_SESSION` blocks and it "
-    "runs AFTER `_fill_climbing`, which has no reservation mechanism. Since the three on-wall "
-    "`general_strength` rows moved to `power` the strength ring is 12 turns of power, anaerobic "
-    "capacity and technique, so an intermediate's climbing pass needs a THIRD, shorter block to "
-    "reach `_share_of_window_floor` and both sessions are full when the hangboard pass arrives. "
-    "It bites only at 2 sessions a week and only in this band: a beginner owes 0 hangs, an "
-    "advanced still gets 2, and at 3+ sessions every intermediate loading week gets its 1. The "
-    "fix is a reservation in the climbing pass, and it belongs to whoever gives it one — not to "
-    "a lower `_FINGER_SESSIONS_PER_WEEK`."
-)
-
-# The register. Both arms below read it, on `_ACCEPTED_INVERSIONS`' contract exactly.
-_ACCEPTED_FINGER_GAPS: tuple[_AcceptedFingerGap, ...] = (
-    _AcceptedFingerGap("intermediate sport 6c", 2, 3, 0, _NO_SLOT_LEFT_FOR_A_HANG),
-    _AcceptedFingerGap("intermediate boulder 6C", 2, 3, 0, _NO_SLOT_LEFT_FOR_A_HANG),
-)
+# The register, and EMPTY is a measurement: §3.4's ordering repaired both rows — ruling 15's
+# intermediate 2x/week hangboard loss included — by making the window follow the hardest block.
+_ACCEPTED_FINGER_GAPS: tuple[_AcceptedFingerGap, ...] = ()
 
 # Quality first. The fixed-volume protocols are the ones whose adaptation is decided by the
 # quality of the effort, so none of them may sit behind any of the volume protocols.
@@ -111,15 +102,63 @@ _PRIORITY_PROTOCOLS = frozenset(
 # The two qualities a DELOAD session leads with, restated independently for `_MAY_EXPAND`'s
 # reason. Kilian, 2026-09-04: at low load movement quality goes ahead of the climbing.
 _DELOAD_LEAD_ASPECTS: frozenset[str] = frozenset({"technique", "mobility"})
-_VOLUME_PROTOCOLS = frozenset(
-    {
-        ProtocolKind.LAPS,
-        ProtocolKind.CIRCUIT,
-        ProtocolKind.INTERVALS,
-        ProtocolKind.STRAIGHT_SETS,
-        ProtocolKind.HOLD,
-    }
+# Everything else is volume work, DERIVED so a new kind joins automatically: `OTHER` was in
+# neither set, so a priority block behind an `OTHER`-kind block passed (320 of 4867 blocks).
+_VOLUME_PROTOCOLS = frozenset(ProtocolKind) - _PRIORITY_PROTOCOLS
+
+# Barrows §3.4's tiers, restated independently of `climbing.py` for `_MAY_EXPAND`'s reason: a
+# guard that asks `intensity_tier()` for a tier agrees with any answer that function gives.
+_INTENSITY_TIERS: tuple[tuple[str, ...], ...] = (
+    ("power", "finger_strength", "general_strength"),
+    ("anaerobic_capacity",),
+    ("power_endurance",),
+    ("endurance",),
+    ("technique", "core_tension", "antagonist_prehab", "mobility"),
 )
+_TIER: Mapping[str, int] = {key: tier for tier, keys in enumerate(_INTENSITY_TIERS) for key in keys}
+
+# The four aspects §3.4 NAMES. Everything else is off the chain, which is also why a deload's
+# `technique`/`mobility` lead needs no exemption below: neither of them is on it.
+_INTENSITY_CHAIN: tuple[str, ...] = ("power", "anaerobic_capacity", "power_endurance", "endurance")
+
+# Sessions carrying two or more chain aspects — the only ones whose order can be WRONG. Measured
+# 13-91 per profile per session count, so the floor is the worst of them and still bites.
+_CHAIN_PAIRED_SESSIONS_FLOOR = 13
+
+# On the full weekday mask `choose_weekdays` leaves 2 and 3 sessions with NO back-to-back pair at
+# all; 5 sessions get 3 a week and 7 get 6, so below this the descending arm has nothing to say.
+_SESSIONS_WITH_BACK_TO_BACK_DAYS = 5
+
+# Barrows §3.3, restated as this file's own data for `_MAY_EXPAND`'s reason: a taper drops ALL
+# anaerobic capacity, aerobic capacity and ARC, and holds only hard strength/power and Aero Pow.
+_TAPER_DROPPED: tuple[str, ...] = ("anaerobic_capacity", "endurance")
+_TAPER_HARD: tuple[str, ...] = ("power", "power_endurance", "general_strength")
+
+# §3.3 holds a taper's intensity at the loading value or higher, and every taper prescription in
+# those three aspects is authored at RPE 8 or 9 — so the held intensity is checkable as a floor.
+_TAPER_HARD_RPE_FLOOR = 8
+
+# Upper-body PULLING only, which is the half of the retired `(taper, general_strength)` exemption
+# that still argues: a heavy hinge or squat leaves fatigue that hides the fitness the plan built.
+_TAPER_STRENGTH_ROWS: frozenset[str] = frozenset({"weighted_pull_ups", "one_arm_lockoff_negatives"})
+
+# Taper weeks the sweep reaches, and the 6 of them carrying gym strength — which is why THAT
+# aspect's arm is POOLED while `power`/`power_endurance`, at 24 of 24, are asserted per week.
+_TAPER_WEEKS_IN_THE_SWEEP = 24
+_TAPER_HARD_PER_WEEK: tuple[str, ...] = ("power", "power_endurance")
+
+# ⚠️ Both sources agree an unload week KEEPS 40-60% of a loading week's volume with intensity
+# held: Barrows §3.3 puts the taper at ~50%, Dylan's deload "reduce the volume of everything you
+# do by 40-60%". Warm-up EXCLUDED on both sides — the fixed 15 min is not a block, and counting
+# it inflates the ratio by a session-count-dependent amount: the beginner 2x/week taper read
+# 9.8% excluding and 35.6% including before this PR, which would have let a 7-minute taper week
+# pass as a third of a loading week.
+# ⚠️ The 60% CEILING is deliberately NOT asserted, and it is an OPEN DECISION FOR KILIAN rather
+# than an accepted exception. Measured after C2's top-up, 52 of 96 deload weeks (to 85.5%) and
+# 8 of 24 taper weeks (to 68.1%) sit above it, because a deload week's length comes from its own
+# prescriptions and its own session types and so does not know which block it closes. Turning it
+# on needs either a per-block unload target or a third re-baseline of `_TARGET_BAND[ADVANCED]`.
+_UNLOAD_FLOOR_PCT = 40
 
 # One climber per band, by CURRENT grade, spanning both ladders so neither discipline's
 # threshold constant can be wrong without a red test. The gap is 3 by default — the shortest
@@ -195,10 +234,10 @@ class _Sweep:
 # three rounds of PR C: neither of them fires on that profile, so an accepted exception and an
 # untested gap were indistinguishable here. Every band and both ladders now, in two equipment
 # columns — the full vocabulary at the file's default gap, and a plain bouldering gym at a gap of
-# 4. The second column is not decoration: measured over gaps 3 and 4, the gap-4 bouldering gym is
-# the only one of the four combinations that reaches the week-level `_floor_allows` residual in
-# week 24's taper, and a wall-only gym is also the harshest equipment column for this invariant
-# because there is no off-the-wall substitute for the block the allocator declines to place.
+# 4. The second column is not decoration: it is the only one of the four combinations that
+# inverts inside a TAPER week at all, which is four of the ten rows below, and a wall-only gym is
+# also the harshest equipment column for this invariant because there is no off-the-wall
+# substitute for the block the allocator declines to place.
 _MONOTONICITY_SWEEP: tuple[_Sweep, ...] = tuple(
     _Sweep(
         f"{level.value} {discipline.value} {grade}, {column}",
@@ -237,12 +276,15 @@ class _AcceptedInversion:
 _SOLO_WEEK_AIMS_AT_100_PCT = (
     "A one-session week is climbing and nothing else and aims at 100% of its minutes on a wall "
     "(`solo` in `_microcycle`, issue #84's decision), while two sessions put this climber on "
-    "their band's target range instead — 50-62% for the advanced band both rows sit in. Two "
-    "decisions colliding, and no amount of per-session arithmetic reconciles them: the fix is "
-    "either that a solo week stops aiming at 100%, or that this invariant is restated for a "
-    "FIXED band rather than for otherwise-identical inputs. Kilian took the inversion instead. "
-    "Re-measured after the general-strength re-file: 320 s (sport, week 9, power) and 490 s "
-    "(boulder, week 19, performance), against 240 s and 1260 s before it."
+    "their band's target range instead — 50-62% for the four advanced rows, 75-82% for the "
+    "intermediate one. Two decisions colliding, and no amount of per-session arithmetic "
+    "reconciles them: the fix is either that a solo week stops aiming at 100%, or that this "
+    "invariant is restated for a FIXED band rather than for otherwise-identical inputs. Kilian "
+    "took the inversion instead. Re-measured after §3.4's ordering made a session's window "
+    "follow its hardest block: 500 s (advanced sport, week 11, power), 490 s (advanced boulder, "
+    "week 19, performance), 312 s for both advanced rows in a bouldering-wall-only gym at gap 4 "
+    "(week 11, power) and 32 s (intermediate sport, week 11, power). Two of those five rows are "
+    "new at this step and the wall-only pair is new to the register altogether."
 )
 
 # The two inversions the general-strength re-file leaves at 2 → 3 sessions. Their own reason:
@@ -250,48 +292,37 @@ _SOLO_WEEK_AIMS_AT_100_PCT = (
 _A_THIRD_SESSION_REMOVES_THE_TOP_UP = (
     "At two sessions a week the whole week lands in two sessions that both run short of their "
     "protocol window, so the length pass spends the blocks `MAX_BLOCKS_PER_SESSION` reserves "
-    "and — with `wall_pref` at `first` — spends them ON THE WALL: the intermediate row's week 9 "
-    "gets a fourth block of 32 min of power intervals it would not otherwise have. A third "
-    "session removes the shortfall, every session stops at `BLOCKS_PER_SESSION`, and the third "
-    "slot's support rotation shifts with the session index onto a different exercise — off the "
-    "wall for the advanced row, where 13 min of on-wall core tension becomes 2 min of general "
-    "strength and the new session returns 11 min of technique. Measured: both weeks stay INSIDE "
-    "their band, 80.7% → 75.6% against 75-82 and 61.8% → 58.7% against 50-64, so what is traded "
-    "is a two-session week's top-up rather than the climbing the band asks for."
-)
-
-# The residual round 3 left standing on purpose when it made the band's top edge per-SESSION.
-_WEEK_LEVEL_CLIMBING_FLOOR = (
-    "The one week-level aggregate left in the allocator: the hard climbing floor in "
-    "`_floor_allows`. `CLIMBING_FLOOR_PCT` is documented as a percent of a WEEK's prescribed "
-    "minutes, so reading it per session would be stricter than the contract rather than a "
-    "refactor of it, and would redefine a number Kilian set. Left alone deliberately; the price "
-    "is twelve seconds in a taper week, and this row's cap is what keeps it a rounding cost."
+    "and — with `wall_pref` at `first` — spends them ON THE WALL: week 9 gives its Monday a "
+    "FIFTH block and 36 min of limit boulders against a 40 min floor. A third session removes "
+    "the shortfall, every session stops at `BLOCKS_PER_SESSION`, and the third slot's support "
+    "rotation shifts with the session index onto a different exercise — off the wall in week "
+    "10, where 13 min of on-wall core tension becomes 2 min of general strength and the new "
+    "session returns 11 min of technique. Measured: both weeks stay INSIDE their band, 65.0% → "
+    "53.5% and 61.8% → 58.7% against 50-65, so what is traded is a two-session week's top-up "
+    "rather than the climbing the band asks for. The intermediate row this reason also covered "
+    "stopped inverting under §3.4's ordering and was deleted."
 )
 
 # The register. Both arms of the guard read it, and the beginners are absent because they do not
 # invert at all — their 85-90% band is close enough to a solo week's 100% that nothing is traded.
 _ACCEPTED_INVERSIONS: tuple[_AcceptedInversion, ...] = (
     _AcceptedInversion(
-        "advanced sport 7c, full vocabulary, gap 3", 1, 320, _SOLO_WEEK_AIMS_AT_100_PCT
+        "advanced sport 7c, full vocabulary, gap 3", 1, 500, _SOLO_WEEK_AIMS_AT_100_PCT
     ),
     _AcceptedInversion(
         "advanced boulder 7C, full vocabulary, gap 3", 1, 490, _SOLO_WEEK_AIMS_AT_100_PCT
     ),
     _AcceptedInversion(
-        "intermediate boulder 6C, full vocabulary, gap 3",
-        2,
-        420,
-        _A_THIRD_SESSION_REMOVES_THE_TOP_UP,
+        "advanced sport 7c, bouldering wall only, gap 4", 1, 312, _SOLO_WEEK_AIMS_AT_100_PCT
     ),
     _AcceptedInversion(
-        "advanced boulder 7C, full vocabulary, gap 3", 2, 120, _A_THIRD_SESSION_REMOVES_THE_TOP_UP
+        "advanced boulder 7C, bouldering wall only, gap 4", 1, 312, _SOLO_WEEK_AIMS_AT_100_PCT
     ),
     _AcceptedInversion(
-        "advanced sport 7c, bouldering wall only, gap 4", 3, 60, _WEEK_LEVEL_CLIMBING_FLOOR
+        "intermediate sport 6c, full vocabulary, gap 3", 1, 32, _SOLO_WEEK_AIMS_AT_100_PCT
     ),
     _AcceptedInversion(
-        "advanced boulder 7C, bouldering wall only, gap 4", 3, 60, _WEEK_LEVEL_CLIMBING_FLOOR
+        "advanced boulder 7C, full vocabulary, gap 3", 2, 700, _A_THIRD_SESSION_REMOVES_THE_TOP_UP
     ),
 )
 
@@ -601,15 +632,15 @@ def _hang_sessions(plan: PlanBlueprint, phase_filter: frozenset[Phase] | None) -
 # runs the full 2-7 for completeness but is NOT the exposing dimension, and neither is the
 # weekday mask: all four masks measured identical to a tenth of a point, because a mask moves
 # which weekday a session lands on and never how many blocks it gets.
-# ⚠️ THE ADVANCED CEILING IS 64: A RE-BASELINE OFF A DEFECT, NOT A WEAKENED GUARD. 62 was only
+# ⚠️ THE ADVANCED CEILING IS 65: A RE-BASELINE OFF A DEFECT, NOT A WEAKENED GUARD. 62 was only
 # green because it averaged in the deload weeks that now answer to `DELOAD_CLIMBING_FLOOR_PCT`;
-# exclude them and `dev` itself measures 62.3% before any of this PR, the same shape as
-# `_DISTINCT_SHARE_FLOOR_PCT` 68→63. All four breaches were gap-0 (8-week) plans, where the
-# performance block is half the plan and the three re-filed on-wall rows concentrate — the
-# ceiling comes back DOWN when the fixed 12-week plan length lands (backlog item 3). Re-measured
-# with deload weeks excluded, the `_wall_pref` sabotage reaches 65.1-67.6% at gap 0, 62.8-65.5%
-# at gap 3 and 63.6-64.8% at gap 6, so 64 bites at all three sampled gaps; honest, the advanced
-# band measures 58.8-63.3%.
+# exclude them and `dev` itself measured 62.3% before any of this. Every breach since has been a
+# gap-0 (8-week) plan, where the performance block is half the plan — the ceiling comes back DOWN
+# when the fixed 12-week plan length lands (backlog item 3). 64 went to 65 when §3.4's ordering
+# made a session's window follow its hardest block, lifting the honest advanced band from
+# 58.8-63.3% to 60.6-64.4%: the one combination over 64 is advanced sport at 2 sessions, gap 0,
+# 64.4%. Re-measured on this code, the `_wall_pref` sabotage reaches 68.6/66.3/66.2% (sport) and
+# 66.0/65.8/66.9% (boulder) at gaps 0/3/6, so 65 bites at every sampled gap on both ladders.
 @pytest.mark.parametrize(("level", "discipline", "system", "label"), _CLIMBERS)
 @pytest.mark.parametrize("sessions", [2, 3, 4, 5, 6, 7])
 @pytest.mark.parametrize("gap", [0, 3, 6])
@@ -732,6 +763,258 @@ def test_priority_work_never_sits_behind_volume_work(
                         f"{block.exercise_key} ({block.protocol_kind.value}) after "
                         f"{seen_volume}; fixed-volume quality work leads a session."
                     )
+
+
+@cache
+def _plan(
+    discipline: Discipline, system: GradeSystemKey, label: str, sessions: int, mask: int
+) -> PlanBlueprint:
+    """One plan, cached: the two §3.4 guards below sweep the same twenty-four of them."""
+    return generate(_input(discipline, system, label, sessions, mask))
+
+
+def _day_tier(session: SessionBlueprint) -> int:
+    """How hard the DAY is: its hardest block on §3.4's chain, because the source's second half
+    is about the day. A block-less Recovery session sinks past every tier there is."""
+    return min((_TIER[block.aspect_key] for block in session.blocks), default=len(_INTENSITY_TIERS))
+
+
+def _back_to_back(
+    microcycle: MicrocycleBlueprint,
+) -> list[tuple[SessionBlueprint, SessionBlueprint]]:
+    """This week's pairs of sessions on CONSECUTIVE weekdays. Sunday to Monday is not one of
+    them: the next Monday is a different microcycle, possibly in a different phase."""
+    days = sorted(microcycle.sessions, key=lambda session: session.weekday)
+    return [
+        (first, second)
+        for first, second in zip(days, days[1:], strict=False)
+        if second.weekday == first.weekday + 1
+    ]
+
+
+@pytest.mark.parametrize(("level", "discipline", "system", "label"), _CLIMBERS)
+@pytest.mark.parametrize("sessions", [2, 3, 5, 7])
+def test_a_session_works_DOWN_barrows_intensity_chain(
+    level: Level, discipline: Discipline, system: GradeSystemKey, label: str, sessions: int
+) -> None:
+    """⚠️ GUARD. §3.4 within one session: "always start with the most intense and work down to
+    the least intense", read off `order_index` and restricted to the four aspects it names."""
+    del level
+    paired = 0
+    for mesocycle in _plan(discipline, system, label, sessions, 0b111_1111).mesocycles:
+        for microcycle in mesocycle.microcycles:
+            for session in microcycle.sessions:
+                blocks = sorted(session.blocks, key=lambda block: block.order_index)
+                chain = [block for block in blocks if block.aspect_key in _INTENSITY_CHAIN]
+                tiers = [_TIER[block.aspect_key] for block in chain]
+                paired += 1 if len(tiers) >= 2 else 0
+                assert tiers == sorted(tiers), (
+                    f"week {microcycle.week_no} ({microcycle.phase.value}) prescribes "
+                    f"{[block.aspect_key for block in blocks]}, which runs "
+                    f"{[block.aspect_key for block in chain]} up §3.4's chain instead of down "
+                    f"it. Easy work in front of hard work spoils the hard work."
+                )
+    assert paired >= _CHAIN_PAIRED_SESSIONS_FLOOR, (
+        f"only {paired} session(s) of a {label} climber's plan at {sessions}x a week carry two "
+        f"or more of {_INTENSITY_CHAIN}, against {_CHAIN_PAIRED_SESSIONS_FLOOR} measured. With "
+        f"fewer than two chain aspects in a session there is no order to get wrong, so the arm "
+        f"above would be green on a generator that had stopped ordering anything at all."
+    )
+
+
+@pytest.mark.parametrize(("level", "discipline", "system", "label"), _CLIMBERS)
+@pytest.mark.parametrize("sessions", [2, 3, 5, 7])
+def test_back_to_back_days_run_HARDEST_FIRST(
+    level: Level, discipline: Discipline, system: GradeSystemKey, label: str, sessions: int
+) -> None:
+    """⚠️ GUARD. §3.4 applies "equally whether within a single session or planning for
+    consecutive days", so where two sessions are on adjacent weekdays the harder one leads."""
+    del level
+    pairs = 0
+    for mesocycle in _plan(discipline, system, label, sessions, 0b111_1111).mesocycles:
+        for microcycle in mesocycle.microcycles:
+            for first, second in _back_to_back(microcycle):
+                pairs += 1
+                assert _day_tier(second) >= _day_tier(first), (
+                    f"week {microcycle.week_no} ({microcycle.phase.value}) puts weekday "
+                    f"{first.weekday} at tier {_day_tier(first)} in front of weekday "
+                    f"{second.weekday} at tier {_day_tier(second)}, so the harder of two "
+                    f"back-to-back days comes second: {first.title!r} then {second.title!r}."
+                )
+    assert pairs > 0 or sessions < _SESSIONS_WITH_BACK_TO_BACK_DAYS, (
+        f"a {label} climber training {sessions}x a week contributed no back-to-back pair at "
+        f"all, so this parametrisation proved nothing."
+    )
+
+
+def test_the_consecutive_day_rule_bites_ONLY_where_the_days_ARE_consecutive() -> None:
+    """⚠️ GUARD, structural arm. A Mon/Wed/Fri week owes EXACTLY ZERO pairs, so its green above
+    is by construction; a five-day week owes many, so the sweep is not green by construction."""
+    spread = sum(
+        len(_back_to_back(microcycle))
+        for mesocycle in _plan(
+            Discipline.SPORT, GradeSystemKey.FRENCH, "6c", 3, 0b001_0101
+        ).mesocycles
+        for microcycle in mesocycle.microcycles
+    )
+    assert spread == 0, (
+        f"a Mon/Wed/Fri climber has no two adjacent training days, but the plan produced "
+        f"{spread} back-to-back pair(s); `choose_weekdays` is no longer honouring the mask and "
+        f"the untouched-week half of §3.4 is being tested on the wrong shape."
+    )
+    packed = sum(
+        len(_back_to_back(microcycle))
+        for mesocycle in _plan(
+            Discipline.SPORT, GradeSystemKey.FRENCH, "6c", 5, 0b111_1111
+        ).mesocycles
+        for microcycle in mesocycle.microcycles
+    )
+    assert packed > 0, f"a five-day week produced {packed} back-to-back pairs; nothing to order."
+
+
+@pytest.mark.parametrize(("level", "discipline", "system", "label"), _CLIMBERS)
+@pytest.mark.parametrize("sessions", [2, 3, 5, 7])
+def test_a_TAPER_WEEK_DROPS_every_minute_of_capacity_work(
+    level: Level, discipline: Discipline, system: GradeSystemKey, label: str, sessions: int
+) -> None:
+    """⚠️ GUARD. §3.3 drops **ALL** An Cap, Aero Cap and ARC from a taper, so this is per WEEK
+    and it is zero: `endurance` was 47% of the taper's minutes and ARC its largest block."""
+    del level
+    weeks = 0
+    for mesocycle in _plan(discipline, system, label, sessions, 0b111_1111).mesocycles:
+        for microcycle in mesocycle.microcycles:
+            if microcycle.phase is not Phase.TAPER:
+                continue
+            weeks += 1
+            blocks = [block for session in microcycle.sessions for block in session.blocks]
+            dropped = {
+                aspect: sum(_block_seconds(b) for b in blocks if b.aspect_key == aspect)
+                for aspect in _TAPER_DROPPED
+            }
+            assert not any(dropped.values()), (
+                f"week {microcycle.week_no}'s taper prescribes {dropped} (seconds) of the "
+                f"capacity work §3.3 says to drop entirely: "
+                f"{sorted({b.exercise_key for b in blocks if b.aspect_key in _TAPER_DROPPED})}."
+            )
+            assert sum(_block_seconds(block) for block in blocks), (
+                f"week {microcycle.week_no}'s taper prescribes nothing at all, so its zero "
+                f"above is vacuous rather than a dropped quality."
+            )
+    assert weeks, f"a {label} climber at {sessions}x a week has no taper week to check."
+
+
+def test_the_TAPER_CARRIES_hard_strength_and_hard_aerobic_power() -> None:
+    """⚠️ GUARD. §3.3's other half. Gym strength reaches 6 of the 24 taper weeks, so its
+    presence arm is POOLED and the other two are per week. Held intensity is pooled too."""
+    minutes: Counter[str] = Counter()
+    weak: list[tuple[int, str, list[int | None]]] = []
+    legs: set[str] = set()
+    weeks = 0
+    for _level, discipline, system, label in _CLIMBERS:
+        for sessions in (2, 3, 5, 7):
+            for mesocycle in _plan(discipline, system, label, sessions, 0b111_1111).mesocycles:
+                for microcycle in mesocycle.microcycles:
+                    if microcycle.phase is not Phase.TAPER:
+                        continue
+                    weeks += 1
+                    present = {
+                        block.aspect_key
+                        for session in microcycle.sessions
+                        for block in session.blocks
+                    }
+                    absent = [a for a in _TAPER_HARD_PER_WEEK if a not in present]
+                    assert not absent, (
+                        f"a {label} climber at {sessions}x a week gets a taper week "
+                        f"({microcycle.week_no}) with no {absent}. §3.3's taper is made of hard "
+                        f"strength/power and hard aerobic power, and 'maximal efforts, hard "
+                        f"route-like circuits' is copy ONE climber reads about their OWN week."
+                    )
+                    for session in microcycle.sessions:
+                        for block in session.blocks:
+                            minutes[block.aspect_key] += _block_seconds(block)
+                            if block.aspect_key not in _TAPER_HARD:
+                                continue
+                            rpes = [item.target_rpe for item in block.sets]
+                            if any(r is None or r < _TAPER_HARD_RPE_FLOOR for r in rpes):
+                                weak.append((microcycle.week_no, block.exercise_key, rpes))
+                            if block.aspect_key == "general_strength" and (
+                                block.exercise_key not in _TAPER_STRENGTH_ROWS
+                            ):
+                                legs.add(block.exercise_key)
+    assert weeks == _TAPER_WEEKS_IN_THE_SWEEP, (
+        f"the sweep reached {weeks} taper weeks, not {_TAPER_WEEKS_IN_THE_SWEEP}, so the pooled "
+        f"presence arm below is being asserted over a different population than it was measured "
+        f"on and 'reaches 2 of 24' is no longer the reason it is pooled."
+    )
+    for aspect in _TAPER_HARD:
+        assert minutes[aspect] > 0, (
+            f"no taper week in the sweep prescribes {aspect}, and §3.3 says a taper contains "
+            f"ONLY hard strength/power and hard aerobic power. Its share was 0.0% before this "
+            f"and a guard used to mandate that, so a zero here is the defect coming back."
+        )
+    assert not weak, (
+        f"these taper blocks sit below RPE {_TAPER_HARD_RPE_FLOOR}: {weak}. §3.3 holds a "
+        f"taper's intensity at the loading value or takes it higher — volume is the only thing "
+        f"an unload week cuts, so a lowered RPE on a taper row is the wrong lever."
+    )
+    assert not legs, (
+        f"the taper prescribes {sorted(legs)} for general strength. It carries "
+        f"{sorted(_TAPER_STRENGTH_ROWS)} and nothing else: a heavy hinge or squat leaves "
+        f"fatigue that hides the fitness the whole plan built, which is the half of the retired "
+        f"`(taper, general_strength)` exemption that still argues."
+    )
+
+
+def _unload_ratio(plan: PlanBlueprint, phase: Phase) -> list[tuple[int, int, float, float]]:
+    """Every unload week of one phase as (week, seconds, its own block's loading mean, %) — its
+    OWN block, because a block is two mesocycles and a plan-wide mean hides the short ones."""
+    rows: list[tuple[int, int, float, float]] = []
+    loading: list[int] = []
+    for mesocycle in plan.mesocycles:
+        weeks = [
+            sum(_block_seconds(block) for session in micro.sessions for block in session.blocks)
+            for micro in mesocycle.microcycles
+        ]
+        if mesocycle.phase not in UNLOADING_PHASES:
+            loading = weeks
+            continue
+        if mesocycle.phase is not phase or not loading:
+            continue
+        mean = sum(loading) / len(loading)
+        rows.extend(
+            (micro.week_no, seconds, mean, 100 * seconds / mean)
+            for micro, seconds in zip(mesocycle.microcycles, weeks, strict=True)
+        )
+    return rows
+
+
+@pytest.mark.parametrize(("level", "discipline", "system", "label"), _CLIMBERS)
+@pytest.mark.parametrize("sessions", [2, 3, 5, 7])
+@pytest.mark.parametrize("phase", [Phase.DELOAD, Phase.TAPER], ids=lambda phase: phase.value)
+def test_an_UNLOAD_WEEK_KEEPS_at_least_forty_percent_of_its_own_blocks_volume(
+    phase: Phase,
+    level: Level,
+    discipline: Discipline,
+    system: GradeSystemKey,
+    label: str,
+    sessions: int,
+) -> None:
+    """⚠️ GUARD. Per week, per climber, DELOAD and TAPER apart: an unload week keeps at least
+    `_UNLOAD_FLOOR_PCT` of its own block's loading mean. On the ceiling, see that comment."""
+    del level
+    rows = _unload_ratio(_plan(discipline, system, label, sessions, 0b111_1111), phase)
+    assert rows, f"a {label} climber at {sessions}x a week has no {phase.value} week to measure."
+    for week, seconds, mean, pct in rows:
+        assert mean > 0, (
+            f"week {week}'s {phase.value} sits against a loading mean of zero, so the ratio "
+            f"below is vacuous rather than passing."
+        )
+        assert pct >= _UNLOAD_FLOOR_PCT, (
+            f"a {label} climber at {sessions}x a week gets {phase.value} week {week} of "
+            f"{seconds / 60:.1f} prescribed minutes against its own block's loading mean of "
+            f"{mean / 60:.1f} = {pct:.1f}%, under the {_UNLOAD_FLOOR_PCT}% BOTH sources agree "
+            f"an unload week keeps. Below this it is a rest week with a plan written on it."
+        )
 
 
 def _base_aspect_seconds(plan: PlanBlueprint) -> tuple[Mapping[str, int], Mapping[str, int]]:

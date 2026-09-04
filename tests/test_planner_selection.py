@@ -42,10 +42,10 @@ _MONDAY = date(2026, 8, 24)
 def test_candidates_are_exactly_the_exercises_prescribed_in_that_cell() -> None:
     """`prescription_template` is one row per (exercise, phase), so the phase filter is real.
 
-    The positive control is the pair of cells: `finger_strength` has eight exercises in the
-    library and eight of them are prescribed in `strength`, while the *same aspect* in
-    `taper` has none — that emptiness is the phase filter doing its job, and it is the one
-    thing a filter that only matched on `aspect_key` would get wrong.
+    The positive control is the pair of cells: `finger_strength` has twelve exercises in the
+    library and eight prescribed in `strength`, while the *same aspect* in `taper` has none —
+    Kilian's injury call, declared, and not the sources' doctrine. That emptiness is the phase
+    filter doing its job, the one thing a filter matching only `aspect_key` would get wrong.
     """
     trained = candidates(Phase.STRENGTH, "finger_strength")
     assert trained

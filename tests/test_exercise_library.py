@@ -104,8 +104,8 @@ def test_every_phase_and_aspect_pair_is_prescribable_or_deliberately_not() -> No
 
     An exercise with no `prescription_template` row for a phase cannot be prescribed in that
     phase, so a cell with no candidate is a block the generator cannot fill for that aspect.
-    Emptiness is allowed — a taper with no power-endurance work is periodisation, not an
-    oversight — but only when it is written down with its reasoning.
+    Emptiness is allowed — a strength block with no power-endurance work is periodisation,
+    not an oversight — but only when it is written down with its reasoning.
 
     Asserted in **both** directions, because a one-way assertion rots: an exemption for a
     cell somebody has since filled is a stale claim about the library, and the next reader

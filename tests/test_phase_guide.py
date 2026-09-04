@@ -34,7 +34,6 @@ _KEYS = tuple(guide.phase.value for guide in PHASE_GUIDE)
 # What each phase's authored `how_to_train` CLAIMS, restated as data on `_BASE_WALL_EMPHASIS`'s
 # idiom. Four tables because the sentences make four different kinds of claim.
 COPY_CLAIMS_LEAD: dict[Phase, tuple[str, ...]] = {
-    Phase.BASE: ("endurance", "technique"),
     Phase.POWER: ("power", "finger_strength"),
     Phase.PERFORMANCE: ("power",),
 }
@@ -69,12 +68,7 @@ COPY_CLAIMS_ABSENT: dict[Phase, tuple[str, ...]] = {
     Phase.POWER: ("power_endurance",),
     Phase.POWER_ENDURANCE: ("general_strength",),
     Phase.PERFORMANCE: ("anaerobic_capacity",),
-    Phase.TAPER: (
-        "finger_strength",
-        "power_endurance",
-        "anaerobic_capacity",
-        "general_strength",
-    ),
+    Phase.TAPER: ("finger_strength", "anaerobic_capacity", "endurance"),
 }
 
 # 2-3 per phase is the authored range: one source cannot show a contested claim from both

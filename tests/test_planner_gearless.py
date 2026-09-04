@@ -114,7 +114,7 @@ def test_every_phase_has_at_least_three_gearless_aspects(phase: Phase) -> None:
 def test_each_gearless_gap_yields_a_shortfall_naming_real_equipment(
     phase: Phase, aspect: str
 ) -> None:
-    """Each of the seventeen cells has to produce an answer, not just fail to fill.
+    """Each of the eighteen cells has to produce an answer, not just fail to fill.
 
     A shortfall with empty `options` in one of these cells would mean the app admitted a
     limitation without saying what would fix it — which is exactly the "thin block with no

@@ -15,7 +15,7 @@ from types import MappingProxyType
 from typing import Final
 
 from server.domain.grades import Discipline, GradeSystemKey, ordinal_of
-from server.domain.vocabulary import Phase, ProtocolKind
+from server.domain.vocabulary import CLIMBING_ASPECTS, Phase, ProtocolKind
 
 # Any block whose exercise needs one of these is wall time; everything else is supplementary.
 # `auto_belay` is in the set although issue #84's own measurement omitted it: it is a wall you
@@ -59,9 +59,31 @@ EXPANDABLE_PROTOCOLS: Final[frozenset[ProtocolKind]] = frozenset(
 )
 UNLOADING_PHASES: Final[frozenset[Phase]] = frozenset({Phase.DELOAD, Phase.TAPER})
 
+# The share of a loading week an unload week keeps, intensity held: Barrows §3.3 says ~50% and
+# Dylan says 40-60%. A share of the WINDOW FLOOR, never a multiplier on an authored dose.
+UNLOAD_VOLUME_PCT: Final = 50
+
 # A deload session LEADS with movement quality at low load rather than with the wall, which is
 # what `PHASE_GUIDE[DELOAD]` promises; `_ordered_blocks` is where it becomes true.
 DELOAD_LEAD_ASPECTS: Final[frozenset[str]] = frozenset({"technique", "mobility"})
+
+# Barrows §3.4, as a tuple of tiers so the source's own sentence is the constant and a tier is a
+# POSITION rather than a magic number: "always start with the most intense and work down to the
+# least intense: bouldering -> An Cap/An Pow -> Aero Pow -> Aero Cap -> ARC", within a session
+# and across consecutive days. `power` shares tier 0 with both strength aspects because §3.3
+# treats hard strength and power as one category, and it needs a tier ahead of
+# `anaerobic_capacity` because the app maps BOTH bouldering and An Pow to it, which is the only
+# implementable reading of that first arrow. The last tier is what the chain does not name.
+INTENSITY_TIERS: Final[tuple[tuple[str, ...], ...]] = (
+    ("power", "finger_strength", "general_strength"),
+    ("anaerobic_capacity",),
+    ("power_endurance",),
+    ("endurance",),
+    ("technique", "core_tension", "antagonist_prehab", "mobility"),
+)
+_INTENSITY_TIER: Final[Mapping[str, int]] = MappingProxyType(
+    {key: tier for tier, keys in enumerate(INTENSITY_TIERS) for key in keys}
+)
 
 
 class Level(enum.StrEnum):
@@ -87,7 +109,9 @@ _CEILINGS: Final[Mapping[Discipline, tuple[int, int]]] = MappingProxyType(
 )
 
 # Percent of a week's prescribed minutes that must be wall time. Integer, so the check is exact
-# integer arithmetic and no float ever decides whether a week meets its floor.
+# integer arithmetic and no float ever decides whether a week meets its floor. ⚠️ A WEEK's, and
+# reading it per SESSION would be a stricter rule rather than a refactor of this one — it would
+# redefine a number Kilian set.
 CLIMBING_FLOOR_PCT: Final[Mapping[Level, int]] = MappingProxyType(
     {Level.BEGINNER: 85, Level.INTERMEDIATE: 75, Level.ADVANCED: 50}
 )
@@ -126,10 +150,10 @@ PRIORITY_PROTOCOLS: Final[frozenset[ProtocolKind]] = frozenset(
 )
 
 # Minutes of prescribed work in a session led by a block of this protocol kind, warm-up
-# excluded because the warm-up is not a block. The maximum binds always; the minimum is only
-# pursued, and only in a loading phase — `Phase` in `server/domain/vocabulary.py` is explicit
-# that a deload has its own prescriptions rather than being a scaled block, so topping one back
-# up to a loading week's length would contradict the schema's own definition of it.
+# excluded because the warm-up is not a block. The maximum binds always; the minimum is pursued
+# in full in a loading phase and at `UNLOAD_VOLUME_PCT` of it in an unload week. Half a floor is
+# not a scaled prescription — `Phase` in `server/domain/vocabulary.py` forbids that and every
+# unload dose stays as authored; what an unload week gets is FEWER blocks, per ruling 3's top-up.
 SESSION_WINDOWS: Final[Mapping[ProtocolKind, tuple[int, int]]] = MappingProxyType(
     {
         ProtocolKind.MAX_HANG: (20, 45),
@@ -182,6 +206,12 @@ def session_window(protocol_kind: ProtocolKind) -> tuple[int, int]:
     return SESSION_WINDOWS[protocol_kind]
 
 
+def session_floor_pct(phase: Phase) -> int:
+    """How much of its type's window floor a session in this phase owes: all of it while
+    loading, `UNLOAD_VOLUME_PCT` of it in a deload or a taper."""
+    return UNLOAD_VOLUME_PCT if phase in UNLOADING_PHASES else 100
+
+
 def is_expandable(aspect_key: str, protocol_kind: ProtocolKind, phase: Phase) -> bool:
     """Whether extra sets of this block are more training rather than a worse session."""
     return (
@@ -212,3 +242,24 @@ def finger_sessions_for(discipline: Discipline, current_ordinal: int, phase: Pha
 def is_priority(protocol_kind: ProtocolKind) -> bool:
     """Whether this is the quality work a session must not bury behind volume."""
     return protocol_kind in PRIORITY_PROTOCOLS
+
+
+def intensity_tier(aspect_key: str) -> int:
+    """Where this aspect sits on §3.4's chain: 0 is the hardest work a session can carry."""
+    return _INTENSITY_TIER[aspect_key]
+
+
+def _validate_intensity_tiers() -> None:
+    """Every aspect owns exactly one tier, checked at import on `_validate_aspect_emphasis`'s
+    idiom: #98 added two aspects and a `KeyError` at generate time is the wrong failure."""
+    tiered = [key for keys in INTENSITY_TIERS for key in keys]
+    expected = {spec.key for spec in CLIMBING_ASPECTS}
+    if len(tiered) != len(set(tiered)) or set(tiered) != expected:
+        raise ValueError(
+            f"INTENSITY_TIERS must tier every aspect in CLIMBING_ASPECTS exactly once. "
+            f"Untiered: {sorted(expected - set(tiered))}; not an aspect or listed twice: "
+            f"{sorted(key for key in tiered if key not in expected or tiered.count(key) > 1)}."
+        )
+
+
+_validate_intensity_tiers()
