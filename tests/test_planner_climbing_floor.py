@@ -5,7 +5,8 @@ matrix from a real plan. Every claim here is therefore MEASURED off `generate()`
 restated from `server/domain/planner/climbing.py`: the PR #63 lesson was that 20 exercises landed in
 the wrong tuple with 266 tests passing, and only recomputing the matrix caught it. The session
 windows are the second half — a fixed-volume protocol must never be padded, because low volume *is*
-the protocol. Shown to fail before being trusted; captures in `.claude/pr-a-state.md`.
+the protocol — and WHICH climbing is the third: a phase's authored emphasis has to be where its
+minutes go. Shown to fail before being trusted; captures in `.claude/pr-a-state.md`.
 """
 
 from collections.abc import Mapping
@@ -94,6 +95,17 @@ _CLIMBERS: tuple[tuple[Level, Discipline, GradeSystemKey, str], ...] = (
     (Level.ADVANCED, Discipline.SPORT, GradeSystemKey.FRENCH, "7c"),
     (Level.ADVANCED, Discipline.BOULDER, GradeSystemKey.FONT, "7C"),
 )
+
+
+# Kilian's authored order for a base block, restated independently of `selection.py` for
+# `_MAY_EXPAND`'s reason, and quoted almost verbatim in `PHASE_GUIDE[Phase.BASE]`.
+_BASE_WALL_EMPHASIS: tuple[str, ...] = ("endurance", "technique", "power_endurance", "power")
+
+# What the two qualities that order ranks last may take of a base block's prescribed minutes.
+# Measured over both beginners at 1-7 sessions: 0.0-17.3% now against 20.6-36.0% before.
+_BASE_TAIL_CEILING_PCT = 20
+
+_BEGINNERS = tuple(row for row in _CLIMBERS if row[0] is Level.BEGINNER)
 
 
 def _input(
@@ -433,3 +445,63 @@ def test_priority_work_never_sits_behind_volume_work(
                         f"{block.exercise_key} ({block.protocol_kind.value}) after "
                         f"{seen_volume}; fixed-volume quality work leads a session."
                     )
+
+
+def _base_aspect_seconds(plan: PlanBlueprint) -> tuple[Mapping[str, int], Mapping[str, int]]:
+    """Prescribed seconds per aspect over the plan's BASE weeks: all of them, then wall only."""
+    every: dict[str, int] = {}
+    wall: dict[str, int] = {}
+    for mesocycle in plan.mesocycles:
+        for microcycle in mesocycle.microcycles:
+            if microcycle.phase is not Phase.BASE:
+                continue
+            for session in microcycle.sessions:
+                for block in session.blocks:
+                    seconds = _block_seconds(block)
+                    every[block.aspect_key] = every.get(block.aspect_key, 0) + seconds
+                    if _on_wall(block):
+                        wall[block.aspect_key] = wall.get(block.aspect_key, 0) + seconds
+    return every, wall
+
+
+@pytest.mark.parametrize(("level", "discipline", "system", "label"), _BEGINNERS)
+@pytest.mark.parametrize("sessions", [1, 2, 3, 5, 7])
+def test_a_beginners_base_block_keeps_the_qualities_it_ranks_last_last(
+    level: Level, discipline: Discipline, system: GradeSystemKey, label: str, sessions: int
+) -> None:
+    """⚠️ GUARD. The phase's authored emphasis has to be where its minutes actually go, and
+    nothing measured that: the emphasis order governed only the supplementary pass."""
+    del level
+    every, _wall = _base_aspect_seconds(
+        generate(_input(discipline, system, label, sessions, 0b111_1111))
+    )
+    total = sum(every.values())
+    assert total, "no base weeks in the plan; the parametrisation is wrong."
+    tail = sum(every.get(key, 0) for key in _BASE_WALL_EMPHASIS[-2:])
+    assert tail * 100 <= _BASE_TAIL_CEILING_PCT * total, (
+        f"a {label} beginner training {sessions}x a week spends {100 * tail / total:.1f}% of "
+        f"a base block's prescribed minutes on {' and '.join(_BASE_WALL_EMPHASIS[-2:])}, "
+        f"against a ceiling of {_BASE_TAIL_CEILING_PCT}%: {tail // 60} min of "
+        f"{total // 60}. Base ranks both of them last and PHASE_GUIDE[base] says so in prose."
+    )
+
+
+@pytest.mark.parametrize(("level", "discipline", "system", "label"), _BEGINNERS)
+@pytest.mark.parametrize("sessions", [1, 2, 3, 5, 7])
+def test_the_quality_a_base_block_ranks_last_takes_the_least_wall_time(
+    level: Level, discipline: Discipline, system: GradeSystemKey, label: str, sessions: int
+) -> None:
+    """⚠️ GUARD, the ordering arm. A share ceiling alone passes a block that spends the same
+    minutes in the wrong ORDER, and "last" is an order rather than a budget."""
+    del level
+    _every, wall = _base_aspect_seconds(
+        generate(_input(discipline, system, label, sessions, 0b111_1111))
+    )
+    last = _BASE_WALL_EMPHASIS[-1]
+    ahead = {key: wall.get(key, 0) for key in _BASE_WALL_EMPHASIS[:-1]}
+    assert all(wall.get(last, 0) <= seconds for seconds in ahead.values()), (
+        f"a {label} beginner training {sessions}x a week gets {wall.get(last, 0) // 60} min of "
+        f"{last} on a wall in a base block, against "
+        f"{ {key: seconds // 60 for key, seconds in ahead.items()} } for the qualities base "
+        f"ranks above it. Whichever quality is last in the row has to be last in the minutes."
+    )

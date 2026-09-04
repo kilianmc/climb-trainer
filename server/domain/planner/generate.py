@@ -83,6 +83,7 @@ from server.domain.planner.selection import (
     prescribable,
     shortfall_message,
     unlock_options,
+    wall_aspect_turns,
     wall_led_aspects,
     wall_unlock_options,
     with_protocols,
@@ -226,10 +227,9 @@ def _fill_climbing(
 ) -> None:
     """Wall blocks up to the band's share of the session type's window floor and no further — to
     a TARGET, never to exhaustion, so the remainder is reserved for supplementary work."""
-    offset = week_no - 1 + draft.session_index
     spread = _spread(week_no, draft.session_index)
     unloading = phase in UNLOADING_PHASES
-    for spec in _wall_picks(planner_input, phase, offset, spread):
+    for spec in _wall_picks(planner_input, phase, spread):
         if len(draft.blocks) >= BLOCKS_PER_SESSION:
             break
         spent = (
@@ -259,18 +259,16 @@ def _fill_climbing(
         draft.shortfalls.append(_no_climbing_shortfall(planner_input, phase))
 
 
-def _wall_picks(
-    planner_input: PlannerInput, phase: Phase, offset: int, spread: int
-) -> tuple[ExerciseSpec, ...]:
-    """This session's wall exercises, best first: one per aspect, rotated, then round again.
-
-    Rounding again is what lets a `strength` block reach a real bouldering session — that phase
-    has only two wall-led aspects, so one block each stopped ten minutes short of the window
-    (measured). Deduped by exercise key, and no set is iterated, so the order is reproducible.
+def _wall_picks(planner_input: PlannerInput, phase: Phase, spread: int) -> tuple[ExerciseSpec, ...]:
+    """This session's wall exercises, best first: the phase's RANK-WEIGHTED ring of aspect
+    turns, started at its own offset, a fresh exercise per turn — so `ASPECT_EMPHASIS` governs
+    climbing and not only the supplementary pass, and a `strength` block keeps the second bite
+    that measured ten minutes short without it. Indexed by `_spread` for the reason recorded
+    there: the aspect offset takes ~5 values in a three-week phase, fewer than the ring is long.
     """
-    pools = [
-        (aspect_key, ordered)
-        for aspect_key in _rotated_pool(wall_led_aspects(phase), offset)
+    pools = {
+        aspect_key: ordered
+        for aspect_key in wall_led_aspects(phase)
         if (
             ordered := prescribable(
                 on_the_wall(candidates(phase, aspect_key)),
@@ -279,15 +277,20 @@ def _wall_picks(
                 open_injury_keys=planner_input.open_injury_keys,
             )
         )
-    ]
+    }
     picked: list[ExerciseSpec] = []
     seen: list[str] = []
-    for depth in range(BLOCKS_PER_SESSION):
-        for _aspect_key, ordered in pools:
-            spec = ordered[(spread + depth) % len(ordered)]
-            if spec.key not in seen:
-                seen.append(spec.key)
-                picked.append(spec)
+    taken: dict[str, int] = {}
+    for aspect_key in _rotated_pool(wall_aspect_turns(phase), spread):
+        pool = pools.get(aspect_key)
+        if pool is None:
+            continue
+        depth = taken.get(aspect_key, 0)
+        taken[aspect_key] = depth + 1
+        spec = pool[(spread + depth) % len(pool)]
+        if spec.key not in seen:
+            seen.append(spec.key)
+            picked.append(spec)
     return tuple(picked)
 
 

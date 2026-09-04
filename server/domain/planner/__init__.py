@@ -52,6 +52,7 @@ from server.domain.planner.selection import (
     no_climbing_message,
     on_the_wall,
     prescribable,
+    wall_aspect_turns,
     wall_led_aspects,
     wall_unlock_options,
 )
@@ -96,6 +97,7 @@ __all__ = [
     "prescribable",
     "requires_wall",
     "session_window",
+    "wall_aspect_turns",
     "wall_led_aspects",
     "wall_unlock_options",
 ]
