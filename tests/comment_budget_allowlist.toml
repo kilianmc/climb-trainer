@@ -1138,7 +1138,7 @@ reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
 path = "server/domain/planner/periodisation.py"
 kind = "docstring"
 anchor = "server.domain.planner.periodisation"
-limit = 35
+limit = 33
 reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
 
 [[exception]]
@@ -8109,9 +8109,9 @@ reason = "Why a length-driven slot abandons the rotation, and why it takes the l
 [[exception]]
 path = "tests/test_planner_climbing_floor.py"
 kind = "hash_run"
-anchor = "the dimension this sweeps is plan length and it is the one the gate was missing round 3 reordered wall pref to put a session s own length ahead of the week s share and this test stayed green at the gap of 3 every other test here uses that moves the advanced band from 57 58 to 59 61 still inside 50 62 measured over gap 0 7 four weekday masks 2 7 sessions the sabotage breaches only the short plans gap 0 8 weeks and gap 1 12 reach 62 1 64 8 against the 62 ceiling because a short plan is mostly base where preferring the wall buys the most so gap is sampled at both ends of periodisation s week count table 0 8 weeks 6 32 plus the 3 the rest of the file uses sessions per week runs the full 2 7 for completeness but it is not the exposing dimension and neither is the weekday mask all four masks measured identical to a tenth of a point because a mask moves which weekday a session lands on and never how many blocks it gets"
-limit = 11
-reason = "Records the MEASUREMENT that chose this parametrisation: which dimension exposes the _wall_pref sabotage (plan length), the numbers at each gap, and the two dimensions measured NOT to expose it - without which the next reader trims the gaps back and re-blinds the gate."
+anchor = "the dimension this sweeps is plan length and it is the one the gate was missing round 3 reordered wall pref"
+limit = 16
+reason = "Records two MEASUREMENTS a reader cannot recover from the code: which dimension exposes the _wall_pref sabotage (plan length, re-measured at 65.1-67.6% against the 64 ceiling), and why the advanced ceiling is 64 - a re-baseline off deload weeks that dev itself already breached at 62.3%, due back down at the fixed 12-week plan length. Without it the next reader trims the gaps back, or reads 64 as a weakened guard."
 
 [[exception]]
 path = "web/src/planCompletionBands.test.tsx"
@@ -8143,17 +8143,17 @@ reason = "Kilian signed dark's day badges off as they stand, so the guard must s
 
 [[exception]]
 path = "tests/test_phase_guide.py"
-kind = "hash_run"
-anchor = "what each phase s authored how to train"
-limit = 4
-reason = "Says why the table exists at all: since PR A (#116) the emphasis order drives what the user is shown, so each of these sentences is a claim about generator behaviour rather than decoration."
+kind = "docstring"
+anchor = "tests.test_phase_guide.test_the_copys_LEAD_claims_name_the_MODAL_FIRST_BLOCK_of_a_generated_plan"
+limit = 7
+reason = "Carries the guard's GRANULARITY and its measured slack: the claim is pooled because PHASE_GUIDE is universal copy, and it does NOT hold per profile - an advanced climber's power and performance blocks open with fingers. Without it the arm reads as a per-plan promise and the next reader tightens it to one."
 
 [[exception]]
 path = "tests/test_planner_climbing_floor.py"
 kind = "hash_run"
 anchor = "kilian s authored order for a base"
 limit = 4
-reason = "Records which wall-led aspects take NO base wall turns and why - general_strength has no on-wall base exercise at all, and anaerobic_capacity had none until PR C authored two. Without it the tuple reads like an omission."
+reason = "Records which wall-led aspects take NO base wall turns and why - since the three on-wall general_strength rows were re-filed to power there is no on-wall general_strength exercise in any phase, and anaerobic_capacity has two. Without it the tuple reads like an omission."
 
 [[exception]]
 path = "tests/test_planner_climbing_floor.py"

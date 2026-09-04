@@ -357,8 +357,7 @@ class PhaseGuide:
 # is checkable in `periodisation.py`, and the plan's own numbers are derived, never restated here.
 PLAN_GOAL: Final = (
     "Every block is three loading weeks and one unloading week. The blocks run in order — base "
-    "first, the strength qualities in the middle, performance last — and a quality is maintained "
-    "after its own block rather than previewed before it."
+    "first, the strength qualities in the middle, performance last."
 )
 
 # ⚠️ **Authored prose with sourced further reading: 2-3 links a phase, checked by
@@ -369,8 +368,9 @@ PHASE_GUIDE: Final[tuple[PhaseGuide, ...]] = (
         "Base",
         "The block that builds the capacity every later block spends — mileage, movement, and "
         "enough aerobic base to recover between hard goes rather than just survive them. It goes "
-        "first because it is the slowest thing in the plan to build: a real aerobic adaptation "
-        "wants eight weeks or more of honest work.",
+        "first because its adaptations are the slowest in the plan to arrive: a real aerobic "
+        "base wants eight weeks or more of honest work, and the anaerobic capacity that starts "
+        "alongside it wants sixteen or more (Barrows §3.1).",
         "Volume before intensity. Long, continuous, submaximal climbing, one to three sessions a "
         "week, progressing by adding time before adding difficulty. Finish able to do more than "
         "you did, because climbing a base block to failure costs you the plan, not just the week. "
@@ -381,10 +381,10 @@ PHASE_GUIDE: Final[tuple[PhaseGuide, ...]] = (
         "would rather you spent the effort on the climbing that mimics it, and a third holds "
         "that its specificity is low and the fatigue it leaves subtracts from climbing. The "
         "squat is the most disputed exercise of the three, so this plan prescribes unilateral "
-        "leg work at low volume and asks you to add depth before you add load. Endurance leads "
-        "every session here, with technique behind it; general strength and anaerobic capacity "
-        "start in this block because they are the two slowest qualities in the plan to "
-        "arrive — and power sits last on purpose.",
+        "leg work at low volume and asks you to add depth before you add load. Endurance opens "
+        "more of these sessions than any other quality, with technique next; general strength "
+        "and anaerobic capacity both start here, anaerobic capacity because it is the slowest "
+        "quality in the plan to arrive (Barrows §3.1) — and power sits last on purpose.",
         (
             GuideLink(
                 "https://www.climbstrong.com/resource-posts/third-gear-the-aerobic-energy-system",
@@ -417,9 +417,10 @@ PHASE_GUIDE: Final[tuple[PhaseGuide, ...]] = (
         "and the wall keeps the rest of the session. How much hangboarding a block "
         "warrants is genuinely contested: some coaches program it twice a week as standard, "
         "others hold that you should hangboard only if fingers are your identified weakness. "
-        "Fingers lead here — depending on your current grade the plan owes one or two real "
-        "hangboard sessions a week, scheduled first in the session rather than behind the "
-        "climbing. General strength and anaerobic capacity are high priority through this block "
+        "Fingers go first: a session that holds real hangboard work opens with it, ahead of any "
+        "volume climbing rather than tacked on behind it. How much of it you get rises with your "
+        "current grade, and at the lowest grades the plan spends those minutes on the wall "
+        "instead. General strength and anaerobic capacity are high priority through this block "
         "too, and the aerobic work stays high alongside them on purpose: raising your tolerance "
         "for the burn without also raising your ability to clear it is worse than doing "
         "neither.",
@@ -476,12 +477,12 @@ PHASE_GUIDE: Final[tuple[PhaseGuide, ...]] = (
         "random hard laps. Dropping the intensity to survive the set turns the session into "
         "endurance training under a different name. How hard these sessions should be is "
         "contested — one school argues that training to a searing pump is too intense to build "
-        "repeatable capacity, and that the aerobic work underneath matters more. Power endurance "
-        "leads here with aerobic endurance immediately behind it, because the capacity underneath "
-        "is what lets the next hard session happen two days later. Heavy general strength is "
-        "deliberately absent: strength is the quality that holds longest, so it keeps across a "
-        "block this short while a heavy session would compete for exactly the recovery these "
-        "ones need.",
+        "repeatable capacity, and that the aerobic work underneath matters more. That aerobic "
+        "work is deliberately kept to a small share of this block — enough to let the next hard "
+        "session happen two days later, never enough to out-train the quality the block is "
+        "named after. Heavy general strength is deliberately absent: strength is the quality "
+        "that holds longest, so it keeps across a block this short while a heavy session would "
+        "compete for exactly the recovery these ones need.",
         (
             GuideLink(
                 "https://www.climbing.com/skills/winter-endurance-training/",
@@ -507,9 +508,10 @@ PHASE_GUIDE: Final[tuple[PhaseGuide, ...]] = (
         "rehearse the sequences you keep failing, write the beta down, and link progressively "
         "bigger pieces. The attempts are the training, so protect them — over-projecting "
         "produces the same flat, declining performance that over-training does. Limit attempts "
-        "and redpoint burns lead this block, with power endurance right behind so stamina is "
-        "still trained if that is your weakness. Anaerobic capacity is deliberately absent: the "
-        "burn work is the first thing to go once the objective is inside four weeks.",
+        "and redpoint burns lead this block, and power endurance keeps a share of it throughout "
+        "so stamina is still trained if that is your weakness. Anaerobic capacity is "
+        "deliberately absent: the burn work is the first thing to go once the objective is "
+        "inside four weeks.",
         (
             GuideLink(
                 "https://www.climbing.com/skills/learn-this-redpoint-smarter-to-redpoint-harder/",

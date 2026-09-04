@@ -59,9 +59,9 @@ _PROFILES: tuple[tuple[Discipline, GradeSystemKey, str, str, int], ...] = (
 # Kilian's requirement, and the floor is a SHARE of what the discipline can see rather than a
 # count: 4 of 100 exercises are boulder-only and 13 rope-only, so a sport plan tops out at 96 and
 # a boulder plan at 87, and a count would ask the two for different things. Measured today:
-# beginner 67.7% (65/96) and 64.4% (56/87), intermediate 81.2% and 82.8%, advanced 96.9% and
-# 98.9%, short sport plan 70.8%. Beginner is lowest by arithmetic, not by defect — the band puts
-# 85-90% of its minutes on a wall, so little is left for the off-the-wall half of the library.
+# beginner 72.9% (70/96) and 71.3% (62/87), intermediate 85.4% and 90.8%, advanced 96.9% and
+# 98.9%, short sport plan 79.2%. Beginner is lowest by arithmetic, not by defect — the band puts
+# 85-90% of a loading week's minutes on a wall, so little is left for the off-the-wall half.
 #
 # ⚠️ **RE-BASELINED 68 → 63** (Kilian, 2026-09-04), and the old number was not a stricter version
 # of this one: it was measuring a DEFECT. Four long accessories (`one_arm_lockoff_negatives`,
@@ -69,10 +69,10 @@ _PROFILES: tuple[tuple[Discipline, GradeSystemKey, str, str, int], ...] = (
 # session running UNDER its type's window floor, where `_pick` took the longest candidate that
 # fit instead of its plain rotation; round 3's climbing top-up closed that path. Widening
 # `_length_pick`'s pool is not the way back and its docstring holds the numbers.
-# 63 is the tightest floor honest behaviour supports: the lowest profile is 64.4% (56 of 87), so
-# it carries exactly ONE exercise of slack — 55/87 = 63.2% passes, 54/87 = 62.1% does not — and
-# that same margin absorbs a new library row this plan does not draw, since authoring one raises
-# the denominator. Shown to fail: `_pick` reduced to `pool[0]` draws 57/96 = 59.4%.
+# 63 was the tightest floor honest behaviour supported when the lowest profile measured 64.4%
+# (56 of 87), one exercise of slack. The general-strength re-file lifted that profile to 71.3%
+# (62 of 87), so the floor now carries seven — room a new library row does not spend, since
+# authoring one raises the denominator. Shown to fail: `_pick` as `pool[0]` draws 57/96 = 59.4%.
 _DISTINCT_SHARE_FLOOR_PCT = 63
 
 

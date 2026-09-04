@@ -29,9 +29,7 @@ in this package and adding one would contradict the schema.
 
 `PHASE_CYCLE_MIDDLE` is base -> strength -> power -> power endurance -> performance with the
 ends removed, which is exactly the cycle `server/domain/exercises.py` authored its
-prescriptions against. Because it matches, "a quality is maintained after its own block,
-never previewed before it" holds by construction rather than by a test — and
-`DELIBERATELY_UNPRESCRIBED`'s exemptions stay correct.
+prescriptions against, so `DELIBERATELY_UNPRESCRIBED`'s exemptions stay correct.
 """
 
 from dataclasses import dataclass
