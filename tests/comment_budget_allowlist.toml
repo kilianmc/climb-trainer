@@ -7992,7 +7992,7 @@ path = "server/domain/planner/generate.py"
 kind = "docstring"
 anchor = "server.domain.planner.generate._wall_picks"
 limit = 6
-reason = "The second pass over the same aspects looks redundant and is not: the strength phase has only two wall-led aspects, measured ten minutes short of the window with one block each."
+reason = "Records what the rank-weighted ring buys - ASPECT_EMPHASIS governing climbing and not only the supplementary pass - and why it is indexed by _spread rather than by the aspect offset, which takes ~5 values inside a three-week phase."
 
 [[exception]]
 path = "tests/test_planner_climbing_floor.py"

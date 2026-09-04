@@ -46,6 +46,10 @@ from server.domain.vocabulary import (
 # is never short of a slot to fill.
 BLOCKS_PER_SESSION: Final = 3
 
+# Turns a wall-led aspect gets in `wall_aspect_turns()`, capped at one more than a session's
+# blocks: uncapped, `base` gives endurance eight turns to power's one and a ring no phase samples.
+MAX_WALL_TURNS: Final = BLOCKS_PER_SESSION + 1
+
 # The third slot, rotated. These are the qualities that keep the pulling durable and the
 # body able to hold a position; they are worth a slot in every phase and they are never the
 # thing a phase is *about*, which is why they get their own rotation instead of competing
@@ -281,6 +285,26 @@ def wall_led_aspects(phase: Phase) -> tuple[str, ...]:
         for key in ASPECT_EMPHASIS[phase]
         if key in WALL_LED_ASPECTS and on_the_wall(candidates(phase, key))
     )
+
+
+def wall_aspect_turns(phase: Phase) -> tuple[str, ...]:
+    """The wall-led aspects as a ring of TURNS — which quality leads a climbing session here,
+    and how OFTEN, which is the half of the phase's authored order a flat rotation loses."""
+    aspects = wall_led_aspects(phase)
+    row = ASPECT_EMPHASIS[phase]
+    turns = {key: min(len(row) - row.index(key), MAX_WALL_TURNS) for key in aspects}
+    taken = dict.fromkeys(aspects, 0)
+    ring: list[str] = []
+    # Largest quotient, so the turns interleave rather than arrive in runs and the authored
+    # order breaks every tie: a run of four endurance turns hides every aspect behind it.
+    for _ in range(sum(turns.values())):
+        leader = aspects[0]
+        for key in aspects:
+            if turns[key] * (taken[leader] + 1) > turns[leader] * (taken[key] + 1):
+                leader = key
+        taken[leader] += 1
+        ring.append(leader)
+    return tuple(ring)
 
 
 def wall_unlock_options(
