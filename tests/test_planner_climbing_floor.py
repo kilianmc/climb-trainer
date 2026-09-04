@@ -10,7 +10,9 @@ minutes go. Shown to fail before being trusted; captures in `.claude/pr-a-state.
 """
 
 from collections.abc import Mapping
+from dataclasses import dataclass
 from datetime import date
+from functools import cache
 
 import pytest
 
@@ -99,15 +101,136 @@ _CLIMBERS: tuple[tuple[Level, Discipline, GradeSystemKey, str], ...] = (
 
 # Kilian's authored order for a base block, restated independently of `selection.py` for
 # `_MAY_EXPAND`'s reason, and quoted almost verbatim in `PHASE_GUIDE[Phase.BASE]`.
-# ⚠️ `anaerobic_capacity` is deliberately not here although #98 put it in the base row: base
-# prescribes no ON-WALL anaerobic capacity exercise, so it takes no wall turns (PR C's content).
-_BASE_WALL_EMPHASIS: tuple[str, ...] = ("endurance", "technique", "power_endurance", "power")
+# ⚠️ `general_strength` sits third in the authored row and is absent here: no ON-WALL base
+# exercise exists for it. `anaerobic_capacity` had none either until PR C authored two.
+_BASE_WALL_EMPHASIS: tuple[str, ...] = (
+    "endurance",
+    "technique",
+    "anaerobic_capacity",
+    "power_endurance",
+    "power",
+)
 
 # What the two qualities that order ranks last may take of a base block's prescribed minutes.
 # Measured over both beginners at 1-7 sessions: 0.0-17.3% now against 20.6-36.0% before.
 _BASE_TAIL_CEILING_PCT = 20
 
+# Barrows §3.2 gives a base block HIGH PRIORITY: strength and anaerobic capacity, plus a
+# reasonable amount of aerobic capacity. It MAINTAINS ONLY aerobic and anaerobic power.
+_BASE_MAINTAINED_ONLY: tuple[str, ...] = ("power", "power_endurance")
+_BASE_PRIORITISED_ON_WALL: tuple[str, ...] = ("endurance", "anaerobic_capacity")
+
+# His worked base week is "0.5x Aero/An Pow" against four strength sessions out of five, i.e.
+# ~10% across BOTH maintained qualities. Measured 2.5-10.7%, so 15 has margin and still bites.
+_BASE_MAINTAINED_CEILING_PCT = 15
+
 _BEGINNERS = tuple(row for row in _CLIMBERS if row[0] is Level.BEGINNER)
+
+# A plain indoor bouldering gym, which is the equipment column PR C's whole pass condition is
+# stated over, and the session counts the monotonicity guard steps through against `n + 1`.
+_WALL_ONLY: tuple[str, ...] = ("bouldering_wall",)
+_SESSION_STEPS: tuple[int, ...] = (1, 2, 3, 4, 5, 6)
+
+
+@dataclass(frozen=True, slots=True)
+class _Sweep:
+    """One climber the monotonicity guard adds a day to. `label` is the exemption register's key."""
+
+    label: str
+    discipline: Discipline
+    system: GradeSystemKey
+    grade: str
+    equipment: tuple[str, ...]
+    gap: int
+
+
+# ⚠️ This sweep used to be `sessions` ALONE against one intermediate sport climber holding the
+# full vocabulary, and that is exactly why both accepted exceptions below sat unsampled through
+# three rounds of PR C: neither of them fires on that profile, so an accepted exception and an
+# untested gap were indistinguishable here. Every band and both ladders now, in two equipment
+# columns — the full vocabulary at the file's default gap, and a plain bouldering gym at a gap of
+# 4. The second column is not decoration: measured over gaps 3 and 4, the gap-4 bouldering gym is
+# the only one of the four combinations that reaches the week-level `_floor_allows` residual in
+# week 24's taper, and a wall-only gym is also the harshest equipment column for this invariant
+# because there is no off-the-wall substitute for the block the allocator declines to place.
+_MONOTONICITY_SWEEP: tuple[_Sweep, ...] = tuple(
+    _Sweep(
+        f"{level.value} {discipline.value} {grade}, {column}",
+        discipline,
+        system,
+        grade,
+        equipment,
+        gap,
+    )
+    for column, equipment, gap in (
+        ("full vocabulary, gap 3", _ALL_EQUIPMENT, 3),
+        ("bouldering wall only, gap 4", _WALL_ONLY, 4),
+    )
+    for level, discipline, system, grade in _CLIMBERS
+)
+
+
+@dataclass(frozen=True, slots=True)
+class _AcceptedInversion:
+    """One (climber, session step) where adding a day is ALLOWED to cost climbing minutes.
+
+    Written as DATA on the idiom of `DELIBERATELY_UNPRESCRIBED`, and asserted in BOTH directions
+    below: an inversion with no row here is a defect, and a row that no longer inverts is a stale
+    claim about the generator. `max_loss_seconds` is the leash — it is the worst loss measured on
+    this row, so an accepted exception cannot quietly grow into a larger one under its own reason.
+    """
+
+    sweep_label: str
+    from_sessions: int
+    max_loss_seconds: int
+    reason: str
+
+
+# Kilian, 2026-09-04: he takes this inversion at 1 → 2 and at that step ONLY. A row of this class
+# at any other step is a defect rather than an exception, which is why the register keys on both.
+_SOLO_WEEK_AIMS_AT_100_PCT = (
+    "A one-session week is climbing and nothing else and aims at 100% of its minutes on a wall "
+    "(`solo` in `_microcycle`, issue #84's decision), while two sessions put this climber on "
+    "their band's target range instead — 50-62% advanced, 75-82% intermediate. Two deliberate "
+    "decisions colliding, and no amount of per-session arithmetic reconciles them: the fix is "
+    "either that a solo week stops aiming at 100%, or that this invariant is restated for a "
+    "FIXED band rather than for otherwise-identical inputs. Kilian took the inversion instead."
+)
+
+# The residual round 3 left standing on purpose when it made the band's top edge per-SESSION.
+_WEEK_LEVEL_CLIMBING_FLOOR = (
+    "The one week-level aggregate left in the allocator: the hard climbing floor in "
+    "`_floor_allows`. `CLIMBING_FLOOR_PCT` is documented as a percent of a WEEK's prescribed "
+    "minutes, so reading it per session would be stricter than the contract rather than a "
+    "refactor of it, and would redefine a number Kilian set. Left alone deliberately; the price "
+    "is twelve seconds in a taper week, and this row's cap is what keeps it a rounding cost."
+)
+
+# The register. Both arms of the guard read it, and the beginners are absent because they do not
+# invert at all — their 85-90% band is close enough to a solo week's 100% that nothing is traded.
+_ACCEPTED_INVERSIONS: tuple[_AcceptedInversion, ...] = (
+    _AcceptedInversion(
+        "intermediate boulder 6C, full vocabulary, gap 3", 1, 300, _SOLO_WEEK_AIMS_AT_100_PCT
+    ),
+    _AcceptedInversion(
+        "advanced sport 7c, full vocabulary, gap 3", 1, 240, _SOLO_WEEK_AIMS_AT_100_PCT
+    ),
+    _AcceptedInversion(
+        "advanced boulder 7C, full vocabulary, gap 3", 1, 1260, _SOLO_WEEK_AIMS_AT_100_PCT
+    ),
+    _AcceptedInversion(
+        "advanced sport 7c, bouldering wall only, gap 4", 1, 660, _SOLO_WEEK_AIMS_AT_100_PCT
+    ),
+    _AcceptedInversion(
+        "advanced boulder 7C, bouldering wall only, gap 4", 1, 660, _SOLO_WEEK_AIMS_AT_100_PCT
+    ),
+    _AcceptedInversion(
+        "advanced sport 7c, bouldering wall only, gap 4", 3, 60, _WEEK_LEVEL_CLIMBING_FLOOR
+    ),
+    _AcceptedInversion(
+        "advanced boulder 7C, bouldering wall only, gap 4", 3, 60, _WEEK_LEVEL_CLIMBING_FLOOR
+    ),
+)
 
 
 def _input(
@@ -117,8 +240,9 @@ def _input(
     sessions: int,
     mask: int,
     gap: int = 3,
+    equipment: tuple[str, ...] = _ALL_EQUIPMENT,
 ) -> PlannerInput:
-    """A plannable climber with the full equipment vocabulary and no injuries."""
+    """A plannable climber with no injuries, holding the whole vocabulary unless told otherwise."""
     current = ordinal_of(system, label)
     return PlannerInput(
         discipline=discipline,
@@ -129,7 +253,7 @@ def _input(
         strength_aspect_key=None,
         weakness_aspect_key=None,
         open_injury_keys=(),
-        equipment_keys=_ALL_EQUIPMENT,
+        equipment_keys=equipment,
         start_date=_MONDAY,
     )
 
@@ -214,22 +338,79 @@ def test_a_single_session_week_is_climbing_and_nothing_else() -> None:
         )
 
 
-@pytest.mark.parametrize("sessions", [1, 2, 3, 4, 5, 6])
-def test_more_available_days_never_reduces_climbing_minutes(sessions: int) -> None:
-    """Monotonicity, measured week by week: a day added is climbing added, never traded."""
-    fewer = _weekly_matrix(
-        generate(_input(Discipline.SPORT, GradeSystemKey.FRENCH, "6c", sessions, 0b111_1111))
-    )
-    more = _weekly_matrix(
-        generate(_input(Discipline.SPORT, GradeSystemKey.FRENCH, "6c", sessions + 1, 0b111_1111))
-    )
-    for (week_no, phase, wall, _o, _c), (_w, _p, wall_more, _o2, _c2) in zip(
-        fewer, more, strict=True
-    ):
-        assert wall_more >= wall, (
-            f"going from {sessions} to {sessions + 1} sessions dropped week {week_no} "
-            f"({phase.value}) from {wall // 60} to {wall_more // 60} min of climbing."
+@cache
+def _climbing_inversions(sweep: _Sweep) -> tuple[tuple[int, int, Phase, int], ...]:
+    """Every `(from_sessions, week_no, phase, seconds_lost)` where a day added cost climbing."""
+    matrices = {
+        sessions: _weekly_matrix(
+            generate(
+                _input(
+                    sweep.discipline,
+                    sweep.system,
+                    sweep.grade,
+                    sessions,
+                    0b111_1111,
+                    gap=sweep.gap,
+                    equipment=sweep.equipment,
+                )
+            )
         )
+        for sessions in range(min(_SESSION_STEPS), max(_SESSION_STEPS) + 2)
+    }
+    return tuple(
+        (sessions, week_no, phase, wall - wall_more)
+        for sessions in _SESSION_STEPS
+        for (week_no, phase, wall, _o, _c), (_w, _p, wall_more, _o2, _c2) in zip(
+            matrices[sessions], matrices[sessions + 1], strict=True
+        )
+        if wall_more < wall
+    )
+
+
+@pytest.mark.parametrize("sweep", _MONOTONICITY_SWEEP, ids=lambda sweep: sweep.label)
+def test_more_available_days_never_reduces_climbing_minutes(sweep: _Sweep) -> None:
+    """Monotonicity, measured week by week: a day added is climbing added, never traded.
+
+    The exceptions are DATA rather than silence. `_ACCEPTED_INVERSIONS` names every step Kilian
+    has accepted, its reason, and the worst loss it was accepted at — so a reader can tell an
+    accepted exception from an untested gap without leaving this file.
+    """
+    accepted = {(row.sweep_label, row.from_sessions): row for row in _ACCEPTED_INVERSIONS}
+    for from_sessions, week_no, phase, loss in _climbing_inversions(sweep):
+        row = accepted.get((sweep.label, from_sessions))
+        assert row is not None, (
+            f"going from {from_sessions} to {from_sessions + 1} sessions dropped week "
+            f"{week_no} ({phase.value}) by {loss} s of climbing for a {sweep.label} climber. A "
+            f"day added is climbing added, never traded. If that is a decision rather than a "
+            f"defect it owes a row in _ACCEPTED_INVERSIONS carrying the reason and the cost."
+        )
+        assert loss <= row.max_loss_seconds, (
+            f"{sweep.label} at {from_sessions} -> {from_sessions + 1} is an ACCEPTED inversion, "
+            f"but week {week_no} ({phase.value}) now loses {loss} s against the "
+            f"{row.max_loss_seconds} s it was accepted at, so the exception has grown into a "
+            f"different one. The row reads: {row.reason}"
+        )
+
+
+def test_no_accepted_monotonicity_exception_has_quietly_become_true() -> None:
+    """⚠️ GUARD, reverse arm. An accepted exception and an unsampled gap look identical in a
+    suite, which is how both rows below spent three rounds of PR C invisible. A row that no
+    longer costs any climbing — or whose label never matched a swept climber at all — is a claim
+    about the generator that has stopped being true, and the next reader would trust it."""
+    inverted = {
+        (sweep.label, from_sessions)
+        for sweep in _MONOTONICITY_SWEEP
+        for from_sessions, _week, _phase, _loss in _climbing_inversions(sweep)
+    }
+    stale = sorted(
+        f"{row.sweep_label} at {row.from_sessions} -> {row.from_sessions + 1}"
+        for row in _ACCEPTED_INVERSIONS
+        if (row.sweep_label, row.from_sessions) not in inverted
+    )
+    assert not stale, (
+        f"{stale} are accepted in _ACCEPTED_INVERSIONS and now lose no climbing at all. Delete "
+        f"those rows — the register is a measurement of the generator, not documentation of it."
+    )
 
 
 @pytest.mark.parametrize(("level", "discipline", "system", "label"), _CLIMBERS)
@@ -516,20 +697,34 @@ def test_the_quality_a_base_block_ranks_FIRST_takes_the_most_wall_time(
 
 @pytest.mark.parametrize(("level", "discipline", "system", "label"), _BEGINNERS)
 @pytest.mark.parametrize("sessions", [1, 2, 3, 5, 7])
-def test_the_quality_a_base_block_ranks_last_takes_the_least_wall_time(
+def test_a_base_block_only_MAINTAINS_the_qualities_the_source_maintains(
     level: Level, discipline: Discipline, system: GradeSystemKey, label: str, sessions: int
 ) -> None:
-    """⚠️ GUARD, the ordering arm. A share ceiling alone passes a block that spends the same
-    minutes in the wrong ORDER, and "last" is an order rather than a budget."""
+    """⚠️ GUARD, the maintenance arm. Base is about getting more climbing in, not about power
+    (Kilian, 2026-09-04): the source prioritises endurance and anaerobic capacity and MAINTAINS
+    aerobic and anaerobic power, so those two together may only take a maintenance share of a
+    base block's wall time.
+
+    ⚠️ Coverage GIVEN UP against the pairwise version this replaces, which demanded that the
+    row's last aspect take no more wall time than each of the four ahead of it. This no longer
+    detects `power` overtaking `technique`, nor `power_endurance` overtaking `power`, nor any
+    ordering inside the prioritised pair. That is deliberate: the source distinguishes
+    prioritised from maintained and orders neither pair internally, so the pairwise version was
+    asserting a ranking nothing publishes — it passed on the old 11-turn wall ring by
+    arithmetic luck and went red on the 15-turn one with the distribution still correct.
+    """
     del level
     _every, wall = _base_aspect_seconds(
         generate(_input(discipline, system, label, sessions, 0b111_1111))
     )
-    last = _BASE_WALL_EMPHASIS[-1]
-    ahead = {key: wall.get(key, 0) for key in _BASE_WALL_EMPHASIS[:-1]}
-    assert all(wall.get(last, 0) <= seconds for seconds in ahead.values()), (
-        f"a {label} beginner training {sessions}x a week gets {wall.get(last, 0) // 60} min of "
-        f"{last} on a wall in a base block, against "
-        f"{ {key: seconds // 60 for key, seconds in ahead.items()} } for the qualities base "
-        f"ranks above it. Whichever quality is last in the row has to be last in the minutes."
+    maintained = sum(wall.get(key, 0) for key in _BASE_MAINTAINED_ONLY)
+    prioritised = sum(wall.get(key, 0) for key in _BASE_PRIORITISED_ON_WALL)
+    assert prioritised, "no prioritised base wall time at all; the parametrisation is wrong."
+    assert maintained * 100 <= _BASE_MAINTAINED_CEILING_PCT * (maintained + prioritised), (
+        f"a {label} beginner training {sessions}x a week spends "
+        f"{100 * maintained / (maintained + prioritised):.1f}% of a base block's PRIORITISED-"
+        f"plus-MAINTAINED wall minutes on {' and '.join(_BASE_MAINTAINED_ONLY)}, against a "
+        f"ceiling of {_BASE_MAINTAINED_CEILING_PCT}%: {maintained // 60} min against "
+        f"{prioritised // 60} min of {' and '.join(_BASE_PRIORITISED_ON_WALL)}. Base maintains "
+        f"those two qualities and trains these; it is not a power block."
     )

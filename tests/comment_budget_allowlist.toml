@@ -1082,14 +1082,14 @@ reason = "The four invariants are priority-ordered and the fourth exists only be
 path = "server/domain/planner/generate.py"
 kind = "docstring"
 anchor = "server.domain.planner.generate._share_allows"
-limit = 11
+limit = 12
 reason = "Four arms say yes regardless of the band's allowance and every one of them is a measured failure of saying no - a three-minute deload session, an emptied gearless session, a session under its type's window floor, and a week the per-session allowance cannot see."
 
 [[exception]]
 path = "server/domain/planner/generate.py"
 kind = "docstring"
 anchor = "server.domain.planner.generate._block_ceiling"
-limit = 5
+limit = 10
 reason = "A fixed per-session block budget cannot express either reason a session may take a fourth block, and both are measured failures: a limit-bouldering session ten minutes short of its own window floor, and a two-session week with nowhere else to put the supplementary work."
 
 [[exception]]
@@ -1124,7 +1124,7 @@ reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
 path = "server/domain/planner/generate.py"
 kind = "docstring"
 anchor = "server.domain.planner.generate._title"
-limit = 7
+limit = 12
 reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
 
 [[exception]]
@@ -8075,28 +8075,28 @@ reason = "Why reach across a sweep is not the same claim as breadth within one p
 path = "tests/test_planner_library_reach.py"
 kind = "hash_run"
 anchor = "key why no profile can ever be"
-limit = 4
-reason = "The register's editing rule plus the three keys origin/dev carried, which is the only record of what the baseline actually was."
+limit = 6
+reason = "The register's editing rule, the three keys origin/dev carried (the only record of the baseline), and the one reason that is never admissible - \"no profile has the equipment\" - which no test can express because nothing executable knows WHY a row was added."
 
 [[exception]]
 path = "tests/test_planner_library_reach.py"
 kind = "hash_run"
 anchor = "both disciplines x all three bands"
-limit = 4
-reason = "Why six profiles and why these six - the measured coverage and runtime are what make the guard cheap enough for the local gate."
+limit = 12
+reason = "Records the MEASUREMENT that added the seventh profile: a candidate pool is indexed by a WEEK count, so 28-32-week plans and a 20-week plan do not sample the same pool positions, and outdoor_route_mileage went unreachable at 32 weeks while 128 of 224 sport combinations still reached it. Without the numbers the next reader deletes the short plan as a duplicate of the long one."
 
 [[exception]]
 path = "tests/test_planner_library_reach.py"
 kind = "hash_run"
 anchor = "kilian s requirement and the floor"
-limit = 6
-reason = "Why the floor is a share rather than a count, the per-band measurements behind it, and why beginner is lowest by arithmetic rather than by defect."
+limit = 17
+reason = "Why the floor is a share rather than a count, the per-band measurements behind it, and the whole RE-BASELINING argument: the four accessories 68% was counting were reachable only through sessions running under their window floor, so the old number was measuring a defect. A lowered guard constant with no reason next to it is exactly what this repo forbids."
 
 [[exception]]
 path = "server/domain/planner/generate.py"
 kind = "docstring"
 anchor = "server.domain.planner.generate._wall_pref"
-limit = 10
+limit = 12
 reason = "Three states with three different measured failures behind them - a 63% advanced band, a 37-minute session against a 40-minute floor, and six unreachable exercises - none of which is visible from the signature."
 
 [[exception]]
@@ -8153,7 +8153,7 @@ path = "tests/test_planner_climbing_floor.py"
 kind = "hash_run"
 anchor = "kilian s authored order for a base"
 limit = 4
-reason = "Records why anaerobic_capacity is NOT in this tuple although issue #98 put it in the base row: base prescribes no on-wall anaerobic capacity exercise, so it takes no wall turns."
+reason = "Records which wall-led aspects take NO base wall turns and why - general_strength has no on-wall base exercise at all, and anaerobic_capacity had none until PR C authored two. Without it the tuple reads like an omission."
 
 [[exception]]
 path = "tests/test_planner_climbing_floor.py"
@@ -8161,3 +8161,66 @@ kind = "docstring"
 anchor = "tests.test_planner_climbing_floor.test_the_quality_a_base_block_ranks_FIRST_takes_the_most_wall_time"
 limit = 7
 reason = "Carries the guard's MEASURED slack: endurance survives a demotion to seventh because its exercises are long, and only goes red at the tail. Without that sentence the guard reads stronger than it is."
+
+[[exception]]
+path = "server/domain/planner/generate.py"
+kind = "docstring"
+anchor = "server.domain.planner.generate._supplementary_rounds"
+limit = 7
+reason = "Records what `cap` is FOR: it reserves the two spare blocks for the climbing top-up, which is the only thing MAX_BLOCKS_PER_SESSION's own comment ever said they were for."
+
+[[exception]]
+path = "server/domain/planner/generate.py"
+kind = "docstring"
+anchor = "server.domain.planner.generate._top_up_with_climbing"
+limit = 9
+reason = "Carries Kilian's 2026-09-04 ruling and the measurement behind the pass ORDER - blocks four and five had gone to a 2.7-minute accessory - plus why it reads only its own draft."
+
+[[exception]]
+path = "server/domain/planner/generate.py"
+kind = "docstring"
+anchor = "server.domain.planner.generate._length_pick"
+limit = 12
+reason = "Two rejected alternatives with their numbers: widening the pool past wall_led_aspects cost the advanced band 2.6 points, and the shortest sufficient block cost per-plan breadth."
+
+[[exception]]
+path = "tests/test_planner_climbing_floor.py"
+kind = "docstring"
+anchor = "tests.test_planner_climbing_floor.test_a_base_block_only_MAINTAINS_the_qualities_the_source_maintains"
+limit = 13
+reason = "Names the coverage this re-scoped guard GAVE UP against the pairwise ordering it replaced, which is the one thing a reader cannot recover from the assertion itself."
+
+[[exception]]
+path = "tests/test_planner_safety.py"
+kind = "docstring"
+anchor = "tests.test_planner_safety.test_the_generators_title_bound_IS_the_columns_width"
+limit = 4
+reason = "Says why a second arm exists beside the sampled one: a title long enough to be refused by the column appeared on a profile the sampled arm does not generate."
+
+[[exception]]
+path = "tests/test_planner_climbing_floor.py"
+kind = "docstring"
+anchor = "tests.test_planner_climbing_floor._AcceptedInversion"
+limit = 7
+reason = "The exemption register's editing rule: why the accepted inversions are DATA rather than a comment, that both arms below read them, and what max_loss_seconds is for - an accepted exception with no bound is a licence, and nothing executable knows that."
+
+[[exception]]
+path = "tests/test_planner_climbing_floor.py"
+kind = "docstring"
+anchor = "tests.test_planner_climbing_floor.test_more_available_days_never_reduces_climbing_minutes"
+limit = 6
+reason = "Says where the exceptions live and why they are written down, which is the one thing a reader cannot recover from the assertion: an accepted exception and an untested gap look identical in a suite, and three rounds of PR C proved it."
+
+[[exception]]
+path = "tests/test_planner_climbing_floor.py"
+kind = "docstring"
+anchor = "tests.test_planner_climbing_floor.test_no_accepted_monotonicity_exception_has_quietly_become_true"
+limit = 4
+reason = "A reverse arm reads as redundant until someone knows what it caught: a stale row is a claim about the generator that has stopped being true, and a mistyped label lands here too."
+
+[[exception]]
+path = "tests/test_planner_climbing_floor.py"
+kind = "hash_run"
+anchor = "this sweep used to be sessions"
+limit = 9
+reason = "Records the MEASUREMENT that chose this parametrisation: the guard swept `sessions` alone on one intermediate sport climber, which is why both accepted exceptions went unsampled for three rounds, and why the second equipment column is a gap-4 bouldering gym - measured over gaps 3 and 4, it is the only combination reaching the _floor_allows residual. Without the numbers the next reader trims the columns back and re-blinds it."

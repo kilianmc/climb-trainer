@@ -321,6 +321,23 @@ def test_prescription_values_satisfy_the_database_checks() -> None:
                 assert value is None or 1 <= value <= 32767, f"{where}: {field} = {value}"
 
 
+def test_boulder_four_by_four_prescribes_NO_REST_BETWEEN_THE_BOULDERS() -> None:
+    """⚠️ GUARD. "No rest between them" IS the 4x4 and only an ABSENCE can say it: the column's
+    CHECK is `1 <= rest_seconds`, so zero is inexpressible and omission is how it is written."""
+    row = next(spec for spec in EXERCISES if spec.key == "boulder_four_by_four")
+    filled = [
+        (prescription.phase.value, prescription.rest_seconds)
+        for prescription in row.prescriptions
+        if prescription.rest_seconds is not None
+    ]
+    assert not filled, (
+        f"boulder_four_by_four prescribes a rest between the boulders in {filled}. Its "
+        f"instructions say the four go 'back to back with no rest between them', and because "
+        f"the column's CHECK is 1 <= rest_seconds an ABSENT value is the only way to write "
+        f"the zero that rule means. Put the rest in rest_between_sets_seconds instead."
+    )
+
+
 def test_authored_strings_fit_their_columns() -> None:
     """A too-long string is an `IntegrityError` at seed time, i.e. in production.
 

@@ -30,12 +30,22 @@ _ALL_EQUIPMENT = tuple(sorted(spec.key for spec in EQUIPMENT))
 # with a reason a reviewer can check; a row added to make this test pass is the failure it
 # exists to catch. `origin/dev` before PR A had three (`density_hangs`, `onsight_volume_on_rope`,
 # `system_board_repeats`), all of which are reachable now.
+# ⚠️ "No profile has the equipment" is never one of those reasons: `_PROFILES` hands every plan
+# the FULL vocabulary, so an orphan here is always a rotation or a sampling gap, never a purchase.
 _ACCEPTABLY_UNREACHABLE: dict[str, str] = {}
 
-# Both disciplines x all three bands, at the largest grade gap so every phase appears. Measured:
-# these six plans between them reach all 85 exercises in ~0.2 s, so the guard is cheap enough to
-# sit in the local gate. `sessions_per_week` is varied because the band's block budget is what
-# decides how much of a pool the climbing pass ever draws on.
+# Both disciplines x all three bands, at the largest grade gap so every phase appears, PLUS one
+# short plan. Measured: these seven plans between them reach all 100 exercises in ~0.3 s, so the
+# guard is cheap enough to sit in the local gate. `sessions_per_week` is varied because the band's
+# block budget is what decides how much of a pool the climbing pass ever draws on.
+# ⚠️ The last row is the PLAN-LENGTH dimension, and it was the one this guard was missing. Six
+# max-gap plans are all 28-32 weeks, and a candidate pool is indexed by `_spread`, which counts
+# WEEKS - so a long plan and a short one do not sample the same pool positions. PR C moved the
+# base on-wall `endurance` pool from six entries to seven and `outdoor_route_mileage` (position
+# 5 of 7) became unreachable at 32 weeks while staying reachable at 20; measured, 128 of the 224
+# sport (grade x gap x sessions) combinations reach it. A gap of 3 is the shortest plan that
+# still carries all five training phases plus deload and taper, which is the same reason
+# `tests/test_planner_climbing_floor.py` uses it.
 _PROFILES: tuple[tuple[Discipline, GradeSystemKey, str, str, int], ...] = (
     (Discipline.SPORT, GradeSystemKey.FRENCH, "6a", "8c", 3),
     (Discipline.SPORT, GradeSystemKey.FRENCH, "6c", "8c", 5),
@@ -43,15 +53,27 @@ _PROFILES: tuple[tuple[Discipline, GradeSystemKey, str, str, int], ...] = (
     (Discipline.BOULDER, GradeSystemKey.FONT, "6A", "8B+", 3),
     (Discipline.BOULDER, GradeSystemKey.FONT, "6C", "8B+", 5),
     (Discipline.BOULDER, GradeSystemKey.FONT, "7C", "8B+", 7),
+    (Discipline.SPORT, GradeSystemKey.FRENCH, "6a", "6b+", 5),
 )
 
 # Kilian's requirement, and the floor is a SHARE of what the discipline can see rather than a
-# count: 4 of 87 exercises are boulder-only and 13 rope-only, so a sport plan tops out at 83 and
-# a boulder plan at 74, and a count would ask the two for different things. Measured today:
-# beginner 58/83 and 51/74 (69%, 68%), intermediate 77/83 and 69/74 (92%, 93%), advanced 81/83
-# and 73/74 (97%, 98%). Beginner is lowest by arithmetic, not by defect — the band puts 85-90% of
-# its minutes on a wall, so there is little room left for the off-the-wall half of the library.
-_DISTINCT_SHARE_FLOOR_PCT = 68
+# count: 4 of 100 exercises are boulder-only and 13 rope-only, so a sport plan tops out at 96 and
+# a boulder plan at 87, and a count would ask the two for different things. Measured today:
+# beginner 67.7% (65/96) and 64.4% (56/87), intermediate 81.2% and 82.8%, advanced 96.9% and
+# 98.9%, short sport plan 70.8%. Beginner is lowest by arithmetic, not by defect — the band puts
+# 85-90% of its minutes on a wall, so little is left for the off-the-wall half of the library.
+#
+# ⚠️ **RE-BASELINED 68 → 63** (Kilian, 2026-09-04), and the old number was not a stricter version
+# of this one: it was measuring a DEFECT. Four long accessories (`one_arm_lockoff_negatives`,
+# `shoulder_band_arcs`, `steep_wall_tension_drill`, `toes_to_bar`) were reachable ONLY through a
+# session running UNDER its type's window floor, where `_pick` took the longest candidate that
+# fit instead of its plain rotation; round 3's climbing top-up closed that path. Widening
+# `_length_pick`'s pool is not the way back and its docstring holds the numbers.
+# 63 is the tightest floor honest behaviour supports: the lowest profile is 64.4% (56 of 87), so
+# it carries exactly ONE exercise of slack — 55/87 = 63.2% passes, 54/87 = 62.1% does not — and
+# that same margin absorbs a new library row this plan does not draw, since authoring one raises
+# the denominator. Shown to fail: `_pick` reduced to `pool[0]` draws 57/96 = 59.4%.
+_DISTINCT_SHARE_FLOOR_PCT = 63
 
 
 def _plan(
