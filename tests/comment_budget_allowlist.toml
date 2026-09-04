@@ -1249,9 +1249,9 @@ reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
 [[exception]]
 path = "server/domain/planner/selection.py"
 kind = "hash_run"
-anchor = "sharpness comes from climbing on"
+anchor = "barrows 3 3 only hard strength"
 limit = 3
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
+reason = "The taper row is the only one whose content is a source's explicit list, and the narrowed leg-session argument is the whole reason gym strength is in it while a heavy hinge is not."
 
 [[exception]]
 path = "server/domain/planner/selection.py"
@@ -7983,6 +7983,13 @@ reason = "Why restart is not a second play triangle: a running item offers Resum
 [[exception]]
 path = "server/domain/planner/climbing.py"
 kind = "hash_run"
+anchor = "percent of a week s prescribed minutes that must be wall time"
+limit = 4
+reason = "The floor is a percent of a WEEK and reading it per session is a stricter rule rather than a refactor; it carried a register row in tests/test_planner_climbing_floor.py until the inversion it priced stopped happening."
+
+[[exception]]
+path = "server/domain/planner/climbing.py"
+kind = "hash_run"
 anchor = "any block whose exercise needs one of these is wall time everything else is supplementary auto belay is in the set although issue 84 s own measurement omitted it it is a wall you climb without a partner and leaving it out would have the app tell an auto belay only climber to go and get somewhere to climb"
 limit = 4
 reason = "auto_belay is in the wall set although issue #84's own measurement left it out; the deviation and its consequence for the shortfall message have to travel with the set."
@@ -7990,9 +7997,9 @@ reason = "auto_belay is in the wall set although issue #84's own measurement lef
 [[exception]]
 path = "server/domain/planner/climbing.py"
 kind = "hash_run"
-anchor = "minutes of prescribed work in a session led by a block of this protocol kind warm up excluded because the warm up is not a block the maximum binds always the minimum is only pursued and only in a loading phase phase in server domain vocabulary py is explicit that a deload has its own prescriptions rather than being a scaled block so topping one back up to a loading week s length would contradict the schema s own definition of it"
+anchor = "minutes of prescribed work in a session led by a block of this protocol kind warm up excluded"
 limit = 5
-reason = "The table's two bounds are enforced differently and the asymmetry is a schema fact: padding a deload back up would contradict Phase's own definition in vocabulary.py."
+reason = "The table's two bounds are enforced differently and the asymmetry is a schema fact: an unload week pursues HALF this minimum and reaches it with extra blocks, because scaling an authored deload dose would contradict Phase's own definition in vocabulary.py."
 
 [[exception]]
 path = "server/domain/planner/generate.py"
@@ -8000,6 +8007,13 @@ kind = "docstring"
 anchor = "server.domain.planner.generate._wall_picks"
 limit = 6
 reason = "Records what the rank-weighted ring buys - ASPECT_EMPHASIS governing climbing and not only the supplementary pass - and why it is indexed by _spread rather than by the aspect offset, which takes ~5 values inside a three-week phase."
+
+[[exception]]
+path = "tests/test_planner_climbing_floor.py"
+kind = "hash_run"
+anchor = "both sources agree an unload week keeps 40 60"
+limit = 11
+reason = "Carries both sources' 40-60% band, the warm-up exclusion with the 9.8%-vs-35.6% measurement that makes it load-bearing, and the prohibition on turning the 60% ceiling into an accepted exception without Kilian."
 
 [[exception]]
 path = "tests/test_planner_climbing_floor.py"
@@ -8111,7 +8125,7 @@ path = "tests/test_planner_climbing_floor.py"
 kind = "hash_run"
 anchor = "the dimension this sweeps is plan length and it is the one the gate was missing round 3 reordered wall pref"
 limit = 16
-reason = "Records two MEASUREMENTS a reader cannot recover from the code: which dimension exposes the _wall_pref sabotage (plan length, re-measured at 65.1-67.6% against the 64 ceiling), and why the advanced ceiling is 64 - a re-baseline off deload weeks that dev itself already breached at 62.3%, due back down at the fixed 12-week plan length. Without it the next reader trims the gaps back, or reads 64 as a weakened guard."
+reason = "Records two MEASUREMENTS a reader cannot recover from the code: which dimension exposes the _wall_pref sabotage (plan length, re-measured at 65.8-68.6% against the 65 ceiling), and why the advanced ceiling is 65 - a re-baseline off deload weeks that dev itself already breached at 62.3%, then off §3.4's ordering, and due back down at the fixed 12-week plan length. Without it the next reader trims the gaps back, or reads 65 as a weakened guard."
 
 [[exception]]
 path = "web/src/planCompletionBands.test.tsx"
@@ -8223,4 +8237,25 @@ path = "tests/test_planner_climbing_floor.py"
 kind = "hash_run"
 anchor = "this sweep used to be sessions"
 limit = 9
-reason = "Records the MEASUREMENT that chose this parametrisation: the guard swept `sessions` alone on one intermediate sport climber, which is why both accepted exceptions went unsampled for three rounds, and why the second equipment column is a gap-4 bouldering gym - measured over gaps 3 and 4, it is the only combination reaching the _floor_allows residual. Without the numbers the next reader trims the columns back and re-blinds it."
+reason = "Records the MEASUREMENT that chose this parametrisation: the guard swept `sessions` alone on one intermediate sport climber, which is why both accepted exceptions went unsampled for three rounds, and why the second equipment column is a gap-4 bouldering gym - it is the only combination that inverts inside a taper week. Without the numbers the next reader trims the columns back and re-blinds it."
+
+[[exception]]
+path = "server/domain/planner/climbing.py"
+kind = "hash_run"
+anchor = "barrows 3 4 as a tuple of tiers so the source s own sentence is the constant"
+limit = 7
+reason = "Carries Barrows §3.4's sentence itself, which is what the tuple encodes, plus the one reading decision a reader would otherwise reverse: the app maps BOTH bouldering and An Pow to `power`, so it needs a tier ahead of anaerobic capacity."
+
+[[exception]]
+path = "server/domain/planner/generate.py"
+kind = "docstring"
+anchor = "server.domain.planner.generate._descend_by_intensity"
+limit = 9
+reason = "Two PROHIBITIONS nothing executable can state: reassign weekday values and never the drafts list or session_index, which keys _spread and every candidate pool; and never treat Sunday to Monday as a run, because the next Monday is a different microcycle."
+
+[[exception]]
+path = "server/domain/planner/generate.py"
+kind = "docstring"
+anchor = "server.domain.planner.generate._session_tier"
+limit = 5
+reason = "The measured reason §3.4's tier is gated on WALL_LED_ASPECTS: promoting an aspect that cannot name a session renamed a 43-minute gearless base session `hold`, capped it at 45 and returned it two blocks thin, which the gearless guard catches and nothing in this module hints at."

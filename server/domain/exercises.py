@@ -615,6 +615,11 @@ EXERCISES: Final[tuple[ExerciseSpec, ...]] = (
             PrescriptionSpec(
                 Phase.POWER, sets=4, reps=3, rest_between_sets_seconds=180, target_rpe=9
             ),
+            # §3.3 keeps hard strength in a taper. Half the power dose at the same RPE, and
+            # upper-body pulling rather than a hinge: this one costs almost nothing to recover.
+            PrescriptionSpec(
+                Phase.TAPER, sets=2, reps=3, rest_between_sets_seconds=180, target_rpe=9
+            ),
         ),
     ),
     ExerciseSpec(
@@ -674,6 +679,9 @@ EXERCISES: Final[tuple[ExerciseSpec, ...]] = (
             ),
             PrescriptionSpec(
                 Phase.POWER, sets=4, work_seconds=5, rest_between_sets_seconds=180, target_rpe=9
+            ),
+            PrescriptionSpec(
+                Phase.TAPER, sets=2, work_seconds=5, rest_between_sets_seconds=180, target_rpe=9
             ),
         ),
     ),
@@ -1667,6 +1675,11 @@ EXERCISES: Final[tuple[ExerciseSpec, ...]] = (
             PrescriptionSpec(
                 Phase.PERFORMANCE, sets=4, reps=4, rest_between_sets_seconds=120, target_rpe=9
             ),
+            # Half the performance dose in rounds, at the same RPE and the same rests: §3.3
+            # holds a taper's intensity and halves only its volume. Two rounds, not four.
+            PrescriptionSpec(
+                Phase.TAPER, sets=2, reps=4, rest_between_sets_seconds=120, target_rpe=9
+            ),
         ),
     ),
     ExerciseSpec(
@@ -1712,6 +1725,16 @@ EXERCISES: Final[tuple[ExerciseSpec, ...]] = (
                 rest_between_sets_seconds=120,
                 target_rpe=6,
             ),
+            # The taper's aerobic power for a climber with no gear at all, at the
+            # power-endurance block's own intensity and half its rounds (issue #61).
+            PrescriptionSpec(
+                Phase.TAPER,
+                sets=3,
+                work_seconds=40,
+                rest_seconds=20,
+                rest_between_sets_seconds=120,
+                target_rpe=9,
+            ),
         ),
     ),
     ExerciseSpec(
@@ -1739,6 +1762,15 @@ EXERCISES: Final[tuple[ExerciseSpec, ...]] = (
                 rest_between_sets_seconds=90,
                 target_rpe=8,
             ),
+            # Anchored on the power-endurance dose rather than the mean of both loading ones:
+            # base is authored at RPE 7 and §3.3 forbids a taper below its loading intensity.
+            PrescriptionSpec(
+                Phase.TAPER,
+                sets=3,
+                work_seconds=90,
+                rest_between_sets_seconds=90,
+                target_rpe=8,
+            ),
         ),
     ),
     ExerciseSpec(
@@ -1761,6 +1793,11 @@ EXERCISES: Final[tuple[ExerciseSpec, ...]] = (
             ),
             PrescriptionSpec(
                 Phase.PERFORMANCE, sets=3, reps=2, rest_between_sets_seconds=420, target_rpe=9
+            ),
+            # Two doubles, half the performance dose: the taper's one hard aerobic-power piece,
+            # and the "route-like circuit" §3.3 keeps when it drops everything below it.
+            PrescriptionSpec(
+                Phase.TAPER, sets=2, reps=2, rest_between_sets_seconds=420, target_rpe=9
             ),
         ),
     ),
@@ -1836,7 +1873,6 @@ EXERCISES: Final[tuple[ExerciseSpec, ...]] = (
             # and progression is more time or more difficulty rather than more rounds.
             PrescriptionSpec(Phase.BASE, sets=1, work_seconds=1800, target_rpe=4),
             PrescriptionSpec(Phase.DELOAD, sets=1, work_seconds=900, target_rpe=3),
-            PrescriptionSpec(Phase.TAPER, sets=1, work_seconds=600, target_rpe=3),
         ),
     ),
     ExerciseSpec(
@@ -1913,7 +1949,6 @@ EXERCISES: Final[tuple[ExerciseSpec, ...]] = (
             # is how a cycle arrives at its endurance block with no base left.
             PrescriptionSpec(Phase.STRENGTH, sets=1, work_seconds=1800, target_rpe=4),
             PrescriptionSpec(Phase.POWER, sets=1, work_seconds=1500, target_rpe=3),
-            PrescriptionSpec(Phase.TAPER, sets=1, work_seconds=1200, target_rpe=3),
         ),
     ),
     ExerciseSpec(
@@ -1941,9 +1976,6 @@ EXERCISES: Final[tuple[ExerciseSpec, ...]] = (
             ),
             PrescriptionSpec(
                 Phase.DELOAD, sets=3, reps=2, rest_between_sets_seconds=240, target_rpe=4
-            ),
-            PrescriptionSpec(
-                Phase.TAPER, sets=2, reps=2, rest_between_sets_seconds=240, target_rpe=4
             ),
         ),
     ),
@@ -1995,9 +2027,6 @@ EXERCISES: Final[tuple[ExerciseSpec, ...]] = (
             PrescriptionSpec(
                 Phase.PERFORMANCE, sets=4, reps=1, rest_between_sets_seconds=600, target_rpe=6
             ),
-            PrescriptionSpec(
-                Phase.TAPER, sets=3, reps=1, rest_between_sets_seconds=600, target_rpe=4
-            ),
         ),
     ),
     ExerciseSpec(
@@ -2018,7 +2047,6 @@ EXERCISES: Final[tuple[ExerciseSpec, ...]] = (
             PrescriptionSpec(Phase.STRENGTH, sets=1, work_seconds=1800, target_rpe=4),
             PrescriptionSpec(Phase.POWER, sets=1, work_seconds=1500, target_rpe=3),
             PrescriptionSpec(Phase.DELOAD, sets=1, work_seconds=1800, target_rpe=3),
-            PrescriptionSpec(Phase.TAPER, sets=1, work_seconds=1200, target_rpe=3),
         ),
     ),
     ExerciseSpec(
@@ -2067,7 +2095,6 @@ EXERCISES: Final[tuple[ExerciseSpec, ...]] = (
             PrescriptionSpec(Phase.POWER, sets=1, work_seconds=1200, target_rpe=2),
             PrescriptionSpec(Phase.PERFORMANCE, sets=1, work_seconds=900, target_rpe=2),
             PrescriptionSpec(Phase.DELOAD, sets=1, work_seconds=1200, target_rpe=2),
-            PrescriptionSpec(Phase.TAPER, sets=1, work_seconds=900, target_rpe=2),
         ),
     ),
     # -------------------------------------------------------------------- technique
@@ -3136,12 +3163,23 @@ EXERCISES: Final[tuple[ExerciseSpec, ...]] = (
 DELIBERATELY_UNPRESCRIBED: Final[tuple[UnprescribedCell, ...]] = (
     UnprescribedCell(
         Phase.TAPER,
+        "endurance",
+        (
+            "Barrows §3.3 drops ALL aerobic capacity and ARC from a taper week, not most of "
+            "it: the long easy volume is what the previous months already bought, and another "
+            "week of it can only add fatigue that hides the fitness. It was 47% of the taper's "
+            "prescribed minutes before this, and ARC alone was its single largest block."
+        ),
+    ),
+    UnprescribedCell(
+        Phase.TAPER,
         "finger_strength",
         (
-            "The fingers are the slowest tissue in the body to recover and the most "
-            "expensive to overreach on, and a taper is one week from a peak. Sharpness "
-            "comes from climbing on the target style in that week, not from a board, so "
-            "the taper prescribes no isolated finger loading at all."
+            "⚠️ A DECLARED DIVERGENCE rather than sourced doctrine, and the taper's copy says "
+            "so out loud: §3.3 would KEEP hard strength this week, and this exclusion is "
+            "Kilian's, on injury grounds. The fingers are the slowest tissue in the body to "
+            "recover and the most expensive to overreach on, and a taper is one week from a "
+            "peak. Sharpness comes from climbing on the target style, not from a board."
         ),
     ),
     UnprescribedCell(
@@ -3162,16 +3200,6 @@ DELIBERATELY_UNPRESCRIBED: Final[tuple[UnprescribedCell, ...]] = (
         ),
     ),
     UnprescribedCell(
-        Phase.TAPER,
-        "power_endurance",
-        (
-            "A full power-endurance session inside a taper week is the classic way to "
-            "arrive at the trip flat: the pump comes back long before the freshness does. "
-            "Note the contrast with `power` in the same phase, which IS prescribed — "
-            "short maximal efforts with complete rest cost almost nothing to recover."
-        ),
-    ),
-    UnprescribedCell(
         Phase.POWER_ENDURANCE,
         "general_strength",
         (
@@ -3179,16 +3207,6 @@ DELIBERATELY_UNPRESCRIBED: Final[tuple[UnprescribedCell, ...]] = (
             "weeks a power-endurance block lasts, so there is nothing to lose by "
             "leaving it out. A heavy hinge or squat inside these weeks competes for exactly "
             "the recovery the interval sessions need, and the trade is one-sided."
-        ),
-    ),
-    UnprescribedCell(
-        Phase.TAPER,
-        "general_strength",
-        (
-            "Same reason, and the taper's own: nothing added in the last week can arrive in "
-            "time, while a heavy leg session leaves fatigue that hides the fitness the whole "
-            "plan built. Short maximal efforts stay because they cost almost nothing to "
-            "recover from; a heavy strength session is not one of those."
         ),
     ),
     UnprescribedCell(
@@ -3235,6 +3253,7 @@ CELLS_WITH_NO_GEARLESS_OPTION: Final[tuple[tuple[Phase, str], ...]] = (
     (Phase.POWER, "finger_strength"),
     (Phase.POWER_ENDURANCE, "finger_strength"),
     (Phase.PERFORMANCE, "finger_strength"),
+    (Phase.TAPER, "general_strength"),
     (Phase.STRENGTH, "power"),
     (Phase.POWER_ENDURANCE, "power"),
     (Phase.DELOAD, "power"),

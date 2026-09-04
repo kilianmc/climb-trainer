@@ -46,15 +46,19 @@ from server.domain.planner.climbing import (
     DELOAD_LEAD_ASPECTS,
     FINGER_ASPECT,
     FINGER_PROTOCOLS,
+    INTENSITY_TIERS,
     MAX_EXPANSION_FACTOR,
     UNLOADING_PHASES,
+    WALL_LED_ASPECTS,
     climbing_block_budget,
     climbing_target_band,
     finger_sessions_for,
+    intensity_tier,
     is_expandable,
     is_priority,
     meets_floor,
     requires_wall,
+    session_floor_pct,
     session_window,
     week_climbing_floor_pct,
 )
@@ -211,13 +215,45 @@ def _microcycle(
     if not solo:
         _fill_finger_strength(drafts, planner_input, phase, week_no)
     _fill_supplementary(drafts, planner_input, phase, week_no, band=(low_pct, high_pct))
+    _descend_by_intensity(drafts)
     return MicrocycleBlueprint(
         week_no=week_no,
         start_date=week_start,
         is_deload=phase is Phase.DELOAD,
         phase=phase,
-        sessions=tuple(_session(draft, week_start, phase) for draft in drafts),
+        sessions=tuple(
+            _session(draft, week_start, phase)
+            for draft in sorted(drafts, key=lambda draft: draft.weekday)
+        ),
     )
+
+
+def _day_intensity(draft: _Draft) -> int:
+    """How hard the DAY is: its hardest block on §3.4's chain, because the source's second half
+    is about the day. A block-less Recovery session sinks to the end of its run."""
+    tiers = (intensity_tier(block.aspect_key) for block in draft.blocks)
+    return min(tiers, default=len(INTENSITY_TIERS))
+
+
+def _descend_by_intensity(drafts: list[_Draft]) -> None:
+    """§3.4 across the week: inside a run of BACK-TO-BACK training days the harder day comes
+    first. A week with no such run — Mon/Wed/Fri — is left exactly as it was, content included.
+
+    ⚠️ This reassigns `weekday` VALUES and must never reorder `drafts` or renumber
+    `session_index`, which keys `_spread`, every candidate pool and `_intended_aspect`'s
+    rotation; re-keying it is the monotonicity regression `_spread`'s own docstring records.
+    A run never wraps Sunday to Monday: the next Monday is a different microcycle, possibly a
+    different phase, which is why this only walks forward through one week's ascending days.
+    """
+    start = 0
+    for index in range(1, len(drafts) + 1):
+        if index < len(drafts) and drafts[index].weekday == drafts[index - 1].weekday + 1:
+            continue
+        run = drafts[start:index]
+        slots = [draft.weekday for draft in run]
+        for draft, weekday in zip(sorted(run, key=_day_intensity), slots, strict=True):
+            draft.weekday = weekday
+        start = index
 
 
 def _fill_climbing(
@@ -233,24 +269,23 @@ def _fill_climbing(
     """Wall blocks up to the band's share of the session type's window floor and no further — to
     a TARGET, never to exhaustion, so the remainder is reserved for supplementary work."""
     spread = _spread(week_no, draft.session_index)
-    unloading = phase in UNLOADING_PHASES
     for spec in _wall_picks(planner_input, phase, spread):
         if len(draft.blocks) >= BLOCKS_PER_SESSION:
             break
         spent = (
-            draft.seconds >= _share_of_window_floor(draft, None, fill_pct)
+            draft.seconds >= _share_of_window_floor(draft, None, fill_pct, phase)
             or len(draft.blocks) >= budget
         )
         if (
             draft.blocks
             and spent
-            and (unloading or draft.seconds >= _share_of_window_floor(draft, None, floor_pct))
+            and draft.seconds >= _share_of_window_floor(draft, None, floor_pct, phase)
         ):
             break
         # Both thresholds are read off the session this block WOULD make, never off the first
         # block placed: a priority block landing second moves the whole session's window.
-        target_seconds = 0 if unloading else _share_of_window_floor(draft, spec, fill_pct)
-        needed_seconds = 0 if unloading else _share_of_window_floor(draft, spec, floor_pct)
+        target_seconds = _share_of_window_floor(draft, spec, fill_pct, phase)
+        needed_seconds = _share_of_window_floor(draft, spec, floor_pct, phase)
         if draft.blocks and (
             not _fits(draft, spec, phase)
             or not (
@@ -341,18 +376,35 @@ def _fill_finger_strength(
             break
 
 
+def _window_rank(aspect_key: str, protocol_kind: ProtocolKind, index: int) -> tuple[int, int, int]:
+    """Quality first, then §3.4's intensity chain, then placement: `_ordered_blocks`' own rank
+    without its DELOAD key, which moves what LEADS and never what sets the window."""
+    return (0 if is_priority(protocol_kind) else 1, _session_tier(aspect_key), index)
+
+
+def _session_tier(aspect_key: str) -> int:
+    """§3.4's tier, except that an aspect outside `WALL_LED_ASPECTS` may not NAME a session, so
+    it neither leads one nor sets its window — `WALL_LED_ASPECTS`' own comment is where that
+    distinction already lives. Measured: promoting one, a gearless base session led by a
+    `hold` finger isometric took HOLD's 45-minute ceiling against 43 minutes already placed and
+    came back two blocks thin. Hard finger work still leads, by `PRIORITY_PROTOCOLS`."""
+    return intensity_tier(aspect_key) if aspect_key in WALL_LED_ASPECTS else len(INTENSITY_TIERS)
+
+
 def _kinds(draft: _Draft, spec: ExerciseSpec | None = None) -> list[ProtocolKind]:
-    """The protocol kinds this session would carry, in placement order."""
-    kinds = [block.protocol_kind for block in draft.blocks]
-    return kinds if spec is None else [*kinds, spec.protocol_kind]
+    """The protocol kinds this session would carry, in the order `_ordered_blocks` emits them."""
+    rows = [(block.aspect_key, block.protocol_kind) for block in draft.blocks]
+    if spec is not None:
+        rows.append((spec.aspect_key, spec.protocol_kind))
+    order = sorted(
+        range(len(rows)), key=lambda index: _window_rank(rows[index][0], rows[index][1], index)
+    )
+    return [rows[index][1] for index in order]
 
 
 def _leading_kind(kinds: list[ProtocolKind]) -> ProtocolKind:
-    """The kind that SETS THE WINDOW — the quality work in the session, not whatever landed
-    first. It leads too, except in a deload, where movement quality is ordered ahead of it."""
-    for kind in kinds:
-        if is_priority(kind):
-            return kind
+    """The kind that SETS THE WINDOW and, `_kinds` being rank-ordered, the kind that leads the
+    session too — except in a deload, where movement quality is ordered ahead of it."""
     return kinds[0]
 
 
@@ -362,17 +414,17 @@ def _fits(draft: _Draft, spec: ExerciseSpec, phase: Phase) -> bool:
     return draft.seconds + _spec_seconds(spec, phase) <= ceiling
 
 
-def _session_floor(draft: _Draft) -> int:
-    """The seconds a session of this type owes in a loading phase. Zero before it has a type."""
+def _session_floor(draft: _Draft, phase: Phase) -> int:
+    """The seconds a session of this type owes in this phase. Zero before it has a type."""
     if not draft.blocks:
         return 0
-    return session_window(_leading_kind(_kinds(draft)))[0] * 60
+    return session_window(_leading_kind(_kinds(draft)))[0] * 60 * session_floor_pct(phase) // 100
 
 
 def _short_of_its_window(draft: _Draft, phase: Phase) -> bool:
-    """Whether this session is still under the floor of its own type's window, which only a
-    loading phase pursues — a deload has its own prescriptions rather than a scaled length."""
-    return phase not in UNLOADING_PHASES and draft.seconds < _session_floor(draft)
+    """Whether this session is still under the share of its own type's window floor its phase
+    owes — all of it while loading, half of it in an unload week (Kilian, 2026-09-04)."""
+    return draft.seconds < _session_floor(draft, phase)
 
 
 def _block_ceiling(
@@ -397,16 +449,18 @@ def _block_ceiling(
 
 
 def _ordered_blocks(blocks: list[BlockBlueprint], phase: Phase) -> tuple[BlockBlueprint, ...]:
-    """Quality first: a fixed-volume protocol never sits behind volume work — except in a DELOAD,
-    where `DELOAD_LEAD_ASPECTS` leads, because low load is what the whole week is for."""
+    """Hardest first on §3.4's chain, and a fixed-volume protocol never behind volume work —
+    except in a DELOAD, where `DELOAD_LEAD_ASPECTS` leads, because low load is the week's point."""
     lead_first = phase is Phase.DELOAD
 
-    def rank(index: int) -> tuple[int, int, int]:
+    def rank(index: int) -> tuple[int, int, int, int]:
         block = blocks[index]
+        quality, tier, placement = _window_rank(block.aspect_key, block.protocol_kind, index)
         return (
             0 if lead_first and block.aspect_key in DELOAD_LEAD_ASPECTS else 1,
-            0 if is_priority(block.protocol_kind) else 1,
-            index,
+            quality,
+            tier,
+            placement,
         )
 
     order = sorted(range(len(blocks)), key=rank)
@@ -555,7 +609,7 @@ def _length_pick(
     ]
     if not pool:
         return None
-    need = _session_floor(draft) - draft.seconds
+    need = _session_floor(draft, phase) - draft.seconds
     enough = [spec for spec in pool if _spec_seconds(spec, phase) >= need]
     if enough:
         return enough[spread % len(enough)]
@@ -599,7 +653,9 @@ def _try_supplementary(
         draft, phase, band=band, wall_seconds=wall_seconds, other_seconds=other_seconds
     )
     need = (
-        max(_session_floor(draft) - draft.seconds, 0) if _short_of_its_window(draft, phase) else 0
+        max(_session_floor(draft, phase) - draft.seconds, 0)
+        if _short_of_its_window(draft, phase)
+        else 0
     )
     room = (
         session_window(_leading_kind(_kinds(draft)))[1] * 60 - draft.seconds if draft.blocks else 0
@@ -707,11 +763,14 @@ def _nearer_target(draft: _Draft, spec: ExerciseSpec, phase: Phase, *, target_se
     return _spec_seconds(spec, phase) < 2 * (target_seconds - draft.seconds)
 
 
-def _share_of_window_floor(draft: _Draft, spec: ExerciseSpec | None, pct: int) -> int:
+def _share_of_window_floor(draft: _Draft, spec: ExerciseSpec | None, pct: int, phase: Phase) -> int:
     """A percentage of the window floor of the session type these blocks make: the band's top
     share is what climbing fills to, its bottom share is what the session's length needs."""
     kinds = _kinds(draft, spec)
-    return session_window(_leading_kind(kinds))[0] * 60 * pct // 100 if kinds else 0
+    if not kinds:
+        return 0
+    floor = session_window(_leading_kind(kinds))[0] * 60
+    return floor * session_floor_pct(phase) * pct // 10_000
 
 
 def _share_allows(
@@ -726,12 +785,12 @@ def _share_allows(
     """Whether one more supplementary block keeps this session near its band's target share.
 
     Four reasons to say yes regardless, and each one is a measured failure of saying no. An
-    unloading phase has no window floor to reserve against, and deriving an allowance from a
-    deload's own small prescriptions produced a three-minute session. A session with no climbing
-    at all has no share to reserve, and refusing there emptied every gearless session. A session
-    still short of its type's window floor is topped up: length belongs to the type. And a
-    SESSION already above the band's top edge wants supplementary work by definition — that arm
-    is what closes the last three points.
+    unloading phase pursues half a floor and reserves nothing against the band: an allowance
+    derived from its own small prescriptions produced a three-minute session. A session with no
+    climbing at all has no share to reserve, and refusing there emptied every gearless session.
+    A session still short of its type's window floor is topped up: length belongs to the type.
+    And a SESSION already above the band's top edge wants supplementary work by definition —
+    that arm is what closes the last three points.
     ⚠️ That last arm read the whole WEEK until 2026-09-04, which made it depend on the week's
     session count and broke the monotonicity invariant; `_block_ceiling` records the measurement.
     """
@@ -739,7 +798,7 @@ def _share_allows(
     wall_seconds, other_seconds = week
     if phase in UNLOADING_PHASES or on_wall or not draft.wall_seconds:
         return True
-    if draft.seconds < _session_floor(draft):
+    if draft.seconds < _session_floor(draft, phase):
         return True
     if meets_floor(
         wall_seconds=draft.wall_seconds, other_seconds=draft.other_seconds, floor_pct=top_pct

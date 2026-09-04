@@ -147,14 +147,15 @@ ASPECT_EMPHASIS: Final[Mapping[Phase, tuple[str, ...]]] = MappingProxyType(
             "power_endurance",
             "power",
         ),
-        # Sharpness comes from climbing on the target style, not from a board — the same reasoning
-        # `DELIBERATELY_UNPRESCRIBED` gives for leaving isolated fingers, full power-endurance
-        # sessions, heavy general strength and anaerobic capacity out of a taper entirely.
+        # Barrows §3.3: only hard strength/power and hard aerobic power. Power leads, aerobic
+        # power follows it, and the gym strength is the short upper-body kind — a heavy hinge or
+        # squat leaves fatigue that hides the fitness the whole plan built.
         Phase.TAPER: (
-            "technique",
             "power",
+            "power_endurance",
+            "technique",
+            "general_strength",
             "core_tension",
-            "endurance",
             "mobility",
             "antagonist_prehab",
         ),
