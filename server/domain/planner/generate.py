@@ -43,12 +43,12 @@ from server.domain.planner.blueprint import (
     Shortfall,
 )
 from server.domain.planner.climbing import (
+    DELOAD_LEAD_ASPECTS,
     FINGER_ASPECT,
     FINGER_PROTOCOLS,
     MAX_EXPANSION_FACTOR,
     UNLOADING_PHASES,
     climbing_block_budget,
-    climbing_floor_pct,
     climbing_target_band,
     finger_sessions_for,
     is_expandable,
@@ -56,6 +56,7 @@ from server.domain.planner.climbing import (
     meets_floor,
     requires_wall,
     session_window,
+    week_climbing_floor_pct,
 )
 from server.domain.planner.contract import PlannerInput
 from server.domain.planner.periodisation import (
@@ -215,7 +216,7 @@ def _microcycle(
         start_date=week_start,
         is_deload=phase is Phase.DELOAD,
         phase=phase,
-        sessions=tuple(_session(draft, week_start) for draft in drafts),
+        sessions=tuple(_session(draft, week_start, phase) for draft in drafts),
     )
 
 
@@ -312,7 +313,9 @@ def _fill_finger_strength(
     )
     if wanted <= 0 or not ordered:
         return
-    floor_pct = climbing_floor_pct(planner_input.discipline, planner_input.current_ordinal)
+    floor_pct = week_climbing_floor_pct(
+        planner_input.discipline, planner_input.current_ordinal, phase
+    )
     wall_seconds = sum(draft.wall_seconds for draft in drafts)
     other_seconds = sum(draft.other_seconds for draft in drafts)
     placed = 0
@@ -345,8 +348,8 @@ def _kinds(draft: _Draft, spec: ExerciseSpec | None = None) -> list[ProtocolKind
 
 
 def _leading_kind(kinds: list[ProtocolKind]) -> ProtocolKind:
-    """The kind of the block that will LEAD once the session is ordered, so the window a
-    session is held to is the window of the quality work in it, not of whatever landed first."""
+    """The kind that SETS THE WINDOW — the quality work in the session, not whatever landed
+    first. It leads too, except in a deload, where movement quality is ordered ahead of it."""
     for kind in kinds:
         if is_priority(kind):
             return kind
@@ -393,12 +396,18 @@ def _block_ceiling(
     return BLOCKS_PER_SESSION
 
 
-def _ordered_blocks(blocks: list[BlockBlueprint]) -> tuple[BlockBlueprint, ...]:
-    """Quality first: a fixed-volume protocol never sits behind volume work, because quality of
-    effort decides the adaptation and 35 minutes of climbing spends it before the hang starts."""
+def _ordered_blocks(blocks: list[BlockBlueprint], phase: Phase) -> tuple[BlockBlueprint, ...]:
+    """Quality first: a fixed-volume protocol never sits behind volume work — except in a DELOAD,
+    where `DELOAD_LEAD_ASPECTS` leads, because low load is what the whole week is for."""
+    lead_first = phase is Phase.DELOAD
 
-    def rank(index: int) -> tuple[int, int]:
-        return (0 if is_priority(blocks[index].protocol_kind) else 1, index)
+    def rank(index: int) -> tuple[int, int, int]:
+        block = blocks[index]
+        return (
+            0 if lead_first and block.aspect_key in DELOAD_LEAD_ASPECTS else 1,
+            0 if is_priority(block.protocol_kind) else 1,
+            index,
+        )
 
     order = sorted(range(len(blocks)), key=rank)
     return tuple(replace(blocks[old], order_index=new) for new, old in enumerate(order, start=1))
@@ -418,7 +427,9 @@ def _fill_supplementary(
         # A solo week has no supplementary pass at all, and still owes its type's length.
         _top_up_with_climbing(drafts, planner_input, phase, week_no)
         return
-    floor_pct = climbing_floor_pct(planner_input.discipline, planner_input.current_ordinal)
+    floor_pct = week_climbing_floor_pct(
+        planner_input.discipline, planner_input.current_ordinal, phase
+    )
     # LENGTH FIRST. The hard floor caps a week's supplementary minutes, so a discretionary block
     # placed early spends what a session under its type's window floor needs.
     _supplementary_rounds(
@@ -813,9 +824,9 @@ def _no_climbing_shortfall(planner_input: PlannerInput, phase: Phase) -> Shortfa
     )
 
 
-def _session(draft: _Draft, week_start: date) -> SessionBlueprint:
+def _session(draft: _Draft, week_start: date, phase: Phase) -> SessionBlueprint:
     """One draft, ordered quality-first and frozen into the output tree."""
-    blocks = _ordered_blocks(draft.blocks)
+    blocks = _ordered_blocks(draft.blocks, phase)
     return SessionBlueprint(
         weekday=draft.weekday,
         scheduled_on=session_date(week_start, draft.weekday),

@@ -618,29 +618,6 @@ EXERCISES: Final[tuple[ExerciseSpec, ...]] = (
         ),
     ),
     ExerciseSpec(
-        key="system_board_limit_moves",
-        name="System board limit moves",
-        aspect_key="general_strength",
-        protocol_kind=ProtocolKind.LIMIT_BOULDER,
-        equipment_keys=("system_board",),
-        contraindication_keys=("fingers", "shoulder", "elbow"),
-        instructions=(
-            "Two or three moves at your absolute limit on a steep board, tried until they "
-            "stop improving. The board removes the reading and the footwork puzzle, so "
-            "every attempt is a pure force effort — which is the appeal and also why the "
-            "session is short."
-        ),
-        substitution_hint="No board? A two-move limit boulder on the steepest wall you have.",
-        prescriptions=(
-            PrescriptionSpec(
-                Phase.POWER, sets=8, reps=1, rest_between_sets_seconds=240, target_rpe=10
-            ),
-            PrescriptionSpec(
-                Phase.PERFORMANCE, sets=6, reps=1, rest_between_sets_seconds=240, target_rpe=10
-            ),
-        ),
-    ),
-    ExerciseSpec(
         key="split_squats",
         name="Split squats",
         aspect_key="general_strength",
@@ -697,57 +674,6 @@ EXERCISES: Final[tuple[ExerciseSpec, ...]] = (
             ),
             PrescriptionSpec(
                 Phase.POWER, sets=4, work_seconds=5, rest_between_sets_seconds=180, target_rpe=9
-            ),
-        ),
-    ),
-    ExerciseSpec(
-        key="outdoor_route_crux_repeats",
-        name="Outdoor crux repeats",
-        aspect_key="general_strength",
-        protocol_kind=ProtocolKind.STRAIGHT_SETS,
-        discipline=Discipline.SPORT,
-        equipment_keys=("outdoor_routes",),
-        contraindication_keys=("fingers", "elbow", "shoulder"),
-        instructions=(
-            "On a rope, work the two or three hardest moves of a route in isolation, hanging "
-            "the bolt between attempts and doing them again. It is the strength session a "
-            "rock-only climber actually has access to: the movement is the real thing, the "
-            "rests are as long as you make them, and the volume stays low."
-        ),
-        substitution_hint="Nothing outdoors? Hard linked moves on a steep indoor route.",
-        prescriptions=(
-            PrescriptionSpec(
-                Phase.STRENGTH, sets=6, reps=2, rest_between_sets_seconds=240, target_rpe=9
-            ),
-            PrescriptionSpec(
-                Phase.POWER, sets=6, reps=1, rest_between_sets_seconds=300, target_rpe=10
-            ),
-            PrescriptionSpec(
-                Phase.PERFORMANCE, sets=5, reps=1, rest_between_sets_seconds=300, target_rpe=10
-            ),
-        ),
-    ),
-    ExerciseSpec(
-        key="outdoor_boulder_move_repeats",
-        name="Outdoor single-move repeats",
-        aspect_key="general_strength",
-        protocol_kind=ProtocolKind.STRAIGHT_SETS,
-        discipline=Discipline.BOULDER,
-        equipment_keys=("outdoor_boulders",),
-        contraindication_keys=("fingers", "shoulder", "ankle"),
-        instructions=(
-            "One hard move on rock, repeated from the same start with a full rest between "
-            "attempts. Rock holds do not give a second chance at a bad body position, which "
-            "is why repeating a single move outdoors teaches more per attempt than a whole "
-            "problem does — and why the strength block does not have to move indoors."
-        ),
-        substitution_hint="Nothing dry? The same single-move repeats on a wall.",
-        prescriptions=(
-            PrescriptionSpec(
-                Phase.STRENGTH, sets=6, reps=2, rest_between_sets_seconds=240, target_rpe=9
-            ),
-            PrescriptionSpec(
-                Phase.POWER, sets=8, reps=1, rest_between_sets_seconds=300, target_rpe=10
             ),
         ),
     ),
@@ -1409,6 +1335,80 @@ EXERCISES: Final[tuple[ExerciseSpec, ...]] = (
                 work_seconds=90,
                 rest_between_sets_seconds=420,
                 target_rpe=9,
+            ),
+        ),
+    ),
+    ExerciseSpec(
+        key="system_board_limit_moves",
+        name="System board limit moves",
+        aspect_key="power",
+        protocol_kind=ProtocolKind.LIMIT_BOULDER,
+        equipment_keys=("system_board",),
+        contraindication_keys=("fingers", "shoulder", "elbow"),
+        instructions=(
+            "Two or three moves at your absolute limit on a steep board, tried until they "
+            "stop improving. The board removes the reading and the footwork puzzle, so "
+            "every attempt is a pure force effort — which is the appeal and also why the "
+            "session is short."
+        ),
+        substitution_hint="No board? A two-move limit boulder on the steepest wall you have.",
+        prescriptions=(
+            PrescriptionSpec(
+                Phase.POWER, sets=8, reps=1, rest_between_sets_seconds=240, target_rpe=10
+            ),
+            PrescriptionSpec(
+                Phase.PERFORMANCE, sets=6, reps=1, rest_between_sets_seconds=240, target_rpe=10
+            ),
+        ),
+    ),
+    ExerciseSpec(
+        key="outdoor_route_crux_repeats",
+        name="Outdoor crux repeats",
+        aspect_key="power",
+        protocol_kind=ProtocolKind.STRAIGHT_SETS,
+        discipline=Discipline.SPORT,
+        equipment_keys=("outdoor_routes",),
+        contraindication_keys=("fingers", "elbow", "shoulder"),
+        instructions=(
+            "On a rope, work the two or three hardest moves of a route in isolation, hanging "
+            "the bolt between attempts and doing them again. It is the strength session a "
+            "rock-only climber actually has access to: the movement is the real thing, the "
+            "rests are as long as you make them, and the volume stays low."
+        ),
+        substitution_hint="Nothing outdoors? Hard linked moves on a steep indoor route.",
+        prescriptions=(
+            PrescriptionSpec(
+                Phase.STRENGTH, sets=6, reps=2, rest_between_sets_seconds=240, target_rpe=9
+            ),
+            PrescriptionSpec(
+                Phase.POWER, sets=6, reps=1, rest_between_sets_seconds=300, target_rpe=10
+            ),
+            PrescriptionSpec(
+                Phase.PERFORMANCE, sets=5, reps=1, rest_between_sets_seconds=300, target_rpe=10
+            ),
+        ),
+    ),
+    ExerciseSpec(
+        key="outdoor_boulder_move_repeats",
+        name="Outdoor single-move repeats",
+        aspect_key="power",
+        protocol_kind=ProtocolKind.STRAIGHT_SETS,
+        discipline=Discipline.BOULDER,
+        equipment_keys=("outdoor_boulders",),
+        contraindication_keys=("fingers", "shoulder", "ankle"),
+        instructions=(
+            "One hard move on rock, repeated from the same start with a full rest between "
+            "attempts. Rock holds do not give a second chance at a bad body position, which "
+            "is why repeating a single move outdoors teaches more per attempt than a whole "
+            "problem does — and why the strength block does not have to move indoors."
+        ),
+        substitution_hint="Nothing dry? The same single-move repeats on a wall.",
+        prescriptions=(
+            PrescriptionSpec(
+                Phase.STRENGTH, sets=6, reps=2, rest_between_sets_seconds=240, target_rpe=9
+            ),
+            PrescriptionSpec(
+                Phase.POWER, sets=8, reps=1, rest_between_sets_seconds=300, target_rpe=10
             ),
         ),
     ),
@@ -3148,20 +3148,17 @@ DELIBERATELY_UNPRESCRIBED: Final[tuple[UnprescribedCell, ...]] = (
         Phase.STRENGTH,
         "power_endurance",
         (
-            "Power endurance is trained in its own block. Anaerobic capacity work "
-            "inside a strength block competes for the recovery the heavy sessions need, "
-            "and power endurance comes back within a couple of weeks while maximum "
-            "strength takes months — so the trade is one-sided."
+            "Power endurance is trained in its own block, and it comes back within a "
+            "couple of weeks while maximum strength takes months — so the trade is "
+            "one-sided."
         ),
     ),
     UnprescribedCell(
         Phase.POWER,
         "power_endurance",
         (
-            "Same reason as the strength block, and the general rule this library "
-            "follows: a quality is maintained after its own block, never previewed "
-            "before it. A power block's own attempts already cost more recovery than a "
-            "pumped session would repay."
+            "Same reason as the strength block: a power block's own attempts already "
+            "cost more recovery than a pumped session would repay."
         ),
     ),
     UnprescribedCell(
@@ -3178,8 +3175,8 @@ DELIBERATELY_UNPRESCRIBED: Final[tuple[UnprescribedCell, ...]] = (
         Phase.POWER_ENDURANCE,
         "general_strength",
         (
-            "Strength is the quality that persists: it holds comfortably across the one to "
-            "four weeks a power-endurance block lasts, so there is nothing to lose by "
+            "Strength is the quality that persists: it holds comfortably across the four "
+            "weeks a power-endurance block lasts, so there is nothing to lose by "
             "leaving it out. A heavy hinge or squat inside these weeks competes for exactly "
             "the recovery the interval sessions need, and the trade is one-sided."
         ),

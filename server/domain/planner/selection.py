@@ -105,17 +105,17 @@ ASPECT_EMPHASIS: Final[Mapping[Phase, tuple[str, ...]]] = MappingProxyType(
             "antagonist_prehab",
             "mobility",
         ),
-        # Its own block, with aerobic endurance behind it and anaerobic capacity behind that —
-        # the systems directly underneath. General strength is absent; power sits at the tail.
+        # Aerobic endurance sits in the TAIL so it cannot out-train the quality this block is
+        # named after: at equal turns its far longer exercises take more minutes than PE's do.
         Phase.POWER_ENDURANCE: (
             "power_endurance",
-            "endurance",
             "technique",
             "anaerobic_capacity",
             "core_tension",
             "finger_strength",
             "antagonist_prehab",
             "mobility",
+            "endurance",
             "power",
         ),
         # Performance is about performing: limit attempts and redpoint burns, `power_endurance`

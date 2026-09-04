@@ -42,7 +42,7 @@ from server.domain.vocabulary import CLIMBING_ASPECTS, EQUIPMENT, INJURY_AREAS
 # endpoint, and it bumps on any behaviour change — the constants in this package included.
 # `server/models.py::Plan` promises version + input reproduces the tree, and a constant
 # tweaked without a bump makes that promise false silently.
-GENERATOR_VERSION: Final = "4.0.0"
+GENERATOR_VERSION: Final = "5.0.0"
 
 MAX_WEEKDAY_MASK: Final = 0b111_1111
 MIN_SESSIONS_PER_WEEK: Final = 1

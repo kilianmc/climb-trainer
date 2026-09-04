@@ -59,6 +59,10 @@ EXPANDABLE_PROTOCOLS: Final[frozenset[ProtocolKind]] = frozenset(
 )
 UNLOADING_PHASES: Final[frozenset[Phase]] = frozenset({Phase.DELOAD, Phase.TAPER})
 
+# A deload session LEADS with movement quality at low load rather than with the wall, which is
+# what `PHASE_GUIDE[DELOAD]` promises; `_ordered_blocks` is where it becomes true.
+DELOAD_LEAD_ASPECTS: Final[frozenset[str]] = frozenset({"technique", "mobility"})
+
 
 class Level(enum.StrEnum):
     """The climber's band, by CURRENT grade. Never persisted — derived on every generate."""
@@ -87,6 +91,10 @@ _CEILINGS: Final[Mapping[Discipline, tuple[int, int]]] = MappingProxyType(
 CLIMBING_FLOOR_PCT: Final[Mapping[Level, int]] = MappingProxyType(
     {Level.BEGINNER: 85, Level.INTERMEDIATE: 75, Level.ADVANCED: 50}
 )
+
+# A deload answers to this instead of its band's floor (Kilian, 2026-09-04): still half climbing —
+# same sessions, shorter — with the room the band leaves none of for the mobility the week is FOR.
+DELOAD_CLIMBING_FLOOR_PCT: Final = 50
 
 # Where the allocator AIMS; the floor above is only the hard lower bound it may never breach.
 # Allocating climbing to exhaustion instead put every band at 84-91% and made banding inert.
@@ -150,6 +158,13 @@ def level_for(discipline: Discipline, current_ordinal: int) -> Level:
 def climbing_floor_pct(discipline: Discipline, current_ordinal: int) -> int:
     """The share of a week's minutes that has to be wall time, for this climber."""
     return CLIMBING_FLOOR_PCT[level_for(discipline, current_ordinal)]
+
+
+def week_climbing_floor_pct(discipline: Discipline, current_ordinal: int, phase: Phase) -> int:
+    """The floor THIS week is held to — the band's, except in a deload, which has its own."""
+    if phase is Phase.DELOAD:
+        return min(DELOAD_CLIMBING_FLOOR_PCT, climbing_floor_pct(discipline, current_ordinal))
+    return climbing_floor_pct(discipline, current_ordinal)
 
 
 def meets_floor(*, wall_seconds: int, other_seconds: int, floor_pct: int) -> bool:

@@ -26,9 +26,9 @@ from server.domain.planner.climbing import (
     UNLOADING_PHASES,
     WALL_EQUIPMENT,
     Level,
-    climbing_floor_pct,
     level_for,
     session_window,
+    week_climbing_floor_pct,
 )
 from server.domain.planner.contract import PlannerInput
 from server.domain.planner.generate import SECONDS_PER_REP, generate
@@ -58,7 +58,7 @@ _MAY_EXPAND: frozenset[tuple[str, ProtocolKind]] = frozenset(
 _TARGET_BAND: Mapping[Level, tuple[int, int]] = {
     Level.BEGINNER: (85, 90),
     Level.INTERMEDIATE: (75, 82),
-    Level.ADVANCED: (50, 62),
+    Level.ADVANCED: (50, 64),
 }
 
 # Real max-hang / repeater sessions a LOADING week owes, per band. Beginner is zero by decision:
@@ -71,11 +71,46 @@ _FINGER_SESSIONS_PER_WEEK: Mapping[Level, int] = {
 _FINGER_PROTOCOLS = frozenset({ProtocolKind.MAX_HANG, ProtocolKind.REPEATERS})
 _FINGER_PHASES = frozenset({Phase.STRENGTH, Phase.POWER})
 
+
+@dataclass(frozen=True, slots=True)
+class _AcceptedFingerGap:
+    """One (climber, sessions, loading week) that misses its band's hangboard floor. `delivered`
+    is the measurement, so the row cannot widen, and the reverse arm fails one that stops firing."""
+
+    profile: str
+    sessions: int
+    loading_week: int
+    delivered: int
+    reason: str
+
+
+# Kilian, 2026-09-04: registered as data rather than answered by lowering the band's floor.
+_NO_SLOT_LEFT_FOR_A_HANG = (
+    "`_fill_finger_strength` skips any session already holding `BLOCKS_PER_SESSION` blocks and it "
+    "runs AFTER `_fill_climbing`, which has no reservation mechanism. Since the three on-wall "
+    "`general_strength` rows moved to `power` the strength ring is 12 turns of power, anaerobic "
+    "capacity and technique, so an intermediate's climbing pass needs a THIRD, shorter block to "
+    "reach `_share_of_window_floor` and both sessions are full when the hangboard pass arrives. "
+    "It bites only at 2 sessions a week and only in this band: a beginner owes 0 hangs, an "
+    "advanced still gets 2, and at 3+ sessions every intermediate loading week gets its 1. The "
+    "fix is a reservation in the climbing pass, and it belongs to whoever gives it one — not to "
+    "a lower `_FINGER_SESSIONS_PER_WEEK`."
+)
+
+# The register. Both arms below read it, on `_ACCEPTED_INVERSIONS`' contract exactly.
+_ACCEPTED_FINGER_GAPS: tuple[_AcceptedFingerGap, ...] = (
+    _AcceptedFingerGap("intermediate sport 6c", 2, 3, 0, _NO_SLOT_LEFT_FOR_A_HANG),
+    _AcceptedFingerGap("intermediate boulder 6C", 2, 3, 0, _NO_SLOT_LEFT_FOR_A_HANG),
+)
+
 # Quality first. The fixed-volume protocols are the ones whose adaptation is decided by the
 # quality of the effort, so none of them may sit behind any of the volume protocols.
 _PRIORITY_PROTOCOLS = frozenset(
     {ProtocolKind.MAX_HANG, ProtocolKind.REPEATERS, ProtocolKind.LIMIT_BOULDER}
 )
+# The two qualities a DELOAD session leads with, restated independently for `_MAY_EXPAND`'s
+# reason. Kilian, 2026-09-04: at low load movement quality goes ahead of the climbing.
+_DELOAD_LEAD_ASPECTS: frozenset[str] = frozenset({"technique", "mobility"})
 _VOLUME_PROTOCOLS = frozenset(
     {
         ProtocolKind.LAPS,
@@ -99,10 +134,21 @@ _CLIMBERS: tuple[tuple[Level, Discipline, GradeSystemKey, str], ...] = (
 )
 
 
+def _profile(level: Level, discipline: Discipline, label: str) -> str:
+    """The `_ACCEPTED_FINGER_GAPS` key: one climber of `_CLIMBERS`, without the session count."""
+    return f"{level.value} {discipline.value} {label}"
+
+
+_BY_PROFILE = {
+    _profile(level, discipline, label): (level, discipline, system, label)
+    for level, discipline, system, label in _CLIMBERS
+}
+
+
 # Kilian's authored order for a base block, restated independently of `selection.py` for
 # `_MAY_EXPAND`'s reason, and quoted almost verbatim in `PHASE_GUIDE[Phase.BASE]`.
-# ⚠️ `general_strength` sits third in the authored row and is absent here: no ON-WALL base
-# exercise exists for it. `anaerobic_capacity` had none either until PR C authored two.
+# ⚠️ `general_strength` sits third in the authored row and is absent here, and since its three
+# on-wall rows moved to `power` no on-wall one exists in ANY phase. `anaerobic_capacity` has two.
 _BASE_WALL_EMPHASIS: tuple[str, ...] = (
     "endurance",
     "technique",
@@ -191,10 +237,27 @@ class _AcceptedInversion:
 _SOLO_WEEK_AIMS_AT_100_PCT = (
     "A one-session week is climbing and nothing else and aims at 100% of its minutes on a wall "
     "(`solo` in `_microcycle`, issue #84's decision), while two sessions put this climber on "
-    "their band's target range instead — 50-62% advanced, 75-82% intermediate. Two deliberate "
+    "their band's target range instead — 50-62% for the advanced band both rows sit in. Two "
     "decisions colliding, and no amount of per-session arithmetic reconciles them: the fix is "
     "either that a solo week stops aiming at 100%, or that this invariant is restated for a "
-    "FIXED band rather than for otherwise-identical inputs. Kilian took the inversion instead."
+    "FIXED band rather than for otherwise-identical inputs. Kilian took the inversion instead. "
+    "Re-measured after the general-strength re-file: 320 s (sport, week 9, power) and 490 s "
+    "(boulder, week 19, performance), against 240 s and 1260 s before it."
+)
+
+# The two inversions the general-strength re-file leaves at 2 → 3 sessions. Their own reason:
+# `_SOLO_WEEK_AIMS_AT_100_PCT` is about a one-session week and does not reach this step.
+_A_THIRD_SESSION_REMOVES_THE_TOP_UP = (
+    "At two sessions a week the whole week lands in two sessions that both run short of their "
+    "protocol window, so the length pass spends the blocks `MAX_BLOCKS_PER_SESSION` reserves "
+    "and — with `wall_pref` at `first` — spends them ON THE WALL: the intermediate row's week 9 "
+    "gets a fourth block of 32 min of power intervals it would not otherwise have. A third "
+    "session removes the shortfall, every session stops at `BLOCKS_PER_SESSION`, and the third "
+    "slot's support rotation shifts with the session index onto a different exercise — off the "
+    "wall for the advanced row, where 13 min of on-wall core tension becomes 2 min of general "
+    "strength and the new session returns 11 min of technique. Measured: both weeks stay INSIDE "
+    "their band, 80.7% → 75.6% against 75-82 and 61.8% → 58.7% against 50-64, so what is traded "
+    "is a two-session week's top-up rather than the climbing the band asks for."
 )
 
 # The residual round 3 left standing on purpose when it made the band's top edge per-SESSION.
@@ -210,19 +273,19 @@ _WEEK_LEVEL_CLIMBING_FLOOR = (
 # invert at all — their 85-90% band is close enough to a solo week's 100% that nothing is traded.
 _ACCEPTED_INVERSIONS: tuple[_AcceptedInversion, ...] = (
     _AcceptedInversion(
-        "intermediate boulder 6C, full vocabulary, gap 3", 1, 300, _SOLO_WEEK_AIMS_AT_100_PCT
+        "advanced sport 7c, full vocabulary, gap 3", 1, 320, _SOLO_WEEK_AIMS_AT_100_PCT
     ),
     _AcceptedInversion(
-        "advanced sport 7c, full vocabulary, gap 3", 1, 240, _SOLO_WEEK_AIMS_AT_100_PCT
+        "advanced boulder 7C, full vocabulary, gap 3", 1, 490, _SOLO_WEEK_AIMS_AT_100_PCT
     ),
     _AcceptedInversion(
-        "advanced boulder 7C, full vocabulary, gap 3", 1, 1260, _SOLO_WEEK_AIMS_AT_100_PCT
+        "intermediate boulder 6C, full vocabulary, gap 3",
+        2,
+        420,
+        _A_THIRD_SESSION_REMOVES_THE_TOP_UP,
     ),
     _AcceptedInversion(
-        "advanced sport 7c, bouldering wall only, gap 4", 1, 660, _SOLO_WEEK_AIMS_AT_100_PCT
-    ),
-    _AcceptedInversion(
-        "advanced boulder 7C, bouldering wall only, gap 4", 1, 660, _SOLO_WEEK_AIMS_AT_100_PCT
+        "advanced boulder 7C, full vocabulary, gap 3", 2, 120, _A_THIRD_SESSION_REMOVES_THE_TOP_UP
     ),
     _AcceptedInversion(
         "advanced sport 7c, bouldering wall only, gap 4", 3, 60, _WEEK_LEVEL_CLIMBING_FLOOR
@@ -297,14 +360,14 @@ def _weekly_matrix(plan: PlanBlueprint) -> list[tuple[int, Phase, int, int, int]
 def test_every_week_meets_its_bands_climbing_floor(
     level: Level, discipline: Discipline, system: GradeSystemKey, label: str, sessions: int
 ) -> None:
-    """The #84 matrix, recomputed. Per WEEK, not over the plan's total: a 28% plan and a plan
-    with one empty week can share the same average."""
+    """The #84 matrix, recomputed per WEEK, not over the plan's total: a 28% plan and a plan with
+    one empty week share an average. A DELOAD answers to its own lower floor, and is measured."""
     assert level_for(discipline, ordinal_of(system, label)) is level
-    floor = climbing_floor_pct(discipline, ordinal_of(system, label))
     plan = generate(_input(discipline, system, label, sessions, 0b111_1111))
     matrix = _weekly_matrix(plan)
     assert matrix
     for week_no, phase, wall, other, climbing in matrix:
+        floor = week_climbing_floor_pct(discipline, ordinal_of(system, label), phase)
         assert wall > 0, (
             f"week {week_no} ({phase.value}) prescribes no climbing at all for a "
             f"{level.value} — that is issue #84's week 19."
@@ -533,15 +596,20 @@ def _hang_sessions(plan: PlanBlueprint, phase_filter: frozenset[Phase] | None) -
 
 # ⚠️ THE DIMENSION THIS SWEEPS IS PLAN LENGTH, and it is the one the gate was missing. Round 3
 # reordered `_wall_pref` to put a session's own length ahead of the week's share and this test
-# stayed GREEN: at the gap of 3 every other test here uses, that moves the advanced band from
-# 57-58% to 59-61%, still inside 50-62. Measured over gap 0-7 × four weekday masks × 2-7
-# sessions, the sabotage breaches only the SHORT plans — gap 0 (8 weeks) and gap 1 (12) reach
-# 62.1-64.8% against the 62% ceiling — because a short plan is mostly `base`, where preferring
-# the wall buys the most. So gap is sampled at both ends of `periodisation`'s week_count table
-# (0 → 8 weeks, 6 → 32) plus the 3 the rest of the file uses. `sessions_per_week` runs the full
-# 2-7 for completeness, but it is NOT the exposing dimension and neither is the weekday mask:
-# all four masks measured identical to a tenth of a point, because a mask moves which weekday a
-# session lands on and never how many blocks it gets.
+# stayed GREEN at the gap of 3 every other test here uses. Gap is therefore sampled at both ends
+# of `periodisation`'s week_count table (0 → 8 weeks, 6 → 32) plus that 3. `sessions_per_week`
+# runs the full 2-7 for completeness but is NOT the exposing dimension, and neither is the
+# weekday mask: all four masks measured identical to a tenth of a point, because a mask moves
+# which weekday a session lands on and never how many blocks it gets.
+# ⚠️ THE ADVANCED CEILING IS 64: A RE-BASELINE OFF A DEFECT, NOT A WEAKENED GUARD. 62 was only
+# green because it averaged in the deload weeks that now answer to `DELOAD_CLIMBING_FLOOR_PCT`;
+# exclude them and `dev` itself measures 62.3% before any of this PR, the same shape as
+# `_DISTINCT_SHARE_FLOOR_PCT` 68→63. All four breaches were gap-0 (8-week) plans, where the
+# performance block is half the plan and the three re-filed on-wall rows concentrate — the
+# ceiling comes back DOWN when the fixed 12-week plan length lands (backlog item 3). Re-measured
+# with deload weeks excluded, the `_wall_pref` sabotage reaches 65.1-67.6% at gap 0, 62.8-65.5%
+# at gap 3 and 63.6-64.8% at gap 6, so 64 bites at all three sampled gaps; honest, the advanced
+# band measures 58.8-63.3%.
 @pytest.mark.parametrize(("level", "discipline", "system", "label"), _CLIMBERS)
 @pytest.mark.parametrize("sessions", [2, 3, 4, 5, 6, 7])
 @pytest.mark.parametrize("gap", [0, 3, 6])
@@ -553,10 +621,11 @@ def test_the_measured_climbing_share_lands_inside_its_bands_target_range(
     sessions: int,
     gap: int,
 ) -> None:
-    """The band is a TARGET RANGE, not only a floor. Round 1 met every floor and still put all
-    three bands at 84-91%, so the banding was inert — a floor alone cannot detect that."""
+    """The band is a TARGET RANGE, not only a floor: round 1 met every floor at 84-91%. DELOAD
+    weeks are out — `DELOAD_CLIMBING_FLOOR_PCT` governs them and the per-week test measures it."""
     low, high = _TARGET_BAND[level]
-    matrix = _weekly_matrix(generate(_input(discipline, system, label, sessions, 0b111_1111, gap)))
+    every = _weekly_matrix(generate(_input(discipline, system, label, sessions, 0b111_1111, gap)))
+    matrix = [row for row in every if row[1] is not Phase.DELOAD]
     wall = sum(row[2] for row in matrix)
     other = sum(row[3] for row in matrix)
     share = 100 * wall / (wall + other)
@@ -580,12 +649,44 @@ def test_a_loading_week_meets_its_bands_finger_strength_floor(
     plan = generate(_input(discipline, system, label, sessions, 0b111_1111))
     weeks = _hang_sessions(plan, _FINGER_PHASES)
     assert weeks, "no strength or power week in the plan; the parametrisation is wrong."
+    accepted = {(row.profile, row.sessions, row.loading_week): row for row in _ACCEPTED_FINGER_GAPS}
     for index, count in enumerate(weeks, start=1):
+        row = accepted.get((_profile(level, discipline, label), sessions, index))
+        if row is not None:
+            assert count >= row.delivered, (
+                f"{row.profile} at {sessions}x, loading week {index} is an ACCEPTED gap that "
+                f"delivered {row.delivered} hangboard session(s) and now delivers {count}, so "
+                f"the exception has grown into a different one. The row reads: {row.reason}"
+            )
+            continue
         assert count >= wanted, (
             f"loading week {index} of a {level.value}'s plan has {count} real max-hang or "
             f"repeater session(s) against a floor of {wanted}. Round 1 measured eight minutes "
-            f"of finger work a week for an advanced climber."
+            f"of finger work a week for an advanced climber. If that is a decision rather than "
+            f"a defect it owes a row in _ACCEPTED_FINGER_GAPS carrying the reason and the cost."
         )
+
+
+def test_no_accepted_finger_strength_gap_has_quietly_become_true() -> None:
+    """⚠️ GUARD, reverse arm, `_ACCEPTED_INVERSIONS`' contract applied to the hangboard floor: a
+    registered gap that now meets its floor is a claim about the generator that has expired."""
+    stale: list[str] = []
+    for row in _ACCEPTED_FINGER_GAPS:
+        climber = _BY_PROFILE.get(row.profile)
+        assert climber is not None, (
+            f"{row.profile} in _ACCEPTED_FINGER_GAPS matches no climber in _CLIMBERS."
+        )
+        level, discipline, system, label = climber
+        weeks = _hang_sessions(
+            generate(_input(discipline, system, label, row.sessions, 0b111_1111)), _FINGER_PHASES
+        )
+        count = weeks[row.loading_week - 1] if row.loading_week <= len(weeks) else -1
+        if count >= _FINGER_SESSIONS_PER_WEEK[level]:
+            stale.append(f"{row.profile} at {row.sessions}x, loading week {row.loading_week}")
+    assert not stale, (
+        f"{stale} are accepted in _ACCEPTED_FINGER_GAPS and now meet their band's floor. Delete "
+        f"those rows — the register is a measurement of the generator, not documentation of it."
+    )
 
 
 @pytest.mark.parametrize("sessions", [2, 3, 5, 7])
@@ -609,7 +710,7 @@ def test_priority_work_never_sits_behind_volume_work(
     level: Level, discipline: Discipline, system: GradeSystemKey, label: str
 ) -> None:
     """Quality of effort decides the adaptation, so a max hang cannot sit behind 35 minutes of
-    climbing — that is the "turn up subpar and set your training back" failure, prescribed."""
+    climbing. The one exemption is a deload's own technique or mobility lead, narrowed to those."""
     del level
     plan = generate(_input(discipline, system, label, 5, 0b111_1111))
     for mesocycle in plan.mesocycles:
@@ -620,8 +721,11 @@ def test_priority_work_never_sits_behind_volume_work(
                     f"week {microcycle.week_no} has blocks indexed {order}."
                 )
                 seen_volume: list[str] = []
+                deload_lead = microcycle.phase is Phase.DELOAD
                 for block in session.blocks:
-                    if block.protocol_kind in _VOLUME_PROTOCOLS:
+                    if block.protocol_kind in _VOLUME_PROTOCOLS and not (
+                        deload_lead and block.aspect_key in _DELOAD_LEAD_ASPECTS
+                    ):
                         seen_volume.append(block.exercise_key)
                     assert not (block.protocol_kind in _PRIORITY_PROTOCOLS and seen_volume), (
                         f"week {microcycle.week_no} ({microcycle.phase.value}) prescribes "
