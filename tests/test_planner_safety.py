@@ -21,7 +21,7 @@ from server.domain.exercises import EXERCISES
 from server.domain.grades import Discipline, GradeSystemKey, ordinal_of
 from server.domain.planner.blueprint import PlanBlueprint
 from server.domain.planner.contract import REFUSAL_MESSAGES, PlannerInput
-from server.domain.planner.generate import generate
+from server.domain.planner.generate import TITLE_MAX_CHARS, generate
 from server.domain.vocabulary import INJURY_AREAS
 from server.models import Plan, PlannedSession
 
@@ -171,6 +171,13 @@ def test_every_generated_string_fits_the_column_it_is_inserted_into(
         for microcycle in mesocycle.microcycles:
             for session in microcycle.sessions:
                 assert len(session.title) <= title_limit, session.title
+
+
+def test_the_generators_title_bound_IS_the_columns_width() -> None:
+    """The arm above only sees the profiles it samples, and a title long enough to be refused
+    by the column appeared on one it does not. `_title` is bounded by `TITLE_MAX_CHARS`, so
+    this pins that constant to the column rather than sampling for the overflow."""
+    assert TITLE_MAX_CHARS == _width_of(PlannedSession.__table__.c.title)
 
 
 def _width_of(column: KeyedColumnElement[Any]) -> int:
