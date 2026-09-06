@@ -75,7 +75,6 @@ from server.domain.planner.periodisation import (
     beyond_one_plan_note,
     block_count_for,
     mesocycle_spans,
-    week_count_for,
 )
 from server.domain.planner.progression import progressed
 from server.domain.planner.schedule import (
@@ -161,7 +160,10 @@ class _Draft:
 def generate(planner_input: PlannerInput) -> PlanBlueprint:
     """Build the whole plan. Raises `CannotPlanError` only for an empty weekday mask."""
     gap = planner_input.grade_gap
-    week_count = week_count_for(gap)
+    # ONE read of the block count. `week_count` is the spans' own extent so the two cannot
+    # disagree; `tests/test_planner_periodisation.py` sabotages that read to prove it.
+    spans = mesocycle_spans(block_count_for(gap))
+    week_count = spans[-1].end_week
     weekdays = choose_weekdays(planner_input.available_weekdays, planner_input.sessions_per_week)
 
     mesocycles = tuple(
@@ -174,7 +176,7 @@ def generate(planner_input: PlannerInput) -> PlanBlueprint:
                 for week_no in range(span.start_week, span.end_week + 1)
             ),
         )
-        for span in mesocycle_spans(block_count_for(gap))
+        for span in spans
     )
 
     return PlanBlueprint(

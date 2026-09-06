@@ -5,17 +5,27 @@ DB-free: it reads `server/domain/planner/`, so it runs in the local gate. The te
 maths". Nothing else is here — no assertion that `MIN_BLOCKS` is 2 (a constant table, explicitly
 on the SKIP list) and no snapshot of a generated plan. The gap table is asserted as a
 **literal**, not by re-deriving the formula: a test that recomputes it agrees with any typo in
-the implementation. The table is the decision.
+the implementation. The table is the decision. The four arms that `generate()` a plan sabotage
+it rather than snapshot it: a plan's own shape cannot be shown to bite on a hand-built fixture.
 """
 
+import sys
+from dataclasses import replace
 from datetime import date, timedelta
 from itertools import pairwise
+from types import ModuleType
 
 import pytest
 
 from server.domain.grades import GRADES, Discipline, system
-from server.domain.planner.blueprint import MAX_WEEK_COUNT, MIN_WEEK_COUNT, NoteKind
+from server.domain.planner.blueprint import (
+    MAX_WEEK_COUNT,
+    MIN_WEEK_COUNT,
+    NoteKind,
+    PlanBlueprint,
+)
 from server.domain.planner.contract import CannotPlanError, PlannerInput, RefusalReason
+from server.domain.planner.generate import generate
 from server.domain.planner.periodisation import (
     GAP_BEYOND_ONE_PLAN,
     MAX_BLOCKS,
@@ -149,6 +159,95 @@ def test_spans_tile_the_plan_exactly_once_starting_at_week_one(blocks: int) -> N
         assert later.start_week == earlier.end_week + 1, "no gap and no overlap between blocks"
 
 
+_SPORT_RUNGS = sorted(
+    {grade.ordinal for grade in GRADES if system(grade.system).discipline is Discipline.SPORT}
+)
+
+
+def _plan(rungs: int = 2) -> PlanBlueprint:
+    """A real generated plan, `rungs` up the sport ladder from its foot and gearless. Generated
+    rather than hand-built: a shape invariant cannot be shown to bite a fixture built to fit it."""
+    return generate(
+        PlannerInput(
+            discipline=Discipline.SPORT,
+            current_ordinal=_SPORT_RUNGS[0],
+            target_ordinal=_SPORT_RUNGS[rungs],
+            sessions_per_week=3,
+            available_weekdays=0b010_0101,
+            strength_aspect_key=None,
+            weakness_aspect_key=None,
+            open_injury_keys=(),
+            equipment_keys=(),
+            start_date=_MONDAY,
+        )
+    )
+
+
+def _weeks_carried(plan: PlanBlueprint) -> int:
+    """Microcycles actually in the tree, which is what the plan PRESCRIBES."""
+    return sum(len(mesocycle.microcycles) for mesocycle in plan.mesocycles)
+
+
+def test_a_plan_whose_mesocycles_do_not_tile_its_week_count_cannot_construct() -> None:
+    """Every value below is inside `ck_plan_week_count_in_range`, so that CHECK passes and only
+    the tiling check stands between a plan and reporting one length while prescribing another."""
+    plan = _plan()
+    assert plan.week_count == _weeks_carried(plan) > 0
+    for bad in (MIN_WEEK_COUNT, plan.week_count - 1, plan.week_count + 1, MAX_WEEK_COUNT):
+        with pytest.raises(ValueError, match="must tile"):
+            replace(plan, week_count=bad)
+
+
+def test_the_week_count_range_check_still_fires_on_its_own_terms() -> None:
+    """The control: the tiling check must not have swallowed the CHECK it sits behind, or a
+    0-week plan would fail for the wrong reason and 53 weeks would still insert."""
+    plan = _plan()
+    for bad in (MIN_WEEK_COUNT - 1, MAX_WEEK_COUNT + 1):
+        with pytest.raises(ValueError, match="ck_plan_week_count_in_range"):
+            replace(plan, week_count=bad)
+
+
+def test_a_mesocycle_must_carry_exactly_the_weeks_its_span_claims() -> None:
+    """The other half of "tile": without it every span could claim weeks 1-3 while the microcycles
+    still ran 1..N. The empty arm is the anti-vacuity one — a pairwise loop would pass on it."""
+    first = _plan().mesocycles[0]
+    for broken in (
+        {"end_week": first.end_week + 1},
+        {"start_week": first.start_week + 1},
+        {"microcycles": first.microcycles[:-1]},
+        {"microcycles": ()},
+        {"microcycles": tuple(reversed(first.microcycles))},
+    ):
+        with pytest.raises(ValueError, match="must carry exactly those microcycles"):
+            replace(first, **broken)
+
+
+def test_the_block_count_is_read_once_so_a_plan_cannot_misreport_its_length() -> None:
+    """Sabotage the ONE read and both halves move together. The patch has to honour its `gap`
+    and to reach the module through `sys.modules` — the arm below is why."""
+    module = sys.modules[generate.__module__]
+    monkeypatched = pytest.MonkeyPatch()
+    monkeypatched.setattr(module, "block_count_for", lambda gap: block_count_for(gap) + 1)
+    try:
+        plan = _plan()
+    finally:
+        monkeypatched.undo()
+    expected = (block_count_for(plan.grade_gap) + 1) * WEEKS_PER_BLOCK
+    assert plan.week_count == expected, "the extra block did not reach the length it reports"
+    assert _weeks_carried(plan) == expected
+    assert plan.name.startswith(f"{expected}-week"), "the name is the length the user reads"
+
+
+def test_the_package_reexport_shadows_the_generate_submodule() -> None:
+    """Why the arm above patches through `sys.modules`: `server/domain/planner/__init__.py`
+    re-exports the FUNCTION, so patching the shadowed name is a silent no-op."""
+    from server.domain import planner
+
+    assert planner.generate is generate, "the attribute is the function, not the submodule"
+    assert not isinstance(planner.generate, ModuleType)
+    assert isinstance(sys.modules[generate.__module__], ModuleType)
+
+
 @pytest.mark.parametrize("blocks", range(2, MAX_BLOCKS + 1))
 def test_deloads_land_on_every_fourth_week_and_the_taper_is_the_last_one(blocks: int) -> None:
     """A deload is a mesocycle with its own prescriptions, and the taper is the one at the
@@ -204,8 +303,8 @@ def test_microcycle_starts_are_seven_days_apart_and_all_mondays() -> None:
 
 @pytest.mark.parametrize("weekday", range(7))
 def test_a_sessions_date_agrees_with_the_weekday_it_is_stored_against(weekday: int) -> None:
-    """`planned_session` stores `weekday` AND `scheduled_on` and nothing in the schema keeps
-    them in agreement, so the generator has to."""
+    """`planned_session` stores `weekday` AND `scheduled_on`; no constraint there enforces the
+    agreement today and the Python check fails earlier, naming the day, so it stays here."""
     scheduled = session_date(microcycle_start(_MONDAY, 5), weekday)
     assert scheduled.weekday() == weekday
     assert (scheduled - _MONDAY).days == 28 + weekday

@@ -28,11 +28,11 @@ models by hand, the same stitching `server/library/routes.py` does for the libra
 
 ## What `__post_init__` checks, and what it deliberately does not
 
-Only a **schema CHECK**. A blueprint that could not be inserted is worth failing on in the
-generator's own tests rather than in #11b's first bulk insert. `String(80)` limits are NOT
-checked here: they are a column width, not a CHECK, and the safety guard already asserts
-every generated string fits — duplicating it would turn that guard's red into a traceback
-from a constructor, which is a worse failure to read.
+A schema **CHECK**, cheaper to fail here than in #11b's first bulk insert, plus the one
+invariant no CHECK can express because it spans rows: the mesocycles tile the plan's own
+`week_count`, each carrying exactly the weeks its span claims. `String(80)` limits are NOT
+checked — a width is not a CHECK, `tests/test_planner_safety.py` covers every generated
+string, and repeating it would turn that guard's red into a constructor traceback.
 """
 
 import enum
@@ -166,8 +166,7 @@ class SessionBlueprint:
         if self.scheduled_on.weekday() != self.weekday:
             raise ValueError(
                 f"scheduled_on {self.scheduled_on} is a {self.scheduled_on.strftime('%A')} "
-                f"but weekday says {self.weekday}. `planned_session` stores both and nothing "
-                f"in the schema keeps them in agreement, so the generator has to."
+                f"but weekday says {self.weekday}."
             )
 
 
@@ -213,6 +212,13 @@ class MesocycleBlueprint:
                 f"end_week {self.end_week} precedes start_week {self.start_week} "
                 f"(ck_mesocycle_end_week_after_start)."
             )
+        carried = tuple(microcycle.week_no for microcycle in self.microcycles)
+        if carried != tuple(range(self.start_week, self.end_week + 1)):
+            raise ValueError(
+                f"a {self.phase.value} mesocycle claiming weeks {self.start_week}-"
+                f"{self.end_week} must carry exactly those microcycles in week order; it "
+                f"carries {carried}."
+            )
 
 
 @dataclass(frozen=True, slots=True)
@@ -243,3 +249,15 @@ class PlanBlueprint:
             )
         if self.start_date.weekday() != 0:
             raise ValueError(f"a plan starts on a Monday; {self.start_date} does not.")
+        carried = tuple(
+            microcycle.week_no
+            for mesocycle in self.mesocycles
+            for microcycle in mesocycle.microcycles
+        )
+        if carried != tuple(range(1, self.week_count + 1)):
+            raise ValueError(
+                f"week_count is {self.week_count} but the mesocycles carry {len(carried)} "
+                f"weeks: {carried}. They must tile 1-{self.week_count} exactly — start at "
+                f"week 1, no gap, no overlap, nothing past the end — or the plan reports one "
+                f"length and prescribes another."
+            )
