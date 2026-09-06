@@ -21,6 +21,7 @@ reason.
 
 import re
 from collections import Counter
+from dataclasses import dataclass
 
 import pytest
 
@@ -337,6 +338,209 @@ def test_boulder_four_by_four_prescribes_NO_REST_BETWEEN_THE_BOULDERS() -> None:
         f"instructions say the four go 'back to back with no rest between them', and because "
         f"the column's CHECK is 1 <= rest_seconds an ABSENT value is the only way to write "
         f"the zero that rule means. Put the rest in rest_between_sets_seconds instead."
+    )
+
+
+# §7's Aero Cap row is "sustained light pump, never fail" and `CLIMBING_ASPECTS`' own endurance
+# copy is "a submaximal intensity", so 6 is the ceiling both allow (ruling 39, 2026-09-06).
+AEROBIC_CAPACITY_RPE_CEILING = 6
+
+# The four aspects §7's dose table covers, through the aspect <-> attribute mapping: Aero Cap,
+# Aero Pow, An Cap and An Pow. The other five aspects are Strength or have no §7 row at all.
+SECTION_7_ASPECTS = frozenset({"endurance", "power_endurance", "anaerobic_capacity", "power"})
+
+
+def test_no_ENDURANCE_row_is_DOSED_OVER_THE_AEROBIC_CAPACITY_RPE_CEILING() -> None:
+    """⚠️ GUARD, ruling 39. F19: four `endurance` rows shipped at RPE 7-8 against §7's "never
+    fail", and the aspect's own user-facing copy promises submaximal. Aspect-wide, so a new row
+    cannot reintroduce it in a cell the boulder-reachability guard's dose arm does not reach."""
+    over = [
+        (spec.key, prescription.phase.value, prescription.target_rpe)
+        for spec in EXERCISES
+        if spec.aspect_key == "endurance"
+        for prescription in spec.prescriptions
+        if prescription.target_rpe is not None
+        and prescription.target_rpe > AEROBIC_CAPACITY_RPE_CEILING
+    ]
+    assert not over, (
+        f"{over} dose `endurance` above RPE {AEROBIC_CAPACITY_RPE_CEILING}. §7 doses aerobic "
+        f"capacity as a sustained light pump that never reaches failure, and the aspect ships "
+        f"to the client as 'staying on the wall for minutes at a submaximal intensity' — an "
+        f"RPE 7 row makes that copy false. Re-dose the row, or file it under the aspect whose "
+        f"dose it actually is; do not raise this ceiling."
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class _DoseShape:
+    """One (aspect, protocol kind) the library authors, with §7's rest:work window for it or
+    `None` where the sources dose that shape by something other than a ratio."""
+
+    aspect_key: str
+    kind: ProtocolKind
+    band: tuple[float, float] | None
+    source: str
+
+
+# §7's dose table and §5's protocol list, as one register. Keyed on `protocol_kind` and never on
+# `aspect_key` alone (ruling 43) — the measurement is in the guard's docstring below.
+SECTION_7_SHAPES: tuple[_DoseShape, ...] = (
+    _DoseShape(
+        "anaerobic_capacity",
+        ProtocolKind.INTERVALS,
+        (2.0, 4.0),
+        "§7 An Cap: rest 2-4x the work. §5.2 progresses it by harder or longer circuits and "
+        "names a shorter rest as the thing not to do, so the 2x floor is the load-bearing edge.",
+    ),
+    _DoseShape(
+        "anaerobic_capacity",
+        ProtocolKind.CIRCUIT,
+        (2.0, 4.0),
+        "The same window, and §5.2 doses this shape by name: 'long boulders 12-15 moves, rest "
+        "fixed at 2-4x climb time'.",
+    ),
+    _DoseShape(
+        "power_endurance",
+        ProtocolKind.INTERVALS,
+        (1.0, 2.0),
+        "§7 Aero Pow: rest about equal to the work, 1-2x. §5.3's on-the-minute is the shape — "
+        "a 6-8 move boulder, ~20 s climbing against 40 s of rest.",
+    ),
+    _DoseShape(
+        "power_endurance",
+        ProtocolKind.LAPS,
+        (1.0, 2.0),
+        "The same Aero Pow window: a timed lap with a measured rest is on-the-minute over a "
+        "longer climb, and `up_down_boulder_laps`' instructions state the 1x shape themselves.",
+    ),
+    _DoseShape(
+        "power_endurance",
+        ProtocolKind.CIRCUIT,
+        None,
+        "⚠️ OUT OF SCOPE. §5.3 doses the Aero Pow circuit by MOVES and shakeouts — '~30-move "
+        "circuits, no shakeouts, don't exceed 30' — and gives no rest figure, where §5.2's An "
+        "Cap circuit carries one by name. F25 is the declared divergence this leaves standing.",
+    ),
+    _DoseShape(
+        "power",
+        ProtocolKind.INTERVALS,
+        None,
+        "⚠️ OUT OF SCOPE. `power` is An Pow AND alactic max-effort work, which no source doses: "
+        "the two exercises here are one 6 s / 48 s alactic burst, correct at 8x, and F18's "
+        "declared divergence. An Pow's own §7 row is a within-set rest and the shape that "
+        "matches it, `short_rest_boulder_sets`, carries no `work_seconds` to read.",
+    ),
+    _DoseShape(
+        "power",
+        ProtocolKind.CIRCUIT,
+        None,
+        "⚠️ OUT OF SCOPE. §5.4 doses the An Pow broken circuit and the redpoint circuit by "
+        "sections and attempts, not by a ratio. F26 registers `broken_circuit_redpoint` at "
+        "4.67-12.00x and this guard does not close it.",
+    ),
+    _DoseShape(
+        "endurance",
+        ProtocolKind.LAPS,
+        None,
+        "⚠️ OUT OF SCOPE. §7 gives Aero Cap no rest period at all — the column reads 'n/a' — so "
+        "its dose is 10+ min of work and a ratio is not the claim. `long_boulder_link_ups`' "
+        "300 s against that floor is ruling 45's declared divergence, recorded at the row.",
+    ),
+    _DoseShape(
+        "endurance",
+        ProtocolKind.OTHER,
+        None,
+        "The same Aero Cap 'n/a', and nothing to read either way: these eleven rows are "
+        "continuous machine and mileage sessions and not one of them carries a rest field.",
+    ),
+)
+
+# Measured 2026-09-06 over the readable set: 24 rows, and a within-set-only reading left all 24
+# unreadable, so the guard below would have been vacuous rather than strict.
+SECTION_7_DOSED_ROWS = 24
+
+
+def _operative_rest(prescription: PrescriptionSpec) -> int | None:
+    """The LONGER of the two rest fields. The library writes an interval's rest in whichever one
+    fits the shape, and ruling 44 reads the longer of the two as the operative one."""
+    rests = [
+        seconds
+        for seconds in (prescription.rest_seconds, prescription.rest_between_sets_seconds)
+        if seconds is not None
+    ]
+    return max(rests, default=None)
+
+
+def _section_7_dose_rows() -> list[tuple[ExerciseSpec, PrescriptionSpec, int]]:
+    """The readable set: rows in the four §7 aspects carrying `work_seconds`, less the filler.
+    The work seconds come out with the row, because a ratio is the only thing anything wants."""
+    return [
+        (spec, prescription, prescription.work_seconds)
+        for spec in EXERCISES
+        if spec.aspect_key in SECTION_7_ASPECTS and spec.key not in OPEN_CLIMBING_KEYS
+        for prescription in spec.prescriptions
+        if prescription.work_seconds is not None
+    ]
+
+
+def test_every_DOSED_row_sits_inside_its_SECTION_7_REST_TO_WORK_BAND() -> None:
+    """⚠️ GUARD, ruling 43. A dose row's rest:work ratio must sit inside the band §7 gives for
+    the KIND of protocol it is; a kind the sources do not dose by a ratio is out of scope and
+    `SECTION_7_SHAPES` says which and why. There is NO exemption register (ruling 34): the four
+    rows that would have needed one are declared divergences recorded at the rows themselves.
+
+    Scope, measured 2026-09-06: 136 rows sit in the four §7 aspects, 60 carry `work_seconds`,
+    6 of those are `OPEN_CLIMBING_KEYS` — exempt BY NAME, since ruling 29 gives the filler no
+    dose progression — leaving 54 readable and 24 in a banded shape.
+    ⚠️ Keying the band on `aspect_key` alone was measured and refused: under an An Pow <=1x read
+    on `aspect_key == "power"`, 10 of 10 `power` rows carrying `work_seconds` breach, including
+    `explosive_move_intervals` at 6 s / 48 s = 8.00x, which is correct alactic dosing.
+    ⚠️ THE BLIND SPOT: only a row with `work_seconds` has a readable ratio, and
+    `short_rest_boulder_sets` — the one An Pow row the audit certifies as matching §7 exactly,
+    20 s rest inside a set against 480-600 s between them — has none. What is readable in
+    `power` is therefore biased toward the rows that are wrong.
+    """
+    bands = {(shape.aspect_key, shape.kind): shape for shape in SECTION_7_SHAPES if shape.band}
+    inspected = 0
+    for spec, prescription, work in _section_7_dose_rows():
+        shape = bands.get((spec.aspect_key, spec.protocol_kind))
+        if shape is None:
+            continue
+        assert shape.band is not None
+        inspected += 1
+        where = f"{spec.key}/{prescription.phase.value}"
+        rest = _operative_rest(prescription)
+        assert rest is not None, (
+            f"{where} is a dosed {spec.aspect_key} {spec.protocol_kind.value} row with "
+            f"{work} s of work and no rest at all. {shape.source}"
+        )
+        ratio = rest / work
+        low, high = shape.band
+        assert low <= ratio <= high, (
+            f"{where} rests {rest} s against {work} s of work = "
+            f"{ratio:.2f}x, outside §7's {low}-{high}x for a {spec.aspect_key} "
+            f"{spec.protocol_kind.value}. {shape.source} Re-dose the row, or file it under the "
+            f"aspect whose dose it actually is — there is no exemption register here."
+        )
+    assert inspected >= SECTION_7_DOSED_ROWS, (
+        f"the band arm read {inspected} rows against the {SECTION_7_DOSED_ROWS} measured, so it "
+        f"has quietly narrowed. A guard nobody's rows reach is the failure mode this number "
+        f"exists to catch — a within-set-only reading of the rest scored 0 of 24."
+    )
+
+
+def test_the_SECTION_7_SHAPE_REGISTER_names_every_shape_the_library_actually_HAS() -> None:
+    """⚠️ GUARD, both directions, on the idiom of `DELIBERATELY_UNPRESCRIBED`. An unnamed shape
+    is a row no band reads — an authored `endurance` INTERVALS row would pass unchecked — and a
+    named shape the library no longer carries is a stale exemption."""
+    present = {(spec.aspect_key, spec.protocol_kind) for spec, _, _ in _section_7_dose_rows()}
+    named = {(shape.aspect_key, shape.kind) for shape in SECTION_7_SHAPES}
+    assert present == named, (
+        f"unnamed in SECTION_7_SHAPES: {sorted((a, k.value) for a, k in present - named)}; "
+        f"named but no longer in the library: "
+        f"{sorted((a, k.value) for a, k in named - present)}. Every (aspect, protocol kind) "
+        f"the four §7 aspects author with `work_seconds` needs a row there — with a band if the "
+        f"sources dose that shape by a ratio, and with the reason they do not if they don't."
     )
 
 

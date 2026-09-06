@@ -85,7 +85,7 @@ _TARGET_BAND_IS_FLOOR_ONLY = (
 )
 
 # Real max-hang / repeater sessions a LOADING week owes, per band. Beginner is zero by KILIAN'S
-# DECISION: neither source scales hangboarding by climber level, so never attribute it to them.
+# DECISION, 2026-09-06: neither source scales hangboarding by level, so never attribute it to them.
 _FINGER_SESSIONS_PER_WEEK: Mapping[Level, int] = {
     Level.BEGINNER: 0,
     Level.INTERMEDIATE: 1,
@@ -990,7 +990,8 @@ def test_a_BOULDERER_GETS_AEROBIC_WORK_in_the_power_endurance_block(sessions: in
     this block prescribes, so `PHASE_GUIDE[POWER_ENDURANCE]`'s "enough to let the next hard
     session happen two days later" was false for half the profiles for reasons no emphasis index
     could reach. The dose arm is the other half of the ruling: sustained and moderate, never to
-    failure, because a HARD row filed under `endurance` recreates F19."""
+    failure. It reads only the rows a BOULDERER draws; the same ceiling over the whole aspect is
+    `test_no_ENDURANCE_row_is_DOSED_OVER_THE_AEROBIC_CAPACITY_RPE_CEILING`."""
     for level, discipline, system, label in _CLIMBERS:
         if discipline is not Discipline.BOULDER:
             continue
@@ -1018,7 +1019,7 @@ def test_a_BOULDERER_GETS_AEROBIC_WORK_in_the_power_endurance_block(sessions: in
                 f"{block.exercise_key} gives a {label} boulderer aerobic work at RPE {rpes} in "
                 f"the power-endurance block, over the {_AEROBIC_RPE_CEILING_FOR_A_BOULDERER} "
                 f"ruling 23 dosed it at. §7 wants a sustained light pump and never a failure, "
-                f"and F19 already registers four rows in this cell that breach that."
+                f"and ruling 39 brought the four rows that breached that down to the same 6."
             )
 
 

@@ -126,6 +126,15 @@ CLIMBING_TARGET_PCT: Final[Mapping[Level, tuple[int, int]]] = MappingProxyType(
     {Level.BEGINNER: (85, 90), Level.INTERMEDIATE: (75, 82), Level.ADVANCED: (50, 62)}
 )
 
+# ⚠️ F14, a DECLARED DIVERGENCE and NOT a fixed defect (ruling 39, measured 2026-09-06 over a
+# 72-plan sweep). `general_strength` + `finger_strength` + `core_tension` take 3.6 / 4.9 / 6.0%
+# of prescribed session minutes by level — 2.8 / 4.0 / 5.1% counting the warm-up — against
+# Dylan's 15-20%, and no level reaches 15% in ANY phase (the highest is advanced `power` at
+# 10.4%). Largely a CONSEQUENCE of ruling 27's length fill, which is 42 / 54 / 65% of those same
+# minutes by level, rather than an authoring omission. **No floor guard, deliberately:** 15% is
+# not landable at that measurement, and a floor red on every profile from the day it lands is a
+# wish rather than a guard.
+
 # Wall blocks a session spends by choice — the lever the target band actually moves, because a
 # session is three blocks and an advanced climber's second one is where supplementary work goes.
 CLIMBING_BLOCKS: Final[Mapping[Level, int]] = MappingProxyType(
@@ -155,8 +164,8 @@ SESSION_MINUTES_TARGET: Final[Mapping[Level, int]] = MappingProxyType(
 # therefore FLOORS and overshoot by up to this much is correct, not a miss.
 LENGTH_FILL_MINUTES: Final = 30
 
-# Real hangboard sessions a loading week owes, by band. Beginner is zero by KILIAN'S DECISION:
-# neither source scales hangboarding by climber level, so never attribute this one to them.
+# Real hangboard sessions a loading week owes, by band. Beginner is zero by KILIAN'S DECISION,
+# 2026-09-06: neither source scales hangboarding by level, so never attribute this one to them.
 FINGER_SESSIONS_PER_WEEK: Final[Mapping[Level, int]] = MappingProxyType(
     {Level.BEGINNER: 0, Level.INTERMEDIATE: 1, Level.ADVANCED: 2}
 )

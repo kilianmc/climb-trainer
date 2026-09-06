@@ -35,17 +35,17 @@ _ALL_EQUIPMENT = tuple(sorted(spec.key for spec in EQUIPMENT))
 _ACCEPTABLY_UNREACHABLE: dict[str, str] = {}
 
 # Both disciplines x all three bands, at the largest grade gap so every phase appears, PLUS one
-# short plan. Measured: these seven plans between them reach all 100 exercises in ~0.3 s, so the
+# short plan. Measured: these seven plans between them reach all 105 exercises in ~0.3 s, so the
 # guard is cheap enough to sit in the local gate. `sessions_per_week` is varied because the band's
 # block budget is what decides how much of a pool the climbing pass ever draws on.
 # ⚠️ The last row is the PLAN-LENGTH dimension, and it was the one this guard was missing. Six
 # max-gap plans are all 28-32 weeks, and a candidate pool is indexed by `_spread`, which counts
 # WEEKS - so a long plan and a short one do not sample the same pool positions. PR C moved the
-# base on-wall `endurance` pool from six entries to seven and `outdoor_route_mileage` (position
-# 5 of 7) became unreachable at 32 weeks while staying reachable at 20; measured, 128 of the 224
-# sport (grade x gap x sessions) combinations reach it. A gap of 3 is the shortest plan that
-# still carries all five training phases plus deload and taper, which is the same reason
-# `tests/test_planner_climbing_floor.py` uses it.
+# base on-wall `endurance` pool from six to seven entries and `outdoor_route_mileage` (position
+# 5 of 7) went unreachable at 32 weeks while staying reachable at 20. ⚠️ Re-measured 2026-09-06:
+# only the 5- and 7-session SPORT plans draw it now and the 20-week one does not, so the length
+# dimension is not what carries that row today. A gap of 3 is the shortest plan with all five
+# training phases plus deload and taper, the same reason `test_planner_climbing_floor.py` uses it.
 _PROFILES: tuple[tuple[Discipline, GradeSystemKey, str, str, int], ...] = (
     (Discipline.SPORT, GradeSystemKey.FRENCH, "6a", "8c", 3),
     (Discipline.SPORT, GradeSystemKey.FRENCH, "6c", "8c", 5),
@@ -57,10 +57,10 @@ _PROFILES: tuple[tuple[Discipline, GradeSystemKey, str, str, int], ...] = (
 )
 
 # Kilian's requirement, and the floor is a SHARE of what the discipline can see rather than a
-# count: 4 of 100 exercises are boulder-only and 13 rope-only, so a sport plan tops out at 96 and
-# a boulder plan at 87, and a count would ask the two for different things. Measured today:
-# beginner 72.9% (70/96) and 71.3% (62/87), intermediate 85.4% and 90.8%, advanced 96.9% and
-# 98.9%, short sport plan 79.2%. Beginner is lowest by arithmetic, not by defect — the band puts
+# count: 4 of 105 exercises are boulder-only and 13 rope-only, so a sport plan tops out at 101
+# and a boulder plan at 92, and a count would ask the two for different things. Measured today:
+# beginner 79.2% (80/101) and 79.3% (73/92), intermediate 95.0% and 97.8%, advanced 96.0% and
+# 97.8%, short sport plan 81.2%. Beginner is lowest by arithmetic, not by defect — the band puts
 # 85-90% of a loading week's minutes on a wall, so little is left for the off-the-wall half.
 #
 # ⚠️ **RE-BASELINED 68 → 63** (Kilian, 2026-09-04), and the old number was not a stricter version
@@ -69,10 +69,10 @@ _PROFILES: tuple[tuple[Discipline, GradeSystemKey, str, str, int], ...] = (
 # session running UNDER its type's window floor, where `_pick` took the longest candidate that
 # fit instead of its plain rotation; round 3's climbing top-up closed that path. Widening
 # `_length_pick`'s pool is not the way back and its docstring holds the numbers.
-# 63 was the tightest floor honest behaviour supported when the lowest profile measured 64.4%
-# (56 of 87), one exercise of slack. The general-strength re-file lifted that profile to 71.3%
-# (62 of 87), so the floor now carries seven — room a new library row does not spend, since
-# authoring one raises the denominator. Shown to fail: `_pick` as `pool[0]` draws 57/96 = 59.4%.
+# ⚠️ 63 STANDS and the slack is 16 points, caught by nothing: it was the tightest floor honest
+# behaviour supported when the lowest profile measured 64.4% (56 of 87 boulder) and the lowest
+# today is 79.2% (80 of 101), so 15 could go undrawn first. Lowering it is KILIAN'S call and is
+# not taken here. Shown to fail: `_pick` as `pool[0]` draws 58/101 = 57.4%.
 _DISTINCT_SHARE_FLOOR_PCT = 63
 
 
