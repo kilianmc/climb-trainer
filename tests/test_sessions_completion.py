@@ -308,7 +308,17 @@ def test_WHICH_BLOCKS_GOT_DONE_comes_back_not_only_HOW_MANY(
 ) -> None:
     """ "33% done" cannot say WHICH third, and the card marks every block row done or missed."""
     plan = _plan(api_client, auth, db_session)
-    partial, whole = _three_block_sessions(plan)[:2]
+    # ⚠️ Only PARTIAL needs three blocks — it is the "which third" the name is about. WHOLE is any
+    # other distinct-exercise session, because ruling 27's length fill gave nearly every session a
+    # fourth block and `_three_block_sessions` stopped finding two.
+    partial = _three_block_session(plan)
+    whole = next(
+        one
+        for one in _sessions(plan)
+        if one["id"] != partial["id"]
+        and one["blocks"]
+        and len({block["exercise_id"] for block in one["blocks"]}) == len(one["blocks"])
+    )
     assert _log(api_client, auth, partial, partial["blocks"][:2]).status_code == 200
     assert _log(api_client, auth, whole, whole["blocks"]).status_code == 200
     logged = {partial["id"], whole["id"]}

@@ -99,6 +99,14 @@ MAX_LINKS = 3
 # as every plan-shape test runs: 24 plans, about a second, cached across every arm below.
 _SESSION_COUNTS: tuple[int, ...] = (2, 3, 5, 7)
 
+# Ruling 31 made the DAY COUNT the subject of the power-endurance block's copy and of PLAN_GOAL's
+# weekly-volume sentence, so those two arms sweep all seven counts rather than these four.
+_EVERY_SESSION_COUNT: tuple[int, ...] = (1, 2, 3, 4, 5, 6, 7)
+
+# "every day you tell us you can train gets a whole session" — the share of a solo plan's minutes
+# each extra day must buy. Measured 1.00-1.02x of it at every count, so 90% is honest slack.
+PLAN_GOAL_DAY_SHARE_PCT: int = 90
+
 
 @dataclass(frozen=True, slots=True)
 class _Climber:
@@ -170,6 +178,17 @@ def _climber_aspect_seconds(climber: _Climber, phase: Phase) -> Counter[str]:
         for block in session.blocks:
             seconds[block.aspect_key] += _block_seconds(block)
     return seconds
+
+
+def _climber_plan_seconds(climber: _Climber) -> int:
+    """Every prescribed second of one climber's WHOLE plan — what "a longer week" is measured in.
+    Recomputed off the blueprint rather than read off `estimated_minutes`, which adds warm-up."""
+    return sum(
+        _block_seconds(block)
+        for sessions in _sessions_by_phase(climber).values()
+        for session in sessions
+        for block in session.blocks
+    )
 
 
 def _climber_wall_seconds(climber: _Climber, phase: Phase) -> Counter[str]:
@@ -287,20 +306,35 @@ def test_the_copys_STRENGTH_claim_is_ORDER_and_not_FREQUENCY() -> None:
     )
 
 
-def test_the_copys_POWER_ENDURANCE_claim_KEEPS_THE_AEROBIC_WORK_UNDER_IT() -> None:
-    """⚠️ GUARD, per climber as the performance arm is. Pooled, PE topped its block on 13 of 24
-    profiles; PE > endurance on 24 of 24 — thinnest 17.8% vs 13.7%, and 17 profiles take zero."""
-    for phase, (aspect, under) in COPY_CLAIMS_OUT_MINUTES.items():
-        for climber in _SWEEP:
-            seconds = _climber_aspect_seconds(climber, phase)
-            total = sum(seconds.values())
-            assert total, f"no {phase.value} minutes for {climber}; the parametrisation is wrong."
-            assert seconds[aspect] > seconds[under], (
-                f"PHASE_GUIDE[{phase.value}] tells the reader the {under} work underneath is kept "
-                f"small enough never to out-train {aspect}, but a {climber.grade} "
-                f"{climber.discipline.value} climber training {climber.sessions}x a week gets "
-                f"{100 * seconds[under] / total:.1f}% {under} against "
-                f"{100 * seconds[aspect] / total:.1f}% {aspect}."
+def test_PLAN_GOALs_claim_that_MORE_DAYS_IS_A_LONGER_WEEK() -> None:
+    """⚠️ GUARD on the executable half of ruling 31's declaration in `PLAN_GOAL`: "a week with
+    more days on it is a longer week rather than the same hours spread thinner". Every day the
+    climber offers buys a whole session at ruling 25's floor, so plan minutes rise with the day
+    count instead of being divided by it.
+
+    ⚠️ The OTHER half of that sentence — that this lands 2–4× above every band Lattice measured,
+    and that it is KILIAN'S choice and not the sources' — is a DECLARATION, stated in the copy on
+    ruling 17's precedent and carrying its numbers in `climbing.py`'s SESSION_MINUTES_TARGET
+    comment. Nothing in the app can measure Lattice's population, so it is not asserted here.
+    """
+    for _level, discipline, system, grade in _CLIMBERS:
+        by_days = [
+            _climber_plan_seconds(_Climber(discipline, system, grade, sessions))
+            for sessions in _EVERY_SESSION_COUNT
+        ]
+        assert by_days == sorted(by_days) and by_days[-1] > by_days[0], (
+            f"PLAN_GOAL tells a {grade} {discipline.value} climber that a week with more days "
+            f"on it is a longer week, but their whole-plan minutes by day count "
+            f"{_EVERY_SESSION_COUNT} are {[seconds // 60 for seconds in by_days]}."
+        )
+        # ⚠️ The arm that actually bites. Rising totals are already ruling 3's window floor and
+        # ruling 4's rule; only PROPORTIONALITY says the hours were not divided by the days.
+        for days, seconds in zip(_EVERY_SESSION_COUNT, by_days, strict=True):
+            assert seconds * 100 >= days * by_days[0] * PLAN_GOAL_DAY_SHARE_PCT, (
+                f"PLAN_GOAL tells a {grade} {discipline.value} climber that every day they "
+                f"offer buys a whole session rather than the same hours spread thinner, but "
+                f"{days} days give {seconds // 60} min against {days} x "
+                f"{by_days[0] // 60} min for the one-day plan."
             )
 
 

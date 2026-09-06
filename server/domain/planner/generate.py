@@ -49,6 +49,7 @@ from server.domain.planner.climbing import (
     FINGER_ASPECT,
     FINGER_PROTOCOLS,
     INTENSITY_TIERS,
+    LENGTH_FILL_MINUTES,
     MAX_EXPANSION_FACTOR,
     UNLOADING_PHASES,
     WALL_LED_ASPECTS,
@@ -63,7 +64,8 @@ from server.domain.planner.climbing import (
     meets_floor,
     requires_wall,
     session_floor_pct,
-    session_window,
+    session_minutes_target,
+    session_window_across,
     week_ceiling_governs,
     week_climbing_floor_pct,
 )
@@ -101,11 +103,17 @@ from server.domain.planner.selection import (
 )
 from server.domain.vocabulary import ActivityKind, Phase, ProtocolKind
 
-# A session is three blocks, and may carry two more ONLY to reach its type's window floor —
-# never as extra prescription, which is what `MAX_EXPANSION_FACTOR` and the windows exist to stop.
+# Three blocks, two more ONLY to reach the type's window floor, and ruling 27's ONE length-fill
+# block on top of both — never extra prescription, which is what `MAX_EXPANSION_FACTOR` stops.
 MAX_BLOCKS_PER_SESSION: Final = BLOCKS_PER_SESSION + 2
 
-WARMUP_MINUTES: Final = 15
+# Flat, every session, every level (Kilian, 2026-09-05 — ruling 26; was 15). Inside his stated
+# 10-30 range. ⚠️ DECLARED DIVERGENCE, not a fixed defect: at ruling 25's 90-minute beginner
+# session this is 22% of the session against Dylan's 5-10% budget, falling to 13% at 150 min.
+# Per-session-type warm-up was considered and refused — it reads a session's type, which ruling 3
+# put off-limits. It sits OUTSIDE `_Draft.seconds` because it is not a block: `_session_floor`
+# subtracts it from ruling 25's target instead, and it is excluded from every unload ratio.
+WARMUP_MINUTES: Final = 20
 SECONDS_PER_REP: Final = 4
 
 _RECOVERY_TITLE: Final = "Recovery"
@@ -124,6 +132,9 @@ class _Draft:
 
     weekday: int
     session_index: int
+    # Ruling 25's per-level session length, warm-up already subtracted. Required rather than
+    # defaulted: a zero here silently restores the protocol-window-only length it replaces.
+    level_target_seconds: int
     blocks: list[BlockBlueprint] = field(default_factory=list)
     used: list[str] = field(default_factory=list)
     shortfalls: list[Shortfall] = field(default_factory=list)
@@ -191,8 +202,13 @@ def _microcycle(
     """One week, climbing-first and to the band's TARGET rather than to exhaustion, so the
     remainder is genuinely left for the supplementary work the band reserves it for."""
     week_start = microcycle_start(planner_input.start_date, week_no)
+    level_target_seconds = (
+        session_minutes_target(planner_input.discipline, planner_input.current_ordinal)
+        - WARMUP_MINUTES
+    ) * 60
     drafts = [
-        _Draft(weekday=weekday, session_index=index) for index, weekday in enumerate(weekdays)
+        _Draft(weekday=weekday, session_index=index, level_target_seconds=level_target_seconds)
+        for index, weekday in enumerate(weekdays)
     ]
     # A one-session week is climbing and nothing else, so it aims at 100% (issue #84).
     solo = len(drafts) == 1
@@ -222,6 +238,7 @@ def _microcycle(
     if not solo:
         _fill_finger_strength(drafts, planner_input, phase, week_no, band=(low_pct, high_pct))
     _fill_supplementary(drafts, planner_input, phase, week_no, band=(low_pct, high_pct))
+    _fill_session_length(drafts, planner_input, phase, week_no)
     _descend_by_intensity(drafts)
     return MicrocycleBlueprint(
         week_no=week_no,
@@ -462,29 +479,47 @@ def _kinds(draft: _Draft, spec: ExerciseSpec | None = None) -> list[ProtocolKind
     return [rows[index][1] for index in order]
 
 
-def _leading_kind(kinds: list[ProtocolKind]) -> ProtocolKind:
-    """The kind that SETS THE WINDOW and, `_kinds` being rank-ordered, the kind that leads the
-    session too — except in a deload, where movement quality is ordered ahead of it."""
-    return kinds[0]
+def _session_ceiling(draft: _Draft, spec: ExerciseSpec | None = None) -> int:
+    """The seconds a session may not exceed: the widest ceiling any of its blocks brings, or its
+    level's target length if that is longer. Ruling 3 forbids LOWERING a window and every term
+    here only raises one — the leading block's ceiling was 45 minutes on a max-hang session, so
+    no advanced session could reach the 150 ruling 25 asks for however many blocks it spent."""
+    return max(
+        session_window_across(_kinds(draft, spec))[1] * 60,
+        draft.level_target_seconds,
+    )
 
 
 def _fits(draft: _Draft, spec: ExerciseSpec, phase: Phase) -> bool:
     """Whether this block fits under the ceiling of the session type it would produce."""
-    ceiling = session_window(_leading_kind(_kinds(draft, spec)))[1] * 60
-    return draft.seconds + _spec_seconds(spec, phase) <= ceiling
+    return draft.seconds + _spec_seconds(spec, phase) <= _session_ceiling(draft, spec)
+
+
+def _window_floor(draft: _Draft, phase: Phase) -> int:
+    """Ruling 3's floor: the seconds the PROTOCOLS in this session owe, and the only one topped
+    up with ordinary climbing. Zero before the session has a type."""
+    if not draft.blocks:
+        return 0
+    return session_window_across(_kinds(draft))[0] * 60 * session_floor_pct(phase) // 100
 
 
 def _session_floor(draft: _Draft, phase: Phase) -> int:
-    """The seconds a session of this type owes in this phase. Zero before it has a type."""
+    """The seconds a session owes: ruling 25's length for its level scaled by its PHASE's volume
+    factor, or its protocols' window floor where that is longer. Zero before it has a type.
+    ⚠️ `_fill_session_length` reads this and nothing else does. Wiring it into the discretionary
+    passes instead put every band 30 points over its target range, left `_fill_finger_strength`
+    no session with a free slot, and made twelve off-the-wall library rows unreachable."""
     if not draft.blocks:
         return 0
-    return session_window(_leading_kind(_kinds(draft)))[0] * 60 * session_floor_pct(phase) // 100
+    return max(
+        _window_floor(draft, phase), draft.level_target_seconds * session_floor_pct(phase) // 100
+    )
 
 
 def _short_of_its_window(draft: _Draft, phase: Phase) -> bool:
-    """Whether this session is still under the share of its own type's window floor its phase
-    owes — all of it while loading, half of it in an unload week (Kilian, 2026-09-04)."""
-    return draft.seconds < _session_floor(draft, phase)
+    """Whether this session is still under the share of its own type's PROTOCOL window floor its
+    phase owes — all of it while loading, half of it in an unload week (Kilian, 2026-09-04)."""
+    return draft.seconds < _window_floor(draft, phase)
 
 
 def _block_ceiling(
@@ -543,7 +578,7 @@ def _fill_supplementary(
     by the band's target share. A one-session week is climbing only, so it never gets here."""
     if len(drafts) == 1 and drafts[0].blocks:
         # A solo week has no supplementary pass at all, and still owes its type's length.
-        _top_up_with_climbing(drafts, planner_input, phase, week_no)
+        _top_up_with_climbing(drafts, planner_input, phase, week_no, band=band)
         return
     floor_pct = week_climbing_floor_pct(
         planner_input.discipline, planner_input.current_ordinal, phase
@@ -560,7 +595,7 @@ def _fill_supplementary(
         short_only=True,
         cap=BLOCKS_PER_SESSION,
     )
-    _top_up_with_climbing(drafts, planner_input, phase, week_no)
+    _top_up_with_climbing(drafts, planner_input, phase, week_no, band=band)
     _supplementary_rounds(
         drafts,
         planner_input,
@@ -615,7 +650,12 @@ def _supplementary_rounds(
 
 
 def _top_up_with_climbing(
-    drafts: list[_Draft], planner_input: PlannerInput, phase: Phase, week_no: int
+    drafts: list[_Draft],
+    planner_input: PlannerInput,
+    phase: Phase,
+    week_no: int,
+    *,
+    band: tuple[int, int],
 ) -> None:
     """A session still under its own type's window floor is topped up with ORDINARY CLIMBING,
     and with nothing else (Kilian, 2026-09-04): length belongs to the type, and the seconds that
@@ -638,10 +678,59 @@ def _top_up_with_climbing(
                 planner_input,
                 phase,
                 spread=_spread(week_no, draft.session_index),
+                band=band,
             )
             if spec is None:
                 break
             _place(draft, spec, phase=phase, target_seconds=0, climbing=True)
+
+
+def _fill_session_length(
+    drafts: list[_Draft], planner_input: PlannerInput, phase: Phase, week_no: int
+) -> None:
+    """Ruling 27: a session short of ruling 25's length takes ONE block of ordinary climbing,
+    sized to the gap and never shorter than `LENGTH_FILL_MINUTES`.
+
+    Runs LAST, after the hangboard floor and every supplementary round, so it can never take a
+    slot a floor is owed — the failure that returned ruling 15's finger loss when the length was
+    chased earlier. One block, which is why neither `MAX_BLOCKS_PER_SESSION` nor the library's
+    doses had to rise to reach the target. A session with no blocks is a Recovery day and stays
+    one, and a session already at its length is left alone rather than padded.
+    """
+    for draft in drafts:
+        gap = _session_floor(draft, phase) - draft.seconds
+        if gap <= 0:
+            continue
+        spec = _length_pick(
+            drafts,
+            draft,
+            planner_input,
+            phase,
+            spread=_spread(week_no, draft.session_index),
+            band=None,
+        )
+        if spec is None:
+            continue
+        _place(
+            draft,
+            spec,
+            phase=phase,
+            target_seconds=0,
+            climbing=True,
+            fill_seconds=max(gap, LENGTH_FILL_MINUTES * 60),
+        )
+
+
+def _band_top_allows(draft: _Draft, added: int, band: tuple[int, int]) -> bool:
+    """Whether one more WALL block keeps this session at or under its band's top share.
+    Two exemptions, both measured: a session under ruling 3's window floor is topped up on the
+    wall whatever the band says (that floor is the one the band never overrides), and a SOLO
+    week's band is 100/100, so gating it would leave a one-session week at its window floor and
+    cost ruling 4 the climbing a second day is supposed to add."""
+    if band[1] >= 100:
+        return True
+    wall = draft.wall_seconds + added
+    return wall * 100 <= band[1] * (wall + draft.other_seconds)
 
 
 def _length_pick(
@@ -651,6 +740,7 @@ def _length_pick(
     phase: Phase,
     *,
     spread: int,
+    band: tuple[int, int] | None,
 ) -> ExerciseSpec | None:
     """The on-wall block that closes the gap, from the qualities the phase leads on a wall.
 
@@ -732,14 +822,8 @@ def _try_supplementary(
     pref = _wall_pref(
         draft, phase, band=band, wall_seconds=wall_seconds, other_seconds=other_seconds
     )
-    need = (
-        max(_session_floor(draft, phase) - draft.seconds, 0)
-        if _short_of_its_window(draft, phase)
-        else 0
-    )
-    room = (
-        session_window(_leading_kind(_kinds(draft)))[1] * 60 - draft.seconds if draft.blocks else 0
-    )
+    need = max(_window_floor(draft, phase) - draft.seconds, 0)
+    room = _session_ceiling(draft) - draft.seconds if draft.blocks else 0
     filled = _fill_slot(
         intended,
         emphasis,
@@ -800,18 +884,44 @@ def _place(
     target_seconds: int,
     climbing: bool,
     shortfall: Shortfall | None = None,
+    fill_seconds: int | None = None,
 ) -> None:
-    """Append one block, expanding its sets only where extra volume is real training."""
+    """Append one block, expanding its sets only where extra volume is real training.
+    `fill_seconds` is ruling 27's length fill and the ONE dose the generator sizes itself:
+    chunk-sized timed sets of plain climbing, on the open-climbing family's own authored shape
+    (`sets=1, work_seconds=1800`). Sets are never padded to buy it — that is what
+    `MAX_EXPANSION_FACTOR` forbids — and the row's authored intensity and RPE are kept."""
     prescription = _prescription_for(spec, phase)
+    if fill_seconds is not None:
+        # One chunk per set, so the longest set a fill can produce is `LENGTH_FILL_MINUTES` and a
+        # 100-minute gap reads as four laps rather than as one 100-minute lap. Rounded UP, so the
+        # session lands on its length rather than a few seconds under it.
+        chunk = LENGTH_FILL_MINUTES * 60
+        sets = -(-fill_seconds // chunk)
+        prescription = replace(
+            prescription,
+            sets=sets,
+            reps=None,
+            work_seconds=-(-fill_seconds // sets),
+            rest_seconds=None,
+            rest_between_sets_seconds=None,
+        )
     sets = prescription.sets
-    if is_expandable(spec.aspect_key, spec.protocol_kind, phase):
+    if fill_seconds is None and is_expandable(spec.aspect_key, spec.protocol_kind, phase):
         sets = _expanded_sets(
             prescription,
             target_seconds=target_seconds - draft.seconds,
-            cap_seconds=session_window(_leading_kind(_kinds(draft, spec)))[1] * 60 - draft.seconds,
+            cap_seconds=_session_ceiling(draft, spec) - draft.seconds,
         )
     draft.blocks.append(
-        _block(len(draft.blocks) + 1, spec, phase=phase, shortfall=shortfall, sets=sets)
+        _block(
+            len(draft.blocks) + 1,
+            spec,
+            phase=phase,
+            shortfall=shortfall,
+            sets=sets,
+            prescription=prescription,
+        )
     )
     draft.used.append(spec.aspect_key)
     draft.climbing_blocks += 1 if climbing else 0
@@ -849,7 +959,7 @@ def _share_of_window_floor(draft: _Draft, spec: ExerciseSpec | None, pct: int, p
     kinds = _kinds(draft, spec)
     if not kinds:
         return 0
-    floor = session_window(_leading_kind(kinds))[0] * 60
+    floor = session_window_across(kinds)[0] * 60
     return floor * session_floor_pct(phase) * pct // 10_000
 
 
@@ -878,7 +988,7 @@ def _share_allows(
     wall_seconds, other_seconds = week
     if phase in UNLOADING_PHASES or on_wall or not draft.wall_seconds:
         return True
-    if draft.seconds < _session_floor(draft, phase):
+    if _short_of_its_window(draft, phase):
         return True
     if meets_floor(
         wall_seconds=draft.wall_seconds, other_seconds=draft.other_seconds, floor_pct=top_pct
@@ -913,7 +1023,7 @@ def _wall_pref(
         wall_seconds=draft.wall_seconds, other_seconds=draft.other_seconds, floor_pct=band[1]
     ):
         return "never"
-    if _short_of_its_window(draft, phase):
+    if draft.seconds < _window_floor(draft, phase):
         return "first"
     return "last"
 
@@ -1160,9 +1270,11 @@ def _block(
     phase: Phase,
     shortfall: Shortfall | None,
     sets: int,
+    prescription: PrescriptionSpec | None = None,
 ) -> BlockBlueprint:
     """One exercise, with its prescription snapshotted the way `session_block` snapshots it."""
-    prescription = _prescription_for(spec, phase)
+    if prescription is None:
+        prescription = _prescription_for(spec, phase)
     return BlockBlueprint(
         order_index=order_index,
         exercise_key=spec.key,

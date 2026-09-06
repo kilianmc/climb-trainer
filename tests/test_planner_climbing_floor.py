@@ -24,6 +24,7 @@ from server.domain.planner.blueprint import (
     MicrocycleBlueprint,
     PlanBlueprint,
     SessionBlueprint,
+    SetBlueprint,
 )
 from server.domain.planner.climbing import (
     ENERGY_SYSTEM_ASPECTS,
@@ -38,7 +39,7 @@ from server.domain.planner.climbing import (
     week_climbing_floor_pct,
 )
 from server.domain.planner.contract import PlannerInput
-from server.domain.planner.generate import SECONDS_PER_REP, generate
+from server.domain.planner.generate import SECONDS_PER_REP, _Draft, _wall_pref, generate
 from server.domain.planner.selection import BLOCKS_PER_SESSION
 from server.domain.vocabulary import EQUIPMENT, Phase, ProtocolKind
 
@@ -62,11 +63,26 @@ _MAY_EXPAND: frozenset[tuple[str, ProtocolKind]] = frozenset(
 
 # Kilian's target BANDS. This and the two tables below are restated independently of
 # `climbing.py` for `_MAY_EXPAND`'s reason: a guard that reads its constant agrees with it.
+# ⚠️ Only `[0]` is ever asserted — see `_TARGET_BAND_IS_FLOOR_ONLY`. The high edge is kept
+# because it is what the GENERATOR aims below, and deleting it here would hide that it exists.
 _TARGET_BAND: Mapping[Level, tuple[int, int]] = {
     Level.BEGINNER: (85, 90),
     Level.INTERMEDIATE: (75, 82),
     Level.ADVANCED: (50, 65),
 }
+
+_TARGET_BAND_IS_FLOOR_ONLY = (
+    "Ruling 28, Kilian, 2026-09-06, and an EXCEPTION to the rule that a band is asserted at both "
+    "edges. Ruling 27's length fill is plain climbing and is now the largest single item in a "
+    "session, so the honest measured share is 91.6-93.4 / 88.9-90.8 / 86.7-88.2% by level and the "
+    "old ceilings cannot stand. Ruling 14 allows a ceiling to be re-based only if the sabotage it "
+    "exists to catch still breaches the new number: re-based to 94/94/92 with `_wall_pref` forced "
+    'to "first", 36 of 36 BEGINNER rows stayed GREEN, intermediate breached at gap 0 alone and '
+    "advanced by 0.1-1.3 points. A ceiling the sabotage passes catches nothing while looking like "
+    "it does, so there is NO ceiling arm here and none is owed. What `_wall_pref` promises is "
+    "guarded per SESSION instead, by the test named after it. Ruling 17's unload floor took the "
+    "same shape for the same reason, and its name says so too."
+)
 
 # Real max-hang / repeater sessions a LOADING week owes, per band. Beginner is zero by decision:
 # the sources want 6-12 months of climbing first and no column records that history.
@@ -156,7 +172,7 @@ _TAPER_HARD_PER_WEEK: tuple[str, ...] = ("power", "power_endurance")
 
 # ⚠️ Both sources agree an unload week KEEPS 40-60% of a loading week's volume with intensity
 # held: Barrows §3.3 puts the taper at ~50%, Dylan's deload "reduce the volume of everything you
-# do by 40-60%". Warm-up EXCLUDED on both sides — the fixed 15 min is not a block, and counting
+# do by 40-60%". Warm-up EXCLUDED on both sides — the flat `WARMUP_MINUTES` is not a block, and
 # it inflates the ratio by a session-count-dependent amount: the beginner 2x/week taper read
 # 9.8% excluding and 35.6% including before this PR, which would have let a 7-minute taper week
 # pass as a third of a loading week.
@@ -202,6 +218,34 @@ _BASE_WALL_EMPHASIS: tuple[str, ...] = (
     "power_endurance",
     "power",
 )
+
+# Ruling 25's per-level session length, warm-up INCLUDED, and ruling 26's flat warm-up. Both
+# restated independently of `climbing.py` and `generate.py` for `_MAY_EXPAND`'s reason.
+# ⚠️ These are Kilian's numbers, never "the sources'": they are the HIGH end of Horst's per-session
+# bands and above Lattice's measured medians. Warm-up is subtracted below because it is not a
+# block, so it has no prescribed seconds to measure.
+_SESSION_MINUTES_TARGET: Mapping[Level, int] = {
+    Level.BEGINNER: 90,
+    Level.INTERMEDIATE: 120,
+    Level.ADVANCED: 150,
+}
+_WARMUP_MINUTES = 20
+_LENGTH_FILL_MINUTES = 30
+
+
+def _is_length_fill(block: BlockBlueprint, chunk: int) -> bool:
+    """Whether this block has ruling 27's fill SHAPE: uniform timed sets, no rest inside one or
+    between them, and none longer than one chunk. Read off the blueprint and not off a flag,
+    because a flag would be a wire-contract change to carry a test."""
+    return block.rest_between_sets_seconds is None and all(
+        item.target_work_seconds is not None
+        and item.target_reps is None
+        and item.target_rest_seconds is None
+        and 0 < item.target_work_seconds <= chunk
+        and item.target_work_seconds == block.sets[0].target_work_seconds
+        for item in block.sets
+    )
+
 
 # What the two qualities that order ranks last may take of a base block's prescribed minutes.
 # Measured over both beginners at 1-7 sessions: 0.0-17.3% now against 20.6-36.0% before.
@@ -323,60 +367,15 @@ class _AcceptedInversion:
     reason: str
 
 
-# Kilian, 2026-09-04: he takes this inversion at 1 → 2 and at that step ONLY. A row of this class
-# at any other step is a defect rather than an exception, which is why the register keys on both.
-_SOLO_WEEK_AIMS_AT_100_PCT = (
-    "A one-session week is climbing and nothing else and aims at 100% of its minutes on a wall "
-    "(`solo` in `_microcycle`, issue #84's decision), while two sessions put this climber on "
-    "their band's target range instead — 50-62% for the four advanced rows, 75-82% for the "
-    "intermediate one. Two decisions colliding, and no amount of per-session arithmetic "
-    "reconciles them: the fix is either that a solo week stops aiming at 100%, or that this "
-    "invariant is restated for a FIXED band rather than for otherwise-identical inputs. Kilian "
-    "took the inversion instead. Re-measured after §3.4's ordering made a session's window "
-    "follow its hardest block: 500 s (advanced sport, week 11, power), 490 s (advanced boulder, "
-    "week 19, performance), 312 s for both advanced rows in a bouldering-wall-only gym at gap 4 "
-    "(week 11, power) and 32 s (intermediate sport, week 11, power). Two of those five rows are "
-    "new at this step and the wall-only pair is new to the register altogether."
-)
-
-# The two inversions the general-strength re-file leaves at 2 → 3 sessions. Their own reason:
-# `_SOLO_WEEK_AIMS_AT_100_PCT` is about a one-session week and does not reach this step.
-_A_THIRD_SESSION_REMOVES_THE_TOP_UP = (
-    "At two sessions a week the whole week lands in two sessions that both run short of their "
-    "protocol window, so the length pass spends the blocks `MAX_BLOCKS_PER_SESSION` reserves "
-    "and — with `wall_pref` at `first` — spends them ON THE WALL: week 9 gives its Monday a "
-    "FIFTH block and 36 min of limit boulders against a 40 min floor. A third session removes "
-    "the shortfall, every session stops at `BLOCKS_PER_SESSION`, and the third slot's support "
-    "rotation shifts with the session index onto a different exercise — off the wall in week "
-    "10, where 13 min of on-wall core tension becomes 2 min of general strength and the new "
-    "session returns 11 min of technique. Measured: both weeks stay INSIDE their band, 65.0% → "
-    "53.5% and 61.8% → 58.7% against 50-65, so what is traded is a two-session week's top-up "
-    "rather than the climbing the band asks for. The intermediate row this reason also covered "
-    "stopped inverting under §3.4's ordering and was deleted."
-)
-
-# The register. Both arms of the guard read it, and the beginners are absent because they do not
-# invert at all — their 85-90% band is close enough to a solo week's 100% that nothing is traded.
-_ACCEPTED_INVERSIONS: tuple[_AcceptedInversion, ...] = (
-    _AcceptedInversion(
-        "advanced sport 7c, full vocabulary, gap 3", 1, 500, _SOLO_WEEK_AIMS_AT_100_PCT
-    ),
-    _AcceptedInversion(
-        "advanced boulder 7C, full vocabulary, gap 3", 1, 490, _SOLO_WEEK_AIMS_AT_100_PCT
-    ),
-    _AcceptedInversion(
-        "advanced sport 7c, bouldering wall only, gap 4", 1, 312, _SOLO_WEEK_AIMS_AT_100_PCT
-    ),
-    _AcceptedInversion(
-        "advanced boulder 7C, bouldering wall only, gap 4", 1, 312, _SOLO_WEEK_AIMS_AT_100_PCT
-    ),
-    _AcceptedInversion(
-        "intermediate sport 6c, full vocabulary, gap 3", 1, 32, _SOLO_WEEK_AIMS_AT_100_PCT
-    ),
-    _AcceptedInversion(
-        "advanced boulder 7C, full vocabulary, gap 3", 2, 700, _A_THIRD_SESSION_REMOVES_THE_TOP_UP
-    ),
-)
+# ⚠️ EMPTY, and that is a MEASUREMENT: ruling 27's length fill repaired every one of the seven
+# rows this register held. Ruling 22 accepted three of them and its own reverse arm (below) is
+# what deletes them — a row that stops inverting is not left as cover. The seven, with the loss
+# each was accepted at: advanced sport 7c full-vocab gap 3 at 1→2 (500 s) and at 6→7 (120 s),
+# advanced boulder 7C full-vocab gap 3 at 1→2 (490 s) and at 2→3 (700 s), intermediate sport 6c
+# full-vocab gap 3 at 1→2 (184 s), and both intermediate wall-only gap-4 rows at 4→5 (388 s).
+# Their three authored mechanisms are archived verbatim in `~/.claude/plans/ct-item3a-state.md`.
+# Ruling 4 is unchanged and absolute; this register is its exception list and it now has none.
+_ACCEPTED_INVERSIONS: tuple[_AcceptedInversion, ...] = ()
 
 
 def _input(
@@ -582,29 +581,53 @@ def test_no_accepted_monotonicity_exception_has_quietly_become_true() -> None:
 
 
 @pytest.mark.parametrize(("level", "discipline", "system", "label"), _CLIMBERS)
-def test_every_session_lands_inside_its_types_window(
+def test_every_session_lands_inside_its_types_window_AND_ITS_PHASES_LENGTH(
     level: Level, discipline: Discipline, system: GradeSystemKey, label: str
 ) -> None:
-    """The window belongs to the session's TYPE, i.e. its leading block's protocol kind. The
-    ceiling binds in every phase; the floor only in a loading one, or a deload is not one."""
-    del level
+    """Ruling 27, both edges, in EVERY phase — which is the whole of what the fill promises.
+
+    FLOOR: at least the protocols' own window (ruling 3's, the one a top-up chases) and at least
+    ruling 25's length for this level, both scaled by the PHASE's volume factor. Ruling 25's half
+    was not asserted before because the generator did not reach it; ruling 27's fill does, at
+    every session count and in both gyms, so the guard now says so. The floor binds in an unload
+    week too, at half — that scaling is what makes ruling 17's ≥40% hold by construction.
+    ⚠️ CEILING: the widest block's window OR the floor plus ONE `LENGTH_FILL_MINUTES` chunk,
+    whichever is larger. The second term is a real widening of ruling 3's mechanism and it is
+    Kilian's (2026-09-06): the fill is one chunk sized to the gap and never smaller than 30
+    minutes, so a session 12 minutes short of its length ends up ~18 minutes over it, and a
+    plain-climbing block sized by the gap outruns `SESSION_WINDOWS` outright — measured, a
+    beginner session of laps + intervals + straight sets + other ran 97 min against LAPS' 90-min
+    ceiling and an intermediate one 120 against 100. Reading the LEADING block's window alone is
+    the older defect this arm also still catches: a 15-minute limit-boulder block behind a max
+    hang took MAX_HANG's 20-minute floor instead of LIMIT_BOULDER's 40.
+    """
     plan = generate(_input(discipline, system, label, 5, 0b111_1111))
     for mesocycle in plan.mesocycles:
         for microcycle in mesocycle.microcycles:
-            unloading = microcycle.phase in {Phase.DELOAD, Phase.TAPER}
+            pct = 50 if microcycle.phase in {Phase.DELOAD, Phase.TAPER} else 100
+            length = (_SESSION_MINUTES_TARGET[level] - _WARMUP_MINUTES) * pct / 100
             for session in microcycle.sessions:
                 if not session.blocks:
                     continue
                 minutes = sum(_block_seconds(b) for b in session.blocks) / 60
-                kind = session.blocks[0].protocol_kind
-                floor, ceiling = session_window(kind)
-                assert minutes <= ceiling, (
-                    f"week {microcycle.week_no}, a {kind.value}-led session runs "
-                    f"{minutes:.0f} min against a {ceiling} min window."
+                kinds = {block.protocol_kind for block in session.blocks}
+                window = max(session_window(kind)[0] for kind in kinds) * pct / 100
+                floor = max(window, length)
+                ceiling = max(
+                    max(session_window(kind)[1] for kind in kinds), floor + _LENGTH_FILL_MINUTES
                 )
-                assert unloading or minutes >= floor, (
-                    f"week {microcycle.week_no} ({microcycle.phase.value}), a {kind.value}-led "
-                    f"session runs {minutes:.0f} min against a {floor} min floor."
+                widest = max(kinds, key=lambda kind: session_window(kind)[1]).value
+                held = sorted(kind.value for kind in kinds)
+                assert minutes <= ceiling, (
+                    f"week {microcycle.week_no}, a session holding {held} runs "
+                    f"{minutes:.0f} min against the {ceiling:.0f} min its widest block "
+                    f"({widest}) and one {_LENGTH_FILL_MINUTES}-minute fill chunk allow."
+                )
+                assert minutes >= floor, (
+                    f"week {microcycle.week_no} ({microcycle.phase.value}), a session holding "
+                    f"{held} runs {minutes:.0f} min against the {floor:.0f} min its protocols "
+                    f"({window:.0f}) and its phase's share of its level's length "
+                    f"({length:.0f}) owe."
                 )
 
 
@@ -613,12 +636,21 @@ def test_a_fixed_volume_protocol_is_never_padded_and_an_expandable_one_is_capped
     level: Level, discipline: Discipline, system: GradeSystemKey, label: str
 ) -> None:
     """Extra time may not become extra volume where low volume is the protocol. Compared against
-    the AUTHORED prescription, so a grown block shows even when the session still fits."""
+    the AUTHORED prescription, so a grown block shows even when the session still fits.
+
+    ⚠️ Ruling 27's length fill is the ONE dose the generator sizes itself, so it is measured
+    against ruling 27's rule instead of against the library's: uniform timed sets, no rest
+    inside or between them, none longer than one `LENGTH_FILL_MINUTES` chunk, exactly as many
+    sets as that chunk size implies, and at most ONE such block in a session. That arm cannot
+    become a hole for a padded authored block, because it is STRICTER: an authored block that
+    grew would have to lose its rests and land on an exact chunk count to reach it."""
     del level
     plan = generate(_input(discipline, system, label, 5, 0b111_1111))
+    chunk = _LENGTH_FILL_MINUTES * 60
     for mesocycle in plan.mesocycles:
         for microcycle in mesocycle.microcycles:
             for session in microcycle.sessions:
+                fills = 0
                 for block in session.blocks:
                     spec = _BY_KEY[block.exercise_key]
                     authored = next(
@@ -629,11 +661,24 @@ def test_a_fixed_volume_protocol_is_never_padded_and_an_expandable_one_is_capped
                         block.protocol_kind,
                     ) in _MAY_EXPAND and microcycle.phase not in {Phase.DELOAD, Phase.TAPER}
                     ceiling = authored * MAX_EXPANSION_FACTOR if expandable else authored
+                    if len(block.sets) != authored and _is_length_fill(block, chunk):
+                        fills += 1
+                        seconds = sum(item.target_work_seconds or 0 for item in block.sets)
+                        assert len(block.sets) == -(-seconds // chunk), (
+                            f"{block.exercise_key} is ruling 27's fill at {seconds} s and spent "
+                            f"{len(block.sets)} sets, not the {-(-seconds // chunk)} a "
+                            f"{_LENGTH_FILL_MINUTES}-minute chunk implies."
+                        )
+                        continue
                     assert authored <= len(block.sets) <= ceiling, (
                         f"{block.exercise_key} ({block.protocol_kind.value}, "
                         f"{microcycle.phase.value}) is authored at {authored} sets and was "
                         f"prescribed {len(block.sets)}; expandable={expandable}."
                     )
+                assert fills <= 1, (
+                    f"week {microcycle.week_no} has a session carrying {fills} length-fill "
+                    f"blocks; ruling 27 is ONE chunk and then it stops."
+                )
 
 
 def test_the_expandability_table_cannot_widen_without_a_decision() -> None:
@@ -706,15 +751,9 @@ def _hang_sessions(plan: PlanBlueprint, phase_filter: frozenset[Phase] | None) -
 # runs the full 2-7 for completeness but is NOT the exposing dimension, and neither is the
 # weekday mask: all four masks measured identical to a tenth of a point, because a mask moves
 # which weekday a session lands on and never how many blocks it gets.
-# ⚠️ THE ADVANCED CEILING IS 65: A RE-BASELINE OFF A DEFECT, NOT A WEAKENED GUARD. 62 was only
-# green because it averaged in the deload weeks that now answer to `DELOAD_CLIMBING_FLOOR_PCT`;
-# exclude them and `dev` itself measured 62.3% before any of this. Every breach since has been a
-# gap-0 (8-week) plan, where the performance block is half the plan — the ceiling comes back DOWN
-# when the fixed 12-week plan length lands (backlog item 3). 64 went to 65 when §3.4's ordering
-# made a session's window follow its hardest block, lifting the honest advanced band from
-# 58.8-63.3% to 60.6-64.4%: the one combination over 64 is advanced sport at 2 sessions, gap 0,
-# 64.4%. Re-measured on this code, the `_wall_pref` sabotage reaches 68.6/66.3/66.2% (sport) and
-# 66.0/65.8/66.9% (boulder) at gaps 0/3/6, so 65 bites at every sampled gap on both ladders.
+# ⚠️ THE CEILING IS GONE AND THIS IS FLOOR-ONLY BY DESIGN (Kilian, ruling 28, 2026-09-06) — read
+# `_TARGET_BAND_IS_FLOOR_ONLY` below before adding one back. `CLIMBING_TARGET_PCT` still carries
+# both edges because the GENERATOR aims between them; only the assertion is one-sided.
 @pytest.mark.parametrize(("level", "discipline", "system", "label"), _CLIMBERS)
 @pytest.mark.parametrize("sessions", [2, 3, 4, 5, 6, 7])
 @pytest.mark.parametrize("gap", [0, 3, 6])
@@ -726,20 +765,137 @@ def test_the_measured_climbing_share_lands_inside_its_bands_target_range(
     sessions: int,
     gap: int,
 ) -> None:
-    """The band is a TARGET RANGE, not only a floor: round 1 met every floor at 84-91%. DELOAD
-    weeks are out — `DELOAD_CLIMBING_FLOOR_PCT` governs them and the per-week test measures it."""
-    low, high = _TARGET_BAND[level]
+    """FLOOR-ONLY BY DESIGN, and the name says so. DELOAD weeks are out —
+    `DELOAD_CLIMBING_FLOOR_PCT` governs them and the per-week test measures it.
+
+    ⚠️ The absent ceiling is a DECISION, not an omission (ruling 28) — `_TARGET_BAND_IS_FLOOR_ONLY`
+    holds the measurement it rests on, and `test__wall_pref_WITHHOLDS_THE_WALL_from_a_session_at_
+    its_bands_top` is the guard that replaced it. The floor still does the work it was filed for:
+    issue #84 opened at a 28% wall share."""
+    low = _TARGET_BAND[level][0]
     every = _weekly_matrix(generate(_input(discipline, system, label, sessions, 0b111_1111, gap)))
     matrix = [row for row in every if row[1] is not Phase.DELOAD]
     wall = sum(row[2] for row in matrix)
     other = sum(row[3] for row in matrix)
     share = 100 * wall / (wall + other)
-    assert low <= share <= high, (
+    assert share >= low, (
         f"a {level.value} training {sessions}x a week on a grade gap of {gap} "
         f"({len(matrix)} weeks) gets {share:.1f}% of prescribed minutes "
-        f"on a wall, against a target band of {low}-{high}%: {wall // 60} min climbing vs "
-        f"{other // 60} min of everything else. Above the band the supplementary work is "
-        f"crowded out; below it the plan has stopped being a climbing plan."
+        f"on a wall, against a floor of {low}%: {wall // 60} min climbing vs "
+        f"{other // 60} min of everything else. Below the floor the plan has stopped being a "
+        f"climbing plan, which is the state issue #84 was filed in at 28%."
+    )
+
+
+# Ruling 28's replacement guard, and the three regimes are `_wall_pref`'s whole contract. A
+# `_Draft` is built by hand rather than generated: the promise is about the candidate ORDER a
+# supplementary slot is offered, which no finished plan records, and the week share that used to
+# stand in for it stopped separating once the fill became the largest item in a session.
+_WALL_PREF_BAND: tuple[int, int] = (50, 62)
+
+
+# One LAPS block, so `session_window_across` gives the draft a 30-minute window floor and the
+# `first` regime is reachable by making the block short. Kind and seconds only — `_wall_pref`
+# reads `wall_seconds` off the draft, never off the block's equipment.
+def _lapping_draft(work_seconds: int, wall_seconds: int) -> _Draft:
+    """A mid-allocation session of one timed LAPS block, at a chosen wall/other split."""
+    block = BlockBlueprint(
+        order_index=1,
+        exercise_key="arc_traversing",
+        aspect_key="endurance",
+        protocol_kind=ProtocolKind.LAPS,
+        sets=(SetBlueprint(set_index=1, target_work_seconds=work_seconds),),
+    )
+    return _Draft(
+        weekday=0,
+        session_index=0,
+        level_target_seconds=90 * 60,
+        blocks=[block],
+        wall_seconds=wall_seconds,
+    )
+
+
+def test__wall_pref_WITHHOLDS_THE_WALL_from_a_session_at_its_bands_top() -> None:
+    """⚠️ GUARD, and the one that replaced the band's ceiling (ruling 28). Three regimes:
+
+    `never` once a session's own wall share has reached the top of its band — more climbing is
+    the one thing it does not need, and its supplementary slot is offered off-the-wall
+    candidates ONLY. `first` while it is short of its protocols' window floor, so the seconds
+    that close that floor are not spent on a pick the band's hard floor then rejects. `last`
+    otherwise: prefer supplementary work without letting the preference become a filter.
+
+    ⚠️ Read `_TARGET_BAND_IS_FLOOR_ONLY` for why this exists as its own test. The week-share
+    band cannot catch a `_wall_pref` regression any more: 36 of 36 beginner rows stayed green
+    under the sabotage. This does catch it — forcing `return "first"` takes both arms below red.
+    """
+    top = _WALL_PREF_BAND[1]
+    at_the_top = _lapping_draft(work_seconds=2000, wall_seconds=1800)
+    assert (
+        _wall_pref(at_the_top, Phase.BASE, band=_WALL_PREF_BAND, wall_seconds=0, other_seconds=0)
+        == "never"
+    ), (
+        f"a session holding {at_the_top.wall_seconds} s of wall time against "
+        f"{at_the_top.other_seconds} s of everything else is already over the {top}% top of its "
+        f"band, and `_wall_pref` still offers its supplementary slot on-the-wall candidates. "
+        f"That slot is the only room the band reserves for the other work."
+    )
+    short = _lapping_draft(work_seconds=600, wall_seconds=300)
+    assert (
+        _wall_pref(short, Phase.BASE, band=_WALL_PREF_BAND, wall_seconds=0, other_seconds=0)
+        == "first"
+    ), (
+        "a session 600 s into a 1800 s window floor must be offered the wall FIRST: the "
+        "off-the-wall pick is the one the band's hard floor can reject, and a slot spent on a "
+        "rejected pick left a 37-minute limit-bouldering session against a 40-minute floor."
+    )
+    roomy = _lapping_draft(work_seconds=2000, wall_seconds=1000)
+    assert (
+        _wall_pref(roomy, Phase.BASE, band=_WALL_PREF_BAND, wall_seconds=0, other_seconds=0)
+        == "last"
+    ), (
+        f"a session past its window floor at a {roomy.wall_seconds * 100 // roomy.seconds}% wall "
+        f"share is inside its band with room to spare, so supplementary work goes FIRST and the "
+        f"wall stays a fallback. A preference that never yields is the filter that made six "
+        f"exercises unreachable."
+    )
+
+
+# Honest 0 of 1632; with `_wall_pref` forced to "first", 14. The ADVANCED band is where this
+# separates and the granularity is deliberate: its 50-62% band reserves the most room for the
+# other work, so it is the level a lost preference is visible at. Beginner and intermediate
+# sessions legitimately end all-climbing (226 and 44 of 1632), so a zero there would be false.
+_ADVANCED_SESSIONS_WITH_NO_SUPPLEMENTARY_BLOCK = 0
+
+
+@pytest.mark.parametrize("gap", [0, 3, 6])
+@pytest.mark.parametrize("sessions", [2, 3, 5, 7])
+def test_an_ADVANCED_loading_session_always_keeps_room_for_work_off_the_wall(
+    sessions: int, gap: int
+) -> None:
+    """⚠️ GUARD. The behavioural half of `_wall_pref`'s contract, and the half a unit test on a
+    private function cannot reach: it fails if the preference is computed right and then ignored.
+    An advanced session's band leaves 38-50% of it for work that is not climbing, so a session
+    with NOTHING off the wall means a supplementary slot went to the wall that should not have.
+    DELOAD weeks are out for the band test's reason."""
+    lost = []
+    for level, discipline, system, label in _CLIMBERS:
+        if level is not Level.ADVANCED:
+            continue
+        plan = generate(_input(discipline, system, label, sessions, 0b111_1111, gap))
+        for mesocycle in plan.mesocycles:
+            for microcycle in mesocycle.microcycles:
+                if microcycle.phase is Phase.DELOAD:
+                    continue
+                for session in microcycle.sessions:
+                    if session.blocks and not any(not _on_wall(block) for block in session.blocks):
+                        lost.append(
+                            (label, microcycle.week_no, [b.exercise_key for b in session.blocks])
+                        )
+    assert len(lost) == _ADVANCED_SESSIONS_WITH_NO_SUPPLEMENTARY_BLOCK, (
+        f"{len(lost)} advanced loading session(s) at {sessions}x a week on a gap of {gap} hold "
+        f"nothing at all off the wall, against {_ADVANCED_SESSIONS_WITH_NO_SUPPLEMENTARY_BLOCK} "
+        f"measured: {lost[:3]}. `generate.py::_wall_pref` is what reserves that room, and the "
+        f"week-share band can no longer catch its loss — see _TARGET_BAND_IS_FLOOR_ONLY."
     )
 
 

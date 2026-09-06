@@ -10,7 +10,7 @@ bands are Kilian's, set directly, and stored as an **ordinal boundary per discip
 """
 
 import enum
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from types import MappingProxyType
 from typing import Final
 
@@ -132,6 +132,29 @@ CLIMBING_BLOCKS: Final[Mapping[Level, int]] = MappingProxyType(
     {Level.BEGINNER: 3, Level.INTERMEDIATE: 2, Level.ADVANCED: 1}
 )
 
+# How long a session RUNS, warm-up included, by band (Kilian, 2026-09-05 — ruling 25). Banded by
+# LEVEL and never by weekly frequency: no source scales length inversely with frequency and
+# Lattice argues the opposite, naming the dense low-frequency session as a beginner failure mode.
+# ⚠️ These are the HIGH end of Horst's published per-session bands (beginner 1-2.5 h,
+# intermediate 1.5-4 h, advanced 1.5-5 h) and above Lattice's measured medians (~52/55/75-112
+# min), so the choice is KILIAN'S and must never be attributed to "the sources".
+# ⚠️ AND SO IS THE WEEKLY TOTAL, where the divergence is widest (ruling 31, 2026-09-06). These
+# are floors at EVERY session count, so seven available days buy seven whole sessions: 11.1 / 14.1
+# / 17.6 h a week against the 2.6 / 3.2 / 4.4 h Lattice measured in the same grade bands, and
+# above what its V12+ group does. Sourced only in that Horst's per-session bands reach 5 h and his
+# day counts reach 6. Capping the week and dividing it by the days available was CONSIDERED AND
+# REFUSED: a climber who says seven days gets seven real sessions.
+SESSION_MINUTES_TARGET: Final[Mapping[Level, int]] = MappingProxyType(
+    {Level.BEGINNER: 90, Level.INTERMEDIATE: 120, Level.ADVANCED: 150}
+)
+
+# Ruling 27's whole granularity: a session short of the length above takes ONE block of plain
+# climbing, sized to the gap and never shorter than this. ⚠️ KILIAN'S figure, 2026-09-06 -- "if a
+# beginner gets 2 or 3 exercises and 12m left, then propose 30m of climbing, and that is it" -- and
+# no source states one, so it must never be attributed to Barrows or Dylan. The bands above are
+# therefore FLOORS and overshoot by up to this much is correct, not a miss.
+LENGTH_FILL_MINUTES: Final = 30
+
 # Real hangboard sessions a loading week owes, by band. Beginner is zero deliberately: the
 # sources want 6-12 months of consistent climbing first and no column records that history.
 FINGER_SESSIONS_PER_WEEK: Final[Mapping[Level, int]] = MappingProxyType(
@@ -244,9 +267,28 @@ def session_window(protocol_kind: ProtocolKind) -> tuple[int, int]:
     return SESSION_WINDOWS[protocol_kind]
 
 
+def session_window_across(protocol_kinds: Iterable[ProtocolKind]) -> tuple[int, int]:
+    """The window a session holding ALL of these kinds runs in: the widest floor any one of its
+    blocks brings and the widest ceiling. Reading the LEADING block's window alone let a
+    15-minute limit-boulder block sit behind a max hang and take MAX_HANG's 20-minute floor
+    instead of LIMIT_BOULDER's 40. Ruling 3 is untouched: the session's TYPE is still the
+    leading block's, and no window here is lower than the one it replaces."""
+    windows = [SESSION_WINDOWS[kind] for kind in protocol_kinds]
+    return (max(low for low, _ in windows), max(high for _, high in windows))
+
+
+def session_minutes_target(discipline: Discipline, current_ordinal: int) -> int:
+    """How long this climber's session runs, warm-up INCLUDED. `generate.py` subtracts the
+    warm-up, because the warm-up is not a block and only blocks have prescribed seconds."""
+    return SESSION_MINUTES_TARGET[level_for(discipline, current_ordinal)]
+
+
 def session_floor_pct(phase: Phase) -> int:
-    """How much of its type's window floor a session in this phase owes: all of it while
-    loading, `UNLOAD_VOLUME_PCT` of it in a deload or a taper."""
+    """How much of its type's window floor AND of `SESSION_MINUTES_TARGET` a session in this
+    phase owes: all of it while loading, `UNLOAD_VOLUME_PCT` of it in a deload or a taper.
+    ⚠️ Ruling 27 put the LENGTH through here too, which is what makes ruling 17's >=40% unload
+    floor hold BY CONSTRUCTION: an unload session owes half of what a loading one does, so the
+    ratio the guard measures cannot drift below the factor whatever the library doses."""
     return UNLOAD_VOLUME_PCT if phase in UNLOADING_PHASES else 100
 
 

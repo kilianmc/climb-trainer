@@ -354,10 +354,13 @@ class PhaseGuide:
 
 
 # ⚠️ **Describes what THIS generator prescribes, not periodisation in general.** Every claim
-# is checkable in `periodisation.py`, and the plan's own numbers are derived, never restated here.
+# is checkable in the planner, and the plan's own numbers are derived, never restated here.
 PLAN_GOAL: Final = (
     "Every block is three loading weeks and one unloading week. The blocks run in order — base "
-    "first, the strength qualities in the middle, performance last."
+    "first, the strength qualities in the middle, performance last. Every day you tell us you "
+    "can train gets a whole session at your level's length, so a week with more days on it is a "
+    "longer week rather than the same hours spread thinner — that is this plan's own choice, "
+    "and it adds up to more hours a week than most climbers train."
 )
 
 # ⚠️ **Authored prose with sourced further reading: 2-3 links a phase, checked by
