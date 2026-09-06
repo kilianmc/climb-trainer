@@ -11,6 +11,7 @@ nothing reads back at all: treat anything quoted from it as unverified until che
 
 import json
 import re
+import shlex
 import shutil
 import subprocess
 from typing import Final
@@ -129,11 +130,30 @@ def test_every_npm_script_it_tells_you_to_run_exists(source: str) -> None:
     )
 
 
+# What a documented step may leave out: the runner prefix, an env assignment, ruff's default `.`
+# and pytest's `-q` carry no behaviour. A FLAG like `--check` does, so the doc must carry it.
+_RUNNER_TOKENS: Final = frozenset({"npm", "run", "--prefix", "web", "uv"})
+_NO_BEHAVIOUR_TOKENS: Final = frozenset({".", "-q"})
+_ENV_ASSIGNMENT: Final = re.compile(r"^[A-Z][A-Z0-9_]*=")
+
+
+def _behavioural_tokens(step: str) -> tuple[str, ...]:
+    """The tokens that decide what a step DOES. `in` membership let a documented `ruff format`
+    pass against a script running `ruff format --check`; comparing these tuples does not."""
+    return tuple(
+        token
+        for token in shlex.split(step)
+        if token not in _RUNNER_TOKENS
+        and token not in _NO_BEHAVIOUR_TOKENS
+        and not _ENV_ASSIGNMENT.match(token)
+    )
+
+
 def test_the_quality_gate_chain_claims_match_the_real_scripts(lines: list[str]) -> None:
     """The `## Quality gate` block claims what each script chains to. Read it back.
 
     Those three comments are the only place the gate's *order* is written down, and the order is
-    load-bearing (issue #26 put `build` before `test`).
+    load-bearing (issue #26 put `build` before `test`), so the match is EXACT and MONOTONIC.
     """
     scripts = _scripts()
     start = next(i for i, line in enumerate(lines) if line.startswith("## Quality gate"))
@@ -148,14 +168,26 @@ def test_the_quality_gate_chain_claims_match_the_real_scripts(lines: list[str]) 
     assert len(claims) >= 3, f"expected the three chain claims in `## Quality gate`, saw {claims}"
     for name, chain in claims:
         actual = scripts[name]
+        script_steps = [_behavioural_tokens(part) for part in actual.split("&&")]
+        matched = -1
         for step in re.split(r"&&|->|→", chain):
             step = step.strip()
             if not step:
                 continue
-            assert step in actual, (
-                f"CLAUDE.md says `npm run {name}` runs `{step}`, but its script value is "
-                f"{actual!r}. The gate's documented order is the only place that order exists."
+            wanted = _behavioural_tokens(step)
+            # Searching FORWARD from the last hit is what makes the ORDER load-bearing: a
+            # reordered chain still finds every step, but not at an increasing index.
+            found = next(
+                (i for i in range(matched + 1, len(script_steps)) if script_steps[i] == wanted),
+                None,
             )
+            assert found is not None, (
+                f"CLAUDE.md says `npm run {name}` runs `{step}` at this point in the chain, but "
+                f"its script value is {actual!r}. Either no later step matches it EXACTLY (a "
+                f"dropped `--check` does not match), or the documented order is wrong. The "
+                f"gate's documented order is the only place that order exists."
+            )
+            matched = found
 
 
 GIT: Final = shutil.which("git")

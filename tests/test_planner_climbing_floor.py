@@ -84,8 +84,8 @@ _TARGET_BAND_IS_FLOOR_ONLY = (
     "same shape for the same reason, and its name says so too."
 )
 
-# Real max-hang / repeater sessions a LOADING week owes, per band. Beginner is zero by decision:
-# the sources want 6-12 months of climbing first and no column records that history.
+# Real max-hang / repeater sessions a LOADING week owes, per band. Beginner is zero by KILIAN'S
+# DECISION: neither source scales hangboarding by climber level, so never attribute it to them.
 _FINGER_SESSIONS_PER_WEEK: Mapping[Level, int] = {
     Level.BEGINNER: 0,
     Level.INTERMEDIATE: 1,

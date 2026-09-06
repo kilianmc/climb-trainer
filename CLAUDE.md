@@ -57,7 +57,6 @@ One line each; `→` names the archive heading that holds the reasoning.
 - Sync SQLAlchemy 2 with `def` endpoints, psycopg3 never asyncpg, `TIMESTAMPTZ` never naive — the engine's omissions are deliberate and must not be "completed" → *Engine config — the omissions are the point*
 - `DATABASE_URL` is pooled and `DATABASE_URL_UNPOOLED` is direct; they are different hosts and one cannot stand for the other → *Database and compute budget*
 - Never store a grade as a display string alone, and never accept a free-typed grade or a client-supplied `ordinal` → *Prefer CLOSED inputs over free text*
-- Tests run against real Postgres: never substitute SQLite to dodge a skip, and never make the gate *require* a database → *SQLite is disqualified for tests*
 - Expand → deploy → contract, always; never migrate at startup, never `alembic downgrade` against production, and a migration touching `app_user` must be ADDITIVE → *Migrations run out-of-band* · *Production data durability — real accounts, no undo*
 - Migrate production BEFORE promoting, never after, and read the applied revision back afterwards → *Branch model* · *Three traps, all paid for on the day it first ran*
 - `server/seed.py` upserts and never deletes; `server/contentseed.py` is the one seed that may delete `exercise` rows → *Production data durability — real accounts, no undo*
@@ -91,6 +90,7 @@ One line each; `→` names the archive heading that holds the reasoning.
 - The server sends the plan's derived facts and the client never re-implements a training rule → *The plan generator*
 - No dose length closes the `POWER_ENDURANCE` week's aerobic gap: never author or re-dose a shorter aerobic row to chase it, and never re-file the weeks that hold none as a finding — the floor was declined on the merits and the block's own copy admits the gap instead → *No dose length closes the sport aerobic gap*
 - The week's climbing-floor gate in `_fill_finger_strength` never cost a hangboard session and must not be "repaired" — block count did, and ruling 32 opened it by having the pass read `_block_ceiling` → *The finger gate that mattered was BLOCK COUNT*
+- Session length must never scale INVERSELY with training frequency — no source does it, Lattice argues against it, and a low-frequency climber prioritises rather than extends; a 2-day climber's 3.2-5.0 h against a 5-day climber's 8.0-12.5 h is the intended shape, not a defect → *The weekly ceilings, ruling 25's session length and the filler family*
 - There is no abandon endpoint, and an `IntegrityError` is never re-raised → *Persisting a plan*
 - An item is done or not — no skipped state on the server — and completion is the blocks at 100%, never the Finish button → *Logging a session* · *Session player invariants*
 - The `sets` array is a DELTA, not a replacement, and `set_index` is the whole session's 1..N ordinal → *The `sets` array is a DELTA, not a replacement*
@@ -150,10 +150,6 @@ exactly ONE of these, then leaves the inbox:
   2. a TRIPWIRE  — a prohibition nobody could infer from working code (one line, stays above)
   3. the ARCHIVE — reasoning, or history
   4. DELETED     — it did not matter after all  (most lines should end here)
-
-- 2026-09-04 — the base on-wall `endurance` pool is now exactly 7 entries and `_wall_picks` indexes it `(spread + depth) % len(pool)` while `_spread`'s stride is `DAYS_PER_WEEK` = 7, so the week term vanishes mod 7 and a given session slot draws the same exercise every week — a pool length equal to the stride collapses the week dimension entirely. Belongs to **issue #117** ("loading weeks 1, 2 and 3 are byte-identical"): this aliasing is a direct cause. Found while re-measuring PR C's library reach.
-- 2026-09-04 — §3.4's tier ordering makes `anaerobic_capacity` open **157** of the power-endurance block's sessions against power endurance's **32** (was 96 / 67), because An Cap is more intense than Aero Pow and the source orders on intensity. Doctrinally right, and it HARDENS ruling 16: `PHASE_GUIDE[POWER_ENDURANCE]` may not be upgraded to a lead claim until the weekly frequency ceilings (ruling 9, backlog item 3) land. A line, not a change.
-- 2026-09-03 — the `## Quality gate` chain-claim arm in `tests/test_claude_md_claims.py` tests each documented step with `step in script_value`, i.e. substring membership. It therefore catches a RENAMED step but not a REORDERED chain, and a claim of `ruff format` passes against a script running `ruff format --check`. Its own docstring says the documented order is the only place the gate's order exists (issue #26), so the arm does not currently prove that. Found by rewording the `check:server` line to `pyright` during the PR #72-style trim: the rename went red, dropping `--check` stayed green.
 
 ## Where things live
 

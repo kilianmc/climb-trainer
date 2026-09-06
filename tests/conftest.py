@@ -47,7 +47,9 @@ _SKIP_REASON = (
 _REMEDY = (
     "Tests seed reference data and COMMIT, so a non-local database would be written to — "
     "including forcing the demo account's password_hash back to NULL. Use "
-    "`npm run check:server` (which clears DATABASE_URL), or set CT_TEST_DATABASE_URL to a "
+    "`npm run check:server`, which takes DATABASE_URL from CT_TEST_DATABASE_URL and is empty "
+    "when that is unset, so these tests skip rather than run remotely. Or set "
+    "CT_TEST_DATABASE_URL to a "
     "local Postgres. If you genuinely need a remote test database, change LOCAL_DB_HOSTS "
     "in server/db.py deliberately — this guard has no environment-variable override."
 )

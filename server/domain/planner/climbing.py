@@ -155,8 +155,8 @@ SESSION_MINUTES_TARGET: Final[Mapping[Level, int]] = MappingProxyType(
 # therefore FLOORS and overshoot by up to this much is correct, not a miss.
 LENGTH_FILL_MINUTES: Final = 30
 
-# Real hangboard sessions a loading week owes, by band. Beginner is zero deliberately: the
-# sources want 6-12 months of consistent climbing first and no column records that history.
+# Real hangboard sessions a loading week owes, by band. Beginner is zero by KILIAN'S DECISION:
+# neither source scales hangboarding by climber level, so never attribute this one to them.
 FINGER_SESSIONS_PER_WEEK: Final[Mapping[Level, int]] = MappingProxyType(
     {Level.BEGINNER: 0, Level.INTERMEDIATE: 1, Level.ADVANCED: 2}
 )
