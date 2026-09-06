@@ -65,15 +65,13 @@ _ALACTIC_WORK_SECONDS_MAX = 15
 # A rule reaching zero cells is a rule nobody is testing, which is how three prescribed mechanisms
 # shipped byte-identical in this package before anybody measured the counterfactual.
 #
-# ⚠️ RE-BASED for ruling 41's `easy_climbing_flush`, and the shorter-rest arm lost more than a
-# tenth. Re-measured with the row in the tree: longer-work 608 (floor unchanged, it still clears
-# 573), more-rounds 498 → 438, shorter-rest **57 → 15**. The row takes a wall turn in `strength`
-# and `power`, so an exercise that used to land in two loading weeks of the SAME block now often
-# lands in one, and a week-PAIR is what this arm counts. What that costs is named, not averaged:
-# `boulders_on_the_two_minute` contributed 30 of the 57 shorter-rest cells (18 `strength`, 12
-# `power`) and now contributes **none**, so the arm reads `short_rest_boulder_sets` alone — the
-# very row ruling 43 records as carrying no `work_seconds` for its own guard to read. F26 hangs
-# on this rule and this arm is now thin. Raising it back is a sweep widening, not a re-dose.
+# ⚠️ RE-BASED for ruling 41's `easy_climbing_flush`: longer-work 608 (floor unchanged, it clears
+# 573), more-rounds 498 → 438, shorter-rest **57 → 15**, because `boulders_on_the_two_minute`
+# stopped landing in two loading weeks of one block and a week-PAIR is what THIS arm counts.
+#
+# ⚠️ Ruling 50 widened the SAMPLING UNIT instead of raising these: a drawn CELL needs one week
+# where a pair needs two, so the cell arm below reads 189 shorter-rest cells where this reads 15.
+# The pair arm STAYS — a pair is the stronger evidence when it fires.
 _CELLS_INSPECTED = {_LONGER_WORK: 573, _SHORTER_REST: 13, _MORE_ROUNDS: 394}
 
 # Pools of exactly one exercise, which no index can move week to week. Pinned so the arm below
@@ -82,6 +80,38 @@ _CELLS_INSPECTED = {_LONGER_WORK: 573, _SHORTER_REST: 13, _MORE_ROUNDS: 394}
 # in `strength` and in `power`, so both phases gain a singleton wall pool for both disciplines.
 # A second on-wall `endurance` row in either phase takes this back down and must be a decision.
 _SINGLETON_WALL_POOLS = 6
+
+# ⚠️ THE CELL ARM (ruling 50). Floors are 90% of the measured 762 / 189 / 1279 later-loading-week
+# cells, and the shorter-rest figure is a 12.6x widening of the pair arm's 15.
+_LATER_WEEK_CELLS_INSPECTED = {_LONGER_WORK: 685, _SHORTER_REST: 170, _MORE_ROUNDS: 1151}
+
+# ⚠️ Per (rule, phase), because a POOLED floor reads green while a whole phase falls to zero —
+# which is how the shorter-rest arm went quiet in `strength` and `performance`. (drawn, later).
+_COVERAGE_FLOORS: Mapping[tuple[str, Phase], tuple[int, int]] = {
+    (_LONGER_WORK, Phase.BASE): (310, 202),
+    (_LONGER_WORK, Phase.STRENGTH): (340, 232),
+    (_LONGER_WORK, Phase.POWER): (186, 121),
+    (_LONGER_WORK, Phase.POWER_ENDURANCE): (194, 129),
+    (_SHORTER_REST, Phase.STRENGTH): (93, 0),
+    (_SHORTER_REST, Phase.POWER): (146, 89),
+    (_SHORTER_REST, Phase.POWER_ENDURANCE): (48, 16),
+    (_SHORTER_REST, Phase.PERFORMANCE): (97, 64),
+    (_MORE_ROUNDS, Phase.BASE): (220, 171),
+    (_MORE_ROUNDS, Phase.STRENGTH): (329, 234),
+    (_MORE_ROUNDS, Phase.POWER): (388, 283),
+    (_MORE_ROUNDS, Phase.POWER_ENDURANCE): (198, 140),
+    (_MORE_ROUNDS, Phase.PERFORMANCE): (439, 321),
+}
+
+# The one cell the cell arm cannot reach, with its reason as DATA rather than as a comment.
+_NO_LATER_WEEK_COVERAGE: Mapping[tuple[str, Phase], str] = {
+    (_SHORTER_REST, Phase.STRENGTH): (
+        "`boulders_on_the_two_minute` is drawn 104 times in `strength` and EVERY draw is week 1 "
+        "of its block, so there is no later-week dose to read. That is a SELECTION fact and not "
+        "a guard fact: ruling 50 refuses a synthetic plan built to fill it, and pins the cell as "
+        "a known zero instead so it goes RED if selection ever changes."
+    ),
+}
 
 
 @dataclass(frozen=True, slots=True)
@@ -163,6 +193,22 @@ def _doses_by_block(climber: _Climber) -> tuple[tuple[str, Phase, int, str, tupl
     return tuple(rows)
 
 
+@cache
+def _coverage() -> tuple[Mapping[tuple[str, Phase], int], Mapping[tuple[str, Phase], int]]:
+    """Per (rule, phase): loading-week cells the sweep drew, and how many are after week 1."""
+    drawn: Counter[tuple[str, Phase]] = Counter()
+    later: Counter[tuple[str, Phase]] = Counter()
+    for climber in _SWEEP:
+        for _, phase, week_no, key, _ in _doses_by_block(climber):
+            rule = _rule_of(key, phase)
+            if rule is None or _week_of_block(week_no) > _LOADING_WEEKS:
+                continue
+            drawn[(rule, phase)] += 1
+            if _week_of_block(week_no) > 1:
+                later[(rule, phase)] += 1
+    return drawn, later
+
+
 def _rule_of(exercise_key: str, phase: Phase) -> str | None:
     """Ruling 46's key applied to one row: the pair, and `work_seconds` in the split cell."""
     spec = _BY_KEY[exercise_key]
@@ -180,6 +226,56 @@ def _rule_of(exercise_key: str, phase: Phase) -> str | None:
 def _authored(exercise_key: str, phase: Phase) -> PrescriptionSpec:
     """The library's own row for this (exercise, phase), before any week has moved it."""
     return next(p for p in _BY_KEY[exercise_key].prescriptions if p.phase is phase)
+
+
+def _week_of_block(week_no: int) -> int:
+    """This plan week's 1-based ordinal inside its own block: 1-3 loading, then the unload."""
+    return (week_no - 1) % _WEEKS_PER_BLOCK + 1
+
+
+def _operative_rest(dose: tuple[int | None, ...]) -> int:
+    """The LONGER of a dose's two rest fields — ruling 43's reading, and ruling 44's."""
+    return max(seconds or 0 for seconds in dose[2:])
+
+
+def _illegal_step(
+    rule: str, before: tuple[int | None, ...], after: tuple[int | None, ...]
+) -> str | None:
+    """Why `after` is not a legal step from `before` under `rule`, or `None` if it is."""
+    if after == before:
+        return f"the dose did not move at all, {before}; its {rule} rule names a direction."
+    if rule == _LONGER_WORK:
+        work_before: int | None = before[1]
+        work_after: int | None = after[1]
+        if work_before is None or work_after is None:
+            return f"no work period to lengthen, {before} -> {after}."
+        if work_after <= work_before:
+            return f"work {work_before} s -> {work_after} s, and An Cap progresses by LONGER work."
+        for index, field in ((2, "rest_seconds"), (3, "rest_between_sets_seconds")):
+            was: int | None = before[index]
+            now: int | None = after[index]
+            if was is None or now is None:
+                continue
+            if now < was:
+                return (
+                    f"{field} fell {was} s -> {now} s. An Cap progresses by harder or longer "
+                    f"work and never by less rest — §5.2 names it."
+                )
+        return None
+    if rule == _SHORTER_REST:
+        if _operative_rest(after) >= _operative_rest(before):
+            return f"the operative rest did not shorten, {before} -> {after}."
+        return None
+    if rule == _MORE_ROUNDS:
+        if (after[0] or 0) <= (before[0] or 0):
+            return f"rounds {before[0]} -> {after[0]}."
+        if after[1:] != before[1:]:
+            return (
+                f"alactic work only gains ROUNDS. Longer work and shorter rest are both named "
+                f"counterproductive, and this moved {before} -> {after}."
+            )
+        return None
+    return None
 
 
 def _week_pairs(
@@ -218,40 +314,108 @@ def test_a_PROGRESSING_PAIR_never_repeats_its_dose_inside_ONE_BLOCK(rule: str) -
     )
 
 
-def test_ANAEROBIC_CAPACITY_progresses_by_LONGER_WORK_and_NEVER_by_LESS_REST() -> None:
-    """⚠️ GUARD. Barrows §5.2 names a shorter rest as the one thing An Cap must not do."""
-    for climber in _SWEEP:
-        for block_id, phase, key, earlier, before, later, after in _week_pairs(climber):
-            if _rule_of(key, phase) != _LONGER_WORK:
-                continue
-            where = f"{key} in {phase.value} ({block_id}), weeks {earlier} -> {later}"
-            assert after[1] is not None and before[1] is not None, f"{where}: no work to lengthen."
-            assert after[1] > before[1], f"{where}: work {before[1]} s -> {after[1]} s."
-            for index, field in ((2, "rest_seconds"), (3, "rest_between_sets_seconds")):
-                if before[index] is None or after[index] is None:
-                    continue
-                assert after[index] >= before[index], (
-                    f"{where}: {field} fell {before[index]} s -> {after[index]} s. An Cap "
-                    f"progresses by harder or longer work and never by less rest."
-                )
-
-
-def test_LACTIC_POWER_progresses_by_SHORTER_REST_and_ALACTIC_POWER_by_ROUNDS_ONLY() -> None:
-    """⚠️ GUARD, the two rules that share one aspect. Alactic rest and work must not move."""
+def test_EVERY_PAIR_MOVES_THE_WAY_ITS_OWN_RULE_NAMES_and_no_two_rules_agree() -> None:
+    """⚠️ GUARD, the three rules two aspects share. An Cap must never lose rest and alactic
+    work gains ROUNDS only; the directions are `_illegal_step`'s, shared with the cell arm."""
     for climber in _SWEEP:
         for block_id, phase, key, earlier, before, later, after in _week_pairs(climber):
             rule = _rule_of(key, phase)
-            where = f"{key} in {phase.value} ({block_id}), weeks {earlier} -> {later}"
-            if rule == _SHORTER_REST:
-                assert max(x or 0 for x in after[2:]) < max(x or 0 for x in before[2:]), (
-                    f"{where}: the operative rest did not shorten, {before} -> {after}."
-                )
-            if rule == _MORE_ROUNDS:
-                assert after[0] > before[0], f"{where}: rounds {before[0]} -> {after[0]}."
-                assert after[1:] == before[1:], (
-                    f"{where}: alactic work only gains ROUNDS. Longer work and shorter rest are "
-                    f"both named counterproductive, and this moved {before} -> {after}."
-                )
+            if rule is None:
+                continue
+            reason = _illegal_step(rule, before, after)
+            assert reason is None, (
+                f"{key} in {phase.value} ({block_id}), weeks {earlier} -> {later}: {reason}"
+            )
+
+
+@pytest.mark.parametrize("rule", sorted(_LATER_WEEK_CELLS_INSPECTED))
+def test_a_DRAWN_CELL_AFTER_WEEK_ONE_LEFT_ITS_AUTHORED_DOSE_BEHIND(rule: str) -> None:
+    """⚠️ GUARD, ruling 50, per `(block, phase, exercise, week)`: the library's authored row
+    against `generate()`'s emitted one. A week-PAIR needs the same row drawn twice in one
+    block and `_pool_index` rotates the pool by week, so most rows never made a pair at all —
+    `broken_circuit_redpoint` made 0 from 136 drawn blocks, which is how F26's dose reached
+    production with no guard reading it. A drawn CELL needs one week, and week 1 is the
+    authored dose by construction (the arm below pins that), so weeks 2-3 are checkable
+    against the library with no second draw."""
+    inspected = 0
+    for climber in _SWEEP:
+        for block_id, phase, week_no, key, dose in _doses_by_block(climber):
+            if _rule_of(key, phase) != rule or not 1 < _week_of_block(week_no) <= _LOADING_WEEKS:
+                continue
+            inspected += 1
+            spec = _authored(key, phase)
+            before = (
+                spec.sets,
+                spec.work_seconds,
+                spec.rest_seconds,
+                spec.rest_between_sets_seconds,
+            )
+            reason = _illegal_step(rule, before, dose)
+            assert reason is None, (
+                f"{key} in {phase.value} week {_week_of_block(week_no)} of its block "
+                f"({block_id}, plan week {week_no}) is dosed {dose} against the library's own "
+                f"{before}: {reason}"
+            )
+    assert inspected >= _LATER_WEEK_CELLS_INSPECTED[rule], (
+        f"only {inspected} {rule} cells inspected against the "
+        f"{_LATER_WEEK_CELLS_INSPECTED[rule]} floor. A cell arm that stops reading is worse "
+        f"than a thin pair arm, because it is the one that reaches every drawn row."
+    )
+
+
+def test_a_DRAWN_CELL_IN_WEEK_ONE_OF_ITS_BLOCK_IS_THE_LIBRARYS_OWN_DOSE() -> None:
+    """⚠️ GUARD, the arm above's premise. Week 1 progresses nothing, so it is the baseline
+    every later week is measured against."""
+    inspected = 0
+    for climber in _SWEEP:
+        for block_id, phase, week_no, key, dose in _doses_by_block(climber):
+            if _rule_of(key, phase) is None or _week_of_block(week_no) != 1:
+                continue
+            inspected += 1
+            spec = _authored(key, phase)
+            assert dose == (
+                spec.sets,
+                spec.work_seconds,
+                spec.rest_seconds,
+                spec.rest_between_sets_seconds,
+            ), (
+                f"{key} in {phase.value} week 1 of {block_id} is dosed {dose} against the "
+                f"authored {spec}; a block's first loading week takes the row as written."
+            )
+    assert inspected > 1000, f"only {inspected} first weeks inspected; the arm is not reading."
+
+
+def test_the_PER_PHASE_COVERAGE_REGISTER_MATCHES_THE_SWEEP_BOTH_WAYS() -> None:
+    """⚠️ GUARD, ruling 50. A pooled floor is green while a phase falls to zero."""
+    drawn, later = _coverage()
+    registered = set(_COVERAGE_FLOORS)
+    assert set(drawn) == registered, (
+        f"drawn but unregistered: "
+        f"{sorted((r, p.value) for r, p in set(drawn) - registered)}; "
+        f"registered but no longer drawn: "
+        f"{sorted((r, p.value) for r, p in registered - set(drawn))}. Every (rule, "
+        f"phase) the sweep reaches needs a floor, or a phase can lose its coverage in silence."
+    )
+    for cell, (drawn_floor, later_floor) in _COVERAGE_FLOORS.items():
+        rule, phase = cell
+        assert drawn[cell] >= drawn_floor and later[cell] >= later_floor, (
+            f"{rule} in {phase.value} is drawn {drawn[cell]} times ({later[cell]} of them after "
+            f"week 1) against a floor of {drawn_floor} ({later_floor}). Selection may drift, but "
+            f"not far enough to buy silence for a whole phase."
+        )
+
+
+def test_the_PHASES_WITH_NO_LATER_WEEK_DOSE_TO_READ_ARE_THE_DECLARED_ONES() -> None:
+    """⚠️ GUARD, ruling 50: the cell arm's own blind spot, pinned as an exact zero."""
+    drawn, later = _coverage()
+    unreachable = {cell for cell in drawn if later[cell] == 0}
+    assert unreachable == set(_NO_LATER_WEEK_COVERAGE), (
+        f"unreachable by the cell arm and undeclared: "
+        f"{sorted((r, p.value) for r, p in unreachable - set(_NO_LATER_WEEK_COVERAGE))}; "
+        f"declared unreachable but now readable: "
+        f"{sorted((r, p.value) for r, p in set(_NO_LATER_WEEK_COVERAGE) - unreachable)}. "
+        f"{' '.join(_NO_LATER_WEEK_COVERAGE.values())}"
+    )
 
 
 def test_the_RULE_IS_KEYED_ON_THE_PAIR_and_could_NEVER_be_read_off_the_ASPECT() -> None:

@@ -1322,31 +1322,41 @@ EXERCISES: Final[tuple[ExerciseSpec, ...]] = (
         instructions=(
             "Set yourself a hard circuit of around twenty-five moves, split it into three or "
             "four sections, and work the sections one at a time before ever trying the whole "
-            "thing. Then link them: two sections, then three, then the lot. It is redpointing "
-            "as a training method rather than as an outcome, and the reason it belongs in a "
-            "gym is that you can build the circuit to be exactly what you are bad at."
+            "thing. Then link them: two sections, then three, then the lot. The prescribed "
+            "seconds are that whole circuit at climbing pace, so spend them on the sections "
+            "and the part-links until the whole thing goes, and on one continuous lap after "
+            "that. It is redpointing as a training method rather than as an outcome, and the "
+            "reason it belongs in a gym is that you can build the circuit to be exactly what "
+            "you are bad at."
         ),
         substitution_hint=(
             "Nothing long enough set? Build the circuit out of holds from three problems "
             "that share a panel."
         ),
+        # ⚠️ THE APP'S OWN CONVERSION, not a sourced figure (ruling 50). §5.4 doses this
+        # circuit by moves and sections only — "~25-move circuit split into 3-4 sections" —
+        # and gives it no seconds, no rest and no set count, so 90 s is this app reading 25
+        # moves at the 1.50-4.17 s/move rate §7's Aero Pow and An Cap rows state for OTHER
+        # attributes. No source states a rate for An Pow. The band is asserted rather than
+        # left as prose by `tests/test_exercise_library.py`, and 25 s was 1.00 s/move — the
+        # move count leaked into a seconds field, which is what F26 was.
         prescriptions=(
             PrescriptionSpec(
                 Phase.STRENGTH,
                 sets=4,
-                work_seconds=25,
+                work_seconds=90,
                 rest_between_sets_seconds=240,
                 target_rpe=8,
             ),
             PrescriptionSpec(
                 Phase.POWER,
                 sets=4,
-                work_seconds=25,
+                work_seconds=90,
                 rest_between_sets_seconds=300,
                 target_rpe=9,
             ),
-            # The linking stage: fewer, longer pieces on a longer rest, which is what turns
-            # the worked sections into one continuous effort.
+            # The linking stage: the same 90 s spent as one continuous lap rather than on
+            # sections, on fewer attempts and a longer rest.
             PrescriptionSpec(
                 Phase.PERFORMANCE,
                 sets=3,
