@@ -1899,6 +1899,36 @@ EXERCISES: Final[tuple[ExerciseSpec, ...]] = (
         ),
     ),
     ExerciseSpec(
+        key="long_boulder_link_ups",
+        name="Long boulder link-ups",
+        aspect_key="endurance",
+        protocol_kind=ProtocolKind.LAPS,
+        equipment_keys=("bouldering_wall",),
+        contraindication_keys=("elbow",),
+        instructions=(
+            "Link two or three problems into one long boulder and climb it end to end, then "
+            "step off, rest, and do it again. Twenty to thirty moves a lap, sustained enough "
+            "that the forearms fill and never so hard that a move is in doubt: stop each lap "
+            "while you could still have done another, and take the grade down rather than the "
+            "length. This is the aerobic layer underneath a power-endurance week, not a burn "
+            "\u2014 the burn is what the four-by-fours are for."
+        ),
+        substitution_hint=(
+            "Nothing long enough set? Climb a problem, reverse it, and climb it again."
+        ),
+        # The only aerobic row a BOULDERER can be given in this block: the other four all
+        # require rope gear, so `discipline` is deliberately NULL and the gear is a boulder wall.
+        prescriptions=(
+            PrescriptionSpec(
+                Phase.POWER_ENDURANCE,
+                sets=3,
+                work_seconds=300,
+                rest_between_sets_seconds=300,
+                target_rpe=6,
+            ),
+        ),
+    ),
+    ExerciseSpec(
         key="continuous_rope_laps",
         name="Continuous rope laps",
         aspect_key="endurance",
@@ -3155,6 +3185,115 @@ EXERCISES: Final[tuple[ExerciseSpec, ...]] = (
             ),
         ),
     ),
+    # ------------------------------------------------- open climbing (the length fill)
+    # ⚠️ **"Climb for fun is also training" is KILIAN'S doctrine (2026-09-06, ruling 29) and must
+    # never be attributed to Barrows or Dylan** — neither source has an unstructured row at all.
+    # It is also the answer to why these four carry no dose progression and no `intensity_pct`:
+    # they are TIME ON THE WALL, not a protocol, and `generate.py::_place` re-sizes the authored
+    # 30 minutes to the gap the session is short by. `ProtocolKind.OTHER` says the same thing —
+    # there is no protocol here — and keeps `SESSION_WINDOWS`' lowest floor, so appending one
+    # cannot raise the window a session is then measured against.
+    # ⚠️ The FAMILY is what makes ruling 30 work, and one row could not. `instructions` sits on
+    # the spec and not on the per-phase prescription, so per-phase cue text has exactly one home:
+    # a separate row per intention. Each one is attributed to the quality its block is named
+    # after, so filling a block adds minutes to that quality rather than to a rival — which is
+    # what stops the fill making another quality out-train the block (ruling 30's second
+    # invariant). `open_climbing_for_fun` is prescribed in EVERY phase because it is the
+    # universal fallback: it carries no contraindication and no quality either weekly frequency
+    # ceiling governs, so the fill is a FILTER with a guaranteed candidate rather than a ranking.
+    ExerciseSpec(
+        key="open_climbing_easy_mileage",
+        name="Open climbing: easy mileage",
+        aspect_key="endurance",
+        protocol_kind=ProtocolKind.OTHER,
+        equipment_keys=("bouldering_wall",),
+        contraindication_keys=("elbow",),
+        instructions=(
+            "Climb for the prescribed minutes and pick it yourself — problems, routes, "
+            "whatever you feel like getting on. These weeks are about endurance and time on the "
+            "wall, so "
+            "the only thing that matters is that you keep climbing: choose things you can do "
+            "a lot of rather than things you have to fight. Climbing for fun is training too, "
+            "and this is the block where it counts for the most."
+        ),
+        prescriptions=(PrescriptionSpec(Phase.BASE, sets=1, work_seconds=1800, target_rpe=4),),
+    ),
+    ExerciseSpec(
+        key="open_climbing_power_endurance",
+        name="Open climbing: get pumped",
+        aspect_key="power_endurance",
+        protocol_kind=ProtocolKind.OTHER,
+        equipment_keys=("bouldering_wall",),
+        contraindication_keys=("elbow",),
+        instructions=(
+            "Climb for the prescribed minutes, your choice of what — but this block is about "
+            "power endurance, so go looking for the boulders and routes that test it the "
+            "most: long, sustained, no rest positions, the ones that leave the forearms full "
+            "by the top. Climbing for fun is training too; here the fun is picking your own "
+            "way to get pumped."
+        ),
+        prescriptions=(
+            PrescriptionSpec(Phase.POWER_ENDURANCE, sets=1, work_seconds=1800, target_rpe=6),
+        ),
+    ),
+    ExerciseSpec(
+        key="open_climbing_hard_moves",
+        name="Open climbing: hardest moves",
+        aspect_key="power",
+        protocol_kind=ProtocolKind.OTHER,
+        equipment_keys=("bouldering_wall",),
+        contraindication_keys=("fingers", "elbow", "shoulder"),
+        instructions=(
+            "Climb for the prescribed minutes on whatever you like, and let this block pick "
+            "the flavour: the hardest individual moves you can do. Few tries, long rests, "
+            "nothing that turns into a pump: power is what these weeks buy and it is the first "
+            "thing to go when you are tired, so stop a problem the moment it stops feeling "
+            "explosive. Climbing for fun is "
+            "training too, so choose the hard thing you actually want to try."
+        ),
+        prescriptions=(
+            PrescriptionSpec(Phase.STRENGTH, sets=1, work_seconds=1800, target_rpe=7),
+            PrescriptionSpec(Phase.POWER, sets=1, work_seconds=1800, target_rpe=7),
+            PrescriptionSpec(Phase.PERFORMANCE, sets=1, work_seconds=1800, target_rpe=7),
+            # RPE 8 and not 7: §3.3 holds a taper's intensity at the loading value or takes
+            # it higher, and volume is the only thing an unload week cuts.
+            PrescriptionSpec(Phase.TAPER, sets=1, work_seconds=1800, target_rpe=8),
+        ),
+    ),
+    ExerciseSpec(
+        key="open_climbing_for_fun",
+        name="Open climbing: your call",
+        aspect_key="technique",
+        protocol_kind=ProtocolKind.OTHER,
+        equipment_keys=("bouldering_wall",),
+        instructions=(
+            "Climb for the prescribed minutes with no protocol at all: your choice of "
+            "problems, your choice of how hard, and you stop when the time is up. Move well "
+            "and enjoy it: this is technique you are practising whether you mean to or not, "
+            "climbing for fun is also training, and this block is here so that "
+            "a session with time left over gets more climbing rather than more exercises."
+        ),
+        prescriptions=(
+            PrescriptionSpec(Phase.BASE, sets=1, work_seconds=1800, target_rpe=4),
+            PrescriptionSpec(Phase.STRENGTH, sets=1, work_seconds=1800, target_rpe=4),
+            PrescriptionSpec(Phase.POWER, sets=1, work_seconds=1800, target_rpe=4),
+            PrescriptionSpec(Phase.POWER_ENDURANCE, sets=1, work_seconds=1800, target_rpe=4),
+            PrescriptionSpec(Phase.PERFORMANCE, sets=1, work_seconds=1800, target_rpe=4),
+            PrescriptionSpec(Phase.DELOAD, sets=1, work_seconds=1800, target_rpe=3),
+            PrescriptionSpec(Phase.TAPER, sets=1, work_seconds=1800, target_rpe=4),
+        ),
+    ),
+)
+
+# Ruling 29's filler family. `selection.py::ordinary()` subtracts exactly this set from every
+# pool the ordinary passes draw from, so it can only arrive as ruling 27's length fill.
+OPEN_CLIMBING_KEYS: Final[frozenset[str]] = frozenset(
+    {
+        "open_climbing_easy_mileage",
+        "open_climbing_power_endurance",
+        "open_climbing_hard_moves",
+        "open_climbing_for_fun",
+    }
 )
 
 # The (phase, aspect) pairs the library deliberately leaves unprescribable. The guard test asserts
@@ -3269,3 +3408,17 @@ CELLS_WITH_NO_GEARLESS_OPTION: Final[tuple[tuple[Phase, str], ...]] = (
     (Phase.POWER, "antagonist_prehab"),
     (Phase.TAPER, "antagonist_prehab"),
 )
+
+
+def _validate_open_climbing_keys() -> None:
+    """`OPEN_CLIMBING_KEYS` names real rows, checked at import on `_require`'s reason: a typo
+    here is a filler that silently rejoins the ordinary pools instead of failing loudly."""
+    authored = {spec.key for spec in EXERCISES}
+    if not OPEN_CLIMBING_KEYS <= authored:
+        raise ValueError(
+            f"OPEN_CLIMBING_KEYS must name exercises this module authors. Not a key: "
+            f"{sorted(OPEN_CLIMBING_KEYS - authored)}."
+        )
+
+
+_validate_open_climbing_keys()

@@ -51,17 +51,51 @@ COPY_CLAIMS_GOES_FIRST: tuple[Phase, str] = (Phase.STRENGTH, "finger_strength")
 _HANGBOARD_PROTOCOLS = frozenset({ProtocolKind.MAX_HANG, ProtocolKind.REPEATERS})
 _MAY_PRECEDE_A_HANG = _HANGBOARD_PROTOCOLS | {ProtocolKind.LIMIT_BOULDER}
 
-# "the aerobic work underneath… never enough to out-train the quality the block is named after":
-# a PAIRWISE minutes claim, and the only one of that block's rankings true on every profile.
-COPY_CLAIMS_OUT_MINUTES: dict[Phase, tuple[str, str]] = {
-    Phase.POWER_ENDURANCE: ("power_endurance", "endurance")
-}
+# "at three days or fewer ... some weeks hold none of it at all, and from four days up every
+# week carries some": the day count the re-authored sentence names as its boundary.
+COPY_CLAIMS_AEROBIC_FROM_DAYS: int = 4
+
+# "At five days a week and under, power endurance is still the biggest thing in the block; at
+# six or seven days that ordinary climbing is": one boundary, and the aspect on each side of it.
+COPY_CLAIMS_BIGGEST_UNTIL_DAYS: int = 5
+COPY_CLAIMS_BIGGEST_BY_DAYS: tuple[str, str] = ("power_endurance", "technique")
+
+# Ruling 29's filler family, RESTATED and never imported: "ordinary climbing" in the copy means
+# these rows, and an arm that asked `selection.py` which rows it treats as a fill would borrow
+# its expectation from the code it checks — round 5 shipped exactly that mistake once.
+_OPEN_CLIMBING_KEYS: frozenset[str] = frozenset(
+    {
+        "open_climbing_easy_mileage",
+        "open_climbing_power_endurance",
+        "open_climbing_hard_moves",
+        "open_climbing_for_fun",
+    }
+)
 
 # "power sits last on purpose", `PHASE_GUIDE[base]`, measured against the three qualities the
 # same sentence says base is for. The share ceiling in test_planner_climbing_floor.py is its twin.
 COPY_CLAIMS_LAST: dict[Phase, tuple[str, tuple[str, ...]]] = {
     Phase.BASE: ("power", ("endurance", "technique", "anaerobic_capacity"))
 }
+
+# The defect this arm was written to register, kept as the number it is measured against: 23 of
+# the 24 swept profiles lost general strength from a base block at BOTH weakness values.
+_WEAKNESS_STARVED_BASE_PROFILES_BEFORE_RULING_21 = 23
+_A_WEAKNESS_YIELDS_SLOT_ONE = (
+    "Nothing measured this before: every plan-shape test in the repo passed "
+    "`weakness_aspect_key=None`, and at None the claim held on 24 of 24. Ruling 21 changed the "
+    "GENERATOR and kept the copy: slot 1 yields the declared weakness one turn in "
+    "`WEAKNESS_YIELDS_SLOT_ONE_EVERY`, and a yielded turn rotates over the aspects with no "
+    "other route into a plan (`generate.py::_no_other_route`) rather than over the whole "
+    "secondary pool, which a three-week base block is too short to walk. A weakness is still "
+    "the organising principle both sources make it; it may not delete a quality to be one."
+)
+
+# The other two claims of `PHASE_GUIDE[base]`'s closing sentence. "Endurance takes more of these
+# weeks' time on the wall than any other quality" is a WALL claim; "general strength and
+# anaerobic capacity both start here" is a presence claim over all base minutes.
+COPY_CLAIMS_BASE_LEAD: str = "endurance"
+COPY_CLAIMS_BASE_START: tuple[str, ...] = ("general_strength", "anaerobic_capacity")
 
 # Every aspect a phase's copy tells the reader is NOT prescribed there.
 COPY_CLAIMS_ABSENT: dict[Phase, tuple[str, ...]] = {
@@ -80,15 +114,27 @@ MAX_LINKS = 3
 # as every plan-shape test runs: 24 plans, about a second, cached across every arm below.
 _SESSION_COUNTS: tuple[int, ...] = (2, 3, 5, 7)
 
+# Ruling 31 made the DAY COUNT the subject of the power-endurance block's copy and of PLAN_GOAL's
+# weekly-volume sentence, so those two arms sweep all seven counts rather than these four.
+_EVERY_SESSION_COUNT: tuple[int, ...] = (1, 2, 3, 4, 5, 6, 7)
+
+# "every day you tell us you can train gets a whole session" — the share of a solo plan's minutes
+# each extra day must buy. Measured 1.00-1.02x of it at every count, so 90% is honest slack.
+PLAN_GOAL_DAY_SHARE_PCT: int = 90
+
 
 @dataclass(frozen=True, slots=True)
 class _Climber:
-    """One generated plan's inputs, frozen so `@cache` can key generation on it."""
+    """One generated plan's inputs, frozen so `@cache` can key generation on it.
+
+    ⚠️ `weakness` is a FIELD and therefore part of that key. A weakness dimension left out of it
+    would hand every arm below the `None` plan and call the difference measured."""
 
     discipline: Discipline
     system: GradeSystemKey
     grade: str
     sessions: int
+    weakness: str | None = None
 
 
 _SWEEP: tuple[_Climber, ...] = tuple(
@@ -98,17 +144,66 @@ _SWEEP: tuple[_Climber, ...] = tuple(
 )
 
 
+# The sweep the per-climber copy arms read, with the DECLARED WEAKNESS as a third dimension:
+# `PHASE_GUIDE` is the same copy whatever the climber declared, so a claim it makes has to hold
+# at every value of the largest categorical lever in the generator. 72 plans, cached.
+_WEAKNESS_SWEEP: tuple[_Climber, ...] = tuple(
+    replace(climber, weakness=weakness)
+    for climber in _SWEEP
+    for weakness in (None, "power", "power_endurance")
+)
+
+
+_PE_SWEEP: tuple[_Climber, ...] = tuple(
+    _Climber(discipline, system, grade, sessions)
+    for _level, discipline, system, grade in _CLIMBERS
+    for sessions in _EVERY_SESSION_COUNT
+)
+
+
 @cache
-def _sessions_by_phase(climber: _Climber) -> Mapping[Phase, tuple[SessionBlueprint, ...]]:
-    """Every session of one generated plan, grouped by the phase of the week it sits in."""
+def _weeks_by_phase(climber: _Climber) -> Mapping[Phase, tuple[tuple[SessionBlueprint, ...], ...]]:
+    """One generated plan grouped by phase with the WEEKS inside it kept SEPARATE.
+
+    ⚠️ `_sessions_by_phase` pools these and a claim about "every week" cannot be read off the
+    pool: at four days a week and up every profile holds aerobic work SOMEWHERE in the
+    power-endurance block (18 of 18) while 12 of those same 72 weeks hold none."""
     plan = generate(
-        _input(climber.discipline, climber.system, climber.grade, climber.sessions, 0b111_1111)
+        _input(
+            climber.discipline,
+            climber.system,
+            climber.grade,
+            climber.sessions,
+            0b111_1111,
+            weakness=climber.weakness,
+        )
     )
-    grouped: dict[Phase, list[SessionBlueprint]] = {}
+    grouped: dict[Phase, list[tuple[SessionBlueprint, ...]]] = {}
     for mesocycle in plan.mesocycles:
         for microcycle in mesocycle.microcycles:
-            grouped.setdefault(microcycle.phase, []).extend(microcycle.sessions)
-    return {phase: tuple(sessions) for phase, sessions in grouped.items()}
+            grouped.setdefault(microcycle.phase, []).append(microcycle.sessions)
+    return {phase: tuple(weeks) for phase, weeks in grouped.items()}
+
+
+def _sessions_by_phase(climber: _Climber) -> Mapping[Phase, tuple[SessionBlueprint, ...]]:
+    """Every session of one generated plan, grouped by the phase of the week it sits in."""
+    return {
+        phase: tuple(session for week in weeks for session in week)
+        for phase, weeks in _weeks_by_phase(climber).items()
+    }
+
+
+def _weeks_holding(climber: _Climber, phase: Phase, aspect_key: str) -> tuple[bool, ...]:
+    """Whether each WEEK of `phase` carries any block of `aspect_key`, in plan order."""
+    return tuple(
+        any(block.aspect_key == aspect_key for session in week for block in session.blocks)
+        for week in _weeks_by_phase(climber).get(phase, ())
+    )
+
+
+def _label(climber: _Climber) -> str:
+    """One climber of a sweep, as a failure message names it."""
+    return f"{climber.grade} {climber.discipline.value} {climber.sessions}x"
 
 
 def _phase_sessions(phase: Phase) -> list[SessionBlueprint]:
@@ -129,6 +224,27 @@ def _climber_aspect_seconds(climber: _Climber, phase: Phase) -> Counter[str]:
     for session in _sessions_by_phase(climber).get(phase, ()):
         for block in session.blocks:
             seconds[block.aspect_key] += _block_seconds(block)
+    return seconds
+
+
+def _climber_plan_seconds(climber: _Climber) -> int:
+    """Every prescribed second of one climber's WHOLE plan — what "a longer week" is measured in.
+    Recomputed off the blueprint rather than read off `estimated_minutes`, which adds warm-up."""
+    return sum(
+        _block_seconds(block)
+        for sessions in _sessions_by_phase(climber).values()
+        for session in sessions
+        for block in session.blocks
+    )
+
+
+def _climber_wall_seconds(climber: _Climber, phase: Phase) -> Counter[str]:
+    """`_climber_aspect_seconds`' wall-only twin, for the half of the sentence that says wall."""
+    seconds: Counter[str] = Counter()
+    for session in _sessions_by_phase(climber).get(phase, ()):
+        for block in session.blocks:
+            if _on_wall(block):
+                seconds[block.aspect_key] += _block_seconds(block)
     return seconds
 
 
@@ -237,34 +353,201 @@ def test_the_copys_STRENGTH_claim_is_ORDER_and_not_FREQUENCY() -> None:
     )
 
 
-def test_the_copys_POWER_ENDURANCE_claim_KEEPS_THE_AEROBIC_WORK_UNDER_IT() -> None:
-    """⚠️ GUARD, per climber as the performance arm is. Pooled, PE topped its block on 13 of 24
-    profiles; PE > endurance on 24 of 24 — thinnest 17.8% vs 13.7%, and 17 profiles take zero."""
-    for phase, (aspect, under) in COPY_CLAIMS_OUT_MINUTES.items():
-        for climber in _SWEEP:
-            seconds = _climber_aspect_seconds(climber, phase)
-            total = sum(seconds.values())
-            assert total, f"no {phase.value} minutes for {climber}; the parametrisation is wrong."
-            assert seconds[aspect] > seconds[under], (
-                f"PHASE_GUIDE[{phase.value}] tells the reader the {under} work underneath is kept "
-                f"small enough never to out-train {aspect}, but a {climber.grade} "
-                f"{climber.discipline.value} climber training {climber.sessions}x a week gets "
-                f"{100 * seconds[under] / total:.1f}% {under} against "
-                f"{100 * seconds[aspect] / total:.1f}% {aspect}."
+def test_the_copys_POWER_ENDURANCE_AEROBIC_claim_is_a_DAY_COUNT_claim() -> None:
+    """⚠️ GUARD, per WEEK and per climber over every session count. Ruling 24's aerobic floor was
+    REVOKED, so there is no mechanism behind this sentence and this guard is the only thing
+    between the ruling and a published lie. Three arms, one per clause of the sentence.
+
+    ⚠️ THE GRANULARITY IS THE CLAIM. Read per profile the block-level arm is green — every
+    profile at four days up holds aerobic work SOMEWHERE (18 of 18) — while 12 of those same 72
+    weeks hold none, which is why the copy says "not always in every week". No day count repairs
+    it: zero weeks are 6 of 18 at four days and 2 of 18 at five, six and seven, all in week 14
+    or 15. Below the boundary: 18 of 18 weeks at one day, 10 of 18 at two, 9 of 18 at three.
+    """
+    above = [c for c in _PE_SWEEP if c.sessions >= COPY_CLAIMS_AEROBIC_FROM_DAYS]
+    below = [c for c in _PE_SWEEP if c.sessions < COPY_CLAIMS_AEROBIC_FROM_DAYS]
+    weeks = {c: _weeks_holding(c, Phase.POWER_ENDURANCE, "endurance") for c in _PE_SWEEP}
+    # "from four days up you always get some of it" — per CLIMBER, because "you" is one climber.
+    barren = sorted(_label(c) for c in above if not any(weeks[c]))
+    assert not barren, (
+        f"PHASE_GUIDE[power_endurance] tells the reader that from "
+        f"{COPY_CLAIMS_AEROBIC_FROM_DAYS} days a week up they always get some aerobic work, but "
+        f"{barren} get none of it in the whole block. Reword the sentence or change the "
+        f"generator — never the table alone."
+    )
+    # "though not always in every week" — the copy's own hedge, and the arm that keeps it honest
+    # if the generator ever starts delivering one every week and the copy owes the stronger claim.
+    hedged = sorted(_label(c) for c in above if not all(weeks[c]))
+    assert hedged, (
+        f"PHASE_GUIDE[power_endurance] hedges that from {COPY_CLAIMS_AEROBIC_FROM_DAYS} days a "
+        f"week up the aerobic work is not always in EVERY week, and now every one of "
+        f"{len(above)} profiles above that boundary carries it in all of theirs. The copy owes "
+        f"the stronger claim — reword the sentence, never the table alone."
+    )
+    # "at three days or fewer ... some weeks hold none of it at all" — an admission goes stale
+    # in silence, so it is asserted rather than assumed.
+    lean = sorted(_label(c) for c in below if not all(weeks[c]))
+    assert lean, (
+        f"PHASE_GUIDE[power_endurance] admits that below {COPY_CLAIMS_AEROBIC_FROM_DAYS} days a "
+        f"week some weeks of this block hold no aerobic work at all, and now every one of "
+        f"{len(below)} profiles below that boundary carries it every week. The copy owes the "
+        f"stronger claim — reword the sentence, never the table alone."
+    )
+
+
+def test_the_copys_POWER_ENDURANCE_claim_about_WHAT_IS_BIGGEST_FLIPS_WITH_THE_DAYS() -> None:
+    """⚠️ GUARD, per climber over EVERY session count. Ruling 31 accepted that `technique` is
+    the majority quality of this block at high day counts and ordered the copy to ADMIT it, so
+    this asserts the admission in BOTH regimes rather than asserting the block's own quality
+    leads everywhere — which is false above five days and was the open red for five rounds.
+
+    Measured, all minutes of the block: power endurance is the largest quality on 30 of 30
+    profiles at one to five sessions a week (69.8–82.5% at one day, 32.9–47.9% at five), and
+    `technique` is the largest on 12 of 12 at six and seven (37.5–50.8% against power
+    endurance's 23.0–34.2%). Cause, structural: ruling 9 allows three hard days however many
+    days there are, so the remaining fills go to ruling 30's non-governed fallback.
+    ⚠️ The second arm is what earns the copy the words ORDINARY CLIMBING rather than "movement
+    drills": 53–90% of those technique minutes are ruling 29's open-climbing filler.
+    """
+    under, over = COPY_CLAIMS_BIGGEST_BY_DAYS
+    for climber in _PE_SWEEP:
+        seconds = _climber_aspect_seconds(climber, Phase.POWER_ENDURANCE)
+        total = sum(seconds.values())
+        assert total, f"no power_endurance minutes for {climber}; the parametrisation is wrong."
+        claimed = under if climber.sessions <= COPY_CLAIMS_BIGGEST_UNTIL_DAYS else over
+        assert seconds.most_common(1)[0][0] == claimed, (
+            f"PHASE_GUIDE[power_endurance] says {claimed} is the biggest thing in the block at "
+            f"{climber.sessions} days a week, but a {climber.grade} {climber.discipline.value} "
+            f"climber gets {seconds.most_common(3)} — {100 * seconds[claimed] / total:.1f}% "
+            f"{claimed}. Reword the sentence or change the generator — never the table alone."
+        )
+    for climber in _PE_SWEEP:
+        if climber.sessions <= COPY_CLAIMS_BIGGEST_UNTIL_DAYS:
+            continue
+        blocks = [
+            block
+            for session in _sessions_by_phase(climber).get(Phase.POWER_ENDURANCE, ())
+            for block in session.blocks
+            if block.aspect_key == over
+        ]
+        led = sum(_block_seconds(block) for block in blocks)
+        fill = sum(
+            _block_seconds(block) for block in blocks if block.exercise_key in _OPEN_CLIMBING_KEYS
+        )
+        assert led and fill * 2 > led, (
+            f"the copy calls what is biggest in this block at {climber.sessions} days a week "
+            f"ORDINARY CLIMBING, but only {100 * fill / (led or 1):.1f}% of a {climber.grade} "
+            f"{climber.discipline.value} climber's {over} minutes there come from the "
+            f"open-climbing rows — the rest are drills, which is a different promise."
+        )
+
+
+def test_PLAN_GOALs_claim_that_MORE_DAYS_IS_A_LONGER_WEEK() -> None:
+    """⚠️ GUARD on the executable half of ruling 31's declaration in `PLAN_GOAL`: "a week with
+    more days on it is a longer week rather than the same hours spread thinner". Every day the
+    climber offers buys a whole session at ruling 25's floor, so plan minutes rise with the day
+    count instead of being divided by it.
+
+    ⚠️ The OTHER half of that sentence — that this lands 2–4× above every band Lattice measured,
+    and that it is KILIAN'S choice and not the sources' — is a DECLARATION, stated in the copy on
+    ruling 17's precedent and carrying its numbers in `climbing.py`'s SESSION_MINUTES_TARGET
+    comment. Nothing in the app can measure Lattice's population, so it is not asserted here.
+    """
+    for _level, discipline, system, grade in _CLIMBERS:
+        by_days = [
+            _climber_plan_seconds(_Climber(discipline, system, grade, sessions))
+            for sessions in _EVERY_SESSION_COUNT
+        ]
+        assert by_days == sorted(by_days) and by_days[-1] > by_days[0], (
+            f"PLAN_GOAL tells a {grade} {discipline.value} climber that a week with more days "
+            f"on it is a longer week, but their whole-plan minutes by day count "
+            f"{_EVERY_SESSION_COUNT} are {[seconds // 60 for seconds in by_days]}."
+        )
+        # ⚠️ The arm that actually bites. Rising totals are already ruling 3's window floor and
+        # ruling 4's rule; only PROPORTIONALITY says the hours were not divided by the days.
+        for days, seconds in zip(_EVERY_SESSION_COUNT, by_days, strict=True):
+            assert seconds * 100 >= days * by_days[0] * PLAN_GOAL_DAY_SHARE_PCT, (
+                f"PLAN_GOAL tells a {grade} {discipline.value} climber that every day they "
+                f"offer buys a whole session rather than the same hours spread thinner, but "
+                f"{days} days give {seconds // 60} min against {days} x "
+                f"{by_days[0] // 60} min for the one-day plan."
             )
 
 
 def test_the_copys_LAST_claim_is_measured_against_the_qualities_the_block_is_FOR() -> None:
-    """⚠️ GUARD. "power sits last on purpose": measured 2.1-7.3% of a base block's WALL minutes,
-    under each quality the same sentence prioritises. The tail ceiling elsewhere is its twin."""
+    """⚠️ GUARD, PER CLIMBER and no longer pooled, and the whole closing sentence rather than
+    half of it. `PHASE_GUIDE` is rendered to every climber on two screens
+    (`web/src/routes/_authed/plan.lazy.tsx`, `web/src/session/SessionBrief.tsx`), so a claim it
+    makes is a per-profile claim and a sweep pooled over 24 plans can read green while the
+    sentence is false for a real one. `_climber_aspect_seconds` exists for this granularity.
+
+    ⚠️ ONE DENOMINATOR, chosen and not averaged: the sentence's own words are "these weeks' time
+    on the wall", so it is measured on WALL minutes. The all-minutes tail ceiling in
+    `test_planner_climbing_floor.py` is a stricter test constant over a different denominator,
+    not a second reading of this sentence — which is why the two numbers never agreed.
+
+    The sentence carries THREE executable claims, all asserted: endurance takes the most wall
+    time, general strength and anaerobic capacity both START here, and power sits last.
+    """
     for phase, (last, ahead) in COPY_CLAIMS_LAST.items():
-        wall = _aspect_seconds(phase, wall_only=True)
-        total = sum(wall.values())
-        assert total, f"no {phase.value} wall minutes in the sweep; the parametrisation is wrong."
-        assert all(wall[last] < wall[key] for key in ahead), (
-            f"PHASE_GUIDE[{phase.value}] says {last} sits last on purpose, but it takes "
-            f"{100 * wall[last] / total:.1f}% of the block's wall minutes against "
-            f"{[(key, f'{100 * wall[key] / total:.1f}%') for key in ahead]}."
+        for climber in _WEAKNESS_SWEEP:
+            wall = _climber_wall_seconds(climber, phase)
+            total = sum(wall.values())
+            assert total, f"no {phase.value} wall minutes for {climber}; parametrisation wrong."
+            assert all(wall[last] < wall[key] for key in ahead), (
+                f"PHASE_GUIDE[{phase.value}] says {last} sits last on purpose, but for a "
+                f"{climber.grade} {climber.discipline.value} climber training "
+                f"{climber.sessions}x a week with weakness={climber.weakness} it takes "
+                f"{100 * wall[last] / total:.1f}% of the block's wall minutes against "
+                f"{[(key, f'{100 * wall[key] / total:.1f}%') for key in ahead]}."
+            )
+            assert all(wall[COPY_CLAIMS_BASE_LEAD] >= wall[key] for key in wall), (
+                f"PHASE_GUIDE[{phase.value}] says {COPY_CLAIMS_BASE_LEAD} takes more of these "
+                f"weeks' time on the wall than any other quality, but a {climber.grade} "
+                f"{climber.discipline.value} climber at {climber.sessions}x with "
+                f"weakness={climber.weakness} gets {wall.most_common(3)}."
+            )
+    for climber in _WEAKNESS_SWEEP:
+        started = _climber_aspect_seconds(climber, Phase.BASE)
+        absent = [aspect for aspect in COPY_CLAIMS_BASE_START if not started[aspect]]
+        assert not absent, (
+            f"PHASE_GUIDE[base] says {' and '.join(COPY_CLAIMS_BASE_START)} both START here, "
+            f"but a {climber.grade} {climber.discipline.value} climber at {climber.sessions}x "
+            f"gets no {absent} in a base block at all. ⚠️ Measured on ALL base minutes, not wall "
+            f"minutes: since the three on-wall general strength rows were re-filed to `power` "
+            f"there is no on-wall general strength exercise in any phase, so a wall-only "
+            f"reading of this claim would be vacuous."
+        )
+
+
+def test_a_DECLARED_WEAKNESS_LEAVES_the_base_blocks_general_strength_A_TURN() -> None:
+    """⚠️ GUARD, re-pointed from the defect it registered: 23 starved profiles of 24 at both
+    weakness values, now none. Slot 1 is `general_strength`'s only route into a plan, so a
+    weakness that took the slot in every session deleted the quality rather than outranking it.
+
+    ⚠️ WHY `WEAKNESS_YIELDS_SLOT_ONE_EVERY` IS 3, measured here at both weakness values. A base
+    block is three weeks, so a 2x-a-week climber's `week_no - 1 + session_index` runs 0-3: N=2
+    yields three of those six sessions, N=3 yields two, and every N of 4 or more yields exactly
+    ONCE in the whole block — one session between the published claim and nothing. 4 buys
+    nothing for that risk (worst-case plan-wide weakness multiplier 1.14x at both 3 and 4,
+    against 1.26x unyielded) and 2 costs the most of the bias, 1.08x. At 3 the multiplier runs
+    1.14x-2.67x where unyielded ran 1.26x-3.42x, and general strength holds 1.0-4.1% of a base
+    block on every profile.
+    """
+    for weakness in ("power", "power_endurance"):
+        starved = sorted(
+            f"{climber.grade} {climber.discipline.value} {climber.sessions}x"
+            for climber in _SWEEP
+            if not _climber_aspect_seconds(replace(climber, weakness=weakness), Phase.BASE)[
+                "general_strength"
+            ]
+        )
+        assert not starved, (
+            f"declaring {weakness} a weakness leaves {len(starved)} of {len(_SWEEP)} profiles "
+            f"with no general strength in a base block, where ruling 21 left "
+            f"0 and the defect it replaced left "
+            f"{_WEAKNESS_STARVED_BASE_PROFILES_BEFORE_RULING_21}: {starved}. "
+            f"{_A_WEAKNESS_YIELDS_SLOT_ONE}"
         )
 
 

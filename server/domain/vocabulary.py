@@ -354,10 +354,13 @@ class PhaseGuide:
 
 
 # ⚠️ **Describes what THIS generator prescribes, not periodisation in general.** Every claim
-# is checkable in `periodisation.py`, and the plan's own numbers are derived, never restated here.
+# is checkable in the planner, and the plan's own numbers are derived, never restated here.
 PLAN_GOAL: Final = (
     "Every block is three loading weeks and one unloading week. The blocks run in order — base "
-    "first, the strength qualities in the middle, performance last."
+    "first, the strength qualities in the middle, performance last. Every day you tell us you "
+    "can train gets a whole session at your level's length, so a week with more days on it is a "
+    "longer week rather than the same hours spread thinner — that is this plan's own choice, "
+    "and it adds up to more hours a week than most climbers train."
 )
 
 # ⚠️ **Authored prose with sourced further reading: 2-3 links a phase, checked by
@@ -477,10 +480,17 @@ PHASE_GUIDE: Final[tuple[PhaseGuide, ...]] = (
         "random hard laps. Dropping the intensity to survive the set turns the session into "
         "endurance training under a different name. How hard these sessions should be is "
         "contested — one school argues that training to a searing pump is too intense to build "
-        "repeatable capacity, and that the aerobic work underneath matters more. That aerobic "
-        "work is deliberately kept to a small share of this block — enough to let the next hard "
-        "session happen two days later, never enough to out-train the quality the block is "
-        "named after. Heavy general strength is deliberately absent: strength is the quality "
+        "repeatable capacity, and that the aerobic work underneath matters more. How much of "
+        "that aerobic work you get depends on how many days a week you train: at three days or "
+        "fewer the intervals take the block and some weeks hold none of it at all, and from "
+        "four days up you always get some of it, though not always in every week. What does "
+        "not change is the ceiling on hard days "
+        "— three a week, however many days you have — so the more days you train, the more of "
+        "this block is movement and ordinary climbing rather than intervals. At five days a "
+        "week and under, power endurance is still the biggest thing in the block; at six or "
+        "seven days that ordinary climbing is, and this plan chooses that rather than handing "
+        "you a fourth hard day. Heavy general strength is deliberately absent: strength is the "
+        "quality "
         "that holds longest, so it keeps across a block this short while a heavy session would "
         "compete for exactly the recovery these ones need.",
         (

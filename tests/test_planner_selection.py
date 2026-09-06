@@ -162,8 +162,8 @@ def test_aspect_emphasis_agrees_with_the_library_in_both_directions() -> None:
     that is missing here is a content decision made by omission: that aspect silently
     disappears from that phase, in every plan, with nothing to read.
 
-    `selection.py` raises this same disagreement at import. That is the mechanism; this is
-    the thing that fails in a test run and names the cell.
+    The first loop can never be the red: `conftest.py` imports `server.app`, so `selection.py`'s
+    import-time validator aborts COLLECTION. Kept only to name the cell a reader would look for.
     """
     unprescribed = {(cell.phase, cell.aspect_key) for cell in DELIBERATELY_UNPRESCRIBED}
     for phase in Phase:
