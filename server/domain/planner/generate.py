@@ -93,6 +93,8 @@ from server.domain.planner.selection import (
     no_climbing_message,
     off_the_wall,
     on_the_wall,
+    open_climbing_fill,
+    ordinary,
     prescribable,
     shortfall_message,
     unlock_options,
@@ -381,7 +383,7 @@ def _wall_picks(planner_input: PlannerInput, phase: Phase, spread: int) -> tuple
         for aspect_key in wall_led_aspects(phase)
         if (
             ordered := prescribable(
-                on_the_wall(candidates(phase, aspect_key)),
+                on_the_wall(ordinary(candidates(phase, aspect_key))),
                 discipline=planner_input.discipline,
                 equipment_keys=planner_input.equipment_keys,
                 open_injury_keys=planner_input.open_injury_keys,
@@ -744,6 +746,12 @@ def _length_pick(
 ) -> ExerciseSpec | None:
     """The on-wall block that closes the gap, from the qualities the phase leads on a wall.
 
+    ⚠️ `band=None` is ruling 27's length fill, and it is a different question answered by a
+    different pool: ruling 29's filler family, one authored row per intention, so the fill
+    FILTERS where it used to rank the whole wall library. The band does not gate it (that
+    ceiling is what the ruling spends), the authored length cannot rank it, and neither can the
+    session ceiling, because a gap wider than any window is the whole point.
+
     Rotation among the candidates that close the gap, then the longest that fits — `_pick`'s
     rule, for `_pick`'s reason: padding with sets is what `MAX_EXPANSION_FACTOR` forbids, and
     the shortest sufficient block measured worse on per-plan breadth on every profile.
@@ -754,20 +762,44 @@ def _length_pick(
     ⚠️ A PRIORITY protocol is excluded. That work has to LEAD its session rather than sit
     behind volume, and appending one would re-type the session and move the floor being chased.
     """
-    seen = [block.exercise_key for block in draft.blocks]
-    pool = [
-        spec
-        for aspect_key in wall_led_aspects(phase)
+    if band is None:
+        # Ruling 29 made this a FILTER. The filler family is ordered by the phase's own
+        # `ASPECT_EMPHASIS`, so the first row a week can still take is the one attributed to the
+        # quality the block is most named after — ruling 30's cue and its no-out-training
+        # invariant are the same single choice. The ceilings still bind: a day ruling 9 has made
+        # easy walks on to the next row rather than being handed the block's hard quality again.
         for spec in prescribable(
-            on_the_wall(candidates(phase, aspect_key)),
+            open_climbing_fill(phase),
             discipline=planner_input.discipline,
             equipment_keys=planner_input.equipment_keys,
             open_injury_keys=planner_input.open_injury_keys,
-        )
-        if spec.key not in seen
-        and not is_priority(spec.protocol_kind)
-        and _fits(draft, spec, phase)
-    ]
+        ):
+            if _week_ceiling_allows(drafts, draft, spec.aspect_key, phase):
+                return spec
+        return None
+    seen = [block.exercise_key for block in draft.blocks]
+
+    def offered(aspects: tuple[str, ...]) -> list[ExerciseSpec]:
+        return [
+            spec
+            for aspect_key in aspects
+            for spec in prescribable(
+                on_the_wall(ordinary(candidates(phase, aspect_key))),
+                discipline=planner_input.discipline,
+                equipment_keys=planner_input.equipment_keys,
+                open_injury_keys=planner_input.open_injury_keys,
+            )
+            if spec.key not in seen
+            and not is_priority(spec.protocol_kind)
+            and _fits(draft, spec, phase)
+            and _week_ceiling_allows(drafts, draft, spec.aspect_key, phase)
+            and (
+                draft.seconds < _window_floor(draft, phase)
+                or _band_top_allows(draft, _spec_seconds(spec, phase), band)
+            )
+        ]
+
+    pool = offered(wall_led_aspects(phase))
     if not pool:
         return None
     need = _session_floor(draft, phase) - draft.seconds
@@ -1208,7 +1240,7 @@ def _fill_slot(
         if aspect_key in used:
             continue
         ordered = prescribable(
-            candidates(phase, aspect_key),
+            ordinary(candidates(phase, aspect_key)),
             discipline=planner_input.discipline,
             equipment_keys=planner_input.equipment_keys,
             open_injury_keys=planner_input.open_injury_keys,

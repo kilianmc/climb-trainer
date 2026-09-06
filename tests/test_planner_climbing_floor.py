@@ -17,7 +17,7 @@ from functools import cache
 
 import pytest
 
-from server.domain.exercises import EXERCISES
+from server.domain.exercises import EXERCISES, OPEN_CLIMBING_KEYS
 from server.domain.grades import Discipline, GradeSystemKey, ordinal_of
 from server.domain.planner.blueprint import (
     BlockBlueprint,
@@ -897,6 +897,129 @@ def test_an_ADVANCED_loading_session_always_keeps_room_for_work_off_the_wall(
         f"measured: {lost[:3]}. `generate.py::_wall_pref` is what reserves that room, and the "
         f"week-share band can no longer catch its loss — see _TARGET_BAND_IS_FLOOR_ONLY."
     )
+
+
+# Ruling 29/30. Measured over 6 climbers x sessions 1-7 x gaps 0/3/6 (~9800 sessions): the fill
+# placed 9837 open-climbing blocks, NEVER two in one session, and never walked off the phase's
+# leading filler in a session that still carried hard energy-system work.
+_SESSIONS_WITH_TWO_FILLS = 0
+_OFF_LEAD_FILLS_ON_A_HARD_DAY = 0
+
+# What each block is FOR, as ruling 30 states it, restated INDEPENDENTLY of
+# `selection.py::open_climbing_fill` for `_MAY_EXPAND`'s reason — and this one is not a
+# formality: reading `open_climbing_fill(phase)[0]` here left the arm below GREEN when the
+# filler order was reversed against the phase's own emphasis, because the test's idea of
+# "leading" reversed with it. The four phases that share a row share an intention: strength,
+# power, performance and the taper are all about the hardest moves a climber can make.
+_THE_BLOCKS_OWN_FILLER: Mapping[Phase, str] = {
+    Phase.BASE: "open_climbing_easy_mileage",
+    Phase.STRENGTH: "open_climbing_hard_moves",
+    Phase.POWER: "open_climbing_hard_moves",
+    Phase.POWER_ENDURANCE: "open_climbing_power_endurance",
+    Phase.PERFORMANCE: "open_climbing_hard_moves",
+    Phase.DELOAD: "open_climbing_for_fun",
+    Phase.TAPER: "open_climbing_hard_moves",
+}
+
+
+@pytest.mark.parametrize("gap", [0, 3, 6])
+@pytest.mark.parametrize("sessions", [1, 2, 3, 5, 7])
+def test_the_LENGTH_FILL_is_ONE_block_carrying_THE_BLOCKS_OWN_INTENTION(
+    sessions: int, gap: int
+) -> None:
+    """⚠️ GUARD, rulings 29 and 30. Ruling 27's fill is ONE chunk of open climbing, and ruling 30
+    makes WHICH open-climbing row a real decision rather than a rotation.
+
+    Arm 1 is ruling 27's "and that is it": one chunk per session, never a loop converging on the
+    length. Arm 2 is ruling 30's second invariant, and it is the whole reason the family has four
+    rows: the fill is credited to the quality the block is NAMED after, so filling a block cannot
+    make a rival out-train it. It walks off that row on exactly one condition — a day ruling 9's
+    ~3-hard-days ceiling has already made easy, where crediting the block's own hard quality
+    would put the injury ceiling back where round 1 found it. So an off-lead fill in a session
+    that DOES carry hard energy-system work means the attribution has stopped following the
+    block, and the measured count is zero.
+    """
+    two_fills, off_lead = [], []
+    for _level, discipline, system, label in _CLIMBERS:
+        plan = generate(_input(discipline, system, label, sessions, 0b111_1111, gap))
+        for mesocycle in plan.mesocycles:
+            for microcycle in mesocycle.microcycles:
+                lead = _THE_BLOCKS_OWN_FILLER[microcycle.phase]
+                for session in microcycle.sessions:
+                    fills = [b for b in session.blocks if b.exercise_key in OPEN_CLIMBING_KEYS]
+                    if len(fills) > 1:
+                        two_fills.append(
+                            (label, microcycle.week_no, [b.exercise_key for b in fills])
+                        )
+                    carries_hard = any(
+                        block.aspect_key in ENERGY_SYSTEM_ASPECTS
+                        for block in session.blocks
+                        if block.exercise_key not in OPEN_CLIMBING_KEYS
+                    )
+                    off_lead += [
+                        (label, microcycle.week_no, microcycle.phase.value, b.exercise_key, lead)
+                        for b in fills
+                        if b.exercise_key != lead and carries_hard
+                    ]
+    assert len(two_fills) == _SESSIONS_WITH_TWO_FILLS, (
+        f"{len(two_fills)} session(s) at {sessions}x a week on a gap of {gap} hold more than one "
+        f"open-climbing block: {two_fills[:3]}. Ruling 27 is ONE chunk of "
+        f"max(gap, 30 min) and then stop, not a loop that converges on the length."
+    )
+    assert len(off_lead) == _OFF_LEAD_FILLS_ON_A_HARD_DAY, (
+        f"{len(off_lead)} fill(s) at {sessions}x a week on a gap of {gap} were credited to a "
+        f"quality the block is not named after, in a session that was already carrying hard "
+        f"energy-system work: {off_lead[:3]}. The fallback exists for the days ruling 9 has made "
+        f"easy and for nothing else — off a hard day it is ruling 30's out-training defect back."
+    )
+
+
+# Ruling 23's cause, as the number it repaired: before the boulder-reachable row, all four
+# `endurance` rows prescribable in POWER_ENDURANCE were `discipline=sport`, so 12 of 12 boulder
+# profiles took ZERO aerobic minutes in that block at every session count. Now 12 of 12 take some.
+# ⚠️ PER PROFILE and not per week, deliberately: 12 boulder POWER_ENDURANCE weeks still hold no
+# aerobic block at all, and closing THAT is ruling 24's one-block-per-week floor, which is not
+# implemented. This guard is ruling 23's claim — reachability — and says so rather than implying
+# the floor exists.
+_AEROBIC_RPE_CEILING_FOR_A_BOULDERER = 6
+
+
+@pytest.mark.parametrize("sessions", [2, 3, 5, 7])
+def test_a_BOULDERER_GETS_AEROBIC_WORK_in_the_power_endurance_block(sessions: int) -> None:
+    """⚠️ GUARD, ruling 23. A boulder-discipline climber was filtered out of every aerobic row
+    this block prescribes, so `PHASE_GUIDE[POWER_ENDURANCE]`'s "enough to let the next hard
+    session happen two days later" was false for half the profiles for reasons no emphasis index
+    could reach. The dose arm is the other half of the ruling: sustained and moderate, never to
+    failure, because a HARD row filed under `endurance` recreates F19."""
+    for level, discipline, system, label in _CLIMBERS:
+        if discipline is not Discipline.BOULDER:
+            continue
+        plan = generate(_input(discipline, system, label, sessions, 0b111_1111))
+        blocks = [
+            block
+            for mesocycle in plan.mesocycles
+            for microcycle in mesocycle.microcycles
+            if microcycle.phase is Phase.POWER_ENDURANCE
+            for session in microcycle.sessions
+            for block in session.blocks
+            if block.aspect_key == "endurance"
+        ]
+        assert blocks, (
+            f"a {level.value} {label} boulderer at {sessions}x a week gets NO aerobic block in "
+            f"the whole power-endurance block. That was 12 of 12 boulder profiles before ruling "
+            f"23 authored a boulder-reachable row, and it is not an emphasis-order problem: "
+            f"every other aerobic row this phase prescribes requires rope equipment."
+        )
+        for block in blocks:
+            rpes = [item.target_rpe for item in block.sets]
+            assert all(
+                rpe is not None and rpe <= _AEROBIC_RPE_CEILING_FOR_A_BOULDERER for rpe in rpes
+            ), (
+                f"{block.exercise_key} gives a {label} boulderer aerobic work at RPE {rpes} in "
+                f"the power-endurance block, over the {_AEROBIC_RPE_CEILING_FOR_A_BOULDERER} "
+                f"ruling 23 dosed it at. §7 wants a sustained light pump and never a failure, "
+                f"and F19 already registers four rows in this cell that breach that."
+            )
 
 
 @pytest.mark.parametrize(("level", "discipline", "system", "label"), _CLIMBERS)

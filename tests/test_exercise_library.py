@@ -29,11 +29,12 @@ from server.domain.exercises import (
     DELIBERATELY_UNPRESCRIBED,
     EXERCISES,
     FINGER_LOADING_EQUIPMENT_KEYS,
+    OPEN_CLIMBING_KEYS,
     ExerciseSpec,
     PrescriptionSpec,
 )
 from server.domain.planner.generate import _spec_seconds
-from server.domain.planner.selection import candidates, on_the_wall
+from server.domain.planner.selection import ASPECT_NAMES, candidates, on_the_wall
 from server.domain.vocabulary import (
     CLIMBING_ASPECTS,
     EQUIPMENT,
@@ -397,3 +398,62 @@ def test_no_progression_link_points_at_itself() -> None:
     for spec in EXERCISES:
         assert spec.progression_of_key != spec.key, f"{spec.key} is a progression of itself"
         assert spec.regression_of_key != spec.key, f"{spec.key} is a regression of itself"
+
+
+# Ruling 30's first invariant, Kilian 2026-09-06: "add what is the intention on the block, so if
+# it was power endurance, we can say, focus on boulders that test your power-endurance the most."
+# ⚠️ MEMBERSHIP ALONE WOULD PROVE NOTHING HERE: "power endurance" contains "power", so a `power`
+# filler whose cue only ever said "power endurance" would read green. Every OTHER aspect name is
+# deleted from the text first, longest first, and only where it is not part of the row's own name.
+def _cue_names_its_own_quality(text: str, aspect_key: str) -> bool:
+    """Whether this cue names the quality the block it fills is FOR, and not a rival's name."""
+    own = ASPECT_NAMES[aspect_key].lower()
+    residue = text.lower()
+    others = sorted(
+        (name.lower() for key, name in ASPECT_NAMES.items() if key != aspect_key),
+        key=len,
+        reverse=True,
+    )
+    for other in others:
+        if other not in own:
+            residue = residue.replace(other, " ")
+    return own in residue
+
+
+def test_every_OPEN_CLIMBING_row_TELLS_THE_CLIMBER_WHAT_THE_BLOCK_IS_FOR() -> None:
+    """⚠️ GUARD, ruling 30. The filler is the largest single item in a session and it is the one
+    block with no protocol, so its own text is the only place the block's intention can be said.
+
+    Also asserts the two shapes ruling 29 gives the family, both of which are the reason it is a
+    FILLER and not a prescription: no dose progression (`intensity_pct` is never set, and every
+    phase gets the same one authored chunk, which `generate.py::_place` re-sizes to the gap), and
+    a bouldering wall and nothing else, so it is never gated behind rope gear the way the
+    `endurance` rows prescribable in POWER_ENDURANCE are.
+    """
+    family = [spec for spec in EXERCISES if spec.key in OPEN_CLIMBING_KEYS]
+    assert len(family) == len(OPEN_CLIMBING_KEYS), (
+        f"OPEN_CLIMBING_KEYS names {len(OPEN_CLIMBING_KEYS)} rows and "
+        f"{len(family)} were found; the import-time check in exercises.py should have fired."
+    )
+    for spec in family:
+        assert _cue_names_its_own_quality(spec.instructions, spec.aspect_key), (
+            f"{spec.key} fills a block it says is about "
+            f"{ASPECT_NAMES[spec.aspect_key]!r} and its own text never names that quality. "
+            f"The climber reads this block and nothing else about why they are climbing: "
+            f"{spec.instructions!r}"
+        )
+        assert spec.equipment_keys == ("bouldering_wall",), (
+            f"{spec.key} requires {spec.equipment_keys}. Ruling 29's filler has to be reachable "
+            f"by both disciplines in a plain bouldering gym; rope gear is what makes the "
+            f"POWER_ENDURANCE aerobic rows unreachable for half the profiles."
+        )
+        assert spec.discipline is None, f"{spec.key} is filed under {spec.discipline}."
+        doses = {
+            (row.sets, row.work_seconds, row.reps, row.intensity_pct) for row in spec.prescriptions
+        }
+        assert len(doses) == 1 and doses.pop()[2:] == (None, None), (
+            f"{spec.key} carries more than one dose across its phases, or an intensity anchor: "
+            f"{sorted((r.phase.value, r.sets, r.work_seconds) for r in spec.prescriptions)}. "
+            f"Open climbing is TIME ON THE WALL and not a protocol, which is why it has no "
+            f"progression to be week 3 of — the generator sizes the one chunk to the gap."
+        )

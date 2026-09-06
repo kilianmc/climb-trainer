@@ -166,6 +166,10 @@ FINGER_PROTOCOLS: Final[frozenset[ProtocolKind]] = frozenset(
     {ProtocolKind.MAX_HANG, ProtocolKind.REPEATERS}
 )
 
+# ⚠️ The twin of this floor for the POWER_ENDURANCE week's aerobic block was DECLINED, not
+# forgotten (ruling 24, revoked): that block's own copy admits the gap and test_phase_guide.py
+# asserts the admission in both directions. Do not add it back as an improvement.
+
 # The three ENERGY SYSTEMS, and deliberately not `INTENSITY_TIERS`' top tier, which holds
 # `power` together with `finger_strength` and `general_strength`. Strength is not an energy
 # system and the two ceilings below are about energy systems only: §4.2's worked base week runs

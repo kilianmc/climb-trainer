@@ -51,11 +51,26 @@ COPY_CLAIMS_GOES_FIRST: tuple[Phase, str] = (Phase.STRENGTH, "finger_strength")
 _HANGBOARD_PROTOCOLS = frozenset({ProtocolKind.MAX_HANG, ProtocolKind.REPEATERS})
 _MAY_PRECEDE_A_HANG = _HANGBOARD_PROTOCOLS | {ProtocolKind.LIMIT_BOULDER}
 
-# "the aerobic work underneath… never enough to out-train the quality the block is named after":
-# a PAIRWISE minutes claim, and the only one of that block's rankings true on every profile.
-COPY_CLAIMS_OUT_MINUTES: dict[Phase, tuple[str, str]] = {
-    Phase.POWER_ENDURANCE: ("power_endurance", "endurance")
-}
+# "at three days or fewer ... some weeks hold none of it at all, and from four days up every
+# week carries some": the day count the re-authored sentence names as its boundary.
+COPY_CLAIMS_AEROBIC_FROM_DAYS: int = 4
+
+# "At five days a week and under, power endurance is still the biggest thing in the block; at
+# six or seven days that ordinary climbing is": one boundary, and the aspect on each side of it.
+COPY_CLAIMS_BIGGEST_UNTIL_DAYS: int = 5
+COPY_CLAIMS_BIGGEST_BY_DAYS: tuple[str, str] = ("power_endurance", "technique")
+
+# Ruling 29's filler family, RESTATED and never imported: "ordinary climbing" in the copy means
+# these rows, and an arm that asked `selection.py` which rows it treats as a fill would borrow
+# its expectation from the code it checks — round 5 shipped exactly that mistake once.
+_OPEN_CLIMBING_KEYS: frozenset[str] = frozenset(
+    {
+        "open_climbing_easy_mileage",
+        "open_climbing_power_endurance",
+        "open_climbing_hard_moves",
+        "open_climbing_for_fun",
+    }
+)
 
 # "power sits last on purpose", `PHASE_GUIDE[base]`, measured against the three qualities the
 # same sentence says base is for. The share ceiling in test_planner_climbing_floor.py is its twin.
@@ -139,9 +154,20 @@ _WEAKNESS_SWEEP: tuple[_Climber, ...] = tuple(
 )
 
 
+_PE_SWEEP: tuple[_Climber, ...] = tuple(
+    _Climber(discipline, system, grade, sessions)
+    for _level, discipline, system, grade in _CLIMBERS
+    for sessions in _EVERY_SESSION_COUNT
+)
+
+
 @cache
-def _sessions_by_phase(climber: _Climber) -> Mapping[Phase, tuple[SessionBlueprint, ...]]:
-    """Every session of one generated plan, grouped by the phase of the week it sits in."""
+def _weeks_by_phase(climber: _Climber) -> Mapping[Phase, tuple[tuple[SessionBlueprint, ...], ...]]:
+    """One generated plan grouped by phase with the WEEKS inside it kept SEPARATE.
+
+    ⚠️ `_sessions_by_phase` pools these and a claim about "every week" cannot be read off the
+    pool: at four days a week and up every profile holds aerobic work SOMEWHERE in the
+    power-endurance block (18 of 18) while 12 of those same 72 weeks hold none."""
     plan = generate(
         _input(
             climber.discipline,
@@ -152,11 +178,32 @@ def _sessions_by_phase(climber: _Climber) -> Mapping[Phase, tuple[SessionBluepri
             weakness=climber.weakness,
         )
     )
-    grouped: dict[Phase, list[SessionBlueprint]] = {}
+    grouped: dict[Phase, list[tuple[SessionBlueprint, ...]]] = {}
     for mesocycle in plan.mesocycles:
         for microcycle in mesocycle.microcycles:
-            grouped.setdefault(microcycle.phase, []).extend(microcycle.sessions)
-    return {phase: tuple(sessions) for phase, sessions in grouped.items()}
+            grouped.setdefault(microcycle.phase, []).append(microcycle.sessions)
+    return {phase: tuple(weeks) for phase, weeks in grouped.items()}
+
+
+def _sessions_by_phase(climber: _Climber) -> Mapping[Phase, tuple[SessionBlueprint, ...]]:
+    """Every session of one generated plan, grouped by the phase of the week it sits in."""
+    return {
+        phase: tuple(session for week in weeks for session in week)
+        for phase, weeks in _weeks_by_phase(climber).items()
+    }
+
+
+def _weeks_holding(climber: _Climber, phase: Phase, aspect_key: str) -> tuple[bool, ...]:
+    """Whether each WEEK of `phase` carries any block of `aspect_key`, in plan order."""
+    return tuple(
+        any(block.aspect_key == aspect_key for session in week for block in session.blocks)
+        for week in _weeks_by_phase(climber).get(phase, ())
+    )
+
+
+def _label(climber: _Climber) -> str:
+    """One climber of a sweep, as a failure message names it."""
+    return f"{climber.grade} {climber.discipline.value} {climber.sessions}x"
 
 
 def _phase_sessions(phase: Phase) -> list[SessionBlueprint]:
@@ -304,6 +351,95 @@ def test_the_copys_STRENGTH_claim_is_ORDER_and_not_FREQUENCY() -> None:
         f"{aspect} is now the modal opener of a {phase.value} session ({counts.most_common(3)}), "
         f"so the copy may make the stronger lead claim and this arm has stopped being the truth."
     )
+
+
+def test_the_copys_POWER_ENDURANCE_AEROBIC_claim_is_a_DAY_COUNT_claim() -> None:
+    """⚠️ GUARD, per WEEK and per climber over every session count. Ruling 24's aerobic floor was
+    REVOKED, so there is no mechanism behind this sentence and this guard is the only thing
+    between the ruling and a published lie. Three arms, one per clause of the sentence.
+
+    ⚠️ THE GRANULARITY IS THE CLAIM. Read per profile the block-level arm is green — every
+    profile at four days up holds aerobic work SOMEWHERE (18 of 18) — while 12 of those same 72
+    weeks hold none, which is why the copy says "not always in every week". No day count repairs
+    it: zero weeks are 6 of 18 at four days and 2 of 18 at five, six and seven, all in week 14
+    or 15. Below the boundary: 18 of 18 weeks at one day, 10 of 18 at two, 9 of 18 at three.
+    """
+    above = [c for c in _PE_SWEEP if c.sessions >= COPY_CLAIMS_AEROBIC_FROM_DAYS]
+    below = [c for c in _PE_SWEEP if c.sessions < COPY_CLAIMS_AEROBIC_FROM_DAYS]
+    weeks = {c: _weeks_holding(c, Phase.POWER_ENDURANCE, "endurance") for c in _PE_SWEEP}
+    # "from four days up you always get some of it" — per CLIMBER, because "you" is one climber.
+    barren = sorted(_label(c) for c in above if not any(weeks[c]))
+    assert not barren, (
+        f"PHASE_GUIDE[power_endurance] tells the reader that from "
+        f"{COPY_CLAIMS_AEROBIC_FROM_DAYS} days a week up they always get some aerobic work, but "
+        f"{barren} get none of it in the whole block. Reword the sentence or change the "
+        f"generator — never the table alone."
+    )
+    # "though not always in every week" — the copy's own hedge, and the arm that keeps it honest
+    # if the generator ever starts delivering one every week and the copy owes the stronger claim.
+    hedged = sorted(_label(c) for c in above if not all(weeks[c]))
+    assert hedged, (
+        f"PHASE_GUIDE[power_endurance] hedges that from {COPY_CLAIMS_AEROBIC_FROM_DAYS} days a "
+        f"week up the aerobic work is not always in EVERY week, and now every one of "
+        f"{len(above)} profiles above that boundary carries it in all of theirs. The copy owes "
+        f"the stronger claim — reword the sentence, never the table alone."
+    )
+    # "at three days or fewer ... some weeks hold none of it at all" — an admission goes stale
+    # in silence, so it is asserted rather than assumed.
+    lean = sorted(_label(c) for c in below if not all(weeks[c]))
+    assert lean, (
+        f"PHASE_GUIDE[power_endurance] admits that below {COPY_CLAIMS_AEROBIC_FROM_DAYS} days a "
+        f"week some weeks of this block hold no aerobic work at all, and now every one of "
+        f"{len(below)} profiles below that boundary carries it every week. The copy owes the "
+        f"stronger claim — reword the sentence, never the table alone."
+    )
+
+
+def test_the_copys_POWER_ENDURANCE_claim_about_WHAT_IS_BIGGEST_FLIPS_WITH_THE_DAYS() -> None:
+    """⚠️ GUARD, per climber over EVERY session count. Ruling 31 accepted that `technique` is
+    the majority quality of this block at high day counts and ordered the copy to ADMIT it, so
+    this asserts the admission in BOTH regimes rather than asserting the block's own quality
+    leads everywhere — which is false above five days and was the open red for five rounds.
+
+    Measured, all minutes of the block: power endurance is the largest quality on 30 of 30
+    profiles at one to five sessions a week (69.8–82.5% at one day, 32.9–47.9% at five), and
+    `technique` is the largest on 12 of 12 at six and seven (37.5–50.8% against power
+    endurance's 23.0–34.2%). Cause, structural: ruling 9 allows three hard days however many
+    days there are, so the remaining fills go to ruling 30's non-governed fallback.
+    ⚠️ The second arm is what earns the copy the words ORDINARY CLIMBING rather than "movement
+    drills": 53–90% of those technique minutes are ruling 29's open-climbing filler.
+    """
+    under, over = COPY_CLAIMS_BIGGEST_BY_DAYS
+    for climber in _PE_SWEEP:
+        seconds = _climber_aspect_seconds(climber, Phase.POWER_ENDURANCE)
+        total = sum(seconds.values())
+        assert total, f"no power_endurance minutes for {climber}; the parametrisation is wrong."
+        claimed = under if climber.sessions <= COPY_CLAIMS_BIGGEST_UNTIL_DAYS else over
+        assert seconds.most_common(1)[0][0] == claimed, (
+            f"PHASE_GUIDE[power_endurance] says {claimed} is the biggest thing in the block at "
+            f"{climber.sessions} days a week, but a {climber.grade} {climber.discipline.value} "
+            f"climber gets {seconds.most_common(3)} — {100 * seconds[claimed] / total:.1f}% "
+            f"{claimed}. Reword the sentence or change the generator — never the table alone."
+        )
+    for climber in _PE_SWEEP:
+        if climber.sessions <= COPY_CLAIMS_BIGGEST_UNTIL_DAYS:
+            continue
+        blocks = [
+            block
+            for session in _sessions_by_phase(climber).get(Phase.POWER_ENDURANCE, ())
+            for block in session.blocks
+            if block.aspect_key == over
+        ]
+        led = sum(_block_seconds(block) for block in blocks)
+        fill = sum(
+            _block_seconds(block) for block in blocks if block.exercise_key in _OPEN_CLIMBING_KEYS
+        )
+        assert led and fill * 2 > led, (
+            f"the copy calls what is biggest in this block at {climber.sessions} days a week "
+            f"ORDINARY CLIMBING, but only {100 * fill / (led or 1):.1f}% of a {climber.grade} "
+            f"{climber.discipline.value} climber's {over} minutes there come from the "
+            f"open-climbing rows — the rest are drills, which is a different promise."
+        )
 
 
 def test_PLAN_GOALs_claim_that_MORE_DAYS_IS_A_LONGER_WEEK() -> None:

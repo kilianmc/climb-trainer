@@ -29,7 +29,12 @@ from collections.abc import Set as AbstractSet
 from types import MappingProxyType
 from typing import Final
 
-from server.domain.exercises import DELIBERATELY_UNPRESCRIBED, EXERCISES, ExerciseSpec
+from server.domain.exercises import (
+    DELIBERATELY_UNPRESCRIBED,
+    EXERCISES,
+    OPEN_CLIMBING_KEYS,
+    ExerciseSpec,
+)
 from server.domain.grades import Discipline
 from server.domain.planner.climbing import (
     WALL_LED_ASPECTS,
@@ -288,6 +293,32 @@ def on_the_wall(cands: Iterable[ExerciseSpec]) -> tuple[ExerciseSpec, ...]:
     return tuple(spec for spec in cands if requires_wall(spec.equipment_keys))
 
 
+def ordinary(cands: Iterable[ExerciseSpec]) -> tuple[ExerciseSpec, ...]:
+    """The candidates that are a PROTOCOL, i.e. everything except ruling 29's open-climbing
+    filler. Subtracted from every pool the ordinary passes draw from, so "climb for X minutes,
+    your choice" can only ever arrive as ruling 27's length fill and never as a session's
+    prescribed work — the filler has no dose to progress and nothing to be a week 3 of."""
+    return tuple(spec for spec in cands if spec.key not in OPEN_CLIMBING_KEYS)
+
+
+def open_climbing_fill(phase: Phase) -> tuple[ExerciseSpec, ...]:
+    """Ruling 29's filler rows for this phase, in the phase's OWN emphasis order.
+
+    Ruling 30's two invariants are both this order: the first row is the one attributed to the
+    quality the block is most named after, so it is the cue the climber reads AND the quality
+    the filled minutes are credited to. `generate.py::_length_pick` takes the first row the
+    week's frequency ceilings allow, which is a FILTER — `_validate_open_climbing_fill` proves
+    the tail of every phase's order is a row no ceiling governs, so the pool is never empty.
+    """
+    by_aspect = {
+        spec.aspect_key: spec
+        for key in ASPECT_EMPHASIS[phase]
+        for spec in candidates(phase, key)
+        if spec.key in OPEN_CLIMBING_KEYS
+    }
+    return tuple(by_aspect[key] for key in ASPECT_EMPHASIS[phase] if key in by_aspect)
+
+
 def off_the_wall(cands: Iterable[ExerciseSpec]) -> tuple[ExerciseSpec, ...]:
     """The candidates that are not climbing. Climbing is allocated in its own pass, so this is
     what "supplementary" means: the remainder is genuinely reserved for other work."""
@@ -307,7 +338,7 @@ def wall_led_aspects(phase: Phase) -> tuple[str, ...]:
     return tuple(
         key
         for key in ASPECT_EMPHASIS[phase]
-        if key in WALL_LED_ASPECTS and on_the_wall(candidates(phase, key))
+        if key in WALL_LED_ASPECTS and on_the_wall(ordinary(candidates(phase, key)))
     )
 
 
@@ -438,4 +469,27 @@ def _validate_aspect_emphasis() -> None:
             )
 
 
+def _validate_open_climbing_fill() -> None:
+    """Every phase's filler order ENDS in a row no weekly ceiling can refuse — at import.
+
+    This is what makes ruling 27's fill a filter rather than a ranking: `_length_pick` walks
+    `open_climbing_fill(phase)` and takes the first row the week allows, so a phase whose only
+    filler is attributed to an energy-system quality would leave a session short of ruling 25's
+    length on every day the ~3-hard-days ceiling has already made easy. Checked here for
+    `_validate_aspect_emphasis`' reason: a missing fallback is a silently shorter session, and
+    a shorter session is exactly what ruling 27 exists to remove.
+    """
+    for phase in Phase:
+        row = open_climbing_fill(phase)
+        if not any(not week_ceiling_governs(spec.aspect_key) for spec in row):
+            raise ValueError(
+                f"open_climbing_fill({phase.value}) offers "
+                f"{[spec.key for spec in row]}, none of which is attributed to a quality the "
+                f"weekly frequency ceilings leave alone. Ruling 27's length fill would then "
+                f"have no candidate on a day already at its hard-energy ceiling. Give "
+                f"server/domain/exercises.py's open-climbing family a row for this phase."
+            )
+
+
 _validate_aspect_emphasis()
+_validate_open_climbing_fill()
