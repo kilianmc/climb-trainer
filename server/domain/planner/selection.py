@@ -31,7 +31,11 @@ from typing import Final
 
 from server.domain.exercises import DELIBERATELY_UNPRESCRIBED, EXERCISES, ExerciseSpec
 from server.domain.grades import Discipline
-from server.domain.planner.climbing import WALL_LED_ASPECTS, requires_wall
+from server.domain.planner.climbing import (
+    WALL_LED_ASPECTS,
+    requires_wall,
+    week_ceiling_governs,
+)
 from server.domain.vocabulary import (
     CLIMBING_ASPECTS,
     EQUIPMENT,
@@ -55,6 +59,11 @@ MAX_WALL_TURNS: Final = BLOCKS_PER_SESSION + 1
 # thing a phase is *about*, which is why they get their own rotation instead of competing
 # for the first two slots.
 SUPPORT_ASPECTS: Final[tuple[str, ...]] = ("antagonist_prehab", "mobility", "core_tension")
+
+# Ruling 21: slot 1 is the declared weakness's, but it YIELDS the slot one turn in this many.
+# Why 3 and not 2 or 4 is measured in the docstring of `tests/test_phase_guide.py`'s
+# `test_a_DECLARED_WEAKNESS_LEAVES_the_base_blocks_general_strength_A_TURN`.
+WEAKNESS_YIELDS_SLOT_ONE_EVERY: Final = 3
 
 # ⚠️ **Position in a row is a TURN COUNT, not a label**: `wall_aspect_turns()` gives a wall-led
 # aspect `len(row) - index` turns capped at `MAX_WALL_TURNS`, so on a ten-aspect row only the last
@@ -105,8 +114,8 @@ ASPECT_EMPHASIS: Final[Mapping[Phase, tuple[str, ...]]] = MappingProxyType(
             "antagonist_prehab",
             "mobility",
         ),
-        # Aerobic endurance sits in the TAIL so it cannot out-train the quality this block is
-        # named after: at equal turns its far longer exercises take more minutes than PE's do.
+        # Aerobic endurance sits LAST, on one wall turn: at equal turns its far longer exercises
+        # take more minutes than PE's do. Ruling 20 supersedes ruling 13's INDEX and nothing else.
         Phase.POWER_ENDURANCE: (
             "power_endurance",
             "technique",
@@ -115,8 +124,8 @@ ASPECT_EMPHASIS: Final[Mapping[Phase, tuple[str, ...]]] = MappingProxyType(
             "finger_strength",
             "antagonist_prehab",
             "mobility",
-            "endurance",
             "power",
+            "endurance",
         ),
         # Performance is about performing: limit attempts and redpoint burns, `power_endurance`
         # right after so a rope climber whose weakness is stamina still leads with it. Anaerobic
@@ -380,7 +389,8 @@ def _blocking_injuries(phase: Phase, aspect_key: str, *, open_injury_keys: Seque
 
 
 def _validate_aspect_emphasis() -> None:
-    """Agree with `DELIBERATELY_UNPRESCRIBED` in both directions, at import.
+    """Agree with `DELIBERATELY_UNPRESCRIBED` in both directions, and keep a fillable row once
+    the weekly frequency ceilings have filtered it — both at import.
 
     Loud and early for the same reason `exercises.py::_require` is: the alternative is a
     generated plan quietly missing an aspect, or a displacement walk that lands on a cell
@@ -411,6 +421,20 @@ def _validate_aspect_emphasis() -> None:
                 f"DELIBERATELY_UNPRESCRIBED or not an aspect at all: {extra}. "
                 f"If you just edited DELIBERATELY_UNPRESCRIBED in "
                 f"server/domain/exercises.py, this row is the other half of that edit."
+            )
+        # `generate.py::_try_supplementary` FILTERS this row by the weekly frequency ceilings
+        # and then indexes `[0]`, so a row the ceilings could empty is an `IndexError` mid-
+        # generate — which is the failure `climbing.py::_validate_frequency_ceilings` exists to
+        # move to import time. Subtracted through `week_ceiling_governs`, the predicate's own
+        # key space, so this floor cannot drift out of step with what the filter refuses.
+        survivors = sorted(key for key in row if not week_ceiling_governs(key))
+        if len(survivors) < BLOCKS_PER_SESSION:
+            raise ValueError(
+                f"ASPECT_EMPHASIS[{phase.value}] keeps only {len(survivors)} aspect(s) the "
+                f"weekly frequency ceilings can never refuse ({survivors}), against the "
+                f"{BLOCKS_PER_SESSION} a session's slots need. A week that has spent its hard "
+                f"energy-system days filters this row down to those, and "
+                f"generate.py::_try_supplementary indexes the result."
             )
 
 

@@ -143,6 +143,44 @@ FINGER_PROTOCOLS: Final[frozenset[ProtocolKind]] = frozenset(
     {ProtocolKind.MAX_HANG, ProtocolKind.REPEATERS}
 )
 
+# The three ENERGY SYSTEMS, and deliberately not `INTENSITY_TIERS`' top tier, which holds
+# `power` together with `finger_strength` and `general_strength`. Strength is not an energy
+# system and the two ceilings below are about energy systems only: §4.2's worked base week runs
+# FOUR strength sessions alongside ~3 hard energy days, so folding the strength aspects into
+# either count would cut work the source explicitly prescribes. `INTENSITY_TIERS` still feeds
+# ordering and nothing else.
+ENERGY_SYSTEM_ASPECTS: Final[frozenset[str]] = frozenset(
+    {"anaerobic_capacity", "power", "power_endurance"}
+)
+
+# Barrows §3.2/§4.2: a 5-day climber gets at most ~3 days of hard energy-system work a week.
+# A ceiling ENFORCED, where `FINGER_SESSIONS_PER_WEEK` is a floor pursued — the same shape,
+# inverted. Not a fraction of the week: it is an overtraining bound, so 7 days get 3 too.
+HARD_ENERGY_DAYS_PER_WEEK: Final = 3
+
+# ⚠️ The TAPER is exempt, by authored decision and not by omission. §3.3 makes a taper only hard
+# strength/power and hard An Pow/Aero Pow with An Cap, Aero Cap and ARC dropped, so every taper
+# session carries hard energy-system work BY CONSTRUCTION; the ceiling there would fight the
+# taper's own composition and the displaced slots have nowhere to go. PERFORMANCE is NOT exempt.
+HARD_ENERGY_EXEMPT_PHASES: Final[frozenset[Phase]] = frozenset({Phase.TAPER})
+
+ANAEROBIC_ASPECT: Final = "anaerobic_capacity"
+
+# §4.2's worked example, which is per STAGE rather than flat: Base 2x An Cap, Peak 1 1x, Peak 2
+# dropped. `PERFORMANCE` and `TAPER` carry a 0 row for the table's own completeness — the library
+# already delivers it through `DELIBERATELY_UNPRESCRIBED`, so those two rows are inert.
+ANAEROBIC_SESSIONS_PER_WEEK: Final[Mapping[Phase, int]] = MappingProxyType(
+    {
+        Phase.BASE: 2,
+        Phase.STRENGTH: 2,
+        Phase.POWER: 1,
+        Phase.POWER_ENDURANCE: 1,
+        Phase.PERFORMANCE: 0,
+        Phase.DELOAD: 1,
+        Phase.TAPER: 0,
+    }
+)
+
 # Quality of effort decides the adaptation, so this work LEADS its session: a max hang sitting
 # behind 35 minutes of climbing is the "turn up subpar and set your training back" failure.
 PRIORITY_PROTOCOLS: Final[frozenset[ProtocolKind]] = frozenset(
@@ -249,6 +287,43 @@ def intensity_tier(aspect_key: str) -> int:
     return _INTENSITY_TIER[aspect_key]
 
 
+def hard_energy_day_ceiling(phase: Phase) -> int | None:
+    """Days of this week that may carry hard energy-system work — `None` where phase is exempt."""
+    return None if phase in HARD_ENERGY_EXEMPT_PHASES else HARD_ENERGY_DAYS_PER_WEEK
+
+
+def anaerobic_sessions_ceiling(phase: Phase) -> int:
+    """Anaerobic-capacity sessions a week of this phase may hold, off §4.2's worked example."""
+    return ANAEROBIC_SESSIONS_PER_WEEK[phase]
+
+
+def week_ceiling_governs(aspect_key: str) -> bool:
+    """The whole key space either weekly ceiling can refuse — one choke point, on purpose.
+
+    `generate.py::_week_ceiling_allows` returns `True` for anything this rejects, and
+    `selection.py::_validate_aspect_emphasis` subtracts exactly this set when it checks that a
+    phase's emphasis row survives the filter. A refusal reason added to the predicate without
+    coming through here would leave that floor measuring a set the generator no longer uses.
+    """
+    return aspect_key in ENERGY_SYSTEM_ASPECTS
+
+
+def _validate_frequency_ceilings() -> None:
+    """Both ceilings are total over their key space, on `_validate_intensity_tiers`' idiom: a
+    missing `Phase` row is a `KeyError` mid-generate, and a typo is a silently inert ceiling."""
+    aspects = {spec.key for spec in CLIMBING_ASPECTS}
+    if not ENERGY_SYSTEM_ASPECTS <= aspects or ANAEROBIC_ASPECT not in ENERGY_SYSTEM_ASPECTS:
+        raise ValueError(
+            f"ENERGY_SYSTEM_ASPECTS must name aspects of CLIMBING_ASPECTS and contain "
+            f"{ANAEROBIC_ASPECT!r}. Not an aspect: {sorted(ENERGY_SYSTEM_ASPECTS - aspects)}."
+        )
+    if set(ANAEROBIC_SESSIONS_PER_WEEK) != set(Phase):
+        raise ValueError(
+            f"ANAEROBIC_SESSIONS_PER_WEEK must give every Phase a ceiling. Missing: "
+            f"{sorted(phase.value for phase in Phase if phase not in ANAEROBIC_SESSIONS_PER_WEEK)}."
+        )
+
+
 def _validate_intensity_tiers() -> None:
     """Every aspect owns exactly one tier, checked at import on `_validate_aspect_emphasis`'s
     idiom: #98 added two aspects and a `KeyError` at generate time is the wrong failure."""
@@ -263,3 +338,4 @@ def _validate_intensity_tiers() -> None:
 
 
 _validate_intensity_tiers()
+_validate_frequency_ceilings()

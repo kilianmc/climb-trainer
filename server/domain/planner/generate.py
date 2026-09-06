@@ -43,16 +43,20 @@ from server.domain.planner.blueprint import (
     Shortfall,
 )
 from server.domain.planner.climbing import (
+    ANAEROBIC_ASPECT,
     DELOAD_LEAD_ASPECTS,
+    ENERGY_SYSTEM_ASPECTS,
     FINGER_ASPECT,
     FINGER_PROTOCOLS,
     INTENSITY_TIERS,
     MAX_EXPANSION_FACTOR,
     UNLOADING_PHASES,
     WALL_LED_ASPECTS,
+    anaerobic_sessions_ceiling,
     climbing_block_budget,
     climbing_target_band,
     finger_sessions_for,
+    hard_energy_day_ceiling,
     intensity_tier,
     is_expandable,
     is_priority,
@@ -60,6 +64,7 @@ from server.domain.planner.climbing import (
     requires_wall,
     session_floor_pct,
     session_window,
+    week_ceiling_governs,
     week_climbing_floor_pct,
 )
 from server.domain.planner.contract import PlannerInput
@@ -81,6 +86,7 @@ from server.domain.planner.selection import (
     ASPECT_NAMES,
     BLOCKS_PER_SESSION,
     SUPPORT_ASPECTS,
+    WEAKNESS_YIELDS_SLOT_ONE_EVERY,
     candidates,
     no_climbing_message,
     off_the_wall,
@@ -204,6 +210,7 @@ def _microcycle(
     )
     for draft in drafts:
         _fill_climbing(
+            drafts,
             draft,
             planner_input,
             phase,
@@ -213,7 +220,7 @@ def _microcycle(
             budget=budget,
         )
     if not solo:
-        _fill_finger_strength(drafts, planner_input, phase, week_no)
+        _fill_finger_strength(drafts, planner_input, phase, week_no, band=(low_pct, high_pct))
     _fill_supplementary(drafts, planner_input, phase, week_no, band=(low_pct, high_pct))
     _descend_by_intensity(drafts)
     return MicrocycleBlueprint(
@@ -256,7 +263,47 @@ def _descend_by_intensity(drafts: list[_Draft]) -> None:
         start = index
 
 
+def _hard_energy_days(drafts: list[_Draft]) -> int:
+    """Sessions of this week that already carry hard energy-system work — An Cap, An Pow or
+    Aero Pow. A day COUNTS by containing such a block, never by what its slot-1 aspect is."""
+    return sum(1 for draft in drafts if _carries_energy_system(draft))
+
+
+def _carries_energy_system(draft: _Draft) -> bool:
+    """Whether this session already holds a hard energy-system block."""
+    return any(block.aspect_key in ENERGY_SYSTEM_ASPECTS for block in draft.blocks)
+
+
+def _holds(draft: _Draft, aspect_key: str) -> bool:
+    """Whether this session already holds a block of one aspect."""
+    return any(block.aspect_key == aspect_key for block in draft.blocks)
+
+
+def _week_ceiling_allows(
+    drafts: list[_Draft], draft: _Draft, aspect_key: str, phase: Phase
+) -> bool:
+    """Barrows' two WEEKLY frequency ceilings, as one predicate every placement pass consults.
+
+    ⚠️ Read off `drafts` rather than off a counter, so it binds all three passes that can place
+    a hard block — the rotated wall ring in `_fill_climbing`, `_length_pick`'s top-up and the
+    supplementary fill — and cannot drift out of step with what the week actually holds. A block
+    landing in a session that ALREADY carries the quality changes no weekly count, so it passes:
+    the ceilings count sessions and days, never blocks.
+    """
+    if not week_ceiling_governs(aspect_key):
+        return True
+    if aspect_key == ANAEROBIC_ASPECT and not _holds(draft, ANAEROBIC_ASPECT):
+        already = sum(1 for other in drafts if _holds(other, ANAEROBIC_ASPECT))
+        if already >= anaerobic_sessions_ceiling(phase):
+            return False
+    ceiling = hard_energy_day_ceiling(phase)
+    if ceiling is None or _carries_energy_system(draft):
+        return True
+    return _hard_energy_days(drafts) < ceiling
+
+
 def _fill_climbing(
+    drafts: list[_Draft],
     draft: _Draft,
     planner_input: PlannerInput,
     phase: Phase,
@@ -269,13 +316,19 @@ def _fill_climbing(
     """Wall blocks up to the band's share of the session type's window floor and no further — to
     a TARGET, never to exhaustion, so the remainder is reserved for supplementary work."""
     spread = _spread(week_no, draft.session_index)
+    refused = False
     for spec in _wall_picks(planner_input, phase, spread):
         if len(draft.blocks) >= BLOCKS_PER_SESSION:
             break
-        spent = (
-            draft.seconds >= _share_of_window_floor(draft, None, fill_pct, phase)
-            or len(draft.blocks) >= budget
-        )
+        if not _week_ceiling_allows(drafts, draft, spec.aspect_key, phase):
+            # A day the week's ceiling takes hard work OFF spends its whole climbing allowance
+            # instead: ruling 9 removes hard WORK and ruling 4 forbids removing CLIMBING, so an
+            # easy day is still a climbing day and takes a full session's worth of wall blocks.
+            refused = True
+            continue
+        spent = draft.seconds >= _share_of_window_floor(draft, None, fill_pct, phase) or len(
+            draft.blocks
+        ) >= (BLOCKS_PER_SESSION if refused else budget)
         if (
             draft.blocks
             and spent
@@ -335,7 +388,12 @@ def _wall_picks(planner_input: PlannerInput, phase: Phase, spread: int) -> tuple
 
 
 def _fill_finger_strength(
-    drafts: list[_Draft], planner_input: PlannerInput, phase: Phase, week_no: int
+    drafts: list[_Draft],
+    planner_input: PlannerInput,
+    phase: Phase,
+    week_no: int,
+    *,
+    band: tuple[int, int],
 ) -> None:
     """The band's hangboard floor. Finger strength is the strongest single predictor of climbing
     performance and matters MORE as level rises, so it is prescribed, not left to a spare slot."""
@@ -358,7 +416,9 @@ def _fill_finger_strength(
         if placed >= wanted:
             return
         draft = drafts[(week_no - 1 + step) % len(drafts)]
-        if len(draft.blocks) >= BLOCKS_PER_SESSION or FINGER_ASPECT in draft.used:
+        if FINGER_ASPECT in draft.used or len(draft.blocks) >= _block_ceiling(
+            draft, phase, band=band, week=(wall_seconds, other_seconds)
+        ):
             continue
         # Every authored protocol is tried, because a hang has to fit inside its OWN window: a
         # long endurance day cannot become a hangboard session, which is the point, not a gap.
@@ -439,7 +499,11 @@ def _block_ceiling(
     the monotonicity invariant: 5 sessions to 6 dropped a deload week's climbing by 10.5 min
     (intermediate boulder, week 8). The band's non-climbing allowance is proportional to wall
     time and therefore additive, so the per-session test sums to the week the band is stated
-    over."""
+    over.
+    ⚠️ Ruling 32's THIRD condition — "the week's hangboard floor is owed" — was written and
+    measured BYTE-IDENTICAL over 1176 weeks, because a session that owes a hang carries no
+    off-the-wall work yet and the band arm above already admits it. What ruling 32 needed was
+    `_fill_finger_strength` READING this ceiling instead of restating three. Do not add it back."""
     del week
     if _short_of_its_window(draft, phase) or meets_floor(
         wall_seconds=draft.wall_seconds, other_seconds=draft.other_seconds, floor_pct=band[1]
@@ -538,6 +602,7 @@ def _supplementary_rounds(
             if len(draft.blocks) >= min(cap, _block_ceiling(draft, phase, band=band, week=week)):
                 continue
             _try_supplementary(
+                drafts,
                 draft,
                 planner_input,
                 phase,
@@ -568,6 +633,7 @@ def _top_up_with_climbing(
             ):
                 break
             spec = _length_pick(
+                drafts,
                 draft,
                 planner_input,
                 phase,
@@ -579,7 +645,12 @@ def _top_up_with_climbing(
 
 
 def _length_pick(
-    draft: _Draft, planner_input: PlannerInput, phase: Phase, *, spread: int
+    drafts: list[_Draft],
+    draft: _Draft,
+    planner_input: PlannerInput,
+    phase: Phase,
+    *,
+    spread: int,
 ) -> ExerciseSpec | None:
     """The on-wall block that closes the gap, from the qualities the phase leads on a wall.
 
@@ -617,6 +688,7 @@ def _length_pick(
 
 
 def _try_supplementary(
+    drafts: list[_Draft],
     draft: _Draft,
     planner_input: PlannerInput,
     phase: Phase,
@@ -636,12 +708,20 @@ def _try_supplementary(
     here made every off-the-wall `power`, `endurance` and `power_endurance` exercise in the
     library structurally unreachable — six exercises no plan could prescribe.
     """
-    emphasis = ASPECT_EMPHASIS[phase]
+    # The week's ceilings bind by REMOVING the refused aspect from this draft's emphasis row,
+    # rather than by rejecting the block afterwards: a slot that walked past `intended` carries
+    # a `Shortfall` naming the equipment that would open it, and an overtraining ceiling is not
+    # a gap in the climber's gym. The row cannot filter down to nothing:
+    # `selection.py::_validate_aspect_emphasis` holds the floor at import.
+    emphasis = tuple(
+        key for key in ASPECT_EMPHASIS[phase] if _week_ceiling_allows(drafts, draft, key, phase)
+    )
     slot = draft.supplementary + (1 if draft.climbing_blocks else 0)
     intended = _intended_aspect(
         slot,
         emphasis,
         planner_input,
+        phase=phase,
         week_no=week_no,
         session_index=draft.session_index,
         used=draft.supplementary_used,
@@ -904,6 +984,7 @@ def _intended_aspect(
     emphasis: tuple[str, ...],
     planner_input: PlannerInput,
     *,
+    phase: Phase,
     week_no: int,
     session_index: int,
     used: list[str],
@@ -912,10 +993,16 @@ def _intended_aspect(
 
     Slot 0 is the phase's defining quality — a quality leads its own block, and where a
     climbing core exists the core IS that block, so the supplementary pass starts at slot 1.
-    Slot 1 is the **weakness bias**: your weakness appears in every session of every phase
-    where it can be trained. "Where it can be trained" is the library's judgement (the phase
-    prescribes that aspect at all), deliberately not the climber's gear — a weakness that needs
-    a hangboard should surface as "here is what you would need", not vanish. Slot 2 on rotate.
+    Slot 1 is the **weakness bias**: your weakness takes it in every session of every phase
+    where it can be trained, except one turn in `WEAKNESS_YIELDS_SLOT_ONE_EVERY`. "Where it can
+    be trained" is the library's judgement (the phase prescribes that aspect at all),
+    deliberately not the climber's gear — a weakness that needs a hangboard should surface as
+    "here is what you would need", not vanish. Slot 2 on rotate.
+
+    ⚠️ The yield is ruling 21 and it is not a tiebreak: `general_strength` has no on-wall row in
+    any phase, so this slot is its only route into a plan, and a weakness that never gave the
+    slot back DELETED it from the base block on 23 of 24 profiles. A declared weakness stays the
+    organising principle both sources make it — it may not delete another quality to be one.
 
     `UserAspectRating`'s per-aspect scores are never read: since issue #54 they sit behind a
     disclosure and may be untouched defaults, while `weakness_aspect_id` is the answer to a
@@ -925,13 +1012,34 @@ def _intended_aspect(
         return emphasis[0]
     if slot == 1:
         weakness = planner_input.weakness_aspect_key
-        if weakness is not None and weakness in emphasis and weakness not in used:
+        turn = week_no - 1 + session_index
+        pool = _secondary_pool(emphasis, planner_input, used)
+        if weakness is None:
+            return _rotated(pool, turn)
+        if weakness in emphasis and weakness not in used and turn % WEAKNESS_YIELDS_SLOT_ONE_EVERY:
             return weakness
-        return _rotated(_secondary_pool(emphasis, planner_input, used), week_no - 1 + session_index)
+        # A yielded turn takes its own offset, `turn // N` rather than `turn`, so consecutive
+        # yields step the pool by one instead of sampling it at one residue class.
+        return _rotated(
+            _no_other_route(pool, phase) or pool, turn // WEAKNESS_YIELDS_SLOT_ONE_EVERY
+        )
     return _rotated(
         tuple(key for key in SUPPORT_ASPECTS if key not in used) or SUPPORT_ASPECTS,
         week_no + session_index + slot,
     )
+
+
+def _no_other_route(pool: tuple[str, ...], phase: Phase) -> tuple[str, ...]:
+    """The pool members whose ONLY route into a plan is this slot, in the phase's own order.
+
+    `wall_led_aspects` is what the climbing pass rotates and `SUPPORT_ASPECTS` owns slot 2, so
+    what is left here is the work no other pass can place. Ruling 21's yield rotates over THESE
+    rather than over the whole pool because a base block is three weeks: at two sessions a week
+    a yield every third turn comes round twice, and a nine-long pool needs nine turns to reach
+    `general_strength` — measured, the plain pool still deleted it from 8 of 24 profiles.
+    """
+    wall = wall_led_aspects(phase)
+    return tuple(key for key in pool if key not in wall and key not in SUPPORT_ASPECTS)
 
 
 def _secondary_pool(

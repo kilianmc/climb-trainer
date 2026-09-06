@@ -63,6 +63,25 @@ COPY_CLAIMS_LAST: dict[Phase, tuple[str, tuple[str, ...]]] = {
     Phase.BASE: ("power", ("endurance", "technique", "anaerobic_capacity"))
 }
 
+# The defect this arm was written to register, kept as the number it is measured against: 23 of
+# the 24 swept profiles lost general strength from a base block at BOTH weakness values.
+_WEAKNESS_STARVED_BASE_PROFILES_BEFORE_RULING_21 = 23
+_A_WEAKNESS_YIELDS_SLOT_ONE = (
+    "Nothing measured this before: every plan-shape test in the repo passed "
+    "`weakness_aspect_key=None`, and at None the claim held on 24 of 24. Ruling 21 changed the "
+    "GENERATOR and kept the copy: slot 1 yields the declared weakness one turn in "
+    "`WEAKNESS_YIELDS_SLOT_ONE_EVERY`, and a yielded turn rotates over the aspects with no "
+    "other route into a plan (`generate.py::_no_other_route`) rather than over the whole "
+    "secondary pool, which a three-week base block is too short to walk. A weakness is still "
+    "the organising principle both sources make it; it may not delete a quality to be one."
+)
+
+# The other two claims of `PHASE_GUIDE[base]`'s closing sentence. "Endurance takes more of these
+# weeks' time on the wall than any other quality" is a WALL claim; "general strength and
+# anaerobic capacity both start here" is a presence claim over all base minutes.
+COPY_CLAIMS_BASE_LEAD: str = "endurance"
+COPY_CLAIMS_BASE_START: tuple[str, ...] = ("general_strength", "anaerobic_capacity")
+
 # Every aspect a phase's copy tells the reader is NOT prescribed there.
 COPY_CLAIMS_ABSENT: dict[Phase, tuple[str, ...]] = {
     Phase.POWER: ("power_endurance",),
@@ -83,12 +102,16 @@ _SESSION_COUNTS: tuple[int, ...] = (2, 3, 5, 7)
 
 @dataclass(frozen=True, slots=True)
 class _Climber:
-    """One generated plan's inputs, frozen so `@cache` can key generation on it."""
+    """One generated plan's inputs, frozen so `@cache` can key generation on it.
+
+    ⚠️ `weakness` is a FIELD and therefore part of that key. A weakness dimension left out of it
+    would hand every arm below the `None` plan and call the difference measured."""
 
     discipline: Discipline
     system: GradeSystemKey
     grade: str
     sessions: int
+    weakness: str | None = None
 
 
 _SWEEP: tuple[_Climber, ...] = tuple(
@@ -98,11 +121,28 @@ _SWEEP: tuple[_Climber, ...] = tuple(
 )
 
 
+# The sweep the per-climber copy arms read, with the DECLARED WEAKNESS as a third dimension:
+# `PHASE_GUIDE` is the same copy whatever the climber declared, so a claim it makes has to hold
+# at every value of the largest categorical lever in the generator. 72 plans, cached.
+_WEAKNESS_SWEEP: tuple[_Climber, ...] = tuple(
+    replace(climber, weakness=weakness)
+    for climber in _SWEEP
+    for weakness in (None, "power", "power_endurance")
+)
+
+
 @cache
 def _sessions_by_phase(climber: _Climber) -> Mapping[Phase, tuple[SessionBlueprint, ...]]:
     """Every session of one generated plan, grouped by the phase of the week it sits in."""
     plan = generate(
-        _input(climber.discipline, climber.system, climber.grade, climber.sessions, 0b111_1111)
+        _input(
+            climber.discipline,
+            climber.system,
+            climber.grade,
+            climber.sessions,
+            0b111_1111,
+            weakness=climber.weakness,
+        )
     )
     grouped: dict[Phase, list[SessionBlueprint]] = {}
     for mesocycle in plan.mesocycles:
@@ -129,6 +169,16 @@ def _climber_aspect_seconds(climber: _Climber, phase: Phase) -> Counter[str]:
     for session in _sessions_by_phase(climber).get(phase, ()):
         for block in session.blocks:
             seconds[block.aspect_key] += _block_seconds(block)
+    return seconds
+
+
+def _climber_wall_seconds(climber: _Climber, phase: Phase) -> Counter[str]:
+    """`_climber_aspect_seconds`' wall-only twin, for the half of the sentence that says wall."""
+    seconds: Counter[str] = Counter()
+    for session in _sessions_by_phase(climber).get(phase, ()):
+        for block in session.blocks:
+            if _on_wall(block):
+                seconds[block.aspect_key] += _block_seconds(block)
     return seconds
 
 
@@ -255,16 +305,79 @@ def test_the_copys_POWER_ENDURANCE_claim_KEEPS_THE_AEROBIC_WORK_UNDER_IT() -> No
 
 
 def test_the_copys_LAST_claim_is_measured_against_the_qualities_the_block_is_FOR() -> None:
-    """⚠️ GUARD. "power sits last on purpose": measured 2.1-7.3% of a base block's WALL minutes,
-    under each quality the same sentence prioritises. The tail ceiling elsewhere is its twin."""
+    """⚠️ GUARD, PER CLIMBER and no longer pooled, and the whole closing sentence rather than
+    half of it. `PHASE_GUIDE` is rendered to every climber on two screens
+    (`web/src/routes/_authed/plan.lazy.tsx`, `web/src/session/SessionBrief.tsx`), so a claim it
+    makes is a per-profile claim and a sweep pooled over 24 plans can read green while the
+    sentence is false for a real one. `_climber_aspect_seconds` exists for this granularity.
+
+    ⚠️ ONE DENOMINATOR, chosen and not averaged: the sentence's own words are "these weeks' time
+    on the wall", so it is measured on WALL minutes. The all-minutes tail ceiling in
+    `test_planner_climbing_floor.py` is a stricter test constant over a different denominator,
+    not a second reading of this sentence — which is why the two numbers never agreed.
+
+    The sentence carries THREE executable claims, all asserted: endurance takes the most wall
+    time, general strength and anaerobic capacity both START here, and power sits last.
+    """
     for phase, (last, ahead) in COPY_CLAIMS_LAST.items():
-        wall = _aspect_seconds(phase, wall_only=True)
-        total = sum(wall.values())
-        assert total, f"no {phase.value} wall minutes in the sweep; the parametrisation is wrong."
-        assert all(wall[last] < wall[key] for key in ahead), (
-            f"PHASE_GUIDE[{phase.value}] says {last} sits last on purpose, but it takes "
-            f"{100 * wall[last] / total:.1f}% of the block's wall minutes against "
-            f"{[(key, f'{100 * wall[key] / total:.1f}%') for key in ahead]}."
+        for climber in _WEAKNESS_SWEEP:
+            wall = _climber_wall_seconds(climber, phase)
+            total = sum(wall.values())
+            assert total, f"no {phase.value} wall minutes for {climber}; parametrisation wrong."
+            assert all(wall[last] < wall[key] for key in ahead), (
+                f"PHASE_GUIDE[{phase.value}] says {last} sits last on purpose, but for a "
+                f"{climber.grade} {climber.discipline.value} climber training "
+                f"{climber.sessions}x a week with weakness={climber.weakness} it takes "
+                f"{100 * wall[last] / total:.1f}% of the block's wall minutes against "
+                f"{[(key, f'{100 * wall[key] / total:.1f}%') for key in ahead]}."
+            )
+            assert all(wall[COPY_CLAIMS_BASE_LEAD] >= wall[key] for key in wall), (
+                f"PHASE_GUIDE[{phase.value}] says {COPY_CLAIMS_BASE_LEAD} takes more of these "
+                f"weeks' time on the wall than any other quality, but a {climber.grade} "
+                f"{climber.discipline.value} climber at {climber.sessions}x with "
+                f"weakness={climber.weakness} gets {wall.most_common(3)}."
+            )
+    for climber in _WEAKNESS_SWEEP:
+        started = _climber_aspect_seconds(climber, Phase.BASE)
+        absent = [aspect for aspect in COPY_CLAIMS_BASE_START if not started[aspect]]
+        assert not absent, (
+            f"PHASE_GUIDE[base] says {' and '.join(COPY_CLAIMS_BASE_START)} both START here, "
+            f"but a {climber.grade} {climber.discipline.value} climber at {climber.sessions}x "
+            f"gets no {absent} in a base block at all. ⚠️ Measured on ALL base minutes, not wall "
+            f"minutes: since the three on-wall general strength rows were re-filed to `power` "
+            f"there is no on-wall general strength exercise in any phase, so a wall-only "
+            f"reading of this claim would be vacuous."
+        )
+
+
+def test_a_DECLARED_WEAKNESS_LEAVES_the_base_blocks_general_strength_A_TURN() -> None:
+    """⚠️ GUARD, re-pointed from the defect it registered: 23 starved profiles of 24 at both
+    weakness values, now none. Slot 1 is `general_strength`'s only route into a plan, so a
+    weakness that took the slot in every session deleted the quality rather than outranking it.
+
+    ⚠️ WHY `WEAKNESS_YIELDS_SLOT_ONE_EVERY` IS 3, measured here at both weakness values. A base
+    block is three weeks, so a 2x-a-week climber's `week_no - 1 + session_index` runs 0-3: N=2
+    yields three of those six sessions, N=3 yields two, and every N of 4 or more yields exactly
+    ONCE in the whole block — one session between the published claim and nothing. 4 buys
+    nothing for that risk (worst-case plan-wide weakness multiplier 1.14x at both 3 and 4,
+    against 1.26x unyielded) and 2 costs the most of the bias, 1.08x. At 3 the multiplier runs
+    1.14x-2.67x where unyielded ran 1.26x-3.42x, and general strength holds 1.0-4.1% of a base
+    block on every profile.
+    """
+    for weakness in ("power", "power_endurance"):
+        starved = sorted(
+            f"{climber.grade} {climber.discipline.value} {climber.sessions}x"
+            for climber in _SWEEP
+            if not _climber_aspect_seconds(replace(climber, weakness=weakness), Phase.BASE)[
+                "general_strength"
+            ]
+        )
+        assert not starved, (
+            f"declaring {weakness} a weakness leaves {len(starved)} of {len(_SWEEP)} profiles "
+            f"with no general strength in a base block, where ruling 21 left "
+            f"0 and the defect it replaced left "
+            f"{_WEAKNESS_STARVED_BASE_PROFILES_BEFORE_RULING_21}: {starved}. "
+            f"{_A_WEAKNESS_YIELDS_SLOT_ONE}"
         )
 
 

@@ -26,6 +26,7 @@ from server.domain.planner.blueprint import (
     SessionBlueprint,
 )
 from server.domain.planner.climbing import (
+    ENERGY_SYSTEM_ASPECTS,
     EXPANDABLE_ASPECTS,
     EXPANDABLE_PROTOCOLS,
     MAX_EXPANSION_FACTOR,
@@ -90,8 +91,14 @@ class _AcceptedFingerGap:
     reason: str
 
 
-# The register, and EMPTY is a measurement: §3.4's ordering repaired both rows — ruling 15's
-# intermediate 2x/week hangboard loss included — by making the window follow the hardest block.
+# The register, and EMPTY is a MEASUREMENT again: ruling 32 opened the one gate that cost a row.
+# §3.4's ordering repaired both of ruling 15's rows once; ruling 25's session length put the
+# intermediate 2x/week hangboard loss back; ruling 32 had `_fill_finger_strength` read
+# `_block_ceiling` instead of restating three blocks, because that session was losing to block
+# COUNT and not to anything about training. ⚠️ The CLIMBING FLOOR never was involved and must not be
+# "repaired": it refuses 0 of 216 evaluations over 1176 weeks, passes the week that used to fail
+# at 81.5% against its 75% floor, and a rewrite of it measured byte-identical over those weeks.
+# Whether the row is registered or the slot is opened is Kilian's, so neither was done here.
 _ACCEPTED_FINGER_GAPS: tuple[_AcceptedFingerGap, ...] = ()
 
 # Quality first. The fixed-volume protocols are the ones whose adaptation is decided by the
@@ -208,6 +215,51 @@ _BASE_PRIORITISED_ON_WALL: tuple[str, ...] = ("endurance", "anaerobic_capacity")
 # His worked base week is "0.5x Aero/An Pow" against four strength sessions out of five, i.e.
 # ~10% across BOTH maintained qualities. Measured 2.5-10.7%, so 15 has margin and still bites.
 _BASE_MAINTAINED_CEILING_PCT = 15
+
+# ⚠️ Barrows §3.2/§4.2's two WEEKLY FREQUENCY ceilings, restated as this file's own data for
+# `_MAY_EXPAND`'s reason: a guard that asks `hard_energy_day_ceiling()` for the number agrees
+# with whatever that function returns, including a wrong one.
+# ⚠️ The set is the three ENERGY SYSTEMS and deliberately not `INTENSITY_TIERS`' top tier, which
+# holds `power` with `finger_strength` and `general_strength`. Strength is not an energy system:
+# §4.2's worked base week runs FOUR strength sessions alongside ~3 hard energy days, so counting
+# the strength aspects here would assert a ceiling on work the source explicitly prescribes.
+_HARD_ENERGY_ASPECTS: frozenset[str] = frozenset({"anaerobic_capacity", "power", "power_endurance"})
+_HARD_ENERGY_DAYS_PER_WEEK = 3
+
+# ⚠️ The TAPER is exempt, and this is the SOURCED reason rather than a hole in the guard: §3.3
+# makes a taper only hard strength/power and hard An Pow/Aero Pow with An Cap, Aero Cap and ARC
+# dropped, so every taper session carries hard energy-system work BY CONSTRUCTION and v8.9.0
+# authored it that way. Applying the ceiling here turns
+# `test_the_TAPER_CARRIES_hard_strength_and_hard_aerobic_power` red and the displaced slots have
+# nowhere to go, because `test_a_TAPER_WEEK_DROPS_every_minute_of_capacity_work` forbids the easy
+# aspects. Measured under the ceiling: taper weeks run 4-5 hard days of 5 and 6-7 of 7.
+# PERFORMANCE is NOT exempt — Peak 2 is 2x Aero Pow + 1x An Pow, already inside ~3.
+_HARD_ENERGY_EXEMPT_PHASES: frozenset[Phase] = frozenset({Phase.TAPER})
+
+# §4.2's worked example is per STAGE, not flat: Base 2x An Cap, Peak 1 1x, Peak 2 dropped.
+# `performance` and `taper` are 0 through `DELIBERATELY_UNPRESCRIBED` and not through the
+# ceiling, which is why the arm below asserts them and does not re-implement them.
+_ANAEROBIC_ASPECT = "anaerobic_capacity"
+_ANAEROBIC_SESSIONS_PER_WEEK: Mapping[Phase, int] = {
+    Phase.BASE: 2,
+    Phase.STRENGTH: 2,
+    Phase.POWER: 1,
+    Phase.POWER_ENDURANCE: 1,
+    Phase.PERFORMANCE: 0,
+    Phase.DELOAD: 1,
+    Phase.TAPER: 0,
+}
+
+# The declared weakness, which is the largest categorical lever in the generator and had no
+# number behind it: it overrides one supplementary slot per session (`_intended_aspect` slot 1)
+# in every phase whose emphasis row carries the aspect. Both halves of it are guarded below.
+_WEAKNESSES: tuple[str, ...] = ("power", "power_endurance")
+
+# ⚠️ A one-session week is EXEMPT from the rise half, measured rather than assumed: a solo week
+# has no supplementary pass at all (`_fill_supplementary` returns after the top-up), so slot 1 is
+# never reached and the plan is byte-identical at every weakness value — 8804 s of power and
+# 4492 s of power endurance whichever is declared. Two sessions is where the lever starts.
+_WEAKNESS_NEEDS_A_SUPPLEMENTARY_SLOT = 2
 
 _BEGINNERS = tuple(row for row in _CLIMBERS if row[0] is Level.BEGINNER)
 
@@ -335,6 +387,7 @@ def _input(
     mask: int,
     gap: int = 3,
     equipment: tuple[str, ...] = _ALL_EQUIPMENT,
+    weakness: str | None = None,
 ) -> PlannerInput:
     """A plannable climber with no injuries, holding the whole vocabulary unless told otherwise."""
     current = ordinal_of(system, label)
@@ -345,7 +398,7 @@ def _input(
         sessions_per_week=sessions,
         available_weekdays=mask,
         strength_aspect_key=None,
-        weakness_aspect_key=None,
+        weakness_aspect_key=weakness,
         open_injury_keys=(),
         equipment_keys=equipment,
         start_date=_MONDAY,
@@ -383,6 +436,27 @@ def _weekly_matrix(plan: PlanBlueprint) -> list[tuple[int, Phase, int, int, int]
                 other += sum(_block_seconds(b) for b in session.blocks if not _on_wall(b))
                 climbing += 1 if on_wall else 0
             rows.append((microcycle.week_no, microcycle.phase, wall, other, climbing))
+    return rows
+
+
+def _weekly_aspect_sessions(plan: PlanBlueprint) -> list[tuple[int, Phase, Counter[str], int]]:
+    """`(week_no, phase, sessions carrying each aspect, sessions carrying hard energy work)`.
+
+    ⚠️ `_weekly_matrix` collapses the aspect dimension away, so this per-week PER-ASPECT view is
+    new. A session CARRIES a quality by containing a block of it, never by what its first block
+    is: An Cap reaches a session through the rotated wall ring, the length top-up and the
+    supplementary fill, and a count keyed on the opener would miss two of the three.
+    """
+    rows: list[tuple[int, Phase, Counter[str], int]] = []
+    for mesocycle in plan.mesocycles:
+        for microcycle in mesocycle.microcycles:
+            carried: Counter[str] = Counter()
+            hard = 0
+            for session in microcycle.sessions:
+                aspects = {block.aspect_key for block in session.blocks}
+                carried.update(aspects)
+                hard += 1 if aspects & _HARD_ENERGY_ASPECTS else 0
+            rows.append((microcycle.week_no, microcycle.phase, carried, hard))
     return rows
 
 
@@ -773,6 +847,26 @@ def _plan(
     return generate(_input(discipline, system, label, sessions, mask))
 
 
+@cache
+def _aspect_minutes(
+    discipline: Discipline,
+    system: GradeSystemKey,
+    label: str,
+    sessions: int,
+    weakness: str | None,
+) -> Mapping[str, int]:
+    """Prescribed seconds per aspect over a WHOLE plan. ⚠️ `weakness` is part of the cache key
+    because leaving it out measures the same plan twice and calls the difference zero."""
+    plan = generate(_input(discipline, system, label, sessions, 0b111_1111, weakness=weakness))
+    seconds: Counter[str] = Counter()
+    for mesocycle in plan.mesocycles:
+        for microcycle in mesocycle.microcycles:
+            for session in microcycle.sessions:
+                for block in session.blocks:
+                    seconds[block.aspect_key] += _block_seconds(block)
+    return seconds
+
+
 def _day_tier(session: SessionBlueprint) -> int:
     """How hard the DAY is: its hardest block on §3.4's chain, because the source's second half
     is about the day. A block-less Recovery session sinks past every tier there is."""
@@ -1114,4 +1208,136 @@ def test_a_base_block_only_MAINTAINS_the_qualities_the_source_maintains(
         f"ceiling of {_BASE_MAINTAINED_CEILING_PCT}%: {maintained // 60} min against "
         f"{prioritised // 60} min of {' and '.join(_BASE_PRIORITISED_ON_WALL)}. Base maintains "
         f"those two qualities and trains these; it is not a power block."
+    )
+
+
+@pytest.mark.parametrize(("level", "discipline", "system", "label"), _CLIMBERS)
+@pytest.mark.parametrize("sessions", [2, 3, 5, 7])
+def test_at_most_THREE_DAYS_A_WEEK_carry_hard_energy_system_work(
+    level: Level, discipline: Discipline, system: GradeSystemKey, label: str, sessions: int
+) -> None:
+    """⚠️ GUARD. Ruling 9, per week and per climber: Barrows gives a 5-day climber at most ~3
+    days of hard energy-system work. An overtraining guard and not a tuning knob — a 5-day
+    climber got 4 or 5 hard days in 80 of 120 measured weeks, and every strength and power
+    loading week of the beginner and intermediate plans was 5 of 5. The TAPER is exempt for
+    `_HARD_ENERGY_EXEMPT_PHASES`' sourced reason and the anti-vacuity arm below is why that
+    exemption cannot hide a generator that stopped prescribing hard work at all."""
+    del level
+    rows = _weekly_aspect_sessions(_plan(discipline, system, label, sessions, 0b111_1111))
+    assert rows, f"a {label} climber at {sessions}x a week produced no weeks at all."
+    for week_no, phase, _carried, hard in rows:
+        if phase in _HARD_ENERGY_EXEMPT_PHASES:
+            continue
+        assert hard <= _HARD_ENERGY_DAYS_PER_WEEK, (
+            f"a {label} climber at {sessions}x a week gets {hard} days of hard energy-system "
+            f"work in week {week_no} ({phase.value}), against the "
+            f"{_HARD_ENERGY_DAYS_PER_WEEK} Barrows §3.2/§4.2 allows. Hard means An Cap, An Pow "
+            f"or Aero Pow — {sorted(_HARD_ENERGY_ASPECTS)} — and a day counts by CONTAINING one, "
+            f"not by opening with one."
+        )
+    loaded = [hard for _w, phase, _c, hard in rows if phase not in _HARD_ENERGY_EXEMPT_PHASES]
+    assert max(loaded) >= min(sessions, _HARD_ENERGY_DAYS_PER_WEEK), (
+        f"the hardest non-taper week a {label} climber gets at {sessions}x a week carries "
+        f"{max(loaded)} hard energy days, so the ceiling above is passing on a plan that has "
+        f"stopped prescribing hard work rather than on one that respects a ceiling."
+    )
+
+
+@pytest.mark.parametrize(("level", "discipline", "system", "label"), _CLIMBERS)
+@pytest.mark.parametrize("sessions", [2, 3, 5, 7])
+def test_ANAEROBIC_CAPACITY_sessions_stay_under_the_ceiling_FOR_THAT_PHASE(
+    level: Level, discipline: Discipline, system: GradeSystemKey, label: str, sessions: int
+) -> None:
+    """⚠️ GUARD. Ruling 18, per week and per climber: the An Cap ceiling is per PHASE, off §4.2's
+    worked example. Measured before: 136 of 480 weeks carried 3 or more An Cap sessions,
+    distribution 3x58 4x44 5x25 6x8 7x1 — seven a week against a ceiling of two — and 206 of
+    480 weeks breached their own phase's number. `performance` and `taper` are 0 because the
+    library declines those cells, which this asserts rather than re-implements."""
+    del level
+    rows = _weekly_aspect_sessions(_plan(discipline, system, label, sessions, 0b111_1111))
+    assert rows, f"a {label} climber at {sessions}x a week produced no weeks at all."
+    for week_no, phase, carried, _hard in rows:
+        ceiling = _ANAEROBIC_SESSIONS_PER_WEEK[phase]
+        assert carried[_ANAEROBIC_ASPECT] <= ceiling, (
+            f"a {label} climber at {sessions}x a week gets {carried[_ANAEROBIC_ASPECT]} "
+            f"anaerobic-capacity sessions in week {week_no} ({phase.value}), against the "
+            f"{ceiling} §4.2 gives that stage. An Cap is the quality Barrows caps hardest: it "
+            f"takes months to build and its sessions are the ones with real injury risk."
+        )
+    reached = {phase for _w, phase, _c, _h in rows}
+    assert reached & set(_ANAEROBIC_SESSIONS_PER_WEEK) == reached, (
+        f"{sorted(phase.value for phase in reached - set(_ANAEROBIC_SESSIONS_PER_WEEK))} have "
+        f"no row in the ceiling table, so those weeks are unchecked rather than passing."
+    )
+
+
+@pytest.mark.parametrize(("level", "discipline", "system", "label"), _CLIMBERS)
+@pytest.mark.parametrize("sessions", [2, 3, 5, 7])
+@pytest.mark.parametrize("weakness", _WEAKNESSES)
+def test_a_DECLARED_WEAKNESS_RAISES_its_own_aspects_minutes(
+    level: Level,
+    discipline: Discipline,
+    system: GradeSystemKey,
+    label: str,
+    sessions: int,
+    weakness: str,
+) -> None:
+    """⚠️ GUARD, the first half of the lever nothing measured. `weakness_aspect_key` is a
+    categorical override of one block slot per session and every plan-shape test in the repo
+    passed `None`; the four files that do pass one assert strings, widths and determinism and
+    never its effect. ⚠️ Re-measured on THIS parametrisation, which the earlier "2.0x-6.4x" note
+    did not match: 1.26x-3.42x plan-wide before ruling 21's yield and 1.14x-2.67x after it.
+
+    A one-session week is exempt: see `_WEAKNESS_NEEDS_A_SUPPLEMENTARY_SLOT`, which is why this
+    parametrisation starts at two and not at one."""
+    del level
+    assert sessions >= _WEAKNESS_NEEDS_A_SUPPLEMENTARY_SLOT
+    baseline = _aspect_minutes(discipline, system, label, sessions, None)
+    declared = _aspect_minutes(discipline, system, label, sessions, weakness)
+    assert baseline[weakness], (
+        f"a {label} climber at {sessions}x a week gets no {weakness} at all with nothing "
+        f"declared, so the comparison below would pass on any positive number."
+    )
+    assert declared[weakness] > baseline[weakness], (
+        f"a {label} climber at {sessions}x a week who declares {weakness} their weakness gets "
+        f"{declared[weakness] // 60} min of it against {baseline[weakness] // 60} min with "
+        f"nothing declared. Both sources build the whole block around the declared weakness, so "
+        f"a declaration that buys no minutes is a form control wired to nothing."
+    )
+
+
+@pytest.mark.parametrize(("level", "discipline", "system", "label"), _BEGINNERS)
+@pytest.mark.parametrize("sessions", [1, 2, 3, 5, 7])
+@pytest.mark.parametrize("weakness", _WEAKNESSES)
+def test_a_DECLARED_WEAKNESS_cannot_push_a_BASE_BLOCKS_TAIL_past_its_ceiling(
+    level: Level,
+    discipline: Discipline,
+    system: GradeSystemKey,
+    label: str,
+    sessions: int,
+    weakness: str,
+) -> None:
+    """⚠️ GUARD, the second half, and the one that was RED when it was written. The weakness is
+    the largest lever in the generator and the base block is where it can do most damage: base
+    MAINTAINS power and aerobic power only, and slot 1 puts the declared one in every session.
+
+    Measured before the weekly frequency ceilings landed: a declared `power_endurance` weakness
+    took 22.0% and 22.3% of the two beginners' base minutes at 7 sessions a week against this
+    ceiling of 20, and 21.6-23.2% across all six climbers. With the ceilings the same sweep
+    peaks at 19.2% — `power` at 14.5%, nothing declared at 10.7% — so ruling 9's ceiling is
+    what closed this breach, which is why the two land in one PR.
+    """
+    del level
+    every, _wall = _base_aspect_seconds(
+        generate(_input(discipline, system, label, sessions, 0b111_1111, weakness=weakness))
+    )
+    total = sum(every.values())
+    assert total, "no base weeks in the plan; the parametrisation is wrong."
+    tail = sum(every.get(key, 0) for key in _BASE_WALL_EMPHASIS[-2:])
+    assert tail * 100 <= _BASE_TAIL_CEILING_PCT * total, (
+        f"a {label} beginner training {sessions}x a week who declares {weakness} their weakness "
+        f"spends {100 * tail / total:.1f}% of a base block's prescribed minutes on "
+        f"{' and '.join(_BASE_WALL_EMPHASIS[-2:])}, against a ceiling of "
+        f"{_BASE_TAIL_CEILING_PCT}%: {tail // 60} min of {total // 60}. A weakness is an "
+        f"organising principle, but base still only MAINTAINS both of these."
     )
