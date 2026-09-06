@@ -355,6 +355,10 @@ class PhaseGuide:
 
 # ⚠️ **Describes what THIS generator prescribes, not periodisation in general.** Every claim
 # is checkable in the planner, and the plan's own numbers are derived, never restated here.
+# ⚠️ **The field is NOT dead payload and issue #100 is closed on that basis** (ruling 8,
+# 2026-09-06): the last sentence is the only place a user is ever told about ruling 31's
+# declared divergence — that this plan chooses 11-18 h weeks, 2-4x above what Lattice measures
+# in the same grade bands. Deleting `vocabulary.plan_goal` deletes the disclosure with it.
 PLAN_GOAL: Final = (
     "Every block is three loading weeks and one unloading week. The blocks run in order — base "
     "first, the strength qualities in the middle, performance last. Every day you tell us you "

@@ -1097,6 +1097,11 @@ EXERCISES: Final[tuple[ExerciseSpec, ...]] = (
     ExerciseSpec(
         key="boulders_on_the_two_minute",
         name="Boulders on the two-minute",
+        # ⚠️ F18, a DECLARED DIVERGENCE (ruling 42): An Cap by dose — 30 s of work against 90 s
+        # of rest is 3.0x, and 16 rounds x 120 s is 32 min of the power block — and Barrows'
+        # Aero Pow by name and shape. It keeps `power` because the honest cell does not exist:
+        # `DELIBERATELY_UNPRESCRIBED` holds (STRENGTH, power_endurance) and (POWER,
+        # power_endurance), which are two of the three phases this row is prescribed in.
         aspect_key="power",
         protocol_kind=ProtocolKind.INTERVALS,
         equipment_keys=("bouldering_wall",),
@@ -1516,29 +1521,6 @@ EXERCISES: Final[tuple[ExerciseSpec, ...]] = (
         ),
     ),
     ExerciseSpec(
-        key="auto_belay_interval_laps",
-        name="Auto belay interval laps",
-        aspect_key="anaerobic_capacity",
-        protocol_kind=ProtocolKind.INTERVALS,
-        discipline=Discipline.SPORT,
-        equipment_keys=("auto_belay",),
-        contraindication_keys=("fingers", "elbow"),
-        instructions=(
-            "Climb a sustained route, ride the device down, and go again on the clock. With "
-            "nobody to wait for, the rest is exactly what the timer says — which is what "
-            "makes an auto belay the most honest interval tool in the building."
-        ),
-        prescriptions=(
-            PrescriptionSpec(
-                Phase.POWER_ENDURANCE,
-                sets=6,
-                work_seconds=90,
-                rest_between_sets_seconds=180,
-                target_rpe=8,
-            ),
-        ),
-    ),
-    ExerciseSpec(
         key="machine_anaerobic_intervals",
         name="Machine anaerobic intervals",
         aspect_key="anaerobic_capacity",
@@ -1560,7 +1542,7 @@ EXERCISES: Final[tuple[ExerciseSpec, ...]] = (
                 Phase.POWER_ENDURANCE,
                 sets=8,
                 work_seconds=40,
-                rest_between_sets_seconds=60,
+                rest_between_sets_seconds=80,
                 target_rpe=9,
             ),
             PrescriptionSpec(
@@ -1685,6 +1667,11 @@ EXERCISES: Final[tuple[ExerciseSpec, ...]] = (
     ExerciseSpec(
         key="bodyweight_anaerobic_circuit",
         name="Anaerobic bodyweight circuit",
+        # ⚠️ F25, a DECLARED DIVERGENCE (ruling 44): the operative rest is the 120 s between
+        # rounds against 40 s of work — 3.0x, which doses like An Cap, not like Aero Pow's 1-2x.
+        # It keeps `power_endurance` because it is the taper's ONLY gearless aerobic-power
+        # session (issue #61) and (TAPER, anaerobic_capacity) is deliberately unprescribed, so
+        # re-filing it takes the session out of the taper rather than re-labelling it.
         aspect_key="power_endurance",
         protocol_kind=ProtocolKind.CIRCUIT,
         # Every movement in the circuit is named, so every movement's contraindication is
@@ -1769,6 +1756,29 @@ EXERCISES: Final[tuple[ExerciseSpec, ...]] = (
                 sets=3,
                 work_seconds=90,
                 rest_between_sets_seconds=90,
+                target_rpe=8,
+            ),
+        ),
+    ),
+    ExerciseSpec(
+        key="auto_belay_interval_laps",
+        name="Auto belay interval laps",
+        aspect_key="power_endurance",
+        protocol_kind=ProtocolKind.INTERVALS,
+        discipline=Discipline.SPORT,
+        equipment_keys=("auto_belay",),
+        contraindication_keys=("fingers", "elbow"),
+        instructions=(
+            "Climb a sustained route, ride the device down, and go again on the clock. With "
+            "nobody to wait for, the rest is exactly what the timer says — which is what "
+            "makes an auto belay the most honest interval tool in the building."
+        ),
+        prescriptions=(
+            PrescriptionSpec(
+                Phase.POWER_ENDURANCE,
+                sets=6,
+                work_seconds=90,
+                rest_between_sets_seconds=180,
                 target_rpe=8,
             ),
         ),
@@ -1919,6 +1929,11 @@ EXERCISES: Final[tuple[ExerciseSpec, ...]] = (
         # The only aerobic row a BOULDERER can be given in this block: the other four all
         # require rope gear, so `discipline` is deliberately NULL and the gear is a boulder wall.
         prescriptions=(
+            # ⚠️ A DECLARED DIVERGENCE (ruling 45): the only `endurance` row under §7's 600 s
+            # work floor, and it stays there. At 600 s this goes red in test_phase_guide.py:
+            # test_the_copys_POWER_ENDURANCE_claim_about_WHAT_IS_BIGGEST_FLIPS_WITH_THE_DAYS —
+            # lengthening ruling 23's own row makes another quality out-train the block it is
+            # named after, which is exactly what ruling 30 forbids.
             PrescriptionSpec(
                 Phase.POWER_ENDURANCE,
                 sets=3,
@@ -1950,10 +1965,10 @@ EXERCISES: Final[tuple[ExerciseSpec, ...]] = (
                 Phase.BASE, sets=4, reps=3, rest_between_sets_seconds=300, target_rpe=6
             ),
             PrescriptionSpec(
-                Phase.POWER_ENDURANCE, sets=5, reps=3, rest_between_sets_seconds=240, target_rpe=7
+                Phase.POWER_ENDURANCE, sets=5, reps=3, rest_between_sets_seconds=240, target_rpe=6
             ),
             PrescriptionSpec(
-                Phase.PERFORMANCE, sets=4, reps=3, rest_between_sets_seconds=240, target_rpe=7
+                Phase.PERFORMANCE, sets=4, reps=3, rest_between_sets_seconds=240, target_rpe=6
             ),
         ),
     ),
@@ -1999,10 +2014,10 @@ EXERCISES: Final[tuple[ExerciseSpec, ...]] = (
                 Phase.BASE, sets=4, reps=3, rest_between_sets_seconds=240, target_rpe=6
             ),
             PrescriptionSpec(
-                Phase.POWER_ENDURANCE, sets=5, reps=2, rest_between_sets_seconds=180, target_rpe=7
+                Phase.POWER_ENDURANCE, sets=5, reps=2, rest_between_sets_seconds=180, target_rpe=6
             ),
             PrescriptionSpec(
-                Phase.PERFORMANCE, sets=4, reps=2, rest_between_sets_seconds=180, target_rpe=7
+                Phase.PERFORMANCE, sets=4, reps=2, rest_between_sets_seconds=180, target_rpe=6
             ),
             PrescriptionSpec(
                 Phase.DELOAD, sets=3, reps=2, rest_between_sets_seconds=240, target_rpe=4
@@ -2018,20 +2033,20 @@ EXERCISES: Final[tuple[ExerciseSpec, ...]] = (
         equipment_keys=("lead_wall",),
         contraindication_keys=("fingers", "elbow"),
         instructions=(
-            "Work up through easier routes to one near your onsight level and back down "
-            "again, one lap each, resting only as long as it takes to pull the rope. The "
-            "ladder down is the part that trains endurance; most people stop at the top and "
-            "call it a session."
+            "Work up through easier routes to the hardest one you can still climb in "
+            "control, then back down again, one lap each, resting only as long as it takes "
+            "to pull the rope. The ladder down is the part that trains endurance; most "
+            "people stop at the top and call it a session."
         ),
         prescriptions=(
             PrescriptionSpec(
                 Phase.BASE, sets=5, reps=1, rest_between_sets_seconds=300, target_rpe=6
             ),
             PrescriptionSpec(
-                Phase.POWER_ENDURANCE, sets=6, reps=1, rest_between_sets_seconds=240, target_rpe=8
+                Phase.POWER_ENDURANCE, sets=6, reps=1, rest_between_sets_seconds=240, target_rpe=6
             ),
             PrescriptionSpec(
-                Phase.PERFORMANCE, sets=5, reps=1, rest_between_sets_seconds=300, target_rpe=7
+                Phase.PERFORMANCE, sets=5, reps=1, rest_between_sets_seconds=300, target_rpe=6
             ),
         ),
     ),
@@ -2098,7 +2113,7 @@ EXERCISES: Final[tuple[ExerciseSpec, ...]] = (
                 Phase.BASE, sets=5, reps=2, rest_between_sets_seconds=240, target_rpe=5
             ),
             PrescriptionSpec(
-                Phase.POWER_ENDURANCE, sets=5, reps=2, rest_between_sets_seconds=180, target_rpe=7
+                Phase.POWER_ENDURANCE, sets=5, reps=2, rest_between_sets_seconds=180, target_rpe=6
             ),
             PrescriptionSpec(
                 Phase.DELOAD, sets=3, reps=2, rest_between_sets_seconds=240, target_rpe=4

@@ -8097,7 +8097,7 @@ path = "tests/test_planner_library_reach.py"
 kind = "hash_run"
 anchor = "both disciplines x all three bands"
 limit = 12
-reason = "Records the MEASUREMENT that added the seventh profile: a candidate pool is indexed by a WEEK count, so 28-32-week plans and a 20-week plan do not sample the same pool positions, and outdoor_route_mileage went unreachable at 32 weeks while 128 of 224 sport combinations still reached it. Without the numbers the next reader deletes the short plan as a duplicate of the long one."
+reason = "Records the MEASUREMENT that added the seventh profile: a candidate pool is indexed by a WEEK count, so 28-32-week plans and a 20-week plan do not sample the same pool positions. It also records that the row this was found on no longer depends on the short plan, which is the only way a reader can tell the profile is kept on the mechanism rather than on that one row."
 
 [[exception]]
 path = "tests/test_planner_library_reach.py"
@@ -8736,7 +8736,7 @@ path = "tests/test_planner_climbing_floor.py"
 kind = "docstring"
 anchor = "tests.test_planner_climbing_floor.test_a_BOULDERER_GETS_AEROBIC_WORK_in_the_power_endurance_block"
 limit = 7
-reason = "Ruling 23's cause is not an emphasis-order problem and a reader will assume it is; the dose arm needs F19 named beside it, because a hard row filed under endurance is the registered defect this row must not recreate."
+reason = "Ruling 23's cause is not an emphasis-order problem and a reader will assume it is; and the dose arm has to say out loud that it reads only a boulderer's rows, or it will be mistaken for the aspect-wide RPE ceiling that lives in another file."
 
 [[exception]]
 path = "tests/test_planner_climbing_floor.py"
@@ -8744,3 +8744,59 @@ kind = "hash_run"
 anchor = "what each block is for as ruling 30 states it restated independently of"
 limit = 6
 reason = "The independent restatement is not a formality here and the run carries the proof: reading open_climbing_fill(phase)[0] instead left the arm GREEN when the filler order was reversed, because the test's idea of leading reversed with it."
+
+[[exception]]
+path = "server/domain/exercises.py"
+kind = "hash_run"
+anchor = "f18 a declared divergence ruling"
+limit = 5
+reason = "A divergence no guard can carry: the row's dose says An Cap, its name says Aero Pow, and the reason it stays filed under power is a structural hole in DELIBERATELY_UNPRESCRIBED that neither file states on its own."
+
+[[exception]]
+path = "server/domain/exercises.py"
+kind = "hash_run"
+anchor = "f25 a declared divergence ruling"
+limit = 5
+reason = "The operative-rest reading and the phase arithmetic are both load-bearing: without them the next reader re-files this row to anaerobic_capacity and empties the no-equipment taper week that is the only reason it exists."
+
+[[exception]]
+path = "server/domain/exercises.py"
+kind = "hash_run"
+anchor = "a declared divergence ruling 45"
+limit = 5
+reason = "The one endurance row under §7's work floor, and what keeps it there is a named guard in another file - a reader who raises it to 600 s would otherwise learn why only by breaking test_phase_guide.py."
+
+[[exception]]
+path = "server/domain/planner/climbing.py"
+kind = "hash_run"
+anchor = "f14 a declared divergence and not"
+limit = 8
+reason = "The whole divergence in one place: three measured shares, the source band they miss, the length-fill cause that accounts for most of it, and why no floor guard is owed. Without it a 4-6% strength share reads as an authoring oversight and gets floored by the next reader."
+
+[[exception]]
+path = "server/domain/vocabulary.py"
+kind = "hash_run"
+anchor = "describes what this generator prescribes"
+limit = 6
+reason = "Issue #100 was closed on the ground that this field is not dead payload, and nothing executable can state that: the field's only reader is client copy, so the reason has to sit where a deletion would be proposed."
+
+[[exception]]
+path = "tests/test_exercise_library.py"
+kind = "docstring"
+anchor = "tests.test_exercise_library.test_no_ENDURANCE_row_is_DOSED_OVER_THE_AEROBIC_CAPACITY_RPE_CEILING"
+limit = 4
+reason = "Names F19 as the defect and says why the ceiling is aspect-wide rather than per-cell, which is what stops it being read as a duplicate of the boulder-reachability guard's dose arm."
+
+[[exception]]
+path = "tests/test_exercise_library.py"
+kind = "docstring"
+anchor = "tests.test_exercise_library.test_every_DOSED_row_sits_inside_its_SECTION_7_REST_TO_WORK_BAND"
+limit = 16
+reason = "The guard's whole scope, which is the part a reader cannot recompute: the counts that make up the checkable set, the aspect-keyed reading that was measured and refused at 10 of 10 false positives, and the work_seconds blind spot that biases what is readable toward the rows that are wrong."
+
+[[exception]]
+path = "tests/test_exercise_library.py"
+kind = "docstring"
+anchor = "tests.test_exercise_library.test_the_SECTION_7_SHAPE_REGISTER_names_every_shape_the_library_actually_HAS"
+limit = 4
+reason = "Both directions and what each one catches: an unnamed shape is a row no band reads, which is invisible from every other test, and a named shape the library has dropped is a stale exemption."
