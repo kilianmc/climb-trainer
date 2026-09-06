@@ -17,7 +17,7 @@ from functools import cache
 
 import pytest
 
-from server.domain.exercises import EXERCISES, OPEN_CLIMBING_KEYS
+from server.domain.exercises import EXERCISES, OPEN_CLIMBING_KEYS, ExerciseSpec, PrescriptionSpec
 from server.domain.grades import Discipline, GradeSystemKey, ordinal_of
 from server.domain.planner.blueprint import (
     BlockBlueprint,
@@ -46,6 +46,25 @@ from server.domain.vocabulary import EQUIPMENT, Phase, ProtocolKind
 _MONDAY = date(2026, 8, 24)
 _ALL_EQUIPMENT = tuple(sorted(spec.key for spec in EQUIPMENT))
 _BY_KEY = {spec.key: spec for spec in EXERCISES}
+
+# Ruling 46's ROUNDS rule, restated here for `_MAY_EXPAND`'s own reason. This is the register that
+# replaced this file's old `ceiling = authored` pin, which guarded AGAINST the progression #117
+# owes: alactic max-effort work progresses by load or rounds, so its set count is a function of the
+# loading week and pinning it to the authored number pinned weeks 1-3 byte-identical.
+#
+# ⚠️ Keyed on the PAIR and never on `aspect_key`: `power` x `circuit` is lactic anaerobic power and
+# progresses by shorter rest instead, so an aspect-level entry here would licence padding it.
+_ROUNDS_PER_LOADING_WEEK: Mapping[tuple[str, ProtocolKind], int] = {
+    ("power", ProtocolKind.STRAIGHT_SETS): 1,
+    ("power", ProtocolKind.LIMIT_BOULDER): 1,
+    ("power", ProtocolKind.INTERVALS): 1,
+}
+
+# `power` x `intervals` holds one alactic row and one lactic one, and only the alactic one takes
+# rounds. 15 s is above every alactic burst in the library and below every lactic interval.
+_ALACTIC_WORK_SECONDS_MAX = 15
+_WEEKS_PER_BLOCK = 4
+_LOADING_WEEKS = 3
 
 # The plan document's own table, restated INDEPENDENTLY of `climbing.py` on purpose: a guard
 # that asks `is_expandable()` whether a block may expand agrees with any answer that function
@@ -86,6 +105,15 @@ _TARGET_BAND_IS_FLOOR_ONLY = (
 
 # Real max-hang / repeater sessions a LOADING week owes, per band. Beginner is zero by KILIAN'S
 # DECISION, 2026-09-06: neither source scales hangboarding by level, so never attribute it to them.
+# ⚠️ The order is STRICT and `test_the_finger_strength_floor_RISES_WITH_THE_BAND` asserts it off
+# the generated plans. Now that the zero is a DECISION rather than the mis-attribution the audit
+# found, the strictness owes its own reason (guard 5, ruling 35): both sources agree beginners
+# habituate before they load hard, a max hang is the load-hard end of finger work, and the band
+# that has earned the tissue tolerance is the one that gets more of it. Only the ZERO diverges.
+# ⚠️ Its CONSEQUENCE, and why it costs nothing: the strict `<` forbids any future beginner
+# habituation protocol from raising this floor. `_HABITUATION_PROTOCOLS` below is how a beginner
+# gets finger work regardless — as scaled CONTENT, which is what the sources scale — and this
+# floor counts `_FINGER_PROTOCOLS` only, so a habituation block can neither satisfy nor breach it.
 _FINGER_SESSIONS_PER_WEEK: Mapping[Level, int] = {
     Level.BEGINNER: 0,
     Level.INTERMEDIATE: 1,
@@ -93,6 +121,28 @@ _FINGER_SESSIONS_PER_WEEK: Mapping[Level, int] = {
 }
 _FINGER_PROTOCOLS = frozenset({ProtocolKind.MAX_HANG, ProtocolKind.REPEATERS})
 _FINGER_PHASES = frozenset({Phase.STRENGTH, Phase.POWER})
+
+# Ruling 35's CONTENT half, restated independently of `climbing.py` for `_MAY_EXPAND`'s reason:
+# Dylan's weeks-1-4 habituation protocol, which the library authors for BASE and no later phase.
+_HABITUATION_PROTOCOLS = frozenset({ProtocolKind.HOLD})
+_HABITUATION_ROW = "hangboard_density_hangs"
+
+# (profile, sessions) whose BASE weeks never draw `_HABITUATION_ROW`, with the mechanism and the
+# measured cost. Asserted in BOTH directions inline below, on `_ACCEPTED_FINGER_GAPS`' contract:
+# a registered pair that starts drawing the row is a stale claim about the generator and goes red.
+# ⚠️ The GRADE GAP is NOT a dimension of it — measured identical at all five gaps, where #118's
+# own headline was that a beginner draws the row at gap 3-5 and never at 1-2. What decides it is
+# how many supplementary slots a BASE week has: `finger_strength` sits fifth in that block's
+# emphasis and a beginner's band spends 85-90% of the week's minutes on a wall.
+_BASE_HABITUATION_GAPS: Mapping[tuple[str, int], str] = {
+    ("beginner sport 6a", 2): "3 BASE weeks of 2 sessions reach the finger slot 0 times",
+    ("beginner boulder 6A", 2): "3 BASE weeks of 2 sessions reach the finger slot 0 times",
+    ("beginner boulder 6A", 3): "3 BASE weeks of 3 sessions reach the finger slot 0 times",
+    ("beginner sport 6a", 3): (
+        "1 BASE finger block, and the rotation spends it on the GEARLESS holds row "
+        "self_resisted_finger_isometrics; both rows are habituation, only one is BASE's own"
+    ),
+}
 
 
 @dataclass(frozen=True, slots=True)
@@ -196,6 +246,10 @@ _CLIMBERS: tuple[tuple[Level, Discipline, GradeSystemKey, str], ...] = (
 )
 
 
+_BEGINNERS = tuple(row for row in _CLIMBERS if row[0] is Level.BEGINNER)
+_HARDER_BANDS = tuple(row for row in _CLIMBERS if row[0] is not Level.BEGINNER)
+
+
 def _profile(level: Level, discipline: Discipline, label: str) -> str:
     """The `_ACCEPTED_FINGER_GAPS` key: one climber of `_CLIMBERS`, without the session count."""
     return f"{level.value} {discipline.value} {label}"
@@ -234,16 +288,30 @@ _LENGTH_FILL_MINUTES = 30
 
 
 def _is_length_fill(block: BlockBlueprint, chunk: int) -> bool:
-    """Whether this block has ruling 27's fill SHAPE: uniform timed sets, no rest inside one or
-    between them, and none longer than one chunk. Read off the blueprint and not off a flag,
-    because a flag would be a wire-contract change to carry a test."""
-    return block.rest_between_sets_seconds is None and all(
-        item.target_work_seconds is not None
-        and item.target_reps is None
-        and item.target_rest_seconds is None
-        and 0 < item.target_work_seconds <= chunk
-        and item.target_work_seconds == block.sets[0].target_work_seconds
-        for item in block.sets
+    """Whether this block IS ruling 27's fill: one of ruling 29's filler rows, in the fill's own
+    shape — uniform timed sets, no rest inside one or between them, none longer than one chunk.
+    Read off the blueprint and not off a flag, because a flag would be a wire-contract change to
+    carry a test.
+
+    ⚠️ **The FAMILY clause is load-bearing and the shape alone was not enough.** `band=None` in
+    `_length_pick` draws only from `open_climbing_fill()`, i.e. only from `OPEN_CLIMBING_KEYS`,
+    and `ordinary()` keeps those rows out of every other pool, so membership identifies the fill
+    exactly. On shape alone, ruling 41's `easy_climbing_flush` (`endurance` × LAPS, 600 s, no
+    rest field of any kind) matched the moment expansion gave it a second set, and the arm below
+    then read the 30-minute chunk rule against a legitimately expanded authored block — 2 sets
+    of 600 s against the 1 that 1200 s implies, red on all six climbers.
+    """
+    return (
+        block.exercise_key in OPEN_CLIMBING_KEYS
+        and block.rest_between_sets_seconds is None
+        and all(
+            item.target_work_seconds is not None
+            and item.target_reps is None
+            and item.target_rest_seconds is None
+            and 0 < item.target_work_seconds <= chunk
+            and item.target_work_seconds == block.sets[0].target_work_seconds
+            for item in block.sets
+        )
     )
 
 
@@ -631,6 +699,20 @@ def test_every_session_lands_inside_its_types_window_AND_ITS_PHASES_LENGTH(
                 )
 
 
+def _rounds_owed(
+    spec: ExerciseSpec, prescription: PrescriptionSpec, microcycle: MicrocycleBlueprint
+) -> int:
+    """The set count this week owes: the authored one, plus ruling 46's rounds where they apply."""
+    cell = (spec.aspect_key, spec.protocol_kind)
+    lactic = cell == ("power", ProtocolKind.INTERVALS) and (
+        prescription.work_seconds is None or prescription.work_seconds > _ALACTIC_WORK_SECONDS_MAX
+    )
+    if microcycle.phase in UNLOADING_PHASES or lactic or spec.key in OPEN_CLIMBING_KEYS:
+        return prescription.sets
+    step = min((microcycle.week_no - 1) % _WEEKS_PER_BLOCK + 1, _LOADING_WEEKS) - 1
+    return prescription.sets + _ROUNDS_PER_LOADING_WEEK.get(cell, 0) * step
+
+
 @pytest.mark.parametrize(("level", "discipline", "system", "label"), _CLIMBERS)
 def test_a_fixed_volume_protocol_is_never_padded_and_an_expandable_one_is_capped(
     level: Level, discipline: Discipline, system: GradeSystemKey, label: str
@@ -641,9 +723,12 @@ def test_a_fixed_volume_protocol_is_never_padded_and_an_expandable_one_is_capped
     ⚠️ Ruling 27's length fill is the ONE dose the generator sizes itself, so it is measured
     against ruling 27's rule instead of against the library's: uniform timed sets, no rest
     inside or between them, none longer than one `LENGTH_FILL_MINUTES` chunk, exactly as many
-    sets as that chunk size implies, and at most ONE such block in a session. That arm cannot
-    become a hole for a padded authored block, because it is STRICTER: an authored block that
-    grew would have to lose its rests and land on an exact chunk count to reach it."""
+    sets as that chunk size implies, and at most ONE such block in a session.
+    ⚠️ Which blocks that arm reads is `OPEN_CLIMBING_KEYS` membership and NOT the shape —
+    `_is_length_fill` records the measurement. The earlier claim that the shape "cannot become a
+    hole for a padded authored block, because an authored block that grew would have to lose its
+    rests and land on an exact chunk count" was wrong in its first clause: it is not a hole, it
+    is a false RED, and ruling 41's rest-free `endurance` row walked into it."""
     del level
     plan = generate(_input(discipline, system, label, 5, 0b111_1111))
     chunk = _LENGTH_FILL_MINUTES * 60
@@ -653,9 +738,10 @@ def test_a_fixed_volume_protocol_is_never_padded_and_an_expandable_one_is_capped
                 fills = 0
                 for block in session.blocks:
                     spec = _BY_KEY[block.exercise_key]
-                    authored = next(
-                        p.sets for p in spec.prescriptions if p.phase is microcycle.phase
+                    prescription = next(
+                        p for p in spec.prescriptions if p.phase is microcycle.phase
                     )
+                    authored = _rounds_owed(spec, prescription, microcycle)
                     expandable = (
                         block.aspect_key,
                         block.protocol_kind,
@@ -672,8 +758,9 @@ def test_a_fixed_volume_protocol_is_never_padded_and_an_expandable_one_is_capped
                         continue
                     assert authored <= len(block.sets) <= ceiling, (
                         f"{block.exercise_key} ({block.protocol_kind.value}, "
-                        f"{microcycle.phase.value}) is authored at {authored} sets and was "
-                        f"prescribed {len(block.sets)}; expandable={expandable}."
+                        f"{microcycle.phase.value} week {microcycle.week_no}) owes {authored} "
+                        f"sets — its authored count plus the rounds its pair progresses by — and "
+                        f"was prescribed {len(block.sets)}; expandable={expandable}."
                     )
                 assert fills <= 1, (
                     f"week {microcycle.week_no} has a session carrying {fills} length-fill "
@@ -1087,6 +1174,112 @@ def test_the_finger_strength_floor_RISES_WITH_THE_BAND(sessions: int) -> None:
     assert beginner < intermediate < advanced, (
         f"hangboard sessions per plan at {sessions}x a week are beginner={beginner}, "
         f"intermediate={intermediate}, advanced={advanced}; the band has to order them."
+    )
+
+
+@cache
+def _gap_plan(
+    discipline: Discipline, system: GradeSystemKey, label: str, sessions: int, gap: int
+) -> PlanBlueprint:
+    """One plan at a chosen GRADE GAP, cached. Plan LENGTH is a dimension of the two habituation
+    guards below because #118's defect had a half that only appeared at the short end."""
+    return generate(_input(discipline, system, label, sessions, 0b111_1111, gap=gap))
+
+
+def _base_finger_blocks(plan: PlanBlueprint) -> tuple[BlockBlueprint, ...]:
+    """Every finger-strength block the plan's BASE weeks carry, in order."""
+    return tuple(
+        block
+        for mesocycle in plan.mesocycles
+        for microcycle in mesocycle.microcycles
+        if microcycle.phase is Phase.BASE
+        for session in microcycle.sessions
+        for block in session.blocks
+        if block.aspect_key == "finger_strength"
+    )
+
+
+@pytest.mark.parametrize("gap", [1, 2, 3, 4, 5])
+@pytest.mark.parametrize("sessions", [2, 3, 5, 7])
+@pytest.mark.parametrize(("level", "discipline", "system", "label"), _BEGINNERS)
+def test_a_BEGINNERS_BASE_WEEKS_HABITUATE_the_fingers_and_never_load_them(
+    level: Level,
+    discipline: Discipline,
+    system: GradeSystemKey,
+    label: str,
+    sessions: int,
+    gap: int,
+) -> None:
+    """Ruling 35, and it reads PER LEVEL because the claim is about one band: the seven-profile
+    union in `test_planner_library_reach.py` was green while this shipped broken.
+
+    The zero above is not what decides this — a beginner's finger work arrives through the
+    ordinary supplementary slot, and what it draws there is CONTENT, which is the thing both
+    sources scale by level. Measured before the fix over 60 beginner plans: **115 of 115 BASE
+    finger blocks were max hangs or repeaters and the row authored for BASE landed in none.**
+    """
+    del level
+    blocks = _base_finger_blocks(_gap_plan(discipline, system, label, sessions, gap))
+    loaded = sorted({block.exercise_key for block in blocks} - {_HABITUATION_ROW})
+    assert not [b for b in blocks if b.protocol_kind not in _HABITUATION_PROTOCOLS], (
+        f"a {label} beginner at {sessions}x, gap {gap} is prescribed {loaded} in BASE. Weeks 1-4 "
+        f"are habituation in both sources, and a max hang or a repeater is the load-hard end."
+    )
+    registered = _BASE_HABITUATION_GAPS.get((_profile(Level.BEGINNER, discipline, label), sessions))
+    drawn = {block.exercise_key for block in blocks}
+    if registered is None:
+        assert _HABITUATION_ROW in drawn, (
+            f"a {label} beginner at {sessions}x, gap {gap} draws {sorted(drawn)} in BASE and not "
+            f"{_HABITUATION_ROW}, the habituation protocol the library authors for that block. "
+            f"If that is a decision it owes a row in _BASE_HABITUATION_GAPS with its mechanism."
+        )
+    else:
+        assert _HABITUATION_ROW not in drawn, (
+            f"({_profile(Level.BEGINNER, discipline, label)}, {sessions}) is registered in "
+            f"_BASE_HABITUATION_GAPS as {registered!r} and now draws {_HABITUATION_ROW} at gap "
+            f"{gap}. Delete the row: the register is a measurement, not documentation."
+        )
+    later = [
+        block.exercise_key
+        for mesocycle in _gap_plan(discipline, system, label, sessions, gap).mesocycles
+        for microcycle in mesocycle.microcycles
+        if microcycle.phase is not Phase.BASE
+        for session in microcycle.sessions
+        for block in session.blocks
+        if block.aspect_key == "finger_strength" and block.protocol_kind in _FINGER_PROTOCOLS
+    ]
+    assert later, (
+        f"a {label} beginner at {sessions}x, gap {gap} is never prescribed a max hang or a "
+        f"repeater ANYWHERE. Habituation is scoped to BASE — weeks 1-4 — and loading is what it "
+        f"is habituation FOR, so a plan that never loads has turned the rule into a ban."
+    )
+
+
+@pytest.mark.parametrize("gap", [1, 3, 5])
+@pytest.mark.parametrize("sessions", [5, 7])
+@pytest.mark.parametrize(("level", "discipline", "system", "label"), _HARDER_BANDS)
+def test_the_HABITUATION_RULE_IS_THE_BEGINNER_BANDS_ALONE(
+    level: Level,
+    discipline: Discipline,
+    system: GradeSystemKey,
+    label: str,
+    sessions: int,
+    gap: int,
+) -> None:
+    """The other end of the level key, and the arm a pooled read cannot make: an intermediate or
+    an advanced climber still LOADS the fingers in BASE. Without it, deleting every max hang from
+    the block would read green.
+
+    ⚠️ Sampled at 5 and 7 sessions on purpose. At 2 sessions for every band, and at 3 for the
+    advanced one, a BASE week reaches no finger slot at all — 30 of 80 plans — which is the same
+    slot scarcity `_BASE_HABITUATION_GAPS` records and says nothing about content.
+    """
+    del level
+    blocks = _base_finger_blocks(_gap_plan(discipline, system, label, sessions, gap))
+    assert [block for block in blocks if block.protocol_kind in _FINGER_PROTOCOLS], (
+        f"a {label} {sessions}x plan holds {sorted({b.exercise_key for b in blocks})} as its "
+        f"whole BASE finger content at gap {gap}. Habituation before loading is the BEGINNER's "
+        f"rule; a band past it trains the maximum the aspect is a predictor of."
     )
 
 
@@ -1621,3 +1814,113 @@ def test_a_DECLARED_WEAKNESS_cannot_push_a_BASE_BLOCKS_TAIL_past_its_ceiling(
         f"{_BASE_TAIL_CEILING_PCT}%: {tail // 60} min of {total // 60}. A weakness is an "
         f"organising principle, but base still only MAINTAINS both of these."
     )
+
+
+# Ruling 33's An Cap → Aero Cap co-occurrence claim, which ruling 41's `easy_climbing_flush` is
+# what made assertable at all: before that row, `endurance` was absent from `wall_led_aspects()`
+# in both of these phases, every `endurance` row they prescribe was OFF the wall, and a 2-session
+# week's whole off-wall allowance (~206-1652 s) could not afford the cheapest of them at 1200 s.
+#
+# ⚠️ SCOPE IS `STRENGTH` AND `POWER` AND NOTHING ELSE. `POWER_ENDURANCE` is out by ruling 24,
+# which revoked that block's aerobic floor and left only the floor revoked; CLAUDE.md forbids
+# re-filing the weeks that hold none, so a guard whose scope reached them would be a re-file of a
+# declined finding however it was worded. BASE and DELOAD are out because they measured 0%.
+#
+# Restated as literals and not imported, on `_THE_BLOCKS_OWN_FILLER`'s reason.
+_ANAEROBIC_ASPECT = "anaerobic_capacity"
+_AEROBIC_ASPECT = "endurance"
+_CO_OCCURRENCE_PHASES = (Phase.STRENGTH, Phase.POWER)
+_CO_OCCURRENCE_WEAKNESSES: tuple[str | None, ...] = (None, "power", "power_endurance")
+
+# From this many sessions a week up, EVERY such week carries aerobic work. Below it the gap is
+# real and registered: the residual is slot scarcity in a week with two or three climbing days,
+# and 100% of it was a 2-session week before ruling 41's row existed.
+_AEROBIC_ALWAYS_FROM_SESSIONS = 5
+
+# The residual, per (sessions, phase), measured over 6 climbers x 3 weakness values with ruling
+# 41's row in the tree. Before the row the same sweep read 132/216 STRENGTH (61.1%) and 165/213
+# POWER (77.5%) weeks with no aerobic work, at every session count including 7.
+# ⚠️ Asserted EXACTLY and in both directions: a number rising is the gap coming back, and a
+# number falling is a claim this register has stopped making. Both are decisions.
+_CO_OCCURRENCE_GAP_BELOW_THAT: Mapping[tuple[int, Phase], int] = {
+    (1, Phase.STRENGTH): 0,
+    (1, Phase.POWER): 18,
+    (2, Phase.STRENGTH): 6,
+    (2, Phase.POWER): 15,
+    (3, Phase.STRENGTH): 0,
+    (3, Phase.POWER): 5,
+    (4, Phase.STRENGTH): 0,
+    (4, Phase.POWER): 6,
+}
+
+
+def _weeks_with_anaerobic_but_no_aerobic(sessions: int) -> Mapping[Phase, list[str]]:
+    """Per PHASE, the STRENGTH/POWER weeks that train An Cap and no aerobic capacity.
+
+    ⚠️ PER WEEK, which is the granularity of the claim. Ruling 24's amendment measured the cost
+    of getting this wrong: the same claim read per PROFILE was true 18 of 18 and green while 12
+    of those profiles' 72 weeks held none. A pooled read cannot see a per-week claim fail.
+    """
+    found: dict[Phase, list[str]] = {phase: [] for phase in _CO_OCCURRENCE_PHASES}
+    for level, discipline, system, label in _CLIMBERS:
+        for weakness in _CO_OCCURRENCE_WEAKNESSES:
+            plan = generate(
+                _input(discipline, system, label, sessions, 0b111_1111, weakness=weakness)
+            )
+            for mesocycle in plan.mesocycles:
+                if mesocycle.phase not in _CO_OCCURRENCE_PHASES:
+                    continue
+                for microcycle in mesocycle.microcycles:
+                    aspects = {
+                        block.aspect_key
+                        for session in microcycle.sessions
+                        for block in session.blocks
+                    }
+                    if _ANAEROBIC_ASPECT in aspects and _AEROBIC_ASPECT not in aspects:
+                        found[mesocycle.phase].append(
+                            f"{level.value} {discipline.value} {label}, weakness={weakness}, "
+                            f"week {microcycle.week_no}"
+                        )
+    return found
+
+
+@pytest.mark.parametrize("sessions", [5, 6, 7])
+def test_an_ANAEROBIC_CAPACITY_WEEK_ALSO_TRAINS_AEROBIC_CAPACITY_from_five_sessions(
+    sessions: int,
+) -> None:
+    """⚠️ GUARD, rulings 33 and 41. §3.4 tags Aero Cap and ARC onto the end of anything, and an
+    anaerobic-capacity week without any aerobic base under it is the week that buys the least
+    from the hard work in it. Scoped to `STRENGTH` and `POWER` — see the register above for why
+    `POWER_ENDURANCE` must not be inside this guard, and why BASE and DELOAD need not be.
+
+    The row that makes this green is on the WALL, which is the whole of ruling 41: an off-wall
+    aerobic row cannot reach a low-session week at all, and the alternative that forced one into
+    the supplementary pass paid for it with 56 `general_strength` blocks, against a strength
+    share F14 already declares as short.
+    """
+    found = _weeks_with_anaerobic_but_no_aerobic(sessions)
+    for phase in _CO_OCCURRENCE_PHASES:
+        assert not found[phase], (
+            f"{len(found[phase])} {phase.value} week(s) at {sessions}x a week train anaerobic "
+            f"capacity with no aerobic capacity anywhere in the week: {found[phase][:3]}. From "
+            f"{_AEROBIC_ALWAYS_FROM_SESSIONS} sessions up there are enough wall turns for both, "
+            f"and ruling 41's on-wall row is what puts the aerobic one within reach."
+        )
+
+
+@pytest.mark.parametrize("sessions", [1, 2, 3, 4])
+def test_the_AEROBIC_CO_OCCURRENCE_GAP_BELOW_FIVE_SESSIONS_IS_EXACTLY_THE_REGISTER(
+    sessions: int,
+) -> None:
+    """⚠️ GUARD, the other end. Below `_AEROBIC_ALWAYS_FROM_SESSIONS` the gap is real, and this
+    arm is what stops the claim above being read as one the whole plan makes. Exact, both ways:
+    the register is the honest limit of ruling 41's row and not a tolerance."""
+    found = _weeks_with_anaerobic_but_no_aerobic(sessions)
+    for phase in _CO_OCCURRENCE_PHASES:
+        expected = _CO_OCCURRENCE_GAP_BELOW_THAT[(sessions, phase)]
+        assert len(found[phase]) == expected, (
+            f"{len(found[phase])} {phase.value} week(s) at {sessions}x a week train anaerobic "
+            f"capacity and no aerobic capacity, against the {expected} registered: "
+            f"{found[phase][:3]}. More is the gap coming back; fewer is this register making a "
+            f"claim it no longer has to. Re-measure and move the number deliberately."
+        )

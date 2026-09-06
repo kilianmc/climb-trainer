@@ -56,6 +56,7 @@ from server.domain.planner.climbing import (
     anaerobic_sessions_ceiling,
     climbing_block_budget,
     climbing_target_band,
+    content_protocols_for,
     finger_sessions_for,
     hard_energy_day_ceiling,
     intensity_tier,
@@ -76,6 +77,7 @@ from server.domain.planner.periodisation import (
     mesocycle_spans,
     week_count_for,
 )
+from server.domain.planner.progression import progressed
 from server.domain.planner.schedule import (
     DAYS_PER_WEEK,
     choose_weekdays,
@@ -359,24 +361,39 @@ def _fill_climbing(
         target_seconds = _share_of_window_floor(draft, spec, fill_pct, phase)
         needed_seconds = _share_of_window_floor(draft, spec, floor_pct, phase)
         if draft.blocks and (
-            not _fits(draft, spec, phase)
+            not _fits(draft, spec, phase, week_no)
             or not (
                 draft.seconds < needed_seconds
-                or _nearer_target(draft, spec, phase, target_seconds=target_seconds)
+                or _nearer_target(draft, spec, phase, week_no, target_seconds=target_seconds)
             )
         ):
             continue
-        _place(draft, spec, phase=phase, target_seconds=target_seconds, climbing=True)
+        _place(
+            draft,
+            spec,
+            phase=phase,
+            week_no=week_no,
+            target_seconds=target_seconds,
+            climbing=True,
+        )
     if not draft.blocks:
         draft.shortfalls.append(_no_climbing_shortfall(planner_input, phase))
 
 
 def _wall_picks(planner_input: PlannerInput, phase: Phase, spread: int) -> tuple[ExerciseSpec, ...]:
-    """This session's wall exercises, best first: the phase's RANK-WEIGHTED ring of aspect
-    turns, started at its own offset, a fresh exercise per turn — so `ASPECT_EMPHASIS` governs
-    climbing and not only the supplementary pass, and a `strength` block keeps the second bite
-    that measured ten minutes short without it. Indexed by `_spread` for the reason recorded
-    there: the aspect offset takes ~5 values in a three-week phase, fewer than the ring is long.
+    """This session's wall exercises, best first: the phase's ring of aspect turns, started at
+    its own offset, a fresh exercise per turn — so `ASPECT_EMPHASIS` governs climbing and not
+    only the supplementary pass, and a `strength` block keeps the second bite that measured ten
+    minutes short without it. Indexed by `_spread` for the reason recorded there.
+
+    ⚠️ **"Rank-weighted" is what this said, and F11 measured it FALSE in the phases where
+    `MAX_WALL_TURNS` binds** — `strength` and `taper` are flat rings, 21 of 30 phase/aspect
+    pairs sit on the cap, and `wall_aspect_turns`' docstring carries the seven readings that
+    were measured to lift it and the shipped ruling each one breaks. The ring is rank-weighted
+    only in its TAIL, and only in the five phases with a tail.
+    ⚠️ The offset matters as much as the weights and is the fact that decided F11: a 2-session
+    week's `spread` takes six values, so it visits **6 of a 16-long ring's rotations**. Which
+    qualities such a week gets at all is which aspects sit at those six positions.
     """
     pools = {
         aspect_key: ordered
@@ -399,7 +416,7 @@ def _wall_picks(planner_input: PlannerInput, phase: Phase, spread: int) -> tuple
             continue
         depth = taken.get(aspect_key, 0)
         taken[aspect_key] = depth + 1
-        spec = pool[(spread + depth) % len(pool)]
+        spec = pool[_pool_index(spread, len(pool), depth)]
         if spec.key not in seen:
             seen.append(spec.key)
             picked.append(spec)
@@ -443,12 +460,12 @@ def _fill_finger_strength(
         # long endurance day cannot become a hangboard session, which is the point, not a gap.
         for turn in range(len(ordered)):
             spec = ordered[(week_no - 1 + placed + turn) % len(ordered)]
-            added = _spec_seconds(spec, phase)
-            if not _fits(draft, spec, phase) or not meets_floor(
+            added = _spec_seconds(spec, phase, week_no)
+            if not _fits(draft, spec, phase, week_no) or not meets_floor(
                 wall_seconds=wall_seconds, other_seconds=other_seconds + added, floor_pct=floor_pct
             ):
                 continue
-            _place(draft, spec, phase=phase, target_seconds=0, climbing=False)
+            _place(draft, spec, phase=phase, week_no=week_no, target_seconds=0, climbing=False)
             draft.supplementary_used.append(spec.aspect_key)
             other_seconds += added
             placed += 1
@@ -492,9 +509,9 @@ def _session_ceiling(draft: _Draft, spec: ExerciseSpec | None = None) -> int:
     )
 
 
-def _fits(draft: _Draft, spec: ExerciseSpec, phase: Phase) -> bool:
+def _fits(draft: _Draft, spec: ExerciseSpec, phase: Phase, week_no: int) -> bool:
     """Whether this block fits under the ceiling of the session type it would produce."""
-    return draft.seconds + _spec_seconds(spec, phase) <= _session_ceiling(draft, spec)
+    return draft.seconds + _spec_seconds(spec, phase, week_no) <= _session_ceiling(draft, spec)
 
 
 def _window_floor(draft: _Draft, phase: Phase) -> int:
@@ -680,11 +697,12 @@ def _top_up_with_climbing(
                 planner_input,
                 phase,
                 spread=_spread(week_no, draft.session_index),
+                week_no=week_no,
                 band=band,
             )
             if spec is None:
                 break
-            _place(draft, spec, phase=phase, target_seconds=0, climbing=True)
+            _place(draft, spec, phase=phase, week_no=week_no, target_seconds=0, climbing=True)
 
 
 def _fill_session_length(
@@ -709,6 +727,7 @@ def _fill_session_length(
             planner_input,
             phase,
             spread=_spread(week_no, draft.session_index),
+            week_no=week_no,
             band=None,
         )
         if spec is None:
@@ -717,6 +736,7 @@ def _fill_session_length(
             draft,
             spec,
             phase=phase,
+            week_no=week_no,
             target_seconds=0,
             climbing=True,
             fill_seconds=max(gap, LENGTH_FILL_MINUTES * 60),
@@ -742,6 +762,7 @@ def _length_pick(
     phase: Phase,
     *,
     spread: int,
+    week_no: int,
     band: tuple[int, int] | None,
 ) -> ExerciseSpec | None:
     """The on-wall block that closes the gap, from the qualities the phase leads on a wall.
@@ -791,11 +812,11 @@ def _length_pick(
             )
             if spec.key not in seen
             and not is_priority(spec.protocol_kind)
-            and _fits(draft, spec, phase)
+            and _fits(draft, spec, phase, week_no)
             and _week_ceiling_allows(drafts, draft, spec.aspect_key, phase)
             and (
                 draft.seconds < _window_floor(draft, phase)
-                or _band_top_allows(draft, _spec_seconds(spec, phase), band)
+                or _band_top_allows(draft, _spec_seconds(spec, phase, week_no), band)
             )
         ]
 
@@ -803,10 +824,10 @@ def _length_pick(
     if not pool:
         return None
     need = _session_floor(draft, phase) - draft.seconds
-    enough = [spec for spec in pool if _spec_seconds(spec, phase) >= need]
+    enough = [spec for spec in pool if _spec_seconds(spec, phase, week_no) >= need]
     if enough:
-        return enough[spread % len(enough)]
-    return max(pool, key=lambda spec: _spec_seconds(spec, phase))
+        return enough[_pool_index(spread, len(enough))]
+    return max(pool, key=lambda spec: _spec_seconds(spec, phase, week_no))
 
 
 def _try_supplementary(
@@ -881,9 +902,9 @@ def _try_supplementary(
             draft.shortfalls.append(_require(shortfall))
         return
     _aspect_key, spec = filled
-    added = _spec_seconds(spec, phase)
+    added = _spec_seconds(spec, phase, week_no)
     on_wall = requires_wall(spec.equipment_keys)
-    if draft.blocks and not _fits(draft, spec, phase):
+    if draft.blocks and not _fits(draft, spec, phase, week_no):
         return
     if not _share_allows(
         draft,
@@ -896,7 +917,15 @@ def _try_supplementary(
         return
     if not on_wall and not _floor_allows(wall_seconds, other_seconds, added, floor_pct):
         return
-    _place(draft, spec, phase=phase, target_seconds=0, climbing=on_wall, shortfall=shortfall)
+    _place(
+        draft,
+        spec,
+        phase=phase,
+        week_no=week_no,
+        target_seconds=0,
+        climbing=on_wall,
+        shortfall=shortfall,
+    )
     draft.supplementary_used.append(spec.aspect_key)
 
 
@@ -913,6 +942,7 @@ def _place(
     spec: ExerciseSpec,
     *,
     phase: Phase,
+    week_no: int,
     target_seconds: int,
     climbing: bool,
     shortfall: Shortfall | None = None,
@@ -923,7 +953,7 @@ def _place(
     chunk-sized timed sets of plain climbing, on the open-climbing family's own authored shape
     (`sets=1, work_seconds=1800`). Sets are never padded to buy it — that is what
     `MAX_EXPANSION_FACTOR` forbids — and the row's authored intensity and RPE are kept."""
-    prescription = _prescription_for(spec, phase)
+    prescription = _prescription_for(spec, phase, week_no)
     if fill_seconds is not None:
         # One chunk per set, so the longest set a fill can produce is `LENGTH_FILL_MINUTES` and a
         # 100-minute gap reads as four laps rather than as one 100-minute lap. Rounded UP, so the
@@ -973,16 +1003,18 @@ def _expanded_sets(prescription: PrescriptionSpec, *, target_seconds: int, cap_s
     return sets
 
 
-def _spec_seconds(spec: ExerciseSpec, phase: Phase) -> int:
-    """What this exercise costs in time in this phase, at its authored set count."""
-    prescription = _prescription_for(spec, phase)
+def _spec_seconds(spec: ExerciseSpec, phase: Phase, week_no: int) -> int:
+    """What this exercise costs in time in this phase and week, at its prescribed set count."""
+    prescription = _prescription_for(spec, phase, week_no)
     return _prescribed_seconds(prescription, prescription.sets)
 
 
-def _nearer_target(draft: _Draft, spec: ExerciseSpec, phase: Phase, *, target_seconds: int) -> bool:
+def _nearer_target(
+    draft: _Draft, spec: ExerciseSpec, phase: Phase, week_no: int, *, target_seconds: int
+) -> bool:
     """Whether one more wall block lands the session CLOSER to its target than stopping does.
     Rounding down broke monotonicity; free overshoot put the advanced band at 71% against 62."""
-    return _spec_seconds(spec, phase) < 2 * (target_seconds - draft.seconds)
+    return _spec_seconds(spec, phase, week_no) < 2 * (target_seconds - draft.seconds)
 
 
 def _share_of_window_floor(draft: _Draft, spec: ExerciseSpec | None, pct: int, phase: Phase) -> int:
@@ -1080,6 +1112,22 @@ def _spread(week_no: int, session_index: int) -> int:
     minutes. A fixed stride leaves sessions 0..n-1 on the offsets they already had.
     """
     return (week_no - 1) * DAYS_PER_WEEK + session_index
+
+
+# `_spread`'s two terms, SWAPPED — which is the whole of issue #117's mechanical half. Read raw,
+# `spread % len(pool)` loses the week for any pool whose length divides the stride.
+#
+# Measured: the base on-wall `endurance` pool is exactly 7, the stride is 7, and a session slot
+# drew the identical endurance list in all three loading weeks. Here the WEEK's stride is 1, which
+# no pool length can divide, and the SESSION takes the wide stride `_spread` needs for pool reach.
+#
+# ⚠️ Apply it at EVERY pool-index site, not only the wall pass: at `_wall_picks` alone the
+# supplementary and top-up passes keep the aliasing, and that measured two FURTHER guards red
+# (a declared weakness's own minutes, and one library row becoming unreachable).
+def _pool_index(spread: int, size: int, depth: int = 0) -> int:
+    """One candidate pool's index, keyed so the WEEK term can never cancel out of it."""
+    week, session_index = divmod(spread, DAYS_PER_WEEK)
+    return (week + session_index * DAYS_PER_WEEK + depth) % size
 
 
 def _rotated_pool(pool: tuple[str, ...], offset: int) -> tuple[str, ...]:
@@ -1245,20 +1293,39 @@ def _fill_slot(
             equipment_keys=planner_input.equipment_keys,
             open_injury_keys=planner_input.open_injury_keys,
         )
+        # Ruling 35: the band scales what an aspect is trained WITH, not how often. A filter and
+        # not a rank, because `_pick` takes the LONGEST candidate whenever the session is short
+        # of its window floor, and a rank is invisible on that branch.
+        kinds = content_protocols_for(
+            aspect_key, planner_input.discipline, planner_input.current_ordinal, phase
+        )
+        if kinds is not None:
+            ordered = with_protocols(ordered, kinds)
         if not ordered:
             continue
         off, on = off_the_wall(ordered), on_the_wall(ordered)
         first, second = (on, off) if wall_pref == "first" else (off, on)
         pool = first if wall_pref == "never" else (*first, *second)
         if pool:
-            return aspect_key, _pick(pool, phase, spread=spread, need=need, room=room)
+            return aspect_key, _pick(
+                pool, phase, spread=spread, week_no=week_no, need=need, room=room
+            )
         if fallback is None:
-            fallback = (aspect_key, _pick(ordered, phase, spread=spread, need=need, room=room))
+            fallback = (
+                aspect_key,
+                _pick(ordered, phase, spread=spread, week_no=week_no, need=need, room=room),
+            )
     return fallback
 
 
 def _pick(
-    pool: tuple[ExerciseSpec, ...], phase: Phase, *, spread: int, need: int, room: int
+    pool: tuple[ExerciseSpec, ...],
+    phase: Phase,
+    *,
+    spread: int,
+    week_no: int,
+    need: int,
+    room: int,
 ) -> ExerciseSpec:
     """The rotation pick, EXCEPT while the session is short of its own window floor.
 
@@ -1269,12 +1336,12 @@ def _pick(
     Padding it with sets instead is what `MAX_EXPANSION_FACTOR` exists to forbid.
     """
     if not need:
-        return pool[spread % len(pool)]
-    fitting = [spec for spec in pool if _spec_seconds(spec, phase) <= room] or list(pool)
-    enough = tuple(spec for spec in fitting if _spec_seconds(spec, phase) >= need)
+        return pool[_pool_index(spread, len(pool))]
+    fitting = [spec for spec in pool if _spec_seconds(spec, phase, week_no) <= room] or list(pool)
+    enough = tuple(spec for spec in fitting if _spec_seconds(spec, phase, week_no) >= need)
     if enough:
-        return enough[spread % len(enough)]
-    return max(fitting, key=lambda spec: _spec_seconds(spec, phase))
+        return enough[_pool_index(spread, len(enough))]
+    return max(fitting, key=lambda spec: _spec_seconds(spec, phase, week_no))
 
 
 def _shortfall(planner_input: PlannerInput, phase: Phase, aspect_key: str) -> Shortfall:
@@ -1302,11 +1369,9 @@ def _block(
     phase: Phase,
     shortfall: Shortfall | None,
     sets: int,
-    prescription: PrescriptionSpec | None = None,
+    prescription: PrescriptionSpec,
 ) -> BlockBlueprint:
     """One exercise, with its prescription snapshotted the way `session_block` snapshots it."""
-    if prescription is None:
-        prescription = _prescription_for(spec, phase)
     return BlockBlueprint(
         order_index=order_index,
         exercise_key=spec.key,
@@ -1332,11 +1397,18 @@ def _block(
     )
 
 
-def _prescription_for(spec: ExerciseSpec, phase: Phase) -> PrescriptionSpec:
-    """The authored row for this phase. `candidates()` already proved one exists."""
+def _prescription_for(spec: ExerciseSpec, phase: Phase, week_no: int) -> PrescriptionSpec:
+    """The authored row for this phase, moved on by this week's own progression (#117)."""
     for prescription in spec.prescriptions:
         if prescription.phase is phase:
-            return prescription
+            return progressed(
+                prescription,
+                exercise_key=spec.key,
+                aspect_key=spec.aspect_key,
+                protocol_kind=spec.protocol_kind,
+                phase=phase,
+                week_no=week_no,
+            )
     raise ValueError(
         f"{spec.key!r} has no prescription for {phase.value}, so selection should never "
         f"have offered it. This is a bug in server/domain/planner/selection.py."

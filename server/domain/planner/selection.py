@@ -56,7 +56,9 @@ from server.domain.vocabulary import (
 BLOCKS_PER_SESSION: Final = 3
 
 # Turns a wall-led aspect gets in `wall_aspect_turns()`, capped at one more than a session's
-# blocks: uncapped, `base` gives endurance eight turns to power's one and a ring no phase samples.
+# blocks. ⚠️ **The cap FLATTENS the head of the authored order and it STAYS (F11, ruling 38) —
+# seven readings were measured and every one of them turns a shipped ruling's guard red.**
+# `wall_aspect_turns`' docstring is the register; do not lift this without reading it.
 MAX_WALL_TURNS: Final = BLOCKS_PER_SESSION + 1
 
 # The third slot, rotated. These are the qualities that keep the pulling durable and the
@@ -71,9 +73,10 @@ SUPPORT_ASPECTS: Final[tuple[str, ...]] = ("antagonist_prehab", "mobility", "cor
 WEAKNESS_YIELDS_SLOT_ONE_EVERY: Final = 3
 
 # ⚠️ **Position in a row is a TURN COUNT, not a label**: `wall_aspect_turns()` gives a wall-led
-# aspect `len(row) - index` turns capped at `MAX_WALL_TURNS`, so on a ten-aspect row only the last
-# three positions differentiate. The TAIL is where a wall quality is deliberately given fewer
-# turns; the support rotation sits mid-row because it never leads a block.
+# aspect `len(row) - index` turns, so EVERY position differentiates and reordering a row is a
+# volume decision. The TAIL is where a wall quality is deliberately given fewer turns; the
+# support rotation sits mid-row because it never leads a block. ⚠️ There is deliberately NO cap
+# on the count any more (F11, ruling 38) — `_rank_weighted_ring` records what removing it moved.
 ASPECT_EMPHASIS: Final[Mapping[Phase, tuple[str, ...]]] = MappingProxyType(
     {
         # Base builds the capacity everything later spends: wall time first, then the movement
@@ -302,13 +305,23 @@ def ordinary(cands: Iterable[ExerciseSpec]) -> tuple[ExerciseSpec, ...]:
 
 
 def open_climbing_fill(phase: Phase) -> tuple[ExerciseSpec, ...]:
-    """Ruling 29's filler rows for this phase, in the phase's OWN emphasis order.
+    """Ruling 29's filler rows for this phase, in `aspect_rank()` order — F11's second surface.
 
     Ruling 30's two invariants are both this order: the first row is the one attributed to the
     quality the block is most named after, so it is the cue the climber reads AND the quality
     the filled minutes are credited to. `generate.py::_length_pick` takes the first row the
     week's frequency ceilings allow, which is a FILTER — `_validate_open_climbing_fill` proves
-    the tail of every phase's order is a row no ceiling governs, so the pool is never empty.
+    every phase's pool holds a row no ceiling governs, so the pool is never empty.
+
+    ⚠️ **This surface is rank-ORDERED and must not become rank-WEIGHTED, and that is measured.**
+    Ruling 38 asks for both surfaces to rank; the same rank now decides both, through
+    `aspect_rank()`, so neither can drift from the other. But a *weight* here is a frequency,
+    and frequency is the one thing ruling 30 fixes: `_length_pick` rotated over a
+    `_rank_weighted_ring` of this pool measured **1242 of 6000 fills credited off-lead on a day
+    that still carried hard energy-system work**, against the 0 that
+    `test_the_LENGTH_FILL_is_ONE_block_carrying_THE_BLOCKS_OWN_INTENTION` pins over its own 9837
+    blocks. Every phase's pool is at most TWO rows — the leader, and the row for the days ruling
+    9 has already made easy — so a weight here has nowhere to go that is not that defect.
     """
     by_aspect = {
         spec.aspect_key: spec
@@ -316,7 +329,7 @@ def open_climbing_fill(phase: Phase) -> tuple[ExerciseSpec, ...]:
         for spec in candidates(phase, key)
         if spec.key in OPEN_CLIMBING_KEYS
     }
-    return tuple(by_aspect[key] for key in ASPECT_EMPHASIS[phase] if key in by_aspect)
+    return tuple(sorted(by_aspect.values(), key=lambda spec: -aspect_rank(phase, spec.aspect_key)))
 
 
 def off_the_wall(cands: Iterable[ExerciseSpec]) -> tuple[ExerciseSpec, ...]:
@@ -342,24 +355,74 @@ def wall_led_aspects(phase: Phase) -> tuple[str, ...]:
     )
 
 
-def wall_aspect_turns(phase: Phase) -> tuple[str, ...]:
-    """The wall-led aspects as a ring of TURNS — which quality leads a climbing session here,
-    and how OFTEN, which is the half of the phase's authored order a flat rotation loses."""
-    aspects = wall_led_aspects(phase)
+def aspect_rank(phase: Phase, aspect_key: str) -> int:
+    """One aspect's authored weight in this phase: its distance from the END of the row, so the
+    head of `ASPECT_EMPHASIS` is the biggest number. The single definition of "rank" both of
+    F11's surfaces read (`wall_aspect_turns` weights by it, `open_climbing_fill` orders by it),
+    so a reordered row cannot move one surface and leave the other where it was."""
     row = ASPECT_EMPHASIS[phase]
-    turns = {key: min(len(row) - row.index(key), MAX_WALL_TURNS) for key in aspects}
-    taken = dict.fromkeys(aspects, 0)
+    return len(row) - row.index(aspect_key)
+
+
+def _rank_weighted_ring(items: tuple[str, ...], turns: Mapping[str, int]) -> tuple[str, ...]:
+    """`items` as a ring, each appearing `turns[item]` times, interleaved by largest quotient so
+    the turns spread rather than arrive in runs and the authored order breaks every tie: a run of
+    four endurance turns hides every aspect behind it."""
+    taken = dict.fromkeys(items, 0)
     ring: list[str] = []
-    # Largest quotient, so the turns interleave rather than arrive in runs and the authored
-    # order breaks every tie: a run of four endurance turns hides every aspect behind it.
-    for _ in range(sum(turns.values())):
-        leader = aspects[0]
-        for key in aspects:
+    for _ in range(sum(turns[item] for item in items)):
+        leader = items[0]
+        for key in items:
             if turns[key] * (taken[leader] + 1) > turns[leader] * (taken[key] + 1):
                 leader = key
         taken[leader] += 1
         ring.append(leader)
     return tuple(ring)
+
+
+def wall_aspect_turns(phase: Phase) -> tuple[str, ...]:
+    """The wall-led aspects as a ring of TURNS — which quality leads a climbing session here,
+    and how OFTEN, which is the half of the phase's authored order a flat rotation loses.
+
+    ⚠️ **THE CAP FLATTENS THE HEAD AND STAYS. F11 / ruling 38 asked for it to be lifted; seven
+    readings were measured and every one of them turns a shipped ruling's guard RED.** What the
+    cap costs, re-measured with ruling 41's row in the tree: **21 of 30** phase/aspect pairs sit
+    on it, and `strength` and `taper` come out perfectly FLAT — so "rank-weighted" is false in
+    **2 of 7** phases, down from 3, because ruling 41's `endurance` row gives `power` a 3 where
+    everything else there is a 4.
+
+    Each reading over the 72-plan sweep, with "agreement" = the fraction of the phase's authored
+    aspect PAIRS the observed per-phase WALL BLOCK counts put in the right order, and the arms
+    it turned red. **cap 4 (this) 35/51, GREEN.** cap 5: 14 red (ruling 35's habituation, reach).
+    cap 6: 37/51, 9 red (ruling 24's day-count copy, ruling 23's boulderer aerobic row at 2×).
+    cap 8: 36/51, co-occurrence 26 → 128 red weeks. **Uncapped: 38/51, the best agreement, 9
+    red** — ruling 23 (a 6A boulderer at 2× and 3× takes NO aerobic block in the whole
+    power-endurance block), ruling 24 (5 profiles at 4-5 days), **ruling 30's out-training
+    invariant** (POWER_ENDURANCE technique 25200 min against power_endurance 24664 = 36.1%), and
+    two rows unreachable. Dense rank over the wall-led aspects (4/3/2/1) and doubled: 38/51, 8
+    red each, co-occurrence 26 → 90. Proportional to rank at **today's exact ring lengths**:
+    every phase strictly ordered, lengths byte-identical, still 5 red — ruling 30 in
+    POWER_ENDURANCE *and* in BASE ("power sits last"), plus habituation.
+
+    ⚠️ **Why even the length-preserving reading breaks PRESENCE guards — the fact no ruling
+    had:** `_rotated_pool(ring, spread)` starts at `spread % len(ring)` and `_spread` is
+    `(week - 1) * DAYS_PER_WEEK + session_index`, so a **2-session week visits 6 of this ring's
+    16 rotations**. Which qualities such a week gets AT ALL is which aspects sit at those six
+    positions, so re-weighting moves presence and not only proportion — and presence at 2-3
+    sessions is exactly what rulings 23, 24, 30 and 35 pin.
+    ⚠️ **The ring cannot buy a share of the clock.** The same pairs read on wall MINUTES barely
+    move across all seven readings (36/51 → 37/51): minutes come from the dose and from
+    `MAX_EXPANSION_FACTOR`. **The ring ranks BLOCKS and nothing else.**
+    ⚠️ **Not strict rank order, and it must not become it** (PR #116): with no ring a leading
+    `endurance` block expands to the fill target, `_fill_climbing` breaks, and whichever aspect
+    leads takes the whole session — 100% of a base block's wall minutes, technique zero.
+    """
+    aspects = wall_led_aspects(phase)
+    if not aspects:
+        return ()
+    return _rank_weighted_ring(
+        aspects, {key: min(aspect_rank(phase, key), MAX_WALL_TURNS) for key in aspects}
+    )
 
 
 def wall_unlock_options(
@@ -470,7 +533,10 @@ def _validate_aspect_emphasis() -> None:
 
 
 def _validate_open_climbing_fill() -> None:
-    """Every phase's filler order ENDS in a row no weekly ceiling can refuse — at import.
+    """Every phase's filler pool HOLDS a row no weekly ceiling can refuse — at import.
+
+    ⚠️ "Holds", not "ends in": the check is `any`, and it always was. The pool is a rank ORDER
+    and `_length_pick` walks all of it, so where the ungoverned row sits is not the invariant.
 
     This is what makes ruling 27's fill a filter rather than a ranking: `_length_pick` walks
     `open_climbing_fill(phase)` and takes the first row the week allows, so a phase whose only

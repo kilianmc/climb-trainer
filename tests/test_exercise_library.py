@@ -548,6 +548,10 @@ def test_the_SECTION_7_SHAPE_REGISTER_names_every_shape_the_library_actually_HAS
 # in the library in minutes". Measured 9.0 / 10.8 / 9.0 / 5.4 min in the four phases it is in.
 CHEAPEST_ON_WALL_POWER_ROW = "explosive_move_intervals"
 
+# #117 gives the loading weeks of a block three different doses, so a superlative about the
+# library's own contents is three claims and the copy ships all three.
+LOADING_WEEKS_OF_A_BLOCK = (1, 2, 3)
+
 
 def test_the_ON_WALL_POWER_SUPERLATIVE_in_the_authored_copy_still_holds() -> None:
     """⚠️ GUARD. A superlative about the library's own contents, shipped to the reader: authoring
@@ -555,16 +559,19 @@ def test_the_ON_WALL_POWER_SUPERLATIVE_in_the_authored_copy_still_holds() -> Non
     claimant = next(spec for spec in EXERCISES if spec.key == CHEAPEST_ON_WALL_POWER_ROW)
     for prescription in claimant.prescriptions:
         phase = prescription.phase
-        mine = _spec_seconds(claimant, phase)
-        for rival in on_the_wall(candidates(phase, claimant.aspect_key)):
-            if rival.key == claimant.key:
-                continue
-            assert _spec_seconds(rival, phase) >= mine, (
-                f"{claimant.key}'s instructions call it the cheapest on-the-wall "
-                f"{claimant.aspect_key} work in the library, but in {phase.value} it costs "
-                f"{mine / 60:.1f} min against {rival.key}'s {_spec_seconds(rival, phase) / 60:.1f}."
-                f" Reword the instructions or re-dose one of the two — the copy is a claim."
-            )
+        for week_no in LOADING_WEEKS_OF_A_BLOCK:
+            mine = _spec_seconds(claimant, phase, week_no)
+            for rival in on_the_wall(candidates(phase, claimant.aspect_key)):
+                if rival.key == claimant.key:
+                    continue
+                theirs = _spec_seconds(rival, phase, week_no)
+                assert theirs >= mine, (
+                    f"{claimant.key}'s instructions call it the cheapest on-the-wall "
+                    f"{claimant.aspect_key} work in the library, but in {phase.value} week "
+                    f"{week_no} it costs {mine / 60:.1f} min against {rival.key}'s "
+                    f"{theirs / 60:.1f}. Reword the instructions or re-dose one of the two — "
+                    f"the copy is a claim, and #117's progression moves both sides of it."
+                )
 
 
 def test_authored_strings_fit_their_columns() -> None:
