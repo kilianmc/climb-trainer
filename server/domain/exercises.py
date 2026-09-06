@@ -1102,6 +1102,11 @@ EXERCISES: Final[tuple[ExerciseSpec, ...]] = (
         # Aero Pow by name and shape. It keeps `power` because the honest cell does not exist:
         # `DELIBERATELY_UNPRESCRIBED` holds (STRENGTH, power_endurance) and (POWER,
         # power_endurance), which are two of the three phases this row is prescribed in.
+        #
+        # ⚠️ Its week-to-week progression follows that KEPT FILING and is a CONSEQUENCE of it,
+        # not a second divergence: filed at `power` with 30 s of work it is the lactic side of
+        # `power` x `intervals`, so `progression.py` shortens its rest across a block. An Cap's
+        # own rule would forbid exactly that. One declared divergence, one consequence.
         aspect_key="power",
         protocol_kind=ProtocolKind.INTERVALS,
         equipment_keys=("bouldering_wall",),
@@ -1941,6 +1946,45 @@ EXERCISES: Final[tuple[ExerciseSpec, ...]] = (
                 rest_between_sets_seconds=300,
                 target_rpe=6,
             ),
+        ),
+    ),
+    ExerciseSpec(
+        key="easy_climbing_flush",
+        name="Easy climbing flush",
+        aspect_key="endurance",
+        protocol_kind=ProtocolKind.LAPS,
+        equipment_keys=("bouldering_wall",),
+        contraindication_keys=("elbow",),
+        instructions=(
+            "Finish with a few unhurried minutes of the easiest climbing in the gym: traverse, "
+            "or link the warm-up problems back to back, at a grade where no move is ever in "
+            "doubt and you could hold a conversation the whole way up. This is the aerobic "
+            "layer underneath a heavy block and it is meant to be the smallest thing in the "
+            "session \u2014 it moves blood through forearms that have just done hard work and "
+            "it keeps the capacity the next block will spend. Stop while it still feels easy; "
+            "if a real pump arrives, drop the grade rather than the time."
+        ),
+        substitution_hint=(
+            "Wall too busy to traverse? Climb the easiest problem on it up and down instead."
+        ),
+        # Ruling 41: the on-wall `endurance` row `strength` and `power` had no candidate for.
+        # Every other `endurance` row those two phases prescribe is OFF the wall, so `endurance`
+        # was absent from `wall_led_aspects()` for both. The cheapest off-wall `endurance` row
+        # those phases prescribe is `machine_recovery_spin` at 1200 s, and a 2-session week's
+        # sessions spend 0-1945 s off the wall in total, median 584 over 216 swept — so no
+        # off-wall aerobic row fits such a week at all. (Ruling 41 measured the allowance itself
+        # at ~206-1652 s and `_floor_allows` refusing it 348 times in `strength` and 270 in
+        # `power`.) On the wall it is pickable by `_wall_picks` and spends no allowance at all.
+        prescriptions=(
+            # 600 s is §7's Aero Cap work floor EXACTLY, and deliberately not a second more.
+            # 900 s was measured and bought NOTHING: the same 124 An Cap weeks still hold no
+            # aerobic work, while pooled `endurance` minutes go 12900 -> 16950 in `strength` and
+            # 8790 -> 11005 in `power`, taken out of `power` and `technique`. Ruling 45 records
+            # why the one row below this floor stays below it; ruling 30 is why this one does not
+            # go above it. The row is EXPANDABLE (`endurance` × LAPS), so 1200 s is its real
+            # ceiling in a session short of its window floor.
+            PrescriptionSpec(Phase.STRENGTH, sets=1, work_seconds=600, target_rpe=4),
+            PrescriptionSpec(Phase.POWER, sets=1, work_seconds=600, target_rpe=4),
         ),
     ),
     ExerciseSpec(

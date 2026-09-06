@@ -166,6 +166,16 @@ LENGTH_FILL_MINUTES: Final = 30
 
 # Real hangboard sessions a loading week owes, by band. Beginner is zero by KILIAN'S DECISION,
 # 2026-09-06: neither source scales hangboarding by level, so never attribute this one to them.
+# ⚠️ The order is STRICT, and `test_the_finger_strength_floor_RISES_WITH_THE_BAND` asserts it as
+# `beginner < intermediate < advanced` off the plans rather than off this table. Now that the
+# zero is a DECISION and not the mis-attribution the audit found, the strictness owes its own
+# reason (guard 5, ruling 35): both sources agree that beginners habituate before they load
+# hard, and a max hang is the load-hard end of finger work, so the band that has earned the
+# tissue tolerance is the band that gets more of it. Only the ZERO is the divergence.
+# ⚠️ Its CONSEQUENCE, and the reason it costs nothing: the strict `<` forbids any future beginner
+# habituation protocol from raising this floor. `HABITUATION_PROTOCOLS` is how a beginner gets
+# finger work anyway — by scaled CONTENT, which is what the sources scale — and this floor counts
+# `FINGER_PROTOCOLS` only, so a habituation block can never satisfy or breach it.
 FINGER_SESSIONS_PER_WEEK: Final[Mapping[Level, int]] = MappingProxyType(
     {Level.BEGINNER: 0, Level.INTERMEDIATE: 1, Level.ADVANCED: 2}
 )
@@ -174,6 +184,16 @@ FINGER_PHASES: Final[frozenset[Phase]] = frozenset({Phase.STRENGTH, Phase.POWER}
 FINGER_PROTOCOLS: Final[frozenset[ProtocolKind]] = frozenset(
     {ProtocolKind.MAX_HANG, ProtocolKind.REPEATERS}
 )
+
+# What the sources DO scale by level: hangboard CONTENT (ruling 35, 2026-09-06). Dylan writes an
+# explicit weeks-1-4 habituation protocol, so a beginner's FIRST block accumulates easy time under
+# tension instead of chasing a maximum. A PROTOCOL set and not an exercise key: the rule is what
+# the block asks of the tissue, and BASE authors two FINGER HOLD rows — one needing a hangboard,
+# one not — so the rule survives a climber who owns neither.
+HABITUATION_PROTOCOLS: Final[frozenset[ProtocolKind]] = frozenset({ProtocolKind.HOLD})
+# Weeks 1-4 are the FIRST block and no later one. Measured: a beginner still draws max hangs or
+# repeaters later on all 40 arms of the per-level guard (5 gaps x 4 sessions x 2), so not a ban.
+HABITUATION_PHASES: Final[frozenset[Phase]] = frozenset({Phase.BASE})
 
 # ⚠️ The twin of this floor for the POWER_ENDURANCE week's aerobic block was DECLINED, not
 # forgotten (ruling 24, revoked): that block's own copy admits the gap and test_phase_guide.py
@@ -330,6 +350,25 @@ def finger_sessions_for(discipline: Discipline, current_ordinal: int, phase: Pha
     if phase not in FINGER_PHASES:
         return 0
     return FINGER_SESSIONS_PER_WEEK[level_for(discipline, current_ordinal)]
+
+
+def content_protocols_for(
+    aspect_key: str, discipline: Discipline, current_ordinal: int, phase: Phase
+) -> frozenset[ProtocolKind] | None:
+    """The protocols this band trains an aspect with here, or `None` where all of them are open.
+
+    ⚠️ Nothing to do with `finger_sessions_for` above, which is a FLOOR pursued in its own pass:
+    a beginner owes zero of those sessions and `_fill_finger_strength` returns before it reads a
+    protocol at all, so a beginner's finger work only ever arrives through the ordinary
+    supplementary slot. This decides WHAT that slot may draw, which is the half ruling 35 left
+    open — measured: 115 of a beginner's 115 BASE finger blocks were max hangs or repeaters and
+    the habituation row the library authors for BASE landed in none of the 60 swept plans.
+    """
+    if aspect_key != FINGER_ASPECT:
+        return None
+    if phase in HABITUATION_PHASES and level_for(discipline, current_ordinal) is Level.BEGINNER:
+        return HABITUATION_PROTOCOLS
+    return None
 
 
 def is_priority(protocol_kind: ProtocolKind) -> bool:
