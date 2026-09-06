@@ -435,8 +435,10 @@ SECTION_7_SHAPES: tuple[_DoseShape, ...] = (
         ProtocolKind.CIRCUIT,
         None,
         "⚠️ OUT OF SCOPE. §5.4 doses the An Pow broken circuit and the redpoint circuit by "
-        "sections and attempts, not by a ratio. F26 registers `broken_circuit_redpoint` at "
-        "4.67-12.00x and this guard does not close it.",
+        "sections and attempts, not by a ratio — ruling 50's research read §5.4 again and "
+        "found no seconds, rest or set figure there at all. `broken_circuit_redpoint` rests "
+        "2.67-4.67x and no band asserts it; what reads its `work_seconds` is the move-rate "
+        "arm below, which is the only guard in this repo that does.",
     ),
     _DoseShape(
         "endurance",
@@ -541,6 +543,144 @@ def test_the_SECTION_7_SHAPE_REGISTER_names_every_shape_the_library_actually_HAS
         f"{sorted((a, k.value) for a, k in named - present)}. Every (aspect, protocol kind) "
         f"the four §7 aspects author with `work_seconds` needs a row there — with a band if the "
         f"sources dose that shape by a ratio, and with the reason they do not if they don't."
+    )
+
+
+# The move-rate band, ruling 50: the arm that would have caught F26, and the only one in the
+# repo reading `broken_circuit_redpoint`'s `work_seconds` at all.
+
+
+_BY_KEY = {spec.key: spec for spec in EXERCISES}
+
+
+@dataclass(frozen=True, slots=True)
+class _MoveCount:
+    """One row's move count, restated from its own prose, with the numerals it spells."""
+
+    low: int
+    high: int
+    words: tuple[str, ...]
+
+
+# Restated from each row's `instructions` and never read out of them at runtime — the numbers
+# are this file's claim ABOUT the text, and the arm two below proves the claim still holds.
+MOVE_COUNTS = {
+    "two_problem_links": _MoveCount(12, 15, ("twelve", "fifteen")),
+    "traverse_intervals": _MoveCount(12, 15, ("twelve", "fifteen")),
+    "up_down_boulder_laps": _MoveCount(30, 30, ("thirty",)),
+    "broken_circuit_redpoint": _MoveCount(25, 25, ("twenty", "five")),
+}
+
+# Named exclusions, with the reason as DATA so it reaches whoever sees the red rather than
+# sitting in a comment. Leaving this band is a ruling; deleting a row from it is not.
+MOVE_RATE_EXCLUSIONS = {
+    "long_boulder_link_ups": (
+        "⚠️ Ruling 45's DECLARED DIVERGENCE, recorded at the row itself: 300 s over 'twenty "
+        "to thirty moves a lap' is 10.0-15.0 s/move, and the row is continuous Aero Cap "
+        "climbed with shakeouts and never so hard that a move is in doubt — so its work "
+        "period is a duration of easy climbing, not a rate at which hard moves are made."
+    ),
+    "explosive_move_intervals": (
+        "⚠️ One big fast move, or a two-move burst, in 6 s. Over one or two moves a per-move "
+        "rate is the length of a single all-out effort rather than a climbing pace, which is "
+        "why §7 doses alactic work by its 8x rest instead — the same reason ruling 43 puts "
+        "`power` x `intervals` outside the rest:work guard's scope."
+    ),
+}
+
+# The union of every move -> seconds rate the sources state, as (low, high) seconds per move.
+MOVE_RATE_BAND = (1.50, 4.17)
+MOVE_RATE_SOURCE = (
+    "§7's Aero Pow row doses ~30 moves in 45-120 s = 1.50-4.00 s/move, and §7's An Cap row "
+    "with §5.2's body doses 12-15 moves in 30-50 s = 2.00-4.17, so 1.50-4.17 s/move is every "
+    "rate the sources state. NO source states one for An Pow: ruling 50 declares the "
+    "conversion as the app's own, at `broken_circuit_redpoint`, where the declaration lives."
+)
+
+# Measured 2026-09-06: 4 rows and 16 (row, phase) prescriptions carry both ends of the claim.
+MOVE_RATE_ROWS = 4
+MOVE_RATE_PRESCRIPTIONS = 16
+
+# Enough words to clear "twelve to fifteen hard enough moves"; the numerals themselves are
+# never converted to a value here, only detected, so the table above stays the sole source.
+MOVE_WINDOW = 5
+NUMBER_WORDS = frozenset(
+    """one two three four five six seven eight nine ten eleven twelve thirteen fourteen
+    fifteen sixteen seventeen eighteen nineteen twenty thirty forty fifty sixty seventy
+    eighty ninety hundred dozen""".split()
+)
+
+
+def numerals_before_moves(text: str) -> frozenset[str]:
+    """Every number word within `MOVE_WINDOW` words before a 'move' or 'moves' in one row."""
+    lowered = text.lower()
+    found: set[str] = set()
+    for match in re.finditer(r"\bmoves?\b", lowered):
+        head = re.findall(r"[a-z]+", lowered[: match.start()])[-MOVE_WINDOW:]
+        found.update(word for word in head if word in NUMBER_WORDS)
+    return frozenset(found)
+
+
+def test_every_row_COUNTING_ITS_MOVES_climbs_them_at_a_RATE_THE_SOURCES_STATE() -> None:
+    """⚠️ GUARD, ruling 50, and it reads BOTH ENDS: the prose move count against the dose."""
+    rows = 0
+    inspected = 0
+    low, high = MOVE_RATE_BAND
+    for spec in EXERCISES:
+        count = MOVE_COUNTS.get(spec.key)
+        if count is None:
+            continue
+        rows += 1
+        for prescription in spec.prescriptions:
+            work = prescription.work_seconds
+            if work is None:
+                continue
+            inspected += 1
+            fastest, slowest = work / count.high, work / count.low
+            assert low <= fastest and slowest <= high, (
+                f"{spec.key}/{prescription.phase.value} doses {work} s of work against the "
+                f"{count.low}-{count.high} moves its OWN instructions state = "
+                f"{fastest:.2f}-{slowest:.2f} s/move, outside {low}-{high}. "
+                f"{MOVE_RATE_SOURCE} The prose and the dose are ONE claim here, so editing "
+                f"the move count instead of the dose moves the breach rather than closing it."
+            )
+    assert rows >= MOVE_RATE_ROWS and inspected >= MOVE_RATE_PRESCRIPTIONS, (
+        f"the move-rate arm read {rows} rows and {inspected} prescriptions against the "
+        f"{MOVE_RATE_ROWS} and {MOVE_RATE_PRESCRIPTIONS} measured. A row leaving `MOVE_COUNTS` "
+        f"takes its dose out of the only guard that reads a move count against a work period."
+    )
+
+
+def test_the_MOVE_COUNT_TABLE_still_matches_the_PROSE_IT_RESTATES() -> None:
+    """⚠️ GUARD, the other end. A reword that moves the number off 'moves' goes red here."""
+    for key, count in MOVE_COUNTS.items():
+        found = numerals_before_moves(_BY_KEY[key].instructions)
+        assert set(count.words) <= found, (
+            f"{key}'s instructions no longer spell {sorted(set(count.words) - found)} next to "
+            f"a move count — the words found there are {sorted(found)}. `MOVE_COUNTS` says "
+            f"{count.low}-{count.high} moves and the row's own text is what that restates, so "
+            f"one of the two has drifted and the band above is now checking a number nobody "
+            f"authored."
+        )
+
+
+def test_EVERY_ROW_WHOSE_PROSE_COUNTS_MOVES_is_TABLED_or_NAMED_AS_AN_EXCLUSION() -> None:
+    """⚠️ GUARD, both directions, on the register's own completeness."""
+    in_scope = {
+        spec.key
+        for spec in EXERCISES
+        if numerals_before_moves(spec.instructions)
+        and any(prescription.work_seconds is not None for prescription in spec.prescriptions)
+    }
+    named = set(MOVE_COUNTS) | set(MOVE_RATE_EXCLUSIONS)
+    assert in_scope == named, (
+        f"counted in prose and dosed in seconds but in neither register: "
+        f"{sorted(in_scope - named)}; registered but no longer both: {sorted(named - in_scope)}. "
+        f"A row that states a move count and carries a work period either goes in `MOVE_COUNTS` "
+        f"with its number, or in `MOVE_RATE_EXCLUSIONS` with the reason a climbing rate is not "
+        f"what its work period measures. `short_rest_boulder_sets` states five to seven moves "
+        f"and carries NO `work_seconds`, so nothing here can read it — authoring one onto it "
+        f"arrives as this failure, which is the decision it is."
     )
 
 

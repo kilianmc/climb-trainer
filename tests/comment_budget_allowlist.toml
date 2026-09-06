@@ -8833,8 +8833,8 @@ reason = "Records what this register replaced: a ceiling = authored pin that gua
 path = "tests/test_planner_progression.py"
 kind = "hash_run"
 anchor = "anti vacuity floors 90 of what the sweep measured"
-limit = 15
-reason = "Carries the measured cell counts the floors are 90% of, so a future reader can tell a drifted sweep from a rule that has stopped firing altogether. GREW when ruling 41's wall row cut the shorter-rest arm from 57 cells to 15 and took boulders_on_the_two_minute out of it entirely; a re-based anti-vacuity floor that does not say what it lost is how a guard goes quietly thin."
+limit = 13
+reason = "Carries the measured cell counts the floors are 90% of, so a future reader can tell a drifted sweep from a rule that has stopped firing altogether. Names both re-bases: ruling 41's wall row cut the shorter-rest arm from 57 pairs to 15, and ruling 50 answered that by widening the sampling unit rather than by lowering a floor, which is the one thing a reader must not undo here."
 
 [[exception]]
 path = "server/domain/planner/climbing.py"
@@ -8980,3 +8980,17 @@ kind = "docstring"
 anchor = "tests.test_planner_selection.test_BOTH_of_F11s_SURFACES_RANK_BY_THE_SAME_AUTHORED_ORDER"
 limit = 14
 reason = "Ruling 38's 'a fix to one surface only is not a fix', the independent-restatement reason (a test that asks the code what its own ordering is agrees with a reversed one), and the measurement refusing a rank WEIGHT on the filler surface. All three are what tell this arm from a tautology."
+
+[[exception]]
+path = "server/domain/exercises.py"
+kind = "hash_run"
+anchor = "the app s own conversion not a sourced figure ruling 50"
+limit = 7
+reason = "Ruling 50's declared divergence, at the row it describes: §5.4 gives this circuit no seconds at all, so the 90 s is the app converting the row's own move count at a rate borrowed from two OTHER attributes. Without it the dose reads as sourced, and the 25 s it replaces - the move count leaked into a seconds field - reads as a typo rather than as the class of defect F26 was."
+
+[[exception]]
+path = "tests/test_planner_progression.py"
+kind = "docstring"
+anchor = "tests.test_planner_progression.test_a_DRAWN_CELL_AFTER_WEEK_ONE_LEFT_ITS_AUTHORED_DOSE_BEHIND"
+limit = 7
+reason = "Why the sampling unit is a drawn CELL and not a week-PAIR, which is the whole of ruling 50's guard half: _pool_index rotates the pool by week, so a pair needs the same row drawn twice in one block and broken_circuit_redpoint made 0 pairs from 136 drawn blocks. A reader who does not know that deletes this arm as a duplicate of the pair arm beside it."
