@@ -8797,6 +8797,13 @@ reason = "The guard's whole scope, which is the part a reader cannot recompute: 
 [[exception]]
 path = "tests/test_exercise_library.py"
 kind = "docstring"
+anchor = "tests.test_exercise_library.test_the_ASPECT_COPYS_REST_TO_WORK_FLOOR_is_TRUE_OF_EVERY_DOSED_ROW"
+limit = 14
+reason = "The denominator and the granularity, which a reader cannot recompute: 8 readable rows of 21, why the other 13 are unreadable or exempt, and why the sentence names a FLOOR instead of section 7's 1-2x band, which one filed row breaks at 3-4x under a ruling that keeps it there."
+
+[[exception]]
+path = "tests/test_exercise_library.py"
+kind = "docstring"
 anchor = "tests.test_exercise_library.test_the_SECTION_7_SHAPE_REGISTER_names_every_shape_the_library_actually_HAS"
 limit = 4
 reason = "Both directions and what each one catches: an unnamed shape is a row no band reads, which is invisible from every other test, and a named shape the library has dropped is a stale exemption."
