@@ -174,8 +174,8 @@ CLIMBING_ASPECTS: Final[tuple[ReferenceSpec, ...]] = (
     ReferenceSpec(
         "power_endurance",
         "Power endurance",
-        "Making hard moves while already pumped — around thirty of them, on rests no "
-        "longer than the work.",
+        "Making hard moves while already pumped — around thirty of them, on rests at "
+        "least as long as the work.",
     ),
     ReferenceSpec(
         "endurance",

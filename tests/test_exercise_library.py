@@ -544,6 +544,74 @@ def test_the_SECTION_7_SHAPE_REGISTER_names_every_shape_the_library_actually_HAS
     )
 
 
+# `CLIMBING_ASPECTS["power_endurance"]`'s published sentence, verbatim. Pinned rather than
+# paraphrased, so a reword arrives at the arms its own number is derived from.
+POWER_ENDURANCE_COPY = (
+    "Making hard moves while already pumped — around thirty of them, on rests at "
+    "least as long as the work."
+)
+# "on rests at least as long as the work": the FLOOR the sentence puts under rest, as a multiple
+# of the work. Two arms read it — one per row, one on the tightest row the aspect ships.
+COPY_CLAIMS_REST_TO_WORK_FLOOR = 1.0
+# Measured 2026-09-06: `power_endurance` authors 21 prescriptions, 12 carry no `work_seconds` and
+# 1 is the open-climbing filler, leaving 8 rows a rest:work ratio can be read from.
+POWER_ENDURANCE_DOSED_ROWS = 8
+
+
+def _power_endurance_dose_rows() -> list[tuple[ExerciseSpec, PrescriptionSpec, int]]:
+    """The aspect's readable set, on `_section_7_dose_rows()`' own filtering and exemptions."""
+    return [row for row in _section_7_dose_rows() if row[0].aspect_key == "power_endurance"]
+
+
+def test_the_ASPECT_COPYS_REST_TO_WORK_FLOOR_is_TRUE_OF_EVERY_DOSED_ROW() -> None:
+    """⚠️ GUARD on `CLIMBING_ASPECTS["power_endurance"]`, the sentence a climber reads
+    when they rate this aspect. Per `(exercise, phase)` ROW, never pooled and never per aspect:
+    an aspect-wide mean sits inside the claim while the row in front of them breaks it.
+
+    Denominator: 8 of the aspect's 21 prescriptions. 12 carry no `work_seconds`, so no ratio can
+    be read from them at all, and `open_climbing_power_endurance` is exempt by name (ruling 34).
+    Rest is the LONGER of the two fields, which is ruling 44's reading.
+
+    ⚠️ The sentence claimed rests "no longer than the work" until 2026-09-06 and 6 of
+    these 8 rows broke it — 1.50x, 2.00x and four at 3.00-4.00x. It is NOT re-authored to
+    §7's 1-2x Aero Pow band either: `bodyweight_anaerobic_circuit` is filed here at
+    3.00-4.00x and ruling 44 keeps that filing, so a 1-2x sentence would move the mismatch
+    rather than end it. The floor is the one edge the whole shipped set supports.
+    """
+    aspect = next(spec for spec in CLIMBING_ASPECTS if spec.key == "power_endurance")
+    assert aspect.description == POWER_ENDURANCE_COPY, (
+        f"the published power_endurance sentence now reads {aspect.description!r}. Its rest "
+        f"claim is what the arms below assert — re-derive them against the library here, or "
+        f"the reword ships a number nothing checks."
+    )
+    ratios: dict[str, float] = {}
+    for spec, prescription, work in _power_endurance_dose_rows():
+        where = f"{spec.key}/{prescription.phase.value}"
+        rest = _operative_rest(prescription)
+        assert rest is not None, (
+            f"{where} is a dosed power_endurance row with {work} s of work and no rest at all, "
+            f"so the sentence's floor cannot be read of it. Dose the rest, or drop the claim."
+        )
+        ratios[where] = rest / work
+        assert ratios[where] >= COPY_CLAIMS_REST_TO_WORK_FLOOR, (
+            f"{where} rests {rest} s against {work} s of work = {ratios[where]:.2f}x, under the "
+            f"{COPY_CLAIMS_REST_TO_WORK_FLOOR:.1f}x the published sentence promises the climber. "
+            f"Reword the copy or re-dose the row — never leave the sentence standing."
+        )
+    assert len(ratios) == POWER_ENDURANCE_DOSED_ROWS, (
+        f"the floor arm read {len(ratios)} rows against the {POWER_ENDURANCE_DOSED_ROWS} "
+        f"measured, so the readable set has moved. A row that stopped carrying `work_seconds` "
+        f"leaves the sentence unchecked over it rather than failing."
+    )
+    tightest = min(ratios, key=lambda where: ratios[where])
+    assert ratios[tightest] == COPY_CLAIMS_REST_TO_WORK_FLOOR, (
+        f"the shortest rest in the aspect is now {ratios[tightest]:.2f}x the work "
+        f"({tightest}), so telling the climber the rests are at least as long as the work "
+        f"understates what they are given and the copy owes the stronger claim. Reword the "
+        f"sentence — never loosen this arm."
+    )
+
+
 # `explosive_move_intervals`' shipped instructions call it "the cheapest on-the-wall power work
 # in the library in minutes". Measured 9.0 / 10.8 / 9.0 / 5.4 min in the four phases it is in.
 CHEAPEST_ON_WALL_POWER_ROW = "explosive_move_intervals"
