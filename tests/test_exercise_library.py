@@ -21,26 +21,39 @@ reason.
 
 import re
 from collections import Counter
+from dataclasses import dataclass
 
 import pytest
+from sqlalchemy import Enum, String
 
 from server.domain.exercises import (
     CELLS_WITH_NO_GEARLESS_OPTION,
     DELIBERATELY_UNPRESCRIBED,
     EXERCISES,
     FINGER_LOADING_EQUIPMENT_KEYS,
+    OPEN_CLIMBING_KEYS,
     ExerciseSpec,
     PrescriptionSpec,
 )
-from server.domain.planner.selection import candidates
+from server.domain.planner.generate import _spec_seconds
+from server.domain.planner.selection import ASPECT_NAMES, candidates, on_the_wall
 from server.domain.vocabulary import (
+    ASCENT_TAGS,
     CLIMBING_ASPECTS,
     EQUIPMENT,
     INJURY_AREAS,
     Phase,
     ProtocolKind,
+    ReferenceSpec,
 )
-from server.models import SUBSTITUTION_HINT_MAX
+from server.models import (
+    AscentTag,
+    Base,
+    ClimbingAspect,
+    Equipment,
+    Exercise,
+    InjuryArea,
+)
 
 # ⚠️ PUBLIC because `tests/test_planner_gearless.py` imports it: a shortfall message is the
 # other place an improvised-edge suggestion could appear, and the two must be checked by the
@@ -99,12 +112,12 @@ def test_every_aspect_has_an_exercise_that_needs_no_equipment() -> None:
 
 
 def test_every_phase_and_aspect_pair_is_prescribable_or_deliberately_not() -> None:
-    """The coverage contract: no silent holes in the 56-cell grid.
+    """The coverage contract: no silent holes in the 70-cell grid.
 
     An exercise with no `prescription_template` row for a phase cannot be prescribed in that
     phase, so a cell with no candidate is a block the generator cannot fill for that aspect.
-    Emptiness is allowed — a taper with no power-endurance work is periodisation, not an
-    oversight — but only when it is written down with its reasoning.
+    Emptiness is allowed — a strength block with no power-endurance work is periodisation,
+    not an oversight — but only when it is written down with its reasoning.
 
     Asserted in **both** directions, because a one-way assertion rots: an exemption for a
     cell somebody has since filled is a stale claim about the library, and the next reader
@@ -321,19 +334,513 @@ def test_prescription_values_satisfy_the_database_checks() -> None:
                 assert value is None or 1 <= value <= 32767, f"{where}: {field} = {value}"
 
 
+def test_boulder_four_by_four_prescribes_NO_REST_BETWEEN_THE_BOULDERS() -> None:
+    """⚠️ GUARD. "No rest between them" IS the 4x4 and only an ABSENCE can say it: the column's
+    CHECK is `1 <= rest_seconds`, so zero is inexpressible and omission is how it is written."""
+    row = next(spec for spec in EXERCISES if spec.key == "boulder_four_by_four")
+    filled = [
+        (prescription.phase.value, prescription.rest_seconds)
+        for prescription in row.prescriptions
+        if prescription.rest_seconds is not None
+    ]
+    assert not filled, (
+        f"boulder_four_by_four prescribes a rest between the boulders in {filled}. Its "
+        f"instructions say the four go 'back to back with no rest between them', and because "
+        f"the column's CHECK is 1 <= rest_seconds an ABSENT value is the only way to write "
+        f"the zero that rule means. Put the rest in rest_between_sets_seconds instead."
+    )
+
+
+# §7's Aero Cap row is "sustained light pump, never fail" and `CLIMBING_ASPECTS`' own endurance
+# copy is "a submaximal intensity", so 6 is the ceiling both allow (ruling 39, 2026-09-06).
+AEROBIC_CAPACITY_RPE_CEILING = 6
+
+# The four aspects §7's dose table covers, through the aspect <-> attribute mapping: Aero Cap,
+# Aero Pow, An Cap and An Pow. The other five aspects are Strength or have no §7 row at all.
+SECTION_7_ASPECTS = frozenset({"endurance", "power_endurance", "anaerobic_capacity", "power"})
+
+
+def test_no_ENDURANCE_row_is_DOSED_OVER_THE_AEROBIC_CAPACITY_RPE_CEILING() -> None:
+    """⚠️ GUARD, ruling 39. F19: four `endurance` rows shipped at RPE 7-8 against §7's "never
+    fail", and the aspect's own user-facing copy promises submaximal. Aspect-wide, so a new row
+    cannot reintroduce it in a cell the boulder-reachability guard's dose arm does not reach."""
+    over = [
+        (spec.key, prescription.phase.value, prescription.target_rpe)
+        for spec in EXERCISES
+        if spec.aspect_key == "endurance"
+        for prescription in spec.prescriptions
+        if prescription.target_rpe is not None
+        and prescription.target_rpe > AEROBIC_CAPACITY_RPE_CEILING
+    ]
+    assert not over, (
+        f"{over} dose `endurance` above RPE {AEROBIC_CAPACITY_RPE_CEILING}. §7 doses aerobic "
+        f"capacity as a sustained light pump that never reaches failure, and the aspect ships "
+        f"to the client as 'staying on the wall for minutes at a submaximal intensity' — an "
+        f"RPE 7 row makes that copy false. Re-dose the row, or file it under the aspect whose "
+        f"dose it actually is; do not raise this ceiling."
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class _DoseShape:
+    """One (aspect, protocol kind) the library authors, with §7's rest:work window for it or
+    `None` where the sources dose that shape by something other than a ratio."""
+
+    aspect_key: str
+    kind: ProtocolKind
+    band: tuple[float, float] | None
+    source: str
+
+
+# §7's dose table and §5's protocol list, as one register. Keyed on `protocol_kind` and never on
+# `aspect_key` alone (ruling 43) — the measurement is in the guard's docstring below.
+SECTION_7_SHAPES: tuple[_DoseShape, ...] = (
+    _DoseShape(
+        "anaerobic_capacity",
+        ProtocolKind.INTERVALS,
+        (2.0, 4.0),
+        "§7 An Cap: rest 2-4x the work. §5.2 progresses it by harder or longer circuits and "
+        "names a shorter rest as the thing not to do, so the 2x floor is the load-bearing edge.",
+    ),
+    _DoseShape(
+        "anaerobic_capacity",
+        ProtocolKind.CIRCUIT,
+        (2.0, 4.0),
+        "The same window, and §5.2 doses this shape by name: 'long boulders 12-15 moves, rest "
+        "fixed at 2-4x climb time'.",
+    ),
+    _DoseShape(
+        "power_endurance",
+        ProtocolKind.INTERVALS,
+        (1.0, 2.0),
+        "§7 Aero Pow: rest about equal to the work, 1-2x. §5.3's on-the-minute is the shape — "
+        "a 6-8 move boulder, ~20 s climbing against 40 s of rest.",
+    ),
+    _DoseShape(
+        "power_endurance",
+        ProtocolKind.LAPS,
+        (1.0, 2.0),
+        "The same Aero Pow window: a timed lap with a measured rest is on-the-minute over a "
+        "longer climb, and `up_down_boulder_laps`' instructions state the 1x shape themselves.",
+    ),
+    _DoseShape(
+        "power_endurance",
+        ProtocolKind.CIRCUIT,
+        None,
+        "⚠️ OUT OF SCOPE. §5.3 doses the Aero Pow circuit by MOVES and shakeouts — '~30-move "
+        "circuits, no shakeouts, don't exceed 30' — and gives no rest figure, where §5.2's An "
+        "Cap circuit carries one by name. F25 is the declared divergence this leaves standing.",
+    ),
+    _DoseShape(
+        "power",
+        ProtocolKind.INTERVALS,
+        None,
+        "⚠️ OUT OF SCOPE. `power` is An Pow AND alactic max-effort work, which no source doses: "
+        "the two exercises here are one 6 s / 48 s alactic burst, correct at 8x, and F18's "
+        "declared divergence. An Pow's own §7 row is a within-set rest and the shape that "
+        "matches it, `short_rest_boulder_sets`, carries no `work_seconds` to read.",
+    ),
+    _DoseShape(
+        "power",
+        ProtocolKind.CIRCUIT,
+        None,
+        "⚠️ OUT OF SCOPE. §5.4 doses the An Pow broken circuit and the redpoint circuit by "
+        "sections and attempts, not by a ratio — ruling 50's research read §5.4 again and "
+        "found no seconds, rest or set figure there at all. `broken_circuit_redpoint` rests "
+        "2.67-4.67x and no band asserts it; what reads its `work_seconds` is the move-rate "
+        "arm below, which is the only guard in this repo that does.",
+    ),
+    _DoseShape(
+        "endurance",
+        ProtocolKind.LAPS,
+        None,
+        "⚠️ OUT OF SCOPE. §7 gives Aero Cap no rest period at all — the column reads 'n/a' — so "
+        "its dose is 10+ min of work and a ratio is not the claim. `long_boulder_link_ups`' "
+        "300 s against that floor is ruling 45's declared divergence, recorded at the row.",
+    ),
+    _DoseShape(
+        "endurance",
+        ProtocolKind.OTHER,
+        None,
+        "The same Aero Cap 'n/a', and nothing to read either way: these eleven rows are "
+        "continuous machine and mileage sessions and not one of them carries a rest field.",
+    ),
+)
+
+# Measured 2026-09-06 over the readable set: 24 rows, and a within-set-only reading left all 24
+# unreadable, so the guard below would have been vacuous rather than strict.
+SECTION_7_DOSED_ROWS = 24
+
+
+def _operative_rest(prescription: PrescriptionSpec) -> int | None:
+    """The LONGER of the two rest fields. The library writes an interval's rest in whichever one
+    fits the shape, and ruling 44 reads the longer of the two as the operative one."""
+    rests = [
+        seconds
+        for seconds in (prescription.rest_seconds, prescription.rest_between_sets_seconds)
+        if seconds is not None
+    ]
+    return max(rests, default=None)
+
+
+def _section_7_dose_rows() -> list[tuple[ExerciseSpec, PrescriptionSpec, int]]:
+    """The readable set: rows in the four §7 aspects carrying `work_seconds`, less the filler.
+    The work seconds come out with the row, because a ratio is the only thing anything wants."""
+    return [
+        (spec, prescription, prescription.work_seconds)
+        for spec in EXERCISES
+        if spec.aspect_key in SECTION_7_ASPECTS and spec.key not in OPEN_CLIMBING_KEYS
+        for prescription in spec.prescriptions
+        if prescription.work_seconds is not None
+    ]
+
+
+def test_every_DOSED_row_sits_inside_its_SECTION_7_REST_TO_WORK_BAND() -> None:
+    """⚠️ GUARD, ruling 43. A dose row's rest:work ratio must sit inside the band §7 gives for
+    the KIND of protocol it is; a kind the sources do not dose by a ratio is out of scope and
+    `SECTION_7_SHAPES` says which and why. There is NO exemption register (ruling 34): the four
+    rows that would have needed one are declared divergences recorded at the rows themselves.
+
+    Scope, measured 2026-09-06: 136 rows sit in the four §7 aspects, 60 carry `work_seconds`,
+    6 of those are `OPEN_CLIMBING_KEYS` — exempt BY NAME, since ruling 29 gives the filler no
+    dose progression — leaving 54 readable and 24 in a banded shape.
+    ⚠️ Keying the band on `aspect_key` alone was measured and refused: under an An Pow <=1x read
+    on `aspect_key == "power"`, 10 of 10 `power` rows carrying `work_seconds` breach, including
+    `explosive_move_intervals` at 6 s / 48 s = 8.00x, which is correct alactic dosing.
+    ⚠️ THE BLIND SPOT: only a row with `work_seconds` has a readable ratio, and
+    `short_rest_boulder_sets` — the one An Pow row the audit certifies as matching §7 exactly,
+    20 s rest inside a set against 480-600 s between them — has none. What is readable in
+    `power` is therefore biased toward the rows that are wrong.
+    """
+    bands = {(shape.aspect_key, shape.kind): shape for shape in SECTION_7_SHAPES if shape.band}
+    inspected = 0
+    for spec, prescription, work in _section_7_dose_rows():
+        shape = bands.get((spec.aspect_key, spec.protocol_kind))
+        if shape is None:
+            continue
+        assert shape.band is not None
+        inspected += 1
+        where = f"{spec.key}/{prescription.phase.value}"
+        rest = _operative_rest(prescription)
+        assert rest is not None, (
+            f"{where} is a dosed {spec.aspect_key} {spec.protocol_kind.value} row with "
+            f"{work} s of work and no rest at all. {shape.source}"
+        )
+        ratio = rest / work
+        low, high = shape.band
+        assert low <= ratio <= high, (
+            f"{where} rests {rest} s against {work} s of work = "
+            f"{ratio:.2f}x, outside §7's {low}-{high}x for a {spec.aspect_key} "
+            f"{spec.protocol_kind.value}. {shape.source} Re-dose the row, or file it under the "
+            f"aspect whose dose it actually is — there is no exemption register here."
+        )
+    assert inspected >= SECTION_7_DOSED_ROWS, (
+        f"the band arm read {inspected} rows against the {SECTION_7_DOSED_ROWS} measured, so it "
+        f"has quietly narrowed. A guard nobody's rows reach is the failure mode this number "
+        f"exists to catch — a within-set-only reading of the rest scored 0 of 24."
+    )
+
+
+def test_the_SECTION_7_SHAPE_REGISTER_names_every_shape_the_library_actually_HAS() -> None:
+    """⚠️ GUARD, both directions, on the idiom of `DELIBERATELY_UNPRESCRIBED`. An unnamed shape
+    is a row no band reads — an authored `endurance` INTERVALS row would pass unchecked — and a
+    named shape the library no longer carries is a stale exemption."""
+    present = {(spec.aspect_key, spec.protocol_kind) for spec, _, _ in _section_7_dose_rows()}
+    named = {(shape.aspect_key, shape.kind) for shape in SECTION_7_SHAPES}
+    assert present == named, (
+        f"unnamed in SECTION_7_SHAPES: {sorted((a, k.value) for a, k in present - named)}; "
+        f"named but no longer in the library: "
+        f"{sorted((a, k.value) for a, k in named - present)}. Every (aspect, protocol kind) "
+        f"the four §7 aspects author with `work_seconds` needs a row there — with a band if the "
+        f"sources dose that shape by a ratio, and with the reason they do not if they don't."
+    )
+
+
+# The move-rate band, ruling 50: the arm that would have caught F26, and the only one in the
+# repo reading `broken_circuit_redpoint`'s `work_seconds` at all.
+
+
+_BY_KEY = {spec.key: spec for spec in EXERCISES}
+
+
+@dataclass(frozen=True, slots=True)
+class _MoveCount:
+    """One row's move count, restated from its own prose, with the numerals it spells."""
+
+    low: int
+    high: int
+    words: tuple[str, ...]
+
+
+# Restated from each row's `instructions` and never read out of them at runtime — the numbers
+# are this file's claim ABOUT the text, and the arm two below proves the claim still holds.
+MOVE_COUNTS = {
+    "two_problem_links": _MoveCount(12, 15, ("twelve", "fifteen")),
+    "traverse_intervals": _MoveCount(12, 15, ("twelve", "fifteen")),
+    "up_down_boulder_laps": _MoveCount(30, 30, ("thirty",)),
+    "broken_circuit_redpoint": _MoveCount(25, 25, ("twenty", "five")),
+}
+
+# Named exclusions, with the reason as DATA so it reaches whoever sees the red rather than
+# sitting in a comment. Leaving this band is a ruling; deleting a row from it is not.
+MOVE_RATE_EXCLUSIONS = {
+    "long_boulder_link_ups": (
+        "⚠️ Ruling 45's DECLARED DIVERGENCE, recorded at the row itself: 300 s over 'twenty "
+        "to thirty moves a lap' is 10.0-15.0 s/move, and the row is continuous Aero Cap "
+        "climbed with shakeouts and never so hard that a move is in doubt — so its work "
+        "period is a duration of easy climbing, not a rate at which hard moves are made."
+    ),
+    "explosive_move_intervals": (
+        "⚠️ One big fast move, or a two-move burst, in 6 s. Over one or two moves a per-move "
+        "rate is the length of a single all-out effort rather than a climbing pace, which is "
+        "why §7 doses alactic work by its 8x rest instead — the same reason ruling 43 puts "
+        "`power` x `intervals` outside the rest:work guard's scope."
+    ),
+}
+
+# The union of every move -> seconds rate the sources state, as (low, high) seconds per move.
+MOVE_RATE_BAND = (1.50, 4.17)
+MOVE_RATE_SOURCE = (
+    "§7's Aero Pow row doses ~30 moves in 45-120 s = 1.50-4.00 s/move, and §7's An Cap row "
+    "with §5.2's body doses 12-15 moves in 30-50 s = 2.00-4.17, so 1.50-4.17 s/move is every "
+    "rate the sources state. NO source states one for An Pow: ruling 50 declares the "
+    "conversion as the app's own, at `broken_circuit_redpoint`, where the declaration lives."
+)
+
+# Measured 2026-09-06: 4 rows and 16 (row, phase) prescriptions carry both ends of the claim.
+MOVE_RATE_ROWS = 4
+MOVE_RATE_PRESCRIPTIONS = 16
+
+# Enough words to clear "twelve to fifteen hard enough moves"; the numerals themselves are
+# never converted to a value here, only detected, so the table above stays the sole source.
+MOVE_WINDOW = 5
+NUMBER_WORDS = frozenset(
+    """one two three four five six seven eight nine ten eleven twelve thirteen fourteen
+    fifteen sixteen seventeen eighteen nineteen twenty thirty forty fifty sixty seventy
+    eighty ninety hundred dozen""".split()
+)
+
+
+def numerals_before_moves(text: str) -> frozenset[str]:
+    """Every number word within `MOVE_WINDOW` words before a 'move' or 'moves' in one row."""
+    lowered = text.lower()
+    found: set[str] = set()
+    for match in re.finditer(r"\bmoves?\b", lowered):
+        head = re.findall(r"[a-z]+", lowered[: match.start()])[-MOVE_WINDOW:]
+        found.update(word for word in head if word in NUMBER_WORDS)
+    return frozenset(found)
+
+
+def test_every_row_COUNTING_ITS_MOVES_climbs_them_at_a_RATE_THE_SOURCES_STATE() -> None:
+    """⚠️ GUARD, ruling 50, and it reads BOTH ENDS: the prose move count against the dose."""
+    rows = 0
+    inspected = 0
+    low, high = MOVE_RATE_BAND
+    for spec in EXERCISES:
+        count = MOVE_COUNTS.get(spec.key)
+        if count is None:
+            continue
+        rows += 1
+        for prescription in spec.prescriptions:
+            work = prescription.work_seconds
+            if work is None:
+                continue
+            inspected += 1
+            fastest, slowest = work / count.high, work / count.low
+            assert low <= fastest and slowest <= high, (
+                f"{spec.key}/{prescription.phase.value} doses {work} s of work against the "
+                f"{count.low}-{count.high} moves its OWN instructions state = "
+                f"{fastest:.2f}-{slowest:.2f} s/move, outside {low}-{high}. "
+                f"{MOVE_RATE_SOURCE} The prose and the dose are ONE claim here, so editing "
+                f"the move count instead of the dose moves the breach rather than closing it."
+            )
+    assert rows >= MOVE_RATE_ROWS and inspected >= MOVE_RATE_PRESCRIPTIONS, (
+        f"the move-rate arm read {rows} rows and {inspected} prescriptions against the "
+        f"{MOVE_RATE_ROWS} and {MOVE_RATE_PRESCRIPTIONS} measured. A row leaving `MOVE_COUNTS` "
+        f"takes its dose out of the only guard that reads a move count against a work period."
+    )
+
+
+def test_the_MOVE_COUNT_TABLE_still_matches_the_PROSE_IT_RESTATES() -> None:
+    """⚠️ GUARD, the other end. A reword that moves the number off 'moves' goes red here."""
+    for key, count in MOVE_COUNTS.items():
+        found = numerals_before_moves(_BY_KEY[key].instructions)
+        assert set(count.words) <= found, (
+            f"{key}'s instructions no longer spell {sorted(set(count.words) - found)} next to "
+            f"a move count — the words found there are {sorted(found)}. `MOVE_COUNTS` says "
+            f"{count.low}-{count.high} moves and the row's own text is what that restates, so "
+            f"one of the two has drifted and the band above is now checking a number nobody "
+            f"authored."
+        )
+
+
+def test_EVERY_ROW_WHOSE_PROSE_COUNTS_MOVES_is_TABLED_or_NAMED_AS_AN_EXCLUSION() -> None:
+    """⚠️ GUARD, both directions, on the register's own completeness."""
+    in_scope = {
+        spec.key
+        for spec in EXERCISES
+        if numerals_before_moves(spec.instructions)
+        and any(prescription.work_seconds is not None for prescription in spec.prescriptions)
+    }
+    named = set(MOVE_COUNTS) | set(MOVE_RATE_EXCLUSIONS)
+    assert in_scope == named, (
+        f"counted in prose and dosed in seconds but in neither register: "
+        f"{sorted(in_scope - named)}; registered but no longer both: {sorted(named - in_scope)}. "
+        f"A row that states a move count and carries a work period either goes in `MOVE_COUNTS` "
+        f"with its number, or in `MOVE_RATE_EXCLUSIONS` with the reason a climbing rate is not "
+        f"what its work period measures. `short_rest_boulder_sets` states five to seven moves "
+        f"and carries NO `work_seconds`, so nothing here can read it — authoring one onto it "
+        f"arrives as this failure, which is the decision it is."
+    )
+
+
+# `CLIMBING_ASPECTS["power_endurance"]`'s published sentence, verbatim. Pinned rather than
+# paraphrased, so a reword arrives at the arms its own number is derived from.
+POWER_ENDURANCE_COPY = (
+    "Making hard moves while already pumped — around thirty of them, on rests at "
+    "least as long as the work."
+)
+
+# "around thirty of them" is PINNED, not proven: `ExerciseSpec` carries no move count, so nothing
+# here can read the number. The pin makes a reword deliberate; it does not make the clause true.
+
+# "on rests at least as long as the work": the FLOOR the sentence puts under rest, as a multiple
+# of the work. Two arms read it — one per row, one on the tightest row the aspect ships.
+COPY_CLAIMS_REST_TO_WORK_FLOOR = 1.0
+# Measured 2026-09-06: `power_endurance` authors 21 prescriptions, 12 carry no `work_seconds` and
+# 1 is the open-climbing filler, leaving 8 rows a rest:work ratio can be read from.
+POWER_ENDURANCE_DOSED_ROWS = 8
+
+
+def _power_endurance_dose_rows() -> list[tuple[ExerciseSpec, PrescriptionSpec, int]]:
+    """The aspect's readable set, on `_section_7_dose_rows()`' own filtering and exemptions."""
+    return [row for row in _section_7_dose_rows() if row[0].aspect_key == "power_endurance"]
+
+
+def test_the_ASPECT_COPYS_REST_TO_WORK_FLOOR_is_TRUE_OF_EVERY_DOSED_ROW() -> None:
+    """⚠️ GUARD on `CLIMBING_ASPECTS["power_endurance"]`, the sentence a climber reads
+    when they rate this aspect. Per `(exercise, phase)` ROW, never pooled and never per aspect:
+    an aspect-wide mean sits inside the claim while the row in front of them breaks it.
+
+    Denominator: 8 of the aspect's 21 prescriptions. 12 carry no `work_seconds`, so no ratio can
+    be read from them at all, and `open_climbing_power_endurance` is exempt by name (ruling 34).
+    Rest is the LONGER of the two fields, which is ruling 44's reading.
+
+    ⚠️ The sentence claimed rests "no longer than the work" until 2026-09-06 and 6 of
+    these 8 rows broke it — 1.50x, 2.00x and four at 3.00-4.00x. It is NOT re-authored to
+    §7's 1-2x Aero Pow band either: `bodyweight_anaerobic_circuit` is filed here at
+    3.00-4.00x and ruling 44 keeps that filing, so a 1-2x sentence would move the mismatch
+    rather than end it. The floor is the one edge the whole shipped set supports.
+    """
+    aspect = next(spec for spec in CLIMBING_ASPECTS if spec.key == "power_endurance")
+    assert aspect.description == POWER_ENDURANCE_COPY, (
+        f"the published power_endurance sentence now reads {aspect.description!r}. Its rest "
+        f"claim is what the arms below assert — re-derive them against the library here, or "
+        f"the reword ships a number nothing checks."
+    )
+    ratios: dict[str, float] = {}
+    for spec, prescription, work in _power_endurance_dose_rows():
+        where = f"{spec.key}/{prescription.phase.value}"
+        rest = _operative_rest(prescription)
+        assert rest is not None, (
+            f"{where} is a dosed power_endurance row with {work} s of work and no rest at all, "
+            f"so the sentence's floor cannot be read of it. Dose the rest, or drop the claim."
+        )
+        ratios[where] = rest / work
+        assert ratios[where] >= COPY_CLAIMS_REST_TO_WORK_FLOOR, (
+            f"{where} rests {rest} s against {work} s of work = {ratios[where]:.2f}x, under the "
+            f"{COPY_CLAIMS_REST_TO_WORK_FLOOR:.1f}x the published sentence promises the climber. "
+            f"Reword the copy or re-dose the row — never leave the sentence standing."
+        )
+    assert len(ratios) == POWER_ENDURANCE_DOSED_ROWS, (
+        f"the floor arm read {len(ratios)} rows against the {POWER_ENDURANCE_DOSED_ROWS} "
+        f"measured, so the readable set has moved. A row that stopped carrying `work_seconds` "
+        f"leaves the sentence unchecked over it rather than failing."
+    )
+    tightest = min(ratios, key=lambda where: ratios[where])
+    assert ratios[tightest] == COPY_CLAIMS_REST_TO_WORK_FLOOR, (
+        f"the shortest rest in the aspect is now {ratios[tightest]:.2f}x the work "
+        f"({tightest}), so telling the climber the rests are at least as long as the work "
+        f"understates what they are given and the copy owes the stronger claim. Reword the "
+        f"sentence — never loosen this arm."
+    )
+
+
+# `explosive_move_intervals`' shipped instructions call it "the cheapest on-the-wall power work
+# in the library in minutes". Measured 9.0 / 10.8 / 9.0 / 5.4 min in the four phases it is in.
+CHEAPEST_ON_WALL_POWER_ROW = "explosive_move_intervals"
+
+# #117 gives the loading weeks of a block three different doses, so a superlative about the
+# library's own contents is three claims and the copy ships all three.
+LOADING_WEEKS_OF_A_BLOCK = (1, 2, 3)
+
+
+def test_the_ON_WALL_POWER_SUPERLATIVE_in_the_authored_copy_still_holds() -> None:
+    """⚠️ GUARD. A superlative about the library's own contents, shipped to the reader: authoring
+    one cheaper on-wall `power` row makes it lie silently. Only 0.8 min of margin at taper."""
+    claimant = next(spec for spec in EXERCISES if spec.key == CHEAPEST_ON_WALL_POWER_ROW)
+    for prescription in claimant.prescriptions:
+        phase = prescription.phase
+        for week_no in LOADING_WEEKS_OF_A_BLOCK:
+            mine = _spec_seconds(claimant, phase, week_no)
+            for rival in on_the_wall(candidates(phase, claimant.aspect_key)):
+                if rival.key == claimant.key:
+                    continue
+                theirs = _spec_seconds(rival, phase, week_no)
+                assert theirs >= mine, (
+                    f"{claimant.key}'s instructions call it the cheapest on-the-wall "
+                    f"{claimant.aspect_key} work in the library, but in {phase.value} week "
+                    f"{week_no} it costs {mine / 60:.1f} min against {rival.key}'s "
+                    f"{theirs / 60:.1f}. Reword the instructions or re-dose one of the two — "
+                    f"the copy is a claim, and #117's progression moves both sides of it."
+                )
+
+
+_PersistedRow = tuple[tuple[ReferenceSpec | ExerciseSpec, ...], type[Base], frozenset[str]]
+
+# Every authored tuple the seed PERSISTS, the model whose columns bound it, and the fields that
+# land in one. `PHASE_GUIDE` is absent because nothing seeds it: it lands in no column at all.
+
+# ⚠️ `Enum` SUBCLASSES `String` and carries a `length`, so the native enum columns are excluded
+# below: their length is the vocabulary's own and a bad value there is not a too-long string.
+PERSISTED_STRINGS: tuple[_PersistedRow, ...] = (
+    (CLIMBING_ASPECTS, ClimbingAspect, frozenset({"key", "name", "description"})),
+    (EQUIPMENT, Equipment, frozenset({"key", "name", "description"})),
+    (INJURY_AREAS, InjuryArea, frozenset({"key", "name", "description"})),
+    (ASCENT_TAGS, AscentTag, frozenset({"key", "name", "description", "category"})),
+    (EXERCISES, Exercise, frozenset({"key", "name", "instructions", "substitution_hint"})),
+)
+
+
 def test_authored_strings_fit_their_columns() -> None:
     """A too-long string is an `IntegrityError` at seed time, i.e. in production.
 
-    The columns are `exercise.name` String(96), `instructions` String(2000) and
-    `substitution_hint` String(SUBSTITUTION_HINT_MAX).
+    Every limit is READ OFF the column. The field sets are compared too: on the columns alone a
+    renamed field matches nothing, and this test would then stay green on zero comparisons.
     """
-    for spec in EXERCISES:
-        assert len(spec.name) <= 96, f"{spec.key}: name is {len(spec.name)} characters"
-        assert len(spec.instructions) <= 2000, f"{spec.key}: instructions too long"
-        if spec.substitution_hint is not None:
-            assert len(spec.substitution_hint) <= SUBSTITUTION_HINT_MAX, (
-                f"{spec.key}: substitution_hint is {len(spec.substitution_hint)} characters"
-            )
+    for specs, model, fields in PERSISTED_STRINGS:
+        limits = {
+            column.name: column.type.length
+            for column in model.__table__.columns
+            if isinstance(column.type, String)
+            and not isinstance(column.type, Enum)
+            and column.type.length is not None
+        }
+        covered = frozenset(field for field in limits if hasattr(specs[0], field))
+        assert covered == fields, (
+            f"{model.__name__} bounds {sorted(covered)} of the fields its specs author, against "
+            f"the {sorted(fields)} recorded beside it. One end of a pair was renamed, and a pair "
+            f"that no longer meets is a length this test stopped checking."
+        )
+        for spec in specs:
+            for field in sorted(covered):
+                value = getattr(spec, field)
+                if value is None:
+                    continue
+                assert len(value) <= limits[field], (
+                    f"{spec.key}: {field} is {len(value)} characters and {model.__name__}."
+                    f"{field} is String({limits[field]}). The seed raises an IntegrityError."
+                )
 
 
 def test_progression_links_name_a_real_exercise() -> None:
@@ -356,3 +863,62 @@ def test_no_progression_link_points_at_itself() -> None:
     for spec in EXERCISES:
         assert spec.progression_of_key != spec.key, f"{spec.key} is a progression of itself"
         assert spec.regression_of_key != spec.key, f"{spec.key} is a regression of itself"
+
+
+# Ruling 30's first invariant, Kilian 2026-09-06: "add what is the intention on the block, so if
+# it was power endurance, we can say, focus on boulders that test your power-endurance the most."
+# ⚠️ MEMBERSHIP ALONE WOULD PROVE NOTHING HERE: "power endurance" contains "power", so a `power`
+# filler whose cue only ever said "power endurance" would read green. Every OTHER aspect name is
+# deleted from the text first, longest first, and only where it is not part of the row's own name.
+def _cue_names_its_own_quality(text: str, aspect_key: str) -> bool:
+    """Whether this cue names the quality the block it fills is FOR, and not a rival's name."""
+    own = ASPECT_NAMES[aspect_key].lower()
+    residue = text.lower()
+    others = sorted(
+        (name.lower() for key, name in ASPECT_NAMES.items() if key != aspect_key),
+        key=len,
+        reverse=True,
+    )
+    for other in others:
+        if other not in own:
+            residue = residue.replace(other, " ")
+    return own in residue
+
+
+def test_every_OPEN_CLIMBING_row_TELLS_THE_CLIMBER_WHAT_THE_BLOCK_IS_FOR() -> None:
+    """⚠️ GUARD, ruling 30. The filler is the largest single item in a session and it is the one
+    block with no protocol, so its own text is the only place the block's intention can be said.
+
+    Also asserts the two shapes ruling 29 gives the family, both of which are the reason it is a
+    FILLER and not a prescription: no dose progression (`intensity_pct` is never set, and every
+    phase gets the same one authored chunk, which `generate.py::_place` re-sizes to the gap), and
+    a bouldering wall and nothing else, so it is never gated behind rope gear the way the
+    `endurance` rows prescribable in POWER_ENDURANCE are.
+    """
+    family = [spec for spec in EXERCISES if spec.key in OPEN_CLIMBING_KEYS]
+    assert len(family) == len(OPEN_CLIMBING_KEYS), (
+        f"OPEN_CLIMBING_KEYS names {len(OPEN_CLIMBING_KEYS)} rows and "
+        f"{len(family)} were found; the import-time check in exercises.py should have fired."
+    )
+    for spec in family:
+        assert _cue_names_its_own_quality(spec.instructions, spec.aspect_key), (
+            f"{spec.key} fills a block it says is about "
+            f"{ASPECT_NAMES[spec.aspect_key]!r} and its own text never names that quality. "
+            f"The climber reads this block and nothing else about why they are climbing: "
+            f"{spec.instructions!r}"
+        )
+        assert spec.equipment_keys == ("bouldering_wall",), (
+            f"{spec.key} requires {spec.equipment_keys}. Ruling 29's filler has to be reachable "
+            f"by both disciplines in a plain bouldering gym; rope gear is what makes the "
+            f"POWER_ENDURANCE aerobic rows unreachable for half the profiles."
+        )
+        assert spec.discipline is None, f"{spec.key} is filed under {spec.discipline}."
+        doses = {
+            (row.sets, row.work_seconds, row.reps, row.intensity_pct) for row in spec.prescriptions
+        }
+        assert len(doses) == 1 and doses.pop()[2:] == (None, None), (
+            f"{spec.key} carries more than one dose across its phases, or an intensity anchor: "
+            f"{sorted((r.phase.value, r.sets, r.work_seconds) for r in spec.prescriptions)}. "
+            f"Open climbing is TIME ON THE WALL and not a protocol, which is why it has no "
+            f"progression to be week 3 of — the generator sizes the one chunk to the gap."
+        )

@@ -113,6 +113,7 @@ describe('a whole run, four PUTs', () => {
       plannedSessionId: 5001,
       startedAtEpochMs: START,
       timeline: timeline(),
+      preDoneBlockIndexes: [],
     });
 
     expect(run.clientUuid).toBe('00000000-0000-4000-8000-000000000001');
@@ -221,6 +222,7 @@ describe('a whole run, four PUTs', () => {
       plannedSessionId: 5001,
       startedAtEpochMs: START,
       timeline: timeline(),
+      preDoneBlockIndexes: [],
     });
 
     for (const elapsed of [0, 60_000, 45 * 60_000]) {
@@ -238,6 +240,7 @@ describe('a whole run, four PUTs', () => {
         plannedSessionId: null,
         startedAtEpochMs: START,
         timeline: timeline(),
+        preDoneBlockIndexes: [],
       }),
       sessionRpe: 6,
     };
@@ -262,6 +265,7 @@ describe('a whole run, four PUTs', () => {
       plannedSessionId: 5001,
       startedAtEpochMs: START,
       timeline: timeline(),
+      preDoneBlockIndexes: [],
     });
     for (let ordinal = 1; ordinal <= 4; ordinal += 1) {
       run = logSet(run, ordinal, START + ordinal * 60_000);
@@ -291,6 +295,7 @@ describe('a whole run, four PUTs', () => {
       plannedSessionId: 5001,
       startedAtEpochMs: START,
       timeline: timeline(),
+      preDoneBlockIndexes: [],
     });
     run = logSet(run, 1, START + 60_000);
     run = logSet(run, 2, START + 120_000);

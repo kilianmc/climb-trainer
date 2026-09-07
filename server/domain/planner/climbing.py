@@ -10,12 +10,12 @@ bands are Kilian's, set directly, and stored as an **ordinal boundary per discip
 """
 
 import enum
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from types import MappingProxyType
 from typing import Final
 
 from server.domain.grades import Discipline, GradeSystemKey, ordinal_of
-from server.domain.vocabulary import Phase, ProtocolKind
+from server.domain.vocabulary import CLIMBING_ASPECTS, Phase, ProtocolKind
 
 # Any block whose exercise needs one of these is wall time; everything else is supplementary.
 # `auto_belay` is in the set although issue #84's own measurement omitted it: it is a wall you
@@ -38,17 +38,17 @@ WALL_EQUIPMENT: Final[frozenset[str]] = frozenset(
     }
 )
 
-# The aspects a climbing session can be *about* — i.e. that may DEFINE its type and therefore
-# its window. `core_tension` is absent because a tension drill cannot define a session, NOT
-# because its minutes are supplementary: wall-based core work counts as climbing (Kilian,
-# 2026-08-29). `requires_wall()` answers "do these minutes count?" and this set answers "may
-# this quality name the session?"; conflating them is what made three wall drills unprescribable.
+# The aspects a climbing session can be *about* — i.e. that may DEFINE its type and therefore its
+# window. `requires_wall()` answers "do these minutes count?" and this answers "may this quality
+# name the session?"; conflating them made three wall drills unprescribable. `core_tension` is out
+# because a tension drill cannot define a session (Kilian, 2026-08-29). Both #98 aspects are IN:
+# `wall_led_aspects()` filters this to on-wall candidates, so no gym lift can lead a session.
 WALL_LED_ASPECTS: Final[frozenset[str]] = frozenset(
-    {"endurance", "technique", "power", "power_endurance"}
+    {"endurance", "technique", "power", "general_strength", "power_endurance", "anaerobic_capacity"}
 )
 
-# Extra time becomes extra volume only here, and only in a loading phase. Everywhere else the
-# low volume *is* the protocol, so padding a max hang makes it worse rather than longer.
+# Extra time becomes extra volume only here, and only in a loading phase. Everywhere else the low
+# volume *is* the protocol, so neither #98 aspect joins: padding them makes another quality.
 EXPANDABLE_ASPECTS: Final[frozenset[str]] = frozenset({"endurance", "technique"})
 
 # And even there, at most this multiple of the AUTHORED set count: without the cap a 4-minute
@@ -58,6 +58,32 @@ EXPANDABLE_PROTOCOLS: Final[frozenset[ProtocolKind]] = frozenset(
     {ProtocolKind.LAPS, ProtocolKind.CIRCUIT, ProtocolKind.OTHER}
 )
 UNLOADING_PHASES: Final[frozenset[Phase]] = frozenset({Phase.DELOAD, Phase.TAPER})
+
+# The share of a loading week an unload week keeps, intensity held: Barrows §3.3 says ~50% and
+# Dylan says 40-60%. A share of the WINDOW FLOOR, never a multiplier on an authored dose.
+UNLOAD_VOLUME_PCT: Final = 50
+
+# A deload session LEADS with movement quality at low load rather than with the wall, which is
+# what `PHASE_GUIDE[DELOAD]` promises; `_ordered_blocks` is where it becomes true.
+DELOAD_LEAD_ASPECTS: Final[frozenset[str]] = frozenset({"technique", "mobility"})
+
+# Barrows §3.4, as a tuple of tiers so the source's own sentence is the constant and a tier is a
+# POSITION rather than a magic number: "always start with the most intense and work down to the
+# least intense: bouldering -> An Cap/An Pow -> Aero Pow -> Aero Cap -> ARC", within a session
+# and across consecutive days. `power` shares tier 0 with both strength aspects because §3.3
+# treats hard strength and power as one category, and it needs a tier ahead of
+# `anaerobic_capacity` because the app maps BOTH bouldering and An Pow to it, which is the only
+# implementable reading of that first arrow. The last tier is what the chain does not name.
+INTENSITY_TIERS: Final[tuple[tuple[str, ...], ...]] = (
+    ("power", "finger_strength", "general_strength"),
+    ("anaerobic_capacity",),
+    ("power_endurance",),
+    ("endurance",),
+    ("technique", "core_tension", "antagonist_prehab", "mobility"),
+)
+_INTENSITY_TIER: Final[Mapping[str, int]] = MappingProxyType(
+    {key: tier for tier, keys in enumerate(INTENSITY_TIERS) for key in keys}
+)
 
 
 class Level(enum.StrEnum):
@@ -83,10 +109,16 @@ _CEILINGS: Final[Mapping[Discipline, tuple[int, int]]] = MappingProxyType(
 )
 
 # Percent of a week's prescribed minutes that must be wall time. Integer, so the check is exact
-# integer arithmetic and no float ever decides whether a week meets its floor.
+# integer arithmetic and no float ever decides whether a week meets its floor. ⚠️ A WEEK's, and
+# reading it per SESSION would be a stricter rule rather than a refactor of this one — it would
+# redefine a number Kilian set.
 CLIMBING_FLOOR_PCT: Final[Mapping[Level, int]] = MappingProxyType(
     {Level.BEGINNER: 85, Level.INTERMEDIATE: 75, Level.ADVANCED: 50}
 )
+
+# A deload answers to this instead of its band's floor (Kilian, 2026-09-04): still half climbing —
+# same sessions, shorter — with the room the band leaves none of for the mobility the week is FOR.
+DELOAD_CLIMBING_FLOOR_PCT: Final = 50
 
 # Where the allocator AIMS; the floor above is only the hard lower bound it may never breach.
 # Allocating climbing to exhaustion instead put every band at 84-91% and made banding inert.
@@ -94,14 +126,56 @@ CLIMBING_TARGET_PCT: Final[Mapping[Level, tuple[int, int]]] = MappingProxyType(
     {Level.BEGINNER: (85, 90), Level.INTERMEDIATE: (75, 82), Level.ADVANCED: (50, 62)}
 )
 
+# ⚠️ F14, a DECLARED DIVERGENCE and NOT a fixed defect (ruling 39, re-measured 2026-09-07 over the
+# same 72-plan sweep, pooled over every week a plan carries). `general_strength` +
+# `finger_strength` + `core_tension` take 4.6 / 5.4 / 6.1% of prescribed block minutes by level —
+# 3.6 / 4.4 / 5.2% counting the warm-up — against Dylan's 15-20%, and no (level, phase) cell
+# reaches 15% (the highest is advanced `strength` at 8.5%). Largely a CONSEQUENCE of ruling 27's
+# length fill, 44 / 55 / 64% of those same minutes, rather than an authoring omission. **No floor
+# guard, deliberately:** 15% is not landable at that measurement, and a floor red on every profile
+# from the day it lands is a wish rather than a guard.
+
 # Wall blocks a session spends by choice — the lever the target band actually moves, because a
 # session is three blocks and an advanced climber's second one is where supplementary work goes.
 CLIMBING_BLOCKS: Final[Mapping[Level, int]] = MappingProxyType(
     {Level.BEGINNER: 3, Level.INTERMEDIATE: 2, Level.ADVANCED: 1}
 )
 
-# Real hangboard sessions a loading week owes, by band. Beginner is zero deliberately: the
-# sources want 6-12 months of consistent climbing first and no column records that history.
+# How long a session RUNS, warm-up included, by band (Kilian, 2026-09-05 — ruling 25). Banded by
+# LEVEL and never by weekly frequency: no source scales length inversely with frequency and
+# Lattice argues the opposite, naming the dense low-frequency session as a beginner failure mode.
+# ⚠️ These are the HIGH end of Horst's published per-session bands (beginner 1-2.5 h,
+# intermediate 1.5-4 h, advanced 1.5-5 h) and above Lattice's measured medians (~52/55/75-112
+# min), so the choice is KILIAN'S and must never be attributed to "the sources".
+# ⚠️ AND SO IS THE WEEKLY TOTAL, where the divergence is widest (ruling 31, 2026-09-06). These
+# are floors at EVERY session count, so seven available days buy seven whole sessions: 11.1 / 14.1
+# / 17.6 h a week against the 2.6 / 3.2 / 4.4 h Lattice measured in the same grade bands, and
+# above what its V12+ group does. Sourced only in that Horst's per-session bands reach 5 h and his
+# day counts reach 6. Capping the week and dividing it by the days available was CONSIDERED AND
+# REFUSED: a climber who says seven days gets seven real sessions.
+SESSION_MINUTES_TARGET: Final[Mapping[Level, int]] = MappingProxyType(
+    {Level.BEGINNER: 90, Level.INTERMEDIATE: 120, Level.ADVANCED: 150}
+)
+
+# Ruling 27's whole granularity: a session short of the length above takes ONE block of plain
+# climbing, sized to the gap and never shorter than this. ⚠️ KILIAN'S figure, 2026-09-06 -- "if a
+# beginner gets 2 or 3 exercises and 12m left, then propose 30m of climbing, and that is it" -- and
+# no source states one, so it must never be attributed to Barrows or Dylan. The bands above are
+# therefore FLOORS and overshoot by up to this much is correct, not a miss.
+LENGTH_FILL_MINUTES: Final = 30
+
+# Real hangboard sessions a loading week owes, by band. Beginner is zero by KILIAN'S DECISION,
+# 2026-09-06: neither source scales hangboarding by level, so never attribute this one to them.
+# ⚠️ The order is STRICT, and `test_the_finger_strength_floor_RISES_WITH_THE_BAND` asserts it as
+# `beginner < intermediate < advanced` off the plans rather than off this table. Now that the
+# zero is a DECISION and not the mis-attribution the audit found, the strictness owes its own
+# reason (guard 5, ruling 35): both sources agree that beginners habituate before they load
+# hard, and a max hang is the load-hard end of finger work, so the band that has earned the
+# tissue tolerance is the band that gets more of it. Only the ZERO is the divergence.
+# ⚠️ Its CONSEQUENCE, and the reason it costs nothing: the strict `<` forbids any future beginner
+# habituation protocol from raising this floor. `HABITUATION_PROTOCOLS` is how a beginner gets
+# finger work anyway — by scaled CONTENT, which is what the sources scale — and this floor counts
+# `FINGER_PROTOCOLS` only, so a habituation block can never satisfy or breach it.
 FINGER_SESSIONS_PER_WEEK: Final[Mapping[Level, int]] = MappingProxyType(
     {Level.BEGINNER: 0, Level.INTERMEDIATE: 1, Level.ADVANCED: 2}
 )
@@ -111,6 +185,58 @@ FINGER_PROTOCOLS: Final[frozenset[ProtocolKind]] = frozenset(
     {ProtocolKind.MAX_HANG, ProtocolKind.REPEATERS}
 )
 
+# What the sources DO scale by level: hangboard CONTENT (ruling 35, 2026-09-06). Dylan writes an
+# explicit weeks-1-4 habituation protocol, so a beginner's FIRST block accumulates easy time under
+# tension instead of chasing a maximum. A PROTOCOL set and not an exercise key: the rule is what
+# the block asks of the tissue, and BASE authors two FINGER HOLD rows — one needing a hangboard,
+# one not — so the rule survives a climber who owns neither.
+HABITUATION_PROTOCOLS: Final[frozenset[ProtocolKind]] = frozenset({ProtocolKind.HOLD})
+# Weeks 1-4 are the FIRST block and no later one. Measured: a beginner still draws max hangs or
+# repeaters later on all 40 arms of the per-level guard (5 gaps x 4 sessions x 2), so not a ban.
+HABITUATION_PHASES: Final[frozenset[Phase]] = frozenset({Phase.BASE})
+
+# ⚠️ The twin of this floor for the POWER_ENDURANCE week's aerobic block was DECLINED, not
+# forgotten (ruling 24, revoked): that block's own copy admits the gap and test_phase_guide.py
+# asserts the admission in both directions. Do not add it back as an improvement.
+
+# The three ENERGY SYSTEMS, and deliberately not `INTENSITY_TIERS`' top tier, which holds
+# `power` together with `finger_strength` and `general_strength`. Strength is not an energy
+# system and the two ceilings below are about energy systems only: §4.2's worked base week runs
+# FOUR strength sessions alongside ~3 hard energy days, so folding the strength aspects into
+# either count would cut work the source explicitly prescribes. `INTENSITY_TIERS` still feeds
+# ordering and nothing else.
+ENERGY_SYSTEM_ASPECTS: Final[frozenset[str]] = frozenset(
+    {"anaerobic_capacity", "power", "power_endurance"}
+)
+
+# Barrows §3.2/§4.2: a 5-day climber gets at most ~3 days of hard energy-system work a week.
+# A ceiling ENFORCED, where `FINGER_SESSIONS_PER_WEEK` is a floor pursued — the same shape,
+# inverted. Not a fraction of the week: it is an overtraining bound, so 7 days get 3 too.
+HARD_ENERGY_DAYS_PER_WEEK: Final = 3
+
+# ⚠️ The TAPER is exempt, by authored decision and not by omission. §3.3 makes a taper only hard
+# strength/power and hard An Pow/Aero Pow with An Cap, Aero Cap and ARC dropped, so every taper
+# session carries hard energy-system work BY CONSTRUCTION; the ceiling there would fight the
+# taper's own composition and the displaced slots have nowhere to go. PERFORMANCE is NOT exempt.
+HARD_ENERGY_EXEMPT_PHASES: Final[frozenset[Phase]] = frozenset({Phase.TAPER})
+
+ANAEROBIC_ASPECT: Final = "anaerobic_capacity"
+
+# §4.2's worked example, which is per STAGE rather than flat: Base 2x An Cap, Peak 1 1x, Peak 2
+# dropped. `PERFORMANCE` and `TAPER` carry a 0 row for the table's own completeness — the library
+# already delivers it through `DELIBERATELY_UNPRESCRIBED`, so those two rows are inert.
+ANAEROBIC_SESSIONS_PER_WEEK: Final[Mapping[Phase, int]] = MappingProxyType(
+    {
+        Phase.BASE: 2,
+        Phase.STRENGTH: 2,
+        Phase.POWER: 1,
+        Phase.POWER_ENDURANCE: 1,
+        Phase.PERFORMANCE: 0,
+        Phase.DELOAD: 1,
+        Phase.TAPER: 0,
+    }
+)
+
 # Quality of effort decides the adaptation, so this work LEADS its session: a max hang sitting
 # behind 35 minutes of climbing is the "turn up subpar and set your training back" failure.
 PRIORITY_PROTOCOLS: Final[frozenset[ProtocolKind]] = frozenset(
@@ -118,10 +244,10 @@ PRIORITY_PROTOCOLS: Final[frozenset[ProtocolKind]] = frozenset(
 )
 
 # Minutes of prescribed work in a session led by a block of this protocol kind, warm-up
-# excluded because the warm-up is not a block. The maximum binds always; the minimum is only
-# pursued, and only in a loading phase — `Phase` in `server/domain/vocabulary.py` is explicit
-# that a deload has its own prescriptions rather than being a scaled block, so topping one back
-# up to a loading week's length would contradict the schema's own definition of it.
+# excluded because the warm-up is not a block. The maximum binds always; the minimum is pursued
+# in full in a loading phase and at `UNLOAD_VOLUME_PCT` of it in an unload week. Half a floor is
+# not a scaled prescription — `Phase` in `server/domain/vocabulary.py` forbids that and every
+# unload dose stays as authored; what an unload week gets is FEWER blocks, per ruling 3's top-up.
 SESSION_WINDOWS: Final[Mapping[ProtocolKind, tuple[int, int]]] = MappingProxyType(
     {
         ProtocolKind.MAX_HANG: (20, 45),
@@ -152,6 +278,13 @@ def climbing_floor_pct(discipline: Discipline, current_ordinal: int) -> int:
     return CLIMBING_FLOOR_PCT[level_for(discipline, current_ordinal)]
 
 
+def week_climbing_floor_pct(discipline: Discipline, current_ordinal: int, phase: Phase) -> int:
+    """The floor THIS week is held to — the band's, except in a deload, which has its own."""
+    if phase is Phase.DELOAD:
+        return min(DELOAD_CLIMBING_FLOOR_PCT, climbing_floor_pct(discipline, current_ordinal))
+    return climbing_floor_pct(discipline, current_ordinal)
+
+
 def meets_floor(*, wall_seconds: int, other_seconds: int, floor_pct: int) -> bool:
     """Whether a week's mix is climbing-dominant enough. Exact, integer, no rounding."""
     return wall_seconds * 100 >= floor_pct * (wall_seconds + other_seconds)
@@ -165,6 +298,31 @@ def requires_wall(equipment_keys: tuple[str, ...]) -> bool:
 def session_window(protocol_kind: ProtocolKind) -> tuple[int, int]:
     """The minutes window for a session led by this protocol kind."""
     return SESSION_WINDOWS[protocol_kind]
+
+
+def session_window_across(protocol_kinds: Iterable[ProtocolKind]) -> tuple[int, int]:
+    """The window a session holding ALL of these kinds runs in: the widest floor any one of its
+    blocks brings and the widest ceiling. Reading the LEADING block's window alone let a
+    15-minute limit-boulder block sit behind a max hang and take MAX_HANG's 20-minute floor
+    instead of LIMIT_BOULDER's 40. Ruling 3 is untouched: the session's TYPE is still the
+    leading block's, and no window here is lower than the one it replaces."""
+    windows = [SESSION_WINDOWS[kind] for kind in protocol_kinds]
+    return (max(low for low, _ in windows), max(high for _, high in windows))
+
+
+def session_minutes_target(discipline: Discipline, current_ordinal: int) -> int:
+    """How long this climber's session runs, warm-up INCLUDED. `generate.py` subtracts the
+    warm-up, because the warm-up is not a block and only blocks have prescribed seconds."""
+    return SESSION_MINUTES_TARGET[level_for(discipline, current_ordinal)]
+
+
+def session_floor_pct(phase: Phase) -> int:
+    """How much of its type's window floor AND of `SESSION_MINUTES_TARGET` a session in this
+    phase owes: all of it while loading, `UNLOAD_VOLUME_PCT` of it in a deload or a taper.
+    ⚠️ Ruling 27 put the LENGTH through here too, which is what makes ruling 17's >=40% unload
+    floor hold BY CONSTRUCTION: an unload session owes half of what a loading one does, so the
+    ratio the guard measures cannot drift below the factor whatever the library doses."""
+    return UNLOAD_VOLUME_PCT if phase in UNLOADING_PHASES else 100
 
 
 def is_expandable(aspect_key: str, protocol_kind: ProtocolKind, phase: Phase) -> bool:
@@ -194,6 +352,84 @@ def finger_sessions_for(discipline: Discipline, current_ordinal: int, phase: Pha
     return FINGER_SESSIONS_PER_WEEK[level_for(discipline, current_ordinal)]
 
 
+def content_protocols_for(
+    aspect_key: str, discipline: Discipline, current_ordinal: int, phase: Phase
+) -> frozenset[ProtocolKind] | None:
+    """The protocols this band trains an aspect with here, or `None` where all of them are open.
+
+    ⚠️ Nothing to do with `finger_sessions_for` above, which is a FLOOR pursued in its own pass:
+    a beginner owes zero of those sessions and `_fill_finger_strength` returns before it reads a
+    protocol at all, so a beginner's finger work only ever arrives through the ordinary
+    supplementary slot. This decides WHAT that slot may draw, which is the half ruling 35 left
+    open — measured: 115 of a beginner's 115 BASE finger blocks were max hangs or repeaters and
+    the habituation row the library authors for BASE landed in none of the 60 swept plans.
+    """
+    if aspect_key != FINGER_ASPECT:
+        return None
+    if phase in HABITUATION_PHASES and level_for(discipline, current_ordinal) is Level.BEGINNER:
+        return HABITUATION_PROTOCOLS
+    return None
+
+
 def is_priority(protocol_kind: ProtocolKind) -> bool:
     """Whether this is the quality work a session must not bury behind volume."""
     return protocol_kind in PRIORITY_PROTOCOLS
+
+
+def intensity_tier(aspect_key: str) -> int:
+    """Where this aspect sits on §3.4's chain: 0 is the hardest work a session can carry."""
+    return _INTENSITY_TIER[aspect_key]
+
+
+def hard_energy_day_ceiling(phase: Phase) -> int | None:
+    """Days of this week that may carry hard energy-system work — `None` where phase is exempt."""
+    return None if phase in HARD_ENERGY_EXEMPT_PHASES else HARD_ENERGY_DAYS_PER_WEEK
+
+
+def anaerobic_sessions_ceiling(phase: Phase) -> int:
+    """Anaerobic-capacity sessions a week of this phase may hold, off §4.2's worked example."""
+    return ANAEROBIC_SESSIONS_PER_WEEK[phase]
+
+
+def week_ceiling_governs(aspect_key: str) -> bool:
+    """The whole key space either weekly ceiling can refuse — one choke point, on purpose.
+
+    `generate.py::_week_ceiling_allows` returns `True` for anything this rejects, and
+    `selection.py::_validate_aspect_emphasis` subtracts exactly this set when it checks that a
+    phase's emphasis row survives the filter. A refusal reason added to the predicate without
+    coming through here would leave that floor measuring a set the generator no longer uses.
+    """
+    return aspect_key in ENERGY_SYSTEM_ASPECTS
+
+
+def _validate_frequency_ceilings() -> None:
+    """Both ceilings are total over their key space, on `_validate_intensity_tiers`' idiom: a
+    missing `Phase` row is a `KeyError` mid-generate, and a typo is a silently inert ceiling."""
+    aspects = {spec.key for spec in CLIMBING_ASPECTS}
+    if not ENERGY_SYSTEM_ASPECTS <= aspects or ANAEROBIC_ASPECT not in ENERGY_SYSTEM_ASPECTS:
+        raise ValueError(
+            f"ENERGY_SYSTEM_ASPECTS must name aspects of CLIMBING_ASPECTS and contain "
+            f"{ANAEROBIC_ASPECT!r}. Not an aspect: {sorted(ENERGY_SYSTEM_ASPECTS - aspects)}."
+        )
+    if set(ANAEROBIC_SESSIONS_PER_WEEK) != set(Phase):
+        raise ValueError(
+            f"ANAEROBIC_SESSIONS_PER_WEEK must give every Phase a ceiling. Missing: "
+            f"{sorted(phase.value for phase in Phase if phase not in ANAEROBIC_SESSIONS_PER_WEEK)}."
+        )
+
+
+def _validate_intensity_tiers() -> None:
+    """Every aspect owns exactly one tier, checked at import on `_validate_aspect_emphasis`'s
+    idiom: #98 added two aspects and a `KeyError` at generate time is the wrong failure."""
+    tiered = [key for keys in INTENSITY_TIERS for key in keys]
+    expected = {spec.key for spec in CLIMBING_ASPECTS}
+    if len(tiered) != len(set(tiered)) or set(tiered) != expected:
+        raise ValueError(
+            f"INTENSITY_TIERS must tier every aspect in CLIMBING_ASPECTS exactly once. "
+            f"Untiered: {sorted(expected - set(tiered))}; not an aspect or listed twice: "
+            f"{sorted(key for key in tiered if key not in expected or tiered.count(key) > 1)}."
+        )
+
+
+_validate_intensity_tiers()
+_validate_frequency_ceilings()

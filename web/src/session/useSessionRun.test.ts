@@ -114,6 +114,8 @@ async function startedSession() {
       session: session(),
       exercises: makeLibrary(),
       discipline: 'sport',
+      // Nothing pre-done: the timing machine is what this suite covers. See `sessionPlayer`.
+      marks: null,
     });
     await Promise.resolve();
   });
@@ -215,6 +217,118 @@ describe('the item machine', () => {
     // …and a SKIPPED item logs nothing at all, which is how partial completion stays honest.
     expect(view.result.current.unsentCount).toBe(0);
     expect(view.result.current.run?.activeBlockIndex).toBeNull();
+  });
+});
+
+describe('dropping the sets an item never sent', () => {
+  /** Three blocks: the first prescribes three sets, the other two one each. One exercise per
+   *  block, so a set names the part it belongs to. */
+  function threeBlocks() {
+    return makeSession([
+      makeBlock({
+        protocol_kind: 'max_hang',
+        exercise_id: 11,
+        rest_between_sets_seconds: 20,
+        sets: [1, 2, 3].map((index) =>
+          makeSet({ id: 500 + index, set_index: index, target_work_seconds: 10 }),
+        ),
+      }),
+      makeBlock({
+        id: 102,
+        order_index: 1,
+        exercise_key: 'front_lever',
+        exercise_id: 12,
+        sets: [makeSet({ id: 600, target_work_seconds: 10 })],
+      }),
+      makeBlock({
+        id: 103,
+        order_index: 2,
+        exercise_key: 'lock_offs',
+        exercise_id: 13,
+        sets: [makeSet({ id: 700, target_work_seconds: 10 })],
+      }),
+    ]);
+  }
+
+  async function threeBlockSession() {
+    const view = mount();
+    await act(async () => {
+      view.result.current.start({
+        session: threeBlocks(),
+        exercises: makeLibrary(),
+        discipline: 'sport',
+        marks: null,
+      });
+      await Promise.resolve();
+    });
+    return view;
+  }
+
+  /** Which PRESCRIPTION each unsent set was written against — the only thing that says whose
+   *  set it is. `set_index` cannot: it is allocated from the run's global ceiling. */
+  function unsent(view: Awaited<ReturnType<typeof threeBlockSession>>) {
+    return view.result.current.run?.pending.map((set) => set.prescribed_set_id);
+  }
+
+  it('KEEPS a LATER block’s unsent sets when an EARLIER one is entered', async () => {
+    const view = await threeBlockSession();
+    // "I did this one myself" on the LAST part, before anything else: `nextSetIndex` reads a
+    // global ceiling, so its set takes ordinal 1 — block 0's own natural range.
+    act(() => {
+      view.result.current.completeItem(2);
+    });
+    expect(view.result.current.run?.pending.map((set) => set.set_index)).toEqual([1]);
+
+    act(() => {
+      view.result.current.startItem(0);
+    });
+
+    // ⚠️ Sets the climber really recorded, on a part this one is not: an ordinal window dropped
+    // them silently, and only while they were unsent — i.e. offline or on a slow network.
+    expect(unsent(view)).toEqual([700]);
+    expect(view.result.current.unsentCount).toBe(1);
+  });
+
+  it('drops the entered block’s OWN unsent sets, whatever ordinals they hold', async () => {
+    const view = await threeBlockSession();
+    act(() => {
+      view.result.current.completeItem(2);
+    });
+    act(() => {
+      view.result.current.completeItem(0);
+    });
+    expect(unsent(view)).toEqual([700, 501, 502, 503]);
+
+    act(() => {
+      view.result.current.skipItem(0);
+    });
+    expect(unsent(view)).toEqual([700]);
+  });
+
+  it('never drops an OFF-PLAN set, which belongs to no block at all', async () => {
+    const view = await threeBlockSession();
+    act(() => {
+      setRun({
+        ...view.result.current.run!,
+        pending: [
+          {
+            client_uuid: '00000000-0000-4000-8000-0000000000ff',
+            set_index: 1,
+            exercise_id: 11,
+            prescribed_set_id: null,
+            actual_reps: null,
+            actual_work_seconds: null,
+            rpe: null,
+            completed_at: new Date(START).toISOString(),
+          },
+        ],
+      });
+    });
+
+    act(() => {
+      view.result.current.skipItem(0);
+    });
+    expect(unsent(view)).toEqual([null]);
   });
 });
 

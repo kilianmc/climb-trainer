@@ -608,8 +608,8 @@ class UserProfile(Base):
     current_grade_id: Mapped[int | None] = mapped_column(ForeignKey("grade.id"), nullable=True)
     sessions_per_week: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
     available_weekdays: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
-    # The headline: one strength, one weakness, from the eight aspects. NULL until asked. See
-    # `UserAspectRating` for why these exist alongside the eight scores, not instead of them.
+    # The headline: one strength, one weakness, from the aspect vocabulary. NULL until asked.
+    # See `UserAspectRating` for why these exist alongside the scores, not instead of them.
     strength_aspect_id: Mapped[int | None] = mapped_column(
         ForeignKey("climbing_aspect.id"), nullable=True
     )
@@ -669,7 +669,7 @@ class UserAspectRating(Base):
     to hand the generator garbage: they are hard to answer honestly, and eight middling
     guesses look exactly like eight real answers. The headline is now
     `user_profile.strength_aspect_id` and `weakness_aspect_id` — one of each, which anybody
-    can answer — and the eight scores are the optional detail behind a disclosure for
+    can answer — and the per-aspect scores are the optional detail behind a disclosure for
     someone who wants to be specific.
 
     So the generator has two pictures of a weakness and they are not equivalent:
@@ -682,7 +682,7 @@ class UserAspectRating(Base):
     Both are still written together — picking a strength or a weakness also writes that
     aspect's score — so a profile never has one without the other.
 
-    Self-rated rather than tested, because a testing protocol for eight aspects is a
+    Self-rated rather than tested, because a testing protocol for every aspect is a
     whole product of its own and this one has to work on day one. `rated_at` is here so
     a rating can be shown as stale ("you rated endurance 5 months ago").
     """

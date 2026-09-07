@@ -21,8 +21,7 @@ __pycache__/
 coverage/
 .DS_Store
 
-# local-only scratch: per-PR working notes, review aids, and the scripts that seed a local
-# database for a visual review — tooling for the review, never a deliverable
+# local-only scratch: working notes and review aids, never a deliverable
 .claude/pr-*.md
 .claude/*.py
 .claude/exercise-classification.md

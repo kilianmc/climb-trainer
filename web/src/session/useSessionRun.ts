@@ -2,6 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import type { Discipline, LibraryExercise, LoggedSetInput, PlanSession } from '../api/types';
 import { useAuth } from '../auth/AuthProvider';
+import type { BlockMarks } from '../plan/completion';
+import { doneBlockIndexes } from '../plan/completion';
 
 import { classifyFailure, useSessionLogPut, writesEnabled } from './api';
 import type { Cursor } from './clock';
@@ -69,8 +71,8 @@ import {
  * ⚠️ **STARTING THE SESSION STARTS NO TIMER.** A session is a LIST OF ITEMS — one per block —
  * and Start means "I am doing this session": it mints the run and its elapsed clock, which is
  * the only source of `duration_minutes`. Each item is then entered deliberately, and may be
- * marked completed or skipped without its timer ever running. Once the session is finished it
- * cannot be started again; the summary is the end of it.
+ * marked completed or skipped without its timer ever running. Finishing ends the RUN, not the
+ * session: `start` mints a fresh one, so a session left under 100% can be run again (#82).
  */
 
 /** Where the run is. `idle` covers both "never started" and "abandoned". */
@@ -91,6 +93,9 @@ export interface StartOptions {
   /** `plan/blueprint.ts::exercisesByKey` — names are not in the plan response. */
   readonly exercises: ReadonlyMap<string, LibraryExercise>;
   readonly discipline: Discipline;
+  /** ⚠️ What the SERVER already holds done — `week.ts::sessionReport`'s `marks`. Without it a
+   *  session three-quarters logged starts again as untouched, which is #82's last defect. */
+  readonly marks: BlockMarks | null;
 }
 
 /** What the tap on an `open` phase knows. Everything is optional; the elapsed count-up is the
@@ -284,17 +289,31 @@ function closeActiveItem(run: RunRecord, status: ItemStatus): RunRecord {
  * for the same reason: an unacknowledged set is by construction one nothing else knows about.
  */
 function dropUnflushed(run: RunRecord, blockIndex: number): RunRecord {
-  const range = rangeFor(run.timeline, blockIndex);
-  const item = itemFor(run, blockIndex);
-  if (range?.firstSetIndex == null || range.lastSetIndex === null || item === undefined) {
-    return run;
-  }
-  const low = range.firstSetIndex + item.setIndexOffset;
-  const high = range.lastSetIndex + item.setIndexOffset;
+  // ⚠️ By `prescribed_set_id`, never an ordinal window: `nextSetIndex` allocates from a GLOBAL
+  // ceiling, so a block done out of order holds ordinals inside another block's natural range.
+  const owned = prescribedSetIds(run.timeline, blockIndex);
+  if (owned.size === 0) return run;
   return {
     ...run,
-    pending: run.pending.filter((set) => set.set_index < low || set.set_index > high),
+    pending: run.pending.filter(
+      // An off-plan set belongs to no block, so it is never this one's.
+      (set) => set.prescribed_set_id == null || !owned.has(set.prescribed_set_id),
+    ),
   };
+}
+
+/** The prescribed sets the block's own phases complete, read off the run's frozen timeline. */
+function prescribedSetIds(
+  timeline: readonly CompiledPhase[],
+  blockIndex: number,
+): ReadonlySet<number> {
+  const range = rangeFor(timeline, blockIndex);
+  const ids = new Set<number>();
+  if (range === undefined) return ids;
+  for (const phase of timeline.slice(range.start, range.end)) {
+    if (phase.completesSet && phase.prescribedSetId !== null) ids.add(phase.prescribedSetId);
+  }
+  return ids;
 }
 
 /** "I did this one myself": the item's prescribed sets, logged with NO measured value. Every
@@ -603,6 +622,7 @@ export function useSessionRun(): SessionRun {
           plannedSessionId: options.session.id ?? null,
           startedAtEpochMs,
           timeline: compileProtocol(options.session, options.exercises),
+          preDoneBlockIndexes: doneBlockIndexes(options.session, options.marks),
         }),
       );
       setResync(null);

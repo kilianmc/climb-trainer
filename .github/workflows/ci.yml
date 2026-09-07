@@ -42,7 +42,7 @@ jobs:
   server:
     runs-on: ubuntu-latest
 
-    # See CLAUDE.md, "SQLite is disqualified for tests".
+    # Why a real Postgres and never SQLite: tests/conftest.py's module docstring.
     services:
       postgres:
         # Pinned to Neon's major — see CLAUDE.md, "Local Postgres for the test suite".

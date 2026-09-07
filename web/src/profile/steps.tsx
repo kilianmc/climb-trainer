@@ -254,10 +254,10 @@ export function AvailabilityFields({ draft, onChange }: FieldProps) {
 }
 
 /**
- * Where the climber is now: a current grade, one strength, one weakness — and the eight
+ * Where the climber is now: a current grade, one strength, one weakness — and the per-aspect
  * sliders kept behind a disclosure.
  *
- * ⚠️ **This replaced eight 1-5 sliders as the step's question** (issue #54). Eight
+ * ⚠️ **This replaced a row of 1-5 sliders as the step's question** (issue #54). Those
  * self-ratings were hard to answer honestly and were the step most likely to hand the
  * generator garbage. "I climb 6c and I want 7a" is a far stronger signal than any
  * self-rating: a 6c climber is measurably closer to 7a than a 6a climber is.
@@ -267,7 +267,7 @@ export function AvailabilityFields({ draft, onChange }: FieldProps) {
  * select the other ladder.
  *
  * All three are real columns since `0006`, and picking a strength or a weakness also writes
- * that aspect's rating — so the eight scores and the two picks can never disagree. See
+ * that aspect's rating — so the scores and the two picks can never disagree. See
  * `UserAspectRating`'s docstring for why both exist.
  */
 export function ClimbingNowFields({ draft, vocabulary, onChange }: FieldProps) {
@@ -369,7 +369,7 @@ export function ClimbingNowFields({ draft, vocabulary, onChange }: FieldProps) {
       </SelectField>
 
       <details className="ct-app__disclosure">
-        <summary>Rate all eight, if you want to be specific</summary>
+        <summary>Rate them all, if you want to be specific</summary>
         <p className="ct-app__caption">
           Optional. Your two answers above are already set here; the rest start in the middle and
           are saved exactly as you leave them.
@@ -427,7 +427,7 @@ export function ClimbingNowFields({ draft, vocabulary, onChange }: FieldProps) {
  *
  * Most people are not injured, so the step opens on the answer most people would give and the
  * seven areas stay out of the way until someone says otherwise — the same disclosure pattern
- * as "rate all eight" on the previous card.
+ * as "rate them all" on the previous card.
  *
  * ⚠️ **A default tick is not an answer, and this is the boundary that keeps the bar honest.**
  * Nothing is credited by rendering: `injuries_reviewed_at` is stamped only by the `PATCH` that

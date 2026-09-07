@@ -23,7 +23,7 @@ import { blockRanges } from './protocol';
 
 export const RUN_STORAGE_KEY = 'ct:run';
 /** Bumped whenever `RunRecord` changes shape. A record from another version is discarded. */
-export const RUN_VERSION = 4;
+export const RUN_VERSION = 5;
 
 /**
  * Where one ITEM — one block of the session — has got to.
@@ -64,6 +64,9 @@ export interface RunRecord {
   readonly timeline: readonly CompiledPhase[];
   /** One per block, in timeline order. The session's list of items. */
   readonly items: readonly RunItem[];
+  /** Blocks the SERVER already held every set of at Start, by `blockIndex`; their items begin
+   *  `completed`. ⚠️ They mint no set, so `sessionCompletion` has to count them — see it. */
+  readonly preDoneBlockIndexes: readonly number[];
   /** The item whose timer is running, or `null` — which is the state a session STARTS in. */
   readonly activeBlockIndex: number | null;
   /** Meaningful only while an item is running; the clock is bounded to that item's phases. */
@@ -104,10 +107,14 @@ export interface RunSeed {
   readonly plannedSessionId: number | null;
   readonly startedAtEpochMs: number;
   readonly timeline: readonly CompiledPhase[];
+  /** `plan/completion.ts::doneBlockIndexes`. Required, not optional: an omitted one restarts a
+   *  part-finished session as untouched, which is the defect (#82). */
+  readonly preDoneBlockIndexes: readonly number[];
 }
 
 /** A fresh run. The uuid is minted here, client-side, and never asked of the server. */
 export function createRun(seed: RunSeed): RunRecord {
+  const preDone = new Set(seed.preDoneBlockIndexes);
   return {
     v: RUN_VERSION,
     clientUuid: crypto.randomUUID(),
@@ -116,11 +123,12 @@ export function createRun(seed: RunSeed): RunRecord {
     plannedSessionId: seed.plannedSessionId,
     startedAtEpochMs: seed.startedAtEpochMs,
     timeline: seed.timeline,
-    // Every item pending and nothing running: Start means "I am doing this session", not
-    // "begin item one". Entering an item is a separate, deliberate press.
+    preDoneBlockIndexes: [...preDone],
+    // Nothing running: Start means "I am doing this session", not "begin item one". Entering an
+    // item is a separate, deliberate press — including a pre-done one, which stays re-enterable.
     items: blockRanges(seed.timeline).map((range) => ({
       blockIndex: range.blockIndex,
-      status: 'pending' as const,
+      status: preDone.has(range.blockIndex) ? ('completed' as const) : ('pending' as const),
       runs: 0,
       setIndexOffset: 0,
     })),
@@ -141,32 +149,48 @@ export function createRun(seed: RunSeed): RunRecord {
 /** The percentage's parts. ⚠️ `status = 'completed'` means "Finish was pressed" and is never
  *  this number: partial completion is a DERIVED QUERY, not a column (CLAUDE.md). */
 export interface Completion {
-  /** Blocks with at least one logged set — the numerator of that query. */
+  /** Blocks with EVERY prescribed set logged — the numerator of that query. */
   readonly blocksDone: number;
+  /** Blocks that can be logged at all; one with nothing to record is out of both figures. */
   readonly blockCount: number;
   /** Whole percent. Three parts with one skipped reads 67, which is the case Kilian described. */
   readonly percent: number;
 }
 
-/** How much of the session got done, by the SERVER's own definition: the join
- *  `logged_set.prescribed_set_id → session_block`, counting blocks with at least one set. */
-export function sessionCompletion(run: RunRecord): Completion {
-  const blockCount = blockRanges(run.timeline).length;
-  const blockOf = new Map<number, number>();
+/** Which prescribed sets each block owes, by `blockIndex`. A block with none of them cannot be
+ *  logged — `mintSet` refuses a phase with no `exerciseId` — so it is absent, not empty. */
+function setsOwed(run: RunRecord): ReadonlyMap<number, Set<number>> {
+  const owed = new Map<number, Set<number>>();
   for (const phase of run.timeline) {
-    if (phase.prescribedSetId !== null) blockOf.set(phase.prescribedSetId, phase.blockIndex);
+    if (!phase.completesSet || phase.exerciseId === null || phase.prescribedSetId === null)
+      continue;
+    const ids = owed.get(phase.blockIndex) ?? new Set<number>();
+    ids.add(phase.prescribedSetId);
+    owed.set(phase.blockIndex, ids);
   }
+  return owed;
+}
+
+/** How much got done, by the SERVER's own rule: a block counts once EVERY prescribed set of it
+ *  has a logged set — or the run STARTED with it held. DONE OR NOT (Kilian); disagreeing was #82. */
+export function sessionCompletion(run: RunRecord): Completion {
   // `quarantined` is excluded on purpose: a 4xx refused those, so no row exists to join to.
-  const reached = new Set<number>();
+  const logged = new Set<number>();
   for (const set of [...run.logged, ...run.pending]) {
-    const id = set.prescribed_set_id;
-    const blockIndex = id == null ? undefined : blockOf.get(id);
-    if (blockIndex !== undefined) reached.add(blockIndex);
+    if (set.prescribed_set_id != null) logged.add(set.prescribed_set_id);
+  }
+  const owed = setsOwed(run);
+  // ⚠️ A block the server already held is DONE and mints nothing: those rows are written, under
+  // an earlier `client_uuid`, and faking sets to make this add up would report unmeasured ones.
+  const preDone = new Set(run.preDoneBlockIndexes);
+  let blocksDone = 0;
+  for (const [blockIndex, ids] of owed) {
+    if (preDone.has(blockIndex) || [...ids].every((id) => logged.has(id))) blocksDone += 1;
   }
   return {
-    blocksDone: reached.size,
-    blockCount,
-    percent: blockCount === 0 ? 0 : Math.round((reached.size / blockCount) * 100),
+    blocksDone,
+    blockCount: owed.size,
+    percent: owed.size === 0 ? 0 : Math.round((blocksDone / owed.size) * 100),
   };
 }
 
@@ -210,6 +234,10 @@ function isItemArray(value: unknown): value is RunItem[] {
   );
 }
 
+function isIndexArray(value: unknown): value is number[] {
+  return Array.isArray(value) && value.every(isFinite_);
+}
+
 function isSetArray(value: unknown): value is LoggedSetInput[] {
   return (
     Array.isArray(value) &&
@@ -240,6 +268,7 @@ export function parseRun(raw: string | null): RunRecord | null {
   if (!Array.isArray(parsed.timeline) || parsed.timeline.length === 0) return null;
   if (!parsed.timeline.every(isPhase)) return null;
   if (!isItemArray(parsed.items)) return null;
+  if (!isIndexArray(parsed.preDoneBlockIndexes)) return null;
   if (!isNullableFinite(parsed.activeBlockIndex)) return null;
   if (!isRecord(parsed.cursor)) return null;
   if (!isFinite_(parsed.cursor.phaseIndex) || !isFinite_(parsed.cursor.phaseStartedAtEpochMs)) {

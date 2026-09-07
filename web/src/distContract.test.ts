@@ -1,6 +1,6 @@
 // @vitest-environment node
 // Needs no DOM, and under jsdom `import.meta.url` is an http: URL that fileURLToPath rejects.
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, statSync } from 'node:fs';
 import { dirname, join } from 'node:path/posix';
 import { fileURLToPath } from 'node:url';
 
@@ -54,8 +54,8 @@ function distFile(rel: string): string {
   return readFileSync(path, 'utf8');
 }
 
-/** The stylesheets the federated mount loads, derived per the comment above. */
-function remoteStylesheets(): string[] {
+/** The remote's reachable chunks and the stylesheets they name, derived per the comment above. */
+function remoteGraph(): { chunks: string[]; css: string[] } {
   const entry = 'remoteEntry.js';
   const seen = new Set<string>();
   const css = new Set<string>();
@@ -98,8 +98,10 @@ function remoteStylesheets(): string[] {
     'no stylesheet was found in the remote graph — the derivation above has broken, ' +
       'not the CSS. Do NOT relax this into a skip.',
   ).not.toEqual([]);
-  return [...css];
+  return { chunks: [...seen], css: [...css] };
 }
+
+const GRAPH = remoteGraph();
 
 /**
  * Every selector list in a stylesheet, at-rules descended into rather than treated as opaque so
@@ -119,7 +121,7 @@ const unscopedSelectors = (css: string) =>
   );
 
 describe('the stylesheet the federated mount loads', () => {
-  const sheets = remoteStylesheets();
+  const sheets = GRAPH.css;
 
   it('is identified, and is a real file', () => {
     for (const sheet of sheets) expect(distFile(sheet).length).toBeGreaterThan(100);
@@ -208,10 +210,120 @@ describe('the values duplicated outside the stylesheets', () => {
       expect(meta?.toLowerCase(), `no ${scheme} theme-color meta`).toBe(bg(scheme));
     }
   });
+});
 
-  it('emitted the service worker the registration points at', () => {
-    // `registerSW` is called with the plugin's defaults, so the stub's `/sw.js` literal is only
-    // right while the build keeps emitting that filename at the root.
-    expect(distFile('sw.js')).toContain('precache');
+/** That everything `dist/index.html` boots stays precached — the reasoning is in the archive,
+ * under *PWA — only the decisions a reader would otherwise reverse*. */
+type PrecacheEntry = { url: string; revision: string | null };
+
+/** Named, and taking source text, so the positive control can run the real parser. */
+function precacheEntries(sw: string): PrecacheEntry[] {
+  return [...sw.matchAll(/\{url:"([^"]+)",revision:(null|"[0-9a-f]{32}")\}/g)].map(
+    ([, url, revision]) => ({
+      url: url ?? '',
+      revision: revision === 'null' ? null : (revision ?? '').slice(1, -1),
+    }),
+  );
+}
+
+/** What the browser fetches to boot, root-relative so it compares against a manifest `url`. */
+function bootHrefs(html: string): string[] {
+  const entry = [...html.matchAll(/<script[^>]*\btype="module"[^>]*\bsrc="([^"]+)"/g)];
+  const linked = [
+    ...html.matchAll(/<link[^>]*\brel="(?:modulepreload|stylesheet)"[^>]*\bhref="([^"]+)"/g),
+  ];
+  return [...entry, ...linked].map(([, href]) => (href ?? '').replace(/^\//, ''));
+}
+
+/** The URLs carrying no content hash, derived rather than listed so a new icon is covered. */
+function unhashedUrls(html: string, webmanifest: string): string[] {
+  const { icons = [] } = JSON.parse(webmanifest) as { icons?: { src?: string }[] };
+  const rels = /<link[^>]*\brel="(?:icon|apple-touch-icon)"[^>]*\bhref="([^"]+)"/g;
+  const named = [...html.matchAll(rels)].map(([, href]) => href ?? '');
+  const all = ['index.html', 'remoteEntry.js', 'manifest.webmanifest']
+    .concat(
+      icons.map((icon) => icon.src ?? ''),
+      named,
+    )
+    .map((url) => url.replace(/^\//, ''));
+  return [...new Set(all)];
+}
+
+// Twice the 613,576 bytes measured today, so a route split moves the count and not this.
+const PRECACHE_BYTE_CEILING = 1_250_000;
+
+describe('the precache manifest baked into dist/sw.js', () => {
+  const entries = precacheEntries(distFile('sw.js'));
+  const precached = new Set(entries.map((entry) => entry.url));
+  const html = distFile('index.html');
+  const hrefs = bootHrefs(html);
+  const unhashed = unhashedUrls(html, distFile('manifest.webmanifest'));
+
+  it('parsed a manifest out of the worker, so nothing below passes on an empty list', () => {
+    expect(distFile('sw.js')).toContain('.precache(');
+    // 43 today.
+    expect(entries.length, 'no precache entry was parsed out of dist/sw.js').toBeGreaterThan(30);
+  });
+
+  it.each(unhashed)('precaches %s, and with a real revision', (url) => {
+    const entry = entries.find((one) => one.url === url);
+    expect(entry, `${url} carries no content hash and is not precached at all`).toBeDefined();
+    expect(
+      entry?.revision,
+      `${url} is precached with revision:null. Its URL never changes, so that pins an ` +
+        `installed app to the copy it first cached, as a widened dontCacheBustURLsMatching would.`,
+    ).toMatch(/^[0-9a-f]{32}$/);
+  });
+
+  it('parsed the boot hrefs, so the arm below is not iterating an empty list', () => {
+    // 22 today: the module script, 19 modulepreloads and 2 stylesheets.
+    expect(hrefs.length, 'no boot href was parsed out of dist/index.html').toBeGreaterThan(15);
+  });
+
+  it.each(hrefs)('precaches the boot href %s', (href) => {
+    expect(precached.has(href), `dist/index.html loads ${href} but it is not precached`).toBe(true);
+  });
+
+  it.each(GRAPH.chunks)('precaches %s, reachable from remoteEntry.js', (chunk) => {
+    expect(
+      precached.has(chunk),
+      `${chunk} is reachable from remoteEntry.js but is not precached`,
+    ).toBe(true);
+  });
+
+  it('precaches an app, not the whole of dist/', () => {
+    // A missing manifest URL throws here rather than being scored as zero bytes.
+    const bytes = entries.reduce((sum, entry) => sum + statSync(`${DIST}${entry.url}`).size, 0);
+    expect(bytes, 'nothing was measured').toBeGreaterThan(100_000);
+    expect(
+      bytes,
+      `${bytes} bytes precached. Widening globPatterns to an image extension puts dist/landing/ ` +
+        `into a phone's Cache Storage; if this is real growth, re-measure and say so here.`,
+    ).toBeLessThan(PRECACHE_BYTE_CEILING);
+  });
+
+  it('positive control: both revision shapes are seen, and a quoted-key list is not', () => {
+    const minified =
+      'T={},function(e){E().precache(e)}([{url:"remoteEntry.js",' +
+      'revision:"79242c895399ca4beaa955aeb8f95e35"},{url:"assets/router-Cm_t8u6o.js",' +
+      'revision:null}])';
+    expect(precacheEntries(minified)).toEqual([
+      { url: 'remoteEntry.js', revision: '79242c895399ca4beaa955aeb8f95e35' },
+      { url: 'assets/router-Cm_t8u6o.js', revision: null },
+    ]);
+    expect(precacheEntries('[{"url":"remoteEntry.js","revision":null}]')).toEqual([]);
+    expect(precacheEntries('[{url:"a.js",revision:"nope"}]')).toEqual([]);
+    expect(
+      bootHrefs(
+        '<script type="module" crossorigin src="/assets/a.js"></script>' +
+          '<link rel="modulepreload" crossorigin href="/remoteEntry.js">' +
+          '<link rel="stylesheet" crossorigin href="/assets/b.css">',
+      ),
+    ).toEqual(['assets/a.js', 'remoteEntry.js', 'assets/b.css']);
+    // An icon is not a boot href, and `unhashedUrls` is what covers it instead.
+    expect(bootHrefs('<link rel="icon" href="/favicon.ico" sizes="48x48" />')).toEqual([]);
+    expect(
+      unhashedUrls('<link rel="apple-touch-icon" href="/a.png" />', '{"icons":[{"src":"b.png"}]}'),
+    ).toEqual(['index.html', 'remoteEntry.js', 'manifest.webmanifest', 'b.png', 'a.png']);
   });
 });

@@ -4,12 +4,21 @@ import { useAuth } from '../../auth/AuthProvider';
 import { useLibrary } from '../../library/api';
 import { useActivePlanView } from '../../plan/api';
 import { exercisesByKey } from '../../plan/blueprint';
+import { completionBySession, useSessionCompletion } from '../../plan/completion';
 import { useVocabulary } from '../../profile/api';
-import { SessionBrief } from '../../session/SessionBrief';
+import { NothingToday, SessionBrief } from '../../session/SessionBrief';
 import { SessionPlayer } from '../../session/SessionPlayer';
 import { SessionSummary } from '../../session/SessionSummary';
-import { localIsoDate, selectSession } from '../../session/today';
+import { localIsoDate, planSessions } from '../../session/today';
 import { useSessionRun } from '../../session/useSessionRun';
+import {
+  pendingSessions,
+  sessionClosed,
+  sessionReport,
+  sessionsAround,
+  weekDays,
+  weekView,
+} from '../../session/week';
 
 /**
  * `/session` — follow today's session along, with a timer, a colour and a cue per phase.
@@ -24,9 +33,9 @@ import { useSessionRun } from '../../session/useSessionRun';
  * gesture; one built in an effect starts suspended and on iOS never resumes. It starts no timer:
  * the session is a list of items and each one is entered on its own control.
  *
- * ⚠️ **A finished session cannot be re-STARTED, though it can be re-OPENED from the summary —
- * and WHICH SCREEN SHOWS IS READ OFF THE RECORD.** `summaryClosedAtEpochMs` is persisted because
- * this component unmounts on every navigation; as a `useState` flag it re-asked the RPE.
+ * ⚠️ **Re-STARTABLE until its BLOCKS are 100%, and at 100% the offer is GONE, card and all
+ * (#82)** — `week.ts::sessionClosed` gates all three sections, so Finish closes nothing. **WHICH
+ * SCREEN SHOWS IS READ OFF THE RECORD**: as `useState`, `summaryClosedAtEpochMs` re-asked the RPE.
  *
  * ⚠️ **The run always ends on the summary, never on the last set** — peak-end, and it is the only
  * screen that can say honestly whether the sets reached the server.
@@ -42,6 +51,9 @@ function Session() {
   // ⚠️ NOT in the gate below, and deliberately not retried here: this feeds the brief's phase
   // reminder, which is absent until it lands. Nothing about the session may wait on it.
   const vocabulary = useVocabulary();
+  // #82: the same read `/plan` colours its calendar with, and the same cache entry — the week
+  // strip and the pending list are that figure, not a second derivation of it.
+  const completion = useSessionCompletion(active.plan ?? null);
   const run = useSessionRun();
   // Issue #65: in demo scope the player runs in full and no PUT is ever issued, so the save
   // affordances are ABSENT rather than greyed out. `useSessionRun` enforces the write half.
@@ -84,8 +96,11 @@ function Session() {
   }
 
   const plan = active.plan;
-  const today = localIsoDate(new Date());
-  const choice = selectSession(plan, today);
+  const now = new Date();
+  const today = localIsoDate(now);
+  const days = weekDays(now);
+  const sessions = planSessions(plan);
+  const rows = completionBySession(completion.data);
   const index = exercisesByKey(exercises);
 
   if (run.status === 'running') return <SessionPlayer run={run} readOnly={readOnly} />;
@@ -107,28 +122,39 @@ function Session() {
     );
   }
 
-  const session = choice.session;
-  // Matched on the planned session, not merely on the day: a rest-day brief offers a session
-  // scheduled for later in the week, and finishing today's does not close that one.
-  const done =
-    finished !== null &&
-    finished.occurredOn === today &&
-    session !== null &&
-    finished.plannedSessionId === (session.id ?? null);
+  // Matched on the planned session, not merely on the day: finishing today's session does not
+  // close the one owed from Monday, and either may be the run that is finished.
+  const own = finished !== null && finished.occurredOn === today ? finished : null;
+  // ⚠️ ONE gate for all three offer sections AND for Start: at 100% a session is closed for
+  // good (#82), so the two behind today are skipped over rather than offered as closed cards.
+  const closed = sessionClosed(rows, today, own, run.unsentCount);
+  const around = sessionsAround(sessions, today, closed);
+  const pending = pendingSessions(sessions, rows, today, days, closed);
+
+  // Nothing today, nothing ahead and nothing owed. A session owed from earlier this week is
+  // still worth a screen, so the empty state is the LAST branch rather than the first.
+  if (around.today === null && around.next === null && pending.length === 0) {
+    return <NothingToday reason={sessions.length === 0 ? 'no_plan' : 'plan_over'} />;
+  }
 
   return (
     <SessionBrief
-      choice={choice}
+      week={weekView(sessions, rows, today, days)}
+      pending={pending}
+      todaySession={around.today}
+      todayReport={sessionReport(around.today, rows, today)}
+      next={around.next}
+      nextReport={sessionReport(around.next, rows, today)}
       plan={plan}
       vocabulary={vocabulary.data}
       exercises={index}
       run={run}
       readOnly={readOnly}
       stale={finished !== null && run.unsentCount > 0 ? finished : null}
-      done={done}
-      onStart={() => {
-        if (session === null || plan === null || done) return;
-        run.start({ session, exercises: index, discipline: plan.discipline });
+      finished={own}
+      onStart={(session, marks) => {
+        if (plan === null) return;
+        run.start({ session, exercises: index, discipline: plan.discipline, marks });
       }}
     />
   );

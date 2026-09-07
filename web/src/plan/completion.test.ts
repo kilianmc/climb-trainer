@@ -93,6 +93,42 @@ describe('what a past session shows', () => {
   });
 });
 
+describe('what a day still IN REACH may report — the scope split', () => {
+  /* ⚠️ `state` decides nothing in the `progress` reading: `completed` means Finish was pressed,
+     and #82 was that reading as a result — "what says it is completed is the inside items". */
+
+  it('reports what has been LOGGED, in the same words as a settled day', () => {
+    expect(completionBadge(row({ state: 'pending' }), 'progress')).toEqual({
+      label: '67% done',
+      band: 'partial',
+    });
+    expect(
+      completionBadge(row({ state: 'pending', blocks_done: 3, percent: 100 }), 'progress'),
+    ).toEqual({ label: 'Completed', band: 'full' });
+  });
+
+  it('⚠️ reports NOTHING while nothing has been logged, Finish pressed or not', () => {
+    const untouched = { blocks_done: 0, done_block_ids: [], percent: 0 };
+
+    for (const state of ['pending', 'completed'] as const) {
+      expect(completionBadge(row({ ...untouched, state }), 'progress')).toBeNull();
+      expect(doneBlocks(row({ ...untouched, state }), 'progress')).toBeNull();
+    }
+    // …and the same row on a day that is OVER is a real 0%, which is the whole distinction.
+    expect(completionBadge(row({ ...untouched, state: 'skipped' }))).toEqual({
+      label: 'Skipped',
+      band: 'low',
+    });
+  });
+
+  it('⚠️ marks its logged blocks done and leaves the rest UNMARKED, never missed', () => {
+    const marks = doneBlocks(row({ state: 'pending', done_block_ids: [DONE_BLOCK] }), 'progress');
+
+    expect(blockOutcome(marks, DONE_BLOCK)).toBe('done');
+    expect(blockOutcome(marks, MISSED_BLOCK)).toBeNull();
+  });
+});
+
 describe('which PART of a past session got done', () => {
   it('marks a logged block done and every other block of the same session missed', () => {
     const marks = doneBlocks(row({ done_block_ids: [DONE_BLOCK] }));

@@ -56,6 +56,11 @@ $confetti-tints: (
     border-color: var(--ct-border-2);
   }
 
+  // …and the same for the session screen's pending card (#82), whose own edge is `--ct-border-1`.
+  &#{$scope} &__card[data-completion] {
+    border-color: var(--ct-border-1);
+  }
+
   // ⚠️ Keyed on the BADGE's OWN `data-completion`, never on an ancestor's — see
   // `&__completion` below for the bug the descendant form caused and why no ancestor may
   // appear in any of these selectors.
@@ -589,15 +594,22 @@ $confetti-tints: (
   // hue is added to it rather than replacing it; `contrast.test.ts` sweeps all three tones
   // against all four card surfaces in both schemes, and names the dark phase pill's own pair
   // (band on `--ct-surface-2`, as text AND as a ring) separately.
-  &__disclosure[data-completion='full'] {
+  //
+  // ⚠️ `&__card` is here for the SAME reason and on the same three bands: the session screen's
+  // pending card (#82) wears its own completion band, and a second mapping would be a second
+  // decision. A card with no band is untouched, so no other card on any screen moves.
+  &__disclosure[data-completion='full'],
+  &__card[data-completion='full'] {
     border-color: var(--ct-success);
   }
 
-  &__disclosure[data-completion='partial'] {
+  &__disclosure[data-completion='partial'],
+  &__card[data-completion='partial'] {
     border-color: var(--ct-warning);
   }
 
-  &__disclosure[data-completion='low'] {
+  &__disclosure[data-completion='low'],
+  &__card[data-completion='low'] {
     border-color: var(--ct-danger);
   }
 

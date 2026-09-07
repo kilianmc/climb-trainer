@@ -270,12 +270,6 @@
     color: var(--ct-danger);
   }
 
-  // The whole session card takes the item rows' completed tone once the session is finished.
-  // No skipped twin: a session is never skipped as a whole, so that rule would have no user.
-  &__card[data-state='completed'] {
-    border-color: var(--ct-success);
-  }
-
   &__item-head {
     display: flex;
     flex-wrap: wrap;
@@ -320,5 +314,106 @@
     &__player {
       transition: none;
     }
+  }
+
+  // ## The BRIEF's sections (#82), and the only spacing rule on this screen
+  //
+  // The layout grid carries no row gap, and `&__card`, `&__notice` and `&__actions` all have
+  // zero margin, so before this every part of the brief touched the next one — which is what
+  // put "Start it anyway" against the card above it. Three steps, largest first: between
+  // sections, between a heading and the offers under it, and between one offer's own parts.
+  //
+  // Scoped to `&__brief`, so no other screen moves. `> h1`/`> section` rather than two more
+  // class names: the flex gap owns the rhythm and the elements are the structure.
+  &__brief {
+    display: flex;
+    flex-direction: column;
+    gap: var(--ct-space-6);
+  }
+
+  // the gap owns the rhythm, so the heading's own bottom margin would double it
+  &__brief > h1 {
+    margin-block-end: 0;
+  }
+
+  &__brief > section {
+    display: flex;
+    flex-direction: column;
+    gap: var(--ct-space-5);
+  }
+
+  &__offer {
+    display: flex;
+    flex-direction: column;
+    gap: var(--ct-space-4);
+  }
+
+  // ## This week's calendar (#82): the plan screen's week table, one row, seven columns
+  //
+  // It REUSES `_plan.scss`'s `&__weekgrid` whole — the grid, the day blocks, the clipped codes
+  // and the caption legend — and changes exactly two things. There is no week-number column
+  // (the session card below already names the week), and a day block carries one line more: its
+  // completion mark. `--celllines` is what the row height is DERIVED from, so it moves with it.
+  //
+  // ⚠️ A COMPOUND selector, not a bare modifier. `_plan.scss` is `@use`d AFTER this file in
+  // `app.scss`, so `&__weekcal` alone would tie at (0,1,0) and lose on source order — including
+  // inside the wide container query, where that file sets `--celllines` again.
+  &__weekgrid#{&}__weekcal {
+    --celllines: 4;
+
+    grid-template-columns: repeat(7, minmax(0, 1fr));
+  }
+
+  @container ct-app (min-inline-size: 34rem) {
+    &__weekgrid#{&}__weekcal {
+      --celllines: 5;
+    }
+  }
+
+  // ## The day's completion, and TODAY
+  //
+  // ⚠️ ONE mapping of band to token: the day block publishes its band as `--dayband` and its own
+  // mark inherits it, so the tint and the word cannot come to disagree. That is inheritance
+  // inside one cell rather than the ancestor-keyed shape `markupCss.test.ts` forbids — a day
+  // block can never contain another day block, which is exactly what made that shape a bug.
+  //
+  // The tones are `--ct-success`/`--ct-warning`/`--ct-danger`, which `contrast.test.ts` already
+  // sweeps as TEXT against all four card surfaces in both schemes, so this adds no pair.
+  &__day[data-completion='full'] {
+    --dayband: var(--ct-success);
+  }
+
+  &__day[data-completion='partial'] {
+    --dayband: var(--ct-warning);
+  }
+
+  &__day[data-completion='low'] {
+    --dayband: var(--ct-danger);
+  }
+
+  &__day[data-completion] {
+    border-color: var(--dayband);
+  }
+
+  // ⚠️ The WORD, never the tint alone: `&__full` carries "Skipped"/"66% done" into the
+  // accessible name at every width and `&__abbr` shows the bare percentage where it is narrow.
+  &__weekmark {
+    color: var(--dayband);
+    font-weight: 700;
+  }
+
+  // ⚠️ Today is marked on the column HEADER, filled, and the header says the word too. Not on
+  // the day block: its edge is the completion band's, and two rings on one cell say nothing.
+  &__weekhead[data-today] {
+    background: var(--ct-accent);
+    color: var(--ct-accent-fg);
+  }
+
+  // Line two of a weekday header — the date, or "Today". The header's own uppercase and 700 are
+  // for the three-letter name above it; a date set that way reads as a code.
+  &__weekdate {
+    font-weight: 500;
+    text-transform: none;
+    letter-spacing: 0;
   }
 }

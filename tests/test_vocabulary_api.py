@@ -58,6 +58,23 @@ def test_it_is_authenticated_like_everything_else(api_client: TestClient) -> Non
     assert api_client.get("/api/vocabulary").status_code == 401
 
 
+# The two aspect keys that also name a `Phase`. Both predate the rule and both are persisted, so
+# renaming either is a data migration; the guard below is that no THIRD one joins them.
+GRANDFATHERED_PHASE_NAMED_ASPECTS = frozenset({"power", "power_endurance"})
+
+
+def test_no_NEW_aspect_key_collides_with_a_PHASE_VALUE() -> None:
+    """⚠️ GUARD, DB-free. `aspect_key="strength"` beside `phase="strength"` reads ambiguously in
+    every payload, query and log line, and the short name is what a tidy-up reaches for (#98)."""
+    phases = {member.value for member in Phase}
+    clashes = {spec.key for spec in CLIMBING_ASPECTS if spec.key in phases}
+    assert clashes == GRANDFATHERED_PHASE_NAMED_ASPECTS, (
+        f"aspect keys that also name a `Phase` are now {sorted(clashes)}, against the "
+        f"{sorted(GRANDFATHERED_PHASE_NAMED_ASPECTS)} that predate the rule. Rename the aspect "
+        f"(a seed insert, no migration), not the phase, which is a native Postgres enum value."
+    )
+
+
 @pytest.mark.parametrize(
     ("field", "specs"),
     [
@@ -156,7 +173,9 @@ def test_the_phase_guide_arrives_whole_and_KEYED_BY_PHASE(vocabulary: dict[str, 
     """The shape, not the prose (`tests/test_phase_guide.py` owns coverage of `Phase`) — and
     pinned HERE because `/api/library` is CDN-cached and the plan payload repeats a phase."""
     rows = vocabulary["phase_guide"]
-    assert [row["phase"] for row in rows] == [member.value for member in Phase]
+    shipped = [guide.phase.value for guide in PHASE_GUIDE]
+    assert [row["phase"] for row in rows] == shipped
+    assert shipped == [member.value for member in Phase if member.value in set(shipped)]
     for row in rows:
         assert set(row) == {"phase", "label", "summary", "how_to_train", "links"}
         assert row["links"]

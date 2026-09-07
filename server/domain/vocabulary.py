@@ -145,10 +145,10 @@ class ReferenceSpec:
     description: str
 
 
-# The eight things a climbing plan can train. Order IS the display order, and it runs
-# roughly finger-strength-first because that is the order the plan generator presents
-# self-ratings in. A lookup table rather than an enum: each row carries a name and a
-# description that appear in the UI, and adding a ninth aspect must not be a migration.
+# What a climbing plan can train, in display order: finger strength first, then down the energy
+# systems, because that is the order the plan generator presents self-ratings in. A lookup table
+# rather than an enum so a row carries display text, and so adding one is a seed insert (#98).
+# ⚠️ No key here may collide with a `Phase` value — `tests/test_equipment_vocabulary.py` proves it.
 CLIMBING_ASPECTS: Final[tuple[ReferenceSpec, ...]] = (
     ReferenceSpec(
         "finger_strength",
@@ -156,14 +156,26 @@ CLIMBING_ASPECTS: Final[tuple[ReferenceSpec, ...]] = (
         "Maximum force the fingers can hold, trained with near-maximal short efforts.",
     ),
     ReferenceSpec(
+        "general_strength",
+        "General strength",
+        "Maximum force from the legs, hips and pulling muscles, trained slow and heavy.",
+    ),
+    ReferenceSpec(
         "power",
         "Power",
-        "Force produced fast — single hard moves, jumps and cuts.",
+        "Force produced fast — the single hard move, and the short burst that ends the "
+        "moment you are powered out.",
+    ),
+    ReferenceSpec(
+        "anaerobic_capacity",
+        "Anaerobic capacity",
+        "Tolerating the burn and clearing it: half-minute bursts, repeated on long rests.",
     ),
     ReferenceSpec(
         "power_endurance",
         "Power endurance",
-        "Sustaining hard moves for 20-60 seconds before failing.",
+        "Making hard moves while already pumped — around thirty of them, on rests at "
+        "least as long as the work.",
     ),
     ReferenceSpec(
         "endurance",
@@ -342,11 +354,17 @@ class PhaseGuide:
 
 
 # ⚠️ **Describes what THIS generator prescribes, not periodisation in general.** Every claim
-# is checkable in `periodisation.py`, and the plan's own numbers are derived, never restated here.
+# is checkable in the planner, and the plan's own numbers are derived, never restated here.
+# ⚠️ **The field is NOT dead payload and issue #100 is closed on that basis** (ruling 8,
+# 2026-09-06): the last sentence is the only place a user is ever told about ruling 31's
+# declared divergence — that this plan chooses 11-18 h weeks, 2-4x above what Lattice measures
+# in the same grade bands. Deleting `vocabulary.plan_goal` deletes the disclosure with it.
 PLAN_GOAL: Final = (
     "Every block is three loading weeks and one unloading week. The blocks run in order — base "
-    "first, the strength qualities in the middle, performance last — and a quality is maintained "
-    "after its own block rather than previewed before it."
+    "first, the strength qualities in the middle, performance last. Every day you tell us you "
+    "can train gets a whole session at your level's length, so a week with more days on it is a "
+    "longer week rather than the same hours spread thinner — that is this plan's own choice, "
+    "and it adds up to more hours a week than most climbers train."
 )
 
 # ⚠️ **Authored prose with sourced further reading: 2-3 links a phase, checked by
@@ -357,15 +375,26 @@ PHASE_GUIDE: Final[tuple[PhaseGuide, ...]] = (
         "Base",
         "The block that builds the capacity every later block spends — mileage, movement, and "
         "enough aerobic base to recover between hard goes rather than just survive them. It goes "
-        "first because it is the slowest thing in the plan to build: a real aerobic adaptation "
-        "wants eight weeks or more of honest work.",
+        "first because its adaptations are the slowest in the plan to arrive: a real aerobic "
+        "base takes eight weeks or more of honest work, and the anaerobic capacity that starts "
+        "alongside it sixteen or more (Barrows §3.1). This block is three loading weeks and a "
+        "fourth to unload, and across the whole plan anaerobic capacity lands in four to twelve "
+        "of its sixteen weeks — fewest if you train one day a week, most if you train five or "
+        "more.",
         "Volume before intensity. Long, continuous, submaximal climbing, one to three sessions a "
         "week, progressing by adding time before adding difficulty. Finish able to do more than "
         "you did, because climbing a base block to failure costs you the plan, not just the week. "
         "Whether maximum strength belongs inside a base phase is genuinely contested; this plan "
-        "gives strength its own block so these weeks stay spent on capacity. Endurance leads "
-        "every session here, then technique, then the tissue work that keeps the pulling "
-        "durable — power sits last on purpose.",
+        "gives strength its own block so these weeks stay spent on capacity. Whether a climber "
+        "needs heavy lower-body strength at all is contested three ways: one position calls the "
+        "deadlift close to the best strength exercise a climber can do, a second caps it low and "
+        "would rather you spent the effort on the climbing that mimics it, and a third holds "
+        "that its specificity is low and the fatigue it leaves subtracts from climbing. The "
+        "squat is the most disputed exercise of the three, so this plan prescribes unilateral "
+        "leg work at low volume and asks you to add depth before you add load. Endurance takes "
+        "more of these weeks' time on the wall than any other quality; general strength "
+        "and anaerobic capacity both start here, anaerobic capacity because it is the slowest "
+        "quality in the plan to arrive (Barrows §3.1) — and power sits last on purpose.",
         (
             GuideLink(
                 "https://www.climbstrong.com/resource-posts/third-gear-the-aerobic-energy-system",
@@ -392,12 +421,19 @@ PHASE_GUIDE: Final[tuple[PhaseGuide, ...]] = (
         "High intensity, low volume, full rest. Short maximal efforts — seven to ten seconds on "
         "the fingers — with minutes rather than seconds between them, two or three sessions a "
         "week at most, and always from a rested state rather than tacked onto the end of a "
-        "session. Progress by adding load, not repetitions. How much hangboarding a block "
+        "session. Progress by adding load, not repetitions. How much strength work a week should "
+        "hold in total is genuinely contested too — the sources behind this plan disagree by a "
+        "factor of two to four — so the leg and hinge work sits at the low end of that range "
+        "and the wall keeps the rest of the session. How much hangboarding a block "
         "warrants is genuinely contested: some coaches program it twice a week as standard, "
         "others hold that you should hangboard only if fingers are your identified weakness. "
-        "Fingers lead here — depending on your current grade the plan owes one or two real "
-        "hangboard sessions a week, scheduled first in the session rather than behind the "
-        "climbing.",
+        "Fingers go first: a session that holds real hangboard work opens with it, ahead of any "
+        "volume climbing rather than tacked on behind it. How much of it you get rises with your "
+        "current grade, and at the lowest grades the plan spends those minutes on the wall "
+        "instead. General strength and anaerobic capacity are high priority through this block "
+        "too, and the aerobic work stays high alongside them on purpose: raising your tolerance "
+        "for the burn without also raising your ability to clear it is worse than doing "
+        "neither.",
         (
             GuideLink(
                 "https://strengthclimbing.com/eric-horst-7-53-hangboard-routine/",
@@ -414,30 +450,6 @@ PHASE_GUIDE: Final[tuple[PhaseGuide, ...]] = (
         ),
     ),
     PhaseGuide(
-        Phase.POWER,
-        "Power",
-        "Power is force applied fast: the hard single move, the cut-loose, the move you either do "
-        "or you don't. It runs on the alactic system, which supplies maximal effort for under "
-        "about ten seconds and, given real rest, produces very little fatigue. Training it raises "
-        "the hardest move you can do, which is usually what a grade is actually asking.",
-        "Three to five moves at genuine 100 percent, then rest until you mean it — minutes, not "
-        "seconds. Keep total volume low, arrive rested, and stop when the quality drops instead "
-        "of pushing on: one all-out effort does more for power than a pile of moderate attempts. "
-        "Getting sweaty and pumped means you have quietly switched to training something else. "
-        "Limit boulders lead the session and contact strength sits right behind them, and power "
-        "endurance is deliberately absent so the attempts stay maximal.",
-        (
-            GuideLink(
-                "https://www.trainingbeta.com/4-keys-to-limit-bouldering/",
-                "Matt Pincus: four keys to limit bouldering",
-            ),
-            GuideLink(
-                "https://www.climbstrong.com/resource-posts/optimizing-first-gear-training-the-alactic-energy-system",
-                "Climb Strong: the alactic system, and why it costs little",
-            ),
-        ),
-    ),
-    PhaseGuide(
         Phase.POWER_ENDURANCE,
         "Power endurance",
         "The ability to keep making hard moves when you are already pumped — typically 20 to 60 "
@@ -449,9 +461,20 @@ PHASE_GUIDE: Final[tuple[PhaseGuide, ...]] = (
         "random hard laps. Dropping the intensity to survive the set turns the session into "
         "endurance training under a different name. How hard these sessions should be is "
         "contested — one school argues that training to a searing pump is too intense to build "
-        "repeatable capacity, and that the aerobic work underneath matters more. Power endurance "
-        "leads here with aerobic endurance immediately behind it, because the capacity underneath "
-        "is what lets the next hard session happen two days later.",
+        "repeatable capacity, and that the aerobic work underneath matters more. How much of "
+        "that aerobic work you get depends on how many days a week you train: at three days or "
+        "fewer the intervals take the block and some weeks hold none of it at all, and from "
+        "four days up you always get some of it, though not always in every week. What does "
+        "not change is the ceiling on hard days "
+        "— three a week, however many days you have — so the more days you train, the more of "
+        "this block is movement and ordinary climbing rather than intervals. At four days a "
+        "week and under, power endurance is still the biggest thing in the block; at five the "
+        "two come out about even; at six or seven days that ordinary climbing is the bigger "
+        "half, and this plan chooses that rather than handing you a fourth hard day. Heavy "
+        "general strength is deliberately absent: strength is the "
+        "quality "
+        "that holds longest, so it keeps across a block this short while a heavy session would "
+        "compete for exactly the recovery these ones need.",
         (
             GuideLink(
                 "https://www.climbing.com/skills/winter-endurance-training/",
@@ -477,8 +500,10 @@ PHASE_GUIDE: Final[tuple[PhaseGuide, ...]] = (
         "rehearse the sequences you keep failing, write the beta down, and link progressively "
         "bigger pieces. The attempts are the training, so protect them — over-projecting "
         "produces the same flat, declining performance that over-training does. Limit attempts "
-        "and redpoint burns lead this block, with power endurance right behind so stamina is "
-        "still trained if that is your weakness.",
+        "and redpoint burns lead this block, and power endurance keeps a share of it throughout "
+        "so stamina is still trained if that is your weakness. Anaerobic capacity is "
+        "deliberately absent: the burn work is the first thing to go once the objective is "
+        "inside four weeks.",
         (
             GuideLink(
                 "https://www.climbing.com/skills/learn-this-redpoint-smarter-to-redpoint-harder/",
@@ -500,13 +525,17 @@ PHASE_GUIDE: Final[tuple[PhaseGuide, ...]] = (
         "The fourth week of every block, and the week in which the previous three actually become "
         "fitness. Training is only the stimulus; the adaptation happens in the recovery. A block "
         "with no unload week ends up as accumulated fatigue that looks exactly like a plateau.",
-        "Cut the volume roughly in half and keep the intensity honest. Same number of sessions, "
+        "Cut the volume and keep the intensity honest — a deload week never drops below 40 "
+        "percent of the weeks around it. Both sources would put it at 40 to 60 percent, and "
+        "where this plan sits above that range it is deliberate: on a week meant for recovery "
+        "it would rather leave work in than take too much out. Same number of sessions, "
         "shorter, on ground you move well on — a deload is not a week off and not a week to climb "
         "through. How often a climber needs one is contested: sources put it anywhere from every "
         "third week to every eighth, and some would judge it by feel rather than schedule it at "
         "all. This plan fixes it at every fourth week, because a cadence you do not have to judge "
         "is the one you actually take. It is a block in its own right rather than a scaled-down "
-        "one: technique and mobility lead at low load, and the maximal qualities sit last.",
+        "one: technique and mobility lead at low load, and the qualities that cost the most to "
+        "recover from sit last.",
         (
             GuideLink(
                 "https://gripped.com/indoor-climbing/training-hard-heres-why-you-need-a-deload-week/",
@@ -528,12 +557,18 @@ PHASE_GUIDE: Final[tuple[PhaseGuide, ...]] = (
         "The final week of the plan, pointed at one thing: arriving fresh. Fatigue hides fitness, "
         "so the taper's whole job is to let the previous months show up on the day. Nothing you "
         "add this week can make you stronger, and plenty can make you tired.",
-        "Volume down to roughly half, intensity unchanged or even a touch higher. Keep the short, "
-        "sharp, maximal efforts — they cost almost nothing to recover from — and drop the "
-        "capacity work that leaves you pumped. Climb on your target style, on ground you already "
-        "move well on, and stop before you are tired. There is no isolated finger loading at all "
-        "this week and no full power-endurance session, but short maximal efforts are still "
-        "prescribed.",
+        "Volume down — never below 40 percent of a loading week — with the intensity unchanged "
+        "or even a touch higher. What stays is "
+        "the work that is short, hard and fully rested: maximal efforts and hard route-like "
+        "circuits, plus a short upper-body pulling session in the weeks with room for one. "
+        "What goes is the capacity work that leaves "
+        "you pumped — no anaerobic capacity, and no aerobic capacity or ARC either, because "
+        "another week of long easy volume can only add fatigue to fitness the previous months "
+        "already bought. Climb on your target style, on ground you already move well on, and "
+        "stop before you are tired. One thing here is ours rather than the sources': they would "
+        "keep hard finger work this week, and we prescribe no isolated finger loading at all, "
+        "because the fingers are the slowest tissue to recover and the most expensive to "
+        "overreach on this close to a peak.",
         (
             GuideLink(
                 "https://www.trainingbeta.com/wp-content/uploads/2015/05/1.-Alex-Barrows-Training-Doc-V2-for-training-beta.pdf",

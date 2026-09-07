@@ -228,10 +228,9 @@ export interface BlockRange {
   readonly start: number;
   readonly end: number;
   readonly setsInBlock: number;
-  /** The chronological set ordinals the block owns. `null` when it owns none — a block whose
-   * every phase is structural cannot happen today, but a compiler change could make it so. */
+  /** The first chronological set ordinal the block owns — the base a re-run offsets from.
+   * `null` when it owns none: a block of purely structural phases, which no compiler emits yet. */
   readonly firstSetIndex: number | null;
-  readonly lastSetIndex: number | null;
 }
 
 /**
@@ -254,7 +253,6 @@ export function blockRanges(timeline: readonly CompiledPhase[]): BlockRange[] {
         end: index + 1,
         setsInBlock: phase.setsInBlock,
         firstSetIndex: phase.setIndex,
-        lastSetIndex: phase.setIndex,
       });
       return;
     }
@@ -262,7 +260,6 @@ export function blockRanges(timeline: readonly CompiledPhase[]): BlockRange[] {
       ...last,
       end: index + 1,
       firstSetIndex: last.firstSetIndex ?? phase.setIndex,
-      lastSetIndex: phase.setIndex ?? last.lastSetIndex,
     };
   });
   return ranges;

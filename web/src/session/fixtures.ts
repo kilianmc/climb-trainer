@@ -33,6 +33,9 @@ export function makeSet(spec: SetSpec = {}) {
 }
 
 export interface BlockSpec {
+  /** `session_block.id` — the key `done_block_ids` joins on, so a suite that reads it needs a
+   *  DISTINCT one per block; the shared default would mark every part off one logged block. */
+  id?: number;
   protocol_kind?: ProtocolKind;
   exercise_key?: string;
   exercise_id?: number | null;
@@ -48,7 +51,7 @@ export function makeBlock(spec: BlockSpec = {}): PlanBlock {
     // `?? 11` would swallow an explicit `null`, which is the previewed-plan case.
     exercise_id: 'exercise_id' in spec ? (spec.exercise_id ?? null) : 11,
     exercise_key: spec.exercise_key ?? 'max_hangs',
-    id: 101,
+    id: spec.id ?? 101,
     order_index: spec.order_index ?? 0,
     protocol_kind: spec.protocol_kind ?? 'max_hang',
     rest_between_sets_seconds: spec.rest_between_sets_seconds ?? null,

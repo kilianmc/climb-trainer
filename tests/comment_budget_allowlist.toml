@@ -906,9 +906,9 @@ reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
 [[exception]]
 path = "server/domain/exercises.py"
 kind = "hash_run"
-anchor = "the four phase aspect pairs the"
+anchor = "the phase aspect pairs the library"
 limit = 3
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
+reason = "Names the both-directions contract with ASPECT_EMPHASIS: an empty cell with no row here is an oversight and the guard cannot tell the two apart without being told."
 
 [[exception]]
 path = "server/domain/exercises.py"
@@ -1082,21 +1082,21 @@ reason = "The four invariants are priority-ordered and the fourth exists only be
 path = "server/domain/planner/generate.py"
 kind = "docstring"
 anchor = "server.domain.planner.generate._share_allows"
-limit = 11
+limit = 12
 reason = "Four arms say yes regardless of the band's allowance and every one of them is a measured failure of saying no - a three-minute deload session, an emptied gearless session, a session under its type's window floor, and a week the per-session allowance cannot see."
 
 [[exception]]
 path = "server/domain/planner/generate.py"
 kind = "docstring"
 anchor = "server.domain.planner.generate._block_ceiling"
-limit = 5
-reason = "A fixed per-session block budget cannot express either reason a session may take a fourth block, and both are measured failures: a limit-bouldering session ten minutes short of its own window floor, and a two-session week with nowhere else to put the supplementary work."
+limit = 14
+reason = "A fixed per-session block budget cannot express either reason a session may take a fourth block, and both are measured failures: a limit-bouldering session ten minutes short of its own window floor, and a two-session week with nowhere else to put the supplementary work. It also records the week-aggregate shape that was refused, and the third condition ruling 32 asked for that measured byte-identical - both would otherwise be re-attempted."
 
 [[exception]]
 path = "server/domain/planner/generate.py"
 kind = "docstring"
 anchor = "server.domain.planner.generate._intended_aspect"
-limit = 13
+limit = 19
 reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
 
 [[exception]]
@@ -1124,7 +1124,7 @@ reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
 path = "server/domain/planner/generate.py"
 kind = "docstring"
 anchor = "server.domain.planner.generate._title"
-limit = 7
+limit = 12
 reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
 
 [[exception]]
@@ -1138,14 +1138,7 @@ reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
 path = "server/domain/planner/periodisation.py"
 kind = "docstring"
 anchor = "server.domain.planner.periodisation"
-limit = 35
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
-
-[[exception]]
-path = "server/domain/planner/periodisation.py"
-kind = "hash_run"
-anchor = "the gap at which the block count"
-limit = 3
+limit = 33
 reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
 
 [[exception]]
@@ -1160,13 +1153,6 @@ path = "server/domain/planner/periodisation.py"
 kind = "docstring"
 anchor = "server.domain.planner.periodisation.mesocycle_spans"
 limit = 5
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
-
-[[exception]]
-path = "server/domain/planner/periodisation.py"
-kind = "docstring"
-anchor = "server.domain.planner.periodisation.beyond_one_plan_note"
-limit = 8
 reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
 
 [[exception]]
@@ -1214,16 +1200,23 @@ reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
 [[exception]]
 path = "server/domain/planner/selection.py"
 kind = "hash_run"
-anchor = "base builds the capacity everything"
-limit = 3
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
+anchor = "position in a row is a turn count"
+limit = 5
+reason = "Position in a row is a TURN COUNT through wall_aspect_turns(), and the MAX_WALL_TURNS cap means only the last three positions of a ten-aspect row differentiate. Nobody re-derives that before reordering a row. GREW by the sentence saying there is no cap on the count any more - F11 measured seven readings and the cap stayed, so the pointer to the register is the load-bearing half."
 
 [[exception]]
 path = "server/domain/planner/selection.py"
 kind = "hash_run"
-anchor = "fingers lead their own block it"
+anchor = "base builds the capacity everything"
+limit = 3
+reason = "Records Kilian's 2026-09-04 call that endurance keeps the base block's wall lead over anaerobic capacity, which the priority matrix on its own would reverse."
+
+[[exception]]
+path = "server/domain/planner/selection.py"
+kind = "hash_run"
+anchor = "fingers lead their own block the"
 limit = 4
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
+reason = "Why power endurance is absent from a strength block: it competes for the recovery the heavy sessions need and comes back in weeks. Deleting the row otherwise looks like a fix."
 
 [[exception]]
 path = "server/domain/planner/selection.py"
@@ -1242,9 +1235,9 @@ reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
 [[exception]]
 path = "server/domain/planner/selection.py"
 kind = "hash_run"
-anchor = "sharpness comes from climbing on"
+anchor = "barrows 3 3 only hard strength"
 limit = 3
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
+reason = "The taper row is the only one whose content is a source's explicit list, and the narrowed leg-session argument is the whole reason gym strength is in it while a heavy hinge is not."
 
 [[exception]]
 path = "server/domain/planner/selection.py"
@@ -1278,7 +1271,7 @@ reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
 path = "server/domain/planner/selection.py"
 kind = "docstring"
 anchor = "server.domain.planner.selection._validate_aspect_emphasis"
-limit = 11
+limit = 12
 reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
 
 [[exception]]
@@ -1333,9 +1326,9 @@ reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
 [[exception]]
 path = "server/domain/vocabulary.py"
 kind = "hash_run"
-anchor = "the eight things a climbing plan"
+anchor = "what a climbing plan can train in"
 limit = 4
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
+reason = "Order IS display order and adding a row is a seed insert rather than a migration - both are decisions a reader would otherwise undo. The key-collision half is executable and cited."
 
 [[exception]]
 path = "server/domain/vocabulary.py"
@@ -2592,34 +2585,6 @@ reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
 
 [[exception]]
 path = "tests/test_claude_md_claims.py"
-kind = "hash_run"
-anchor = "the ten env vars this project actually"
-limit = 4
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
-
-[[exception]]
-path = "tests/test_claude_md_claims.py"
-kind = "hash_run"
-anchor = "the tenth and it is the odd one"
-limit = 3
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
-
-[[exception]]
-path = "tests/test_claude_md_claims.py"
-kind = "hash_run"
-anchor = "reading the document"
-limit = 3
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
-
-[[exception]]
-path = "tests/test_claude_md_claims.py"
-kind = "hash_run"
-anchor = "the eight arms"
-limit = 3
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
-
-[[exception]]
-path = "tests/test_claude_md_claims.py"
 kind = "docstring"
 anchor = "tests.test_claude_md_claims.test_the_quality_gate_chain_claims_match_the_real_scripts"
 limit = 5
@@ -2638,41 +2603,6 @@ kind = "docstring"
 anchor = "tests.test_claude_md_claims.test_the_shell_owned_variable_is_still_not_read_by_this_repo"
 limit = 5
 reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
-
-[[exception]]
-path = "tests/test_claude_md_claims.py"
-kind = "hash_run"
-anchor = "index integrity both directions"
-limit = 11
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
-
-[[exception]]
-path = "tests/test_claude_md_claims.py"
-kind = "docstring"
-anchor = "tests.test_claude_md_claims.test_every_heading_the_index_quotes_resolves"
-limit = 7
-reason = "Records that the prose fallback was REMOVED when the index became pure pointers. A loosening whose reason is gone is exactly what this arm must not quietly carry again."
-
-[[exception]]
-path = "tests/test_claude_md_claims.py"
-kind = "docstring"
-anchor = "tests.test_claude_md_claims.test_every_section_has_an_index_entry_pointing_into_it"
-limit = 5
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
-
-[[exception]]
-path = "tests/test_claude_md_claims.py"
-kind = "hash_run"
-anchor = "positive controls every detector"
-limit = 3
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
-
-[[exception]]
-path = "tests/test_claude_md_claims.py"
-kind = "docstring"
-anchor = "tests.test_claude_md_claims.test_the_index_forward_arm_would_notice_a_reworded_heading"
-limit = 5
-reason = "Names what the control proves and why the arm it controls is the highest-value one here: a reworded heading leaves a reader concluding the rule was deleted."
 
 [[exception]]
 path = "tests/test_comment_budget.py"
@@ -3419,29 +3349,8 @@ reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
 [[exception]]
 path = "tests/test_planner_periodisation.py"
 kind = "docstring"
-anchor = "tests.test_planner_periodisation.test_every_reachable_gap_on_both_ladders_fits_the_plan_check_constraint"
-limit = 7
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
-
-[[exception]]
-path = "tests/test_planner_periodisation.py"
-kind = "docstring"
 anchor = "tests.test_planner_periodisation.test_a_cross_ladder_pair_refuses_instead_of_producing_a_nonsense_gap"
 limit = 5
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
-
-[[exception]]
-path = "tests/test_planner_periodisation.py"
-kind = "docstring"
-anchor = "tests.test_planner_periodisation.test_block_phases_run_the_librarys_authored_cycle"
-limit = 4
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
-
-[[exception]]
-path = "tests/test_planner_periodisation.py"
-kind = "docstring"
-anchor = "tests.test_planner_periodisation.test_a_plan_that_reaches_its_target_carries_no_such_note"
-limit = 7
 reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
 
 [[exception]]
@@ -3596,13 +3505,6 @@ path = "tests/test_plans_api.py"
 kind = "docstring"
 anchor = "tests.test_plans_api.demo_auth"
 limit = 5
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
-
-[[exception]]
-path = "tests/test_plans_api.py"
-kind = "docstring"
-anchor = "tests.test_plans_api.test_a_complete_profile_gets_a_plan_whose_length_follows_the_GRADE_GAP"
-limit = 7
 reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
 
 [[exception]]
@@ -6163,7 +6065,7 @@ reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
 [[exception]]
 path = "web/src/profile/draft.ts"
 kind = "block"
-anchor = "where the eight sliders sit until"
+anchor = "where the sliders sit until something"
 limit = 9
 reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
 
@@ -6198,7 +6100,7 @@ reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
 [[exception]]
 path = "web/src/profile/draft.ts"
 kind = "slash_run"
-anchor = "three answers and the eight scores"
+anchor = "three answers and every score in one"
 limit = 3
 reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
 
@@ -8039,6 +7941,13 @@ reason = "Why restart is not a second play triangle: a running item offers Resum
 [[exception]]
 path = "server/domain/planner/climbing.py"
 kind = "hash_run"
+anchor = "percent of a week s prescribed minutes that must be wall time"
+limit = 4
+reason = "The floor is a percent of a WEEK and reading it per session is a stricter rule rather than a refactor; it carried a register row in tests/test_planner_climbing_floor.py until the inversion it priced stopped happening."
+
+[[exception]]
+path = "server/domain/planner/climbing.py"
+kind = "hash_run"
 anchor = "any block whose exercise needs one of these is wall time everything else is supplementary auto belay is in the set although issue 84 s own measurement omitted it it is a wall you climb without a partner and leaving it out would have the app tell an auto belay only climber to go and get somewhere to climb"
 limit = 4
 reason = "auto_belay is in the wall set although issue #84's own measurement left it out; the deviation and its consequence for the shortfall message have to travel with the set."
@@ -8046,16 +7955,23 @@ reason = "auto_belay is in the wall set although issue #84's own measurement lef
 [[exception]]
 path = "server/domain/planner/climbing.py"
 kind = "hash_run"
-anchor = "minutes of prescribed work in a session led by a block of this protocol kind warm up excluded because the warm up is not a block the maximum binds always the minimum is only pursued and only in a loading phase phase in server domain vocabulary py is explicit that a deload has its own prescriptions rather than being a scaled block so topping one back up to a loading week s length would contradict the schema s own definition of it"
+anchor = "minutes of prescribed work in a session led by a block of this protocol kind warm up excluded"
 limit = 5
-reason = "The table's two bounds are enforced differently and the asymmetry is a schema fact: padding a deload back up would contradict Phase's own definition in vocabulary.py."
+reason = "The table's two bounds are enforced differently and the asymmetry is a schema fact: an unload week pursues HALF this minimum and reaches it with extra blocks, because scaling an authored deload dose would contradict Phase's own definition in vocabulary.py."
 
 [[exception]]
 path = "server/domain/planner/generate.py"
 kind = "docstring"
 anchor = "server.domain.planner.generate._wall_picks"
-limit = 6
-reason = "The second pass over the same aspects looks redundant and is not: the strength phase has only two wall-led aspects, measured ten minutes short of the window with one block each."
+limit = 14
+reason = "Records what the rank-weighted ring buys - ASPECT_EMPHASIS governing climbing and not only the supplementary pass - and why it is indexed by _spread rather than by the aspect offset, which takes ~5 values inside a three-week phase. GREW by F11's correction: the word rank-weighted was measurably FALSE in the phases where MAX_WALL_TURNS binds, and the offset fact - a 2-session week visits 6 of a 16-long ring's rotations - is why the weights cannot simply be lifted."
+
+[[exception]]
+path = "tests/test_planner_climbing_floor.py"
+kind = "hash_run"
+anchor = "both sources agree an unload week keeps 40 60"
+limit = 11
+reason = "Carries both sources' 40-60% band, the warm-up exclusion with the 9.8%-vs-35.6% measurement that makes it load-bearing, and the prohibition on turning the 60% ceiling into an accepted exception without Kilian."
 
 [[exception]]
 path = "tests/test_planner_climbing_floor.py"
@@ -8131,28 +8047,28 @@ reason = "Why reach across a sweep is not the same claim as breadth within one p
 path = "tests/test_planner_library_reach.py"
 kind = "hash_run"
 anchor = "key why no profile can ever be"
-limit = 4
-reason = "The register's editing rule plus the three keys origin/dev carried, which is the only record of what the baseline actually was."
+limit = 6
+reason = "The register's editing rule, the three keys origin/dev carried (the only record of the baseline), and the one reason that is never admissible - \"no profile has the equipment\" - which no test can express because nothing executable knows WHY a row was added."
 
 [[exception]]
 path = "tests/test_planner_library_reach.py"
 kind = "hash_run"
 anchor = "both disciplines x all three bands"
-limit = 4
-reason = "Why six profiles and why these six - the measured coverage and runtime are what make the guard cheap enough for the local gate."
+limit = 12
+reason = "Records the MEASUREMENT that added the seventh profile: a candidate pool is indexed by a WEEK count, so 28-32-week plans and a 20-week plan do not sample the same pool positions. It also records that the row this was found on no longer depends on the short plan, which is the only way a reader can tell the profile is kept on the mechanism rather than on that one row."
 
 [[exception]]
 path = "tests/test_planner_library_reach.py"
 kind = "hash_run"
 anchor = "kilian s requirement and the floor"
-limit = 6
-reason = "Why the floor is a share rather than a count, the per-band measurements behind it, and why beginner is lowest by arithmetic rather than by defect."
+limit = 17
+reason = "Why the floor is a share rather than a count, the per-band measurements behind it, and the whole RE-BASELINING argument: the four accessories 68% was counting were reachable only through sessions running under their window floor, so the old number was measuring a defect. A lowered guard constant with no reason next to it is exactly what this repo forbids."
 
 [[exception]]
 path = "server/domain/planner/generate.py"
 kind = "docstring"
 anchor = "server.domain.planner.generate._wall_pref"
-limit = 10
+limit = 12
 reason = "Three states with three different measured failures behind them - a 63% advanced band, a 37-minute session against a 40-minute floor, and six unreachable exercises - none of which is visible from the signature."
 
 [[exception]]
@@ -8165,9 +8081,9 @@ reason = "Why a length-driven slot abandons the rotation, and why it takes the l
 [[exception]]
 path = "tests/test_planner_climbing_floor.py"
 kind = "hash_run"
-anchor = "the dimension this sweeps is plan length and it is the one the gate was missing round 3 reordered wall pref to put a session s own length ahead of the week s share and this test stayed green at the gap of 3 every other test here uses that moves the advanced band from 57 58 to 59 61 still inside 50 62 measured over gap 0 7 four weekday masks 2 7 sessions the sabotage breaches only the short plans gap 0 8 weeks and gap 1 12 reach 62 1 64 8 against the 62 ceiling because a short plan is mostly base where preferring the wall buys the most so gap is sampled at both ends of periodisation s week count table 0 8 weeks 6 32 plus the 3 the rest of the file uses sessions per week runs the full 2 7 for completeness but it is not the exposing dimension and neither is the weekday mask all four masks measured identical to a tenth of a point because a mask moves which weekday a session lands on and never how many blocks it gets"
-limit = 11
-reason = "Records the MEASUREMENT that chose this parametrisation: which dimension exposes the _wall_pref sabotage (plan length), the numbers at each gap, and the two dimensions measured NOT to expose it - without which the next reader trims the gaps back and re-blinds the gate."
+anchor = "the dimension this sweeps is plan length and it is the one the gate was missing round 3 reordered wall pref"
+limit = 16
+reason = "Records two MEASUREMENTS a reader cannot recover from the code: which dimension exposes the _wall_pref sabotage (plan length, re-measured at 65.8-68.6% against the 65 ceiling), and why the advanced ceiling is 65 - a re-baseline off deload weeks that dev itself already breached at 62.3%, then off §3.4's ordering, and due back down at the fixed 12-week plan length. Without it the next reader trims the gaps back, or reads 65 as a weakened guard."
 
 [[exception]]
 path = "web/src/planCompletionBands.test.tsx"
@@ -8196,3 +8112,843 @@ kind = "block"
 anchor = "in dark the pill belongs to the phase badge alone the day badges inside a week"
 limit = 14
 reason = "Kilian signed dark's day badges off as they stand, so the guard must say which rules may carry pill geometry, that nothing else in the suite can see an ungated one, and why the gate is read off selector text rather than at-rule context."
+
+[[exception]]
+path = "tests/test_phase_guide.py"
+kind = "docstring"
+anchor = "tests.test_phase_guide.test_the_copys_LEAD_claims_name_the_MODAL_FIRST_BLOCK_of_a_generated_plan"
+limit = 7
+reason = "Carries the guard's GRANULARITY and its measured slack: the claim is pooled because PHASE_GUIDE is universal copy, and it does NOT hold per profile - an advanced climber's power and performance blocks open with fingers. Without it the arm reads as a per-plan promise and the next reader tightens it to one."
+
+[[exception]]
+path = "tests/test_planner_climbing_floor.py"
+kind = "hash_run"
+anchor = "kilian s authored order for a base"
+limit = 4
+reason = "Records which wall-led aspects take NO base wall turns and why - since the three on-wall general_strength rows were re-filed to power there is no on-wall general_strength exercise in any phase, and anaerobic_capacity has two. Without it the tuple reads like an omission."
+
+[[exception]]
+path = "tests/test_planner_climbing_floor.py"
+kind = "docstring"
+anchor = "tests.test_planner_climbing_floor.test_the_quality_a_base_block_ranks_FIRST_takes_the_most_wall_time"
+limit = 7
+reason = "Carries the guard's MEASURED slack: endurance survives a demotion to seventh because its exercises are long, and only goes red at the tail. Without that sentence the guard reads stronger than it is."
+
+[[exception]]
+path = "server/domain/planner/generate.py"
+kind = "docstring"
+anchor = "server.domain.planner.generate._supplementary_rounds"
+limit = 7
+reason = "Records what `cap` is FOR: it reserves the two spare blocks for the climbing top-up, which is the only thing MAX_BLOCKS_PER_SESSION's own comment ever said they were for."
+
+[[exception]]
+path = "server/domain/planner/generate.py"
+kind = "docstring"
+anchor = "server.domain.planner.generate._top_up_with_climbing"
+limit = 9
+reason = "Carries Kilian's 2026-09-04 ruling and the measurement behind the pass ORDER - blocks four and five had gone to a 2.7-minute accessory - plus why it reads only its own draft."
+
+[[exception]]
+path = "server/domain/planner/generate.py"
+kind = "docstring"
+anchor = "server.domain.planner.generate._length_pick"
+limit = 18
+reason = "Two rejected alternatives with their numbers - widening the pool past wall_led_aspects cost the advanced band 2.6 points, and the shortest sufficient block cost per-plan breadth - plus the one paragraph that says band=None is now ruling 29's filler family and a filter rather than a rank."
+
+[[exception]]
+path = "tests/test_planner_climbing_floor.py"
+kind = "docstring"
+anchor = "tests.test_planner_climbing_floor.test_a_base_block_only_MAINTAINS_the_qualities_the_source_maintains"
+limit = 13
+reason = "Names the coverage this re-scoped guard GAVE UP against the pairwise ordering it replaced, which is the one thing a reader cannot recover from the assertion itself."
+
+[[exception]]
+path = "tests/test_planner_safety.py"
+kind = "docstring"
+anchor = "tests.test_planner_safety.test_the_generators_title_bound_IS_the_columns_width"
+limit = 4
+reason = "Says why a second arm exists beside the sampled one: a title long enough to be refused by the column appeared on a profile the sampled arm does not generate."
+
+[[exception]]
+path = "tests/test_planner_climbing_floor.py"
+kind = "docstring"
+anchor = "tests.test_planner_climbing_floor._AcceptedInversion"
+limit = 7
+reason = "The exemption register's editing rule: why the accepted inversions are DATA rather than a comment, that both arms below read them, and what max_loss_seconds is for - an accepted exception with no bound is a licence, and nothing executable knows that."
+
+[[exception]]
+path = "tests/test_planner_climbing_floor.py"
+kind = "docstring"
+anchor = "tests.test_planner_climbing_floor.test_more_available_days_never_reduces_climbing_minutes"
+limit = 6
+reason = "Says where the exceptions live and why they are written down, which is the one thing a reader cannot recover from the assertion: an accepted exception and an untested gap look identical in a suite, and three rounds of PR C proved it."
+
+[[exception]]
+path = "tests/test_planner_climbing_floor.py"
+kind = "docstring"
+anchor = "tests.test_planner_climbing_floor.test_no_accepted_monotonicity_exception_has_quietly_become_true"
+limit = 4
+reason = "A reverse arm reads as redundant until someone knows what it caught: a stale row is a claim about the generator that has stopped being true, and a mistyped label lands here too."
+
+[[exception]]
+path = "tests/test_planner_climbing_floor.py"
+kind = "hash_run"
+anchor = "this sweep used to be sessions"
+limit = 9
+reason = "Records the MEASUREMENT that chose this parametrisation: the guard swept `sessions` alone on one intermediate sport climber, which is why both accepted exceptions went unsampled for three rounds, and why the second equipment column is a gap-4 bouldering gym - it is the only combination that inverts inside a taper week. Without the numbers the next reader trims the columns back and re-blinds it."
+
+[[exception]]
+path = "server/domain/planner/climbing.py"
+kind = "hash_run"
+anchor = "barrows 3 4 as a tuple of tiers so the source s own sentence is the constant"
+limit = 7
+reason = "Carries Barrows §3.4's sentence itself, which is what the tuple encodes, plus the one reading decision a reader would otherwise reverse: the app maps BOTH bouldering and An Pow to `power`, so it needs a tier ahead of anaerobic capacity."
+
+[[exception]]
+path = "server/domain/planner/generate.py"
+kind = "docstring"
+anchor = "server.domain.planner.generate._descend_by_intensity"
+limit = 9
+reason = "Two PROHIBITIONS nothing executable can state: reassign weekday values and never the drafts list or session_index, which keys _spread and every candidate pool; and never treat Sunday to Monday as a run, because the next Monday is a different microcycle."
+
+[[exception]]
+path = "server/domain/planner/generate.py"
+kind = "docstring"
+anchor = "server.domain.planner.generate._session_tier"
+limit = 5
+reason = "The measured reason §3.4's tier is gated on WALL_LED_ASPECTS: promoting an aspect that cannot name a session renamed a 43-minute gearless base session `hold`, capped it at 45 and returned it two blocks thin, which the gearless guard catches and nothing in this module hints at."
+
+[[exception]]
+path = "server/domain/planner/climbing.py"
+kind = "hash_run"
+anchor = "the three energy systems and deliberately"
+limit = 6
+reason = "The set looks wrong at a glance - power sits in INTENSITY_TIERS' top tier with both strength aspects - so it carries why strength is excluded: SS4.2's worked base week runs four strength sessions alongside ~3 hard energy days."
+
+[[exception]]
+path = "server/domain/planner/climbing.py"
+kind = "hash_run"
+anchor = "barrows 3 2 4 2 a 5 day climber"
+limit = 3
+reason = "Names the source section, and records that this is a ceiling ENFORCED against FINGER_SESSIONS_PER_WEEK's floor PURSUED plus the reason it is not a fraction of the week."
+
+[[exception]]
+path = "server/domain/planner/climbing.py"
+kind = "hash_run"
+anchor = "the taper is exempt by authored"
+limit = 4
+reason = "The exemption has to read as sourced rather than as a hole: SS3.3 makes every taper session carry hard work by construction, and PERFORMANCE is deliberately NOT exempt."
+
+[[exception]]
+path = "server/domain/planner/climbing.py"
+kind = "hash_run"
+anchor = "4 2 s worked example which is per"
+limit = 3
+reason = "Records that the ceiling is per STAGE and not flat, and that the two zero rows are the table's completeness rather than a second mechanism beside DELIBERATELY_UNPRESCRIBED."
+
+[[exception]]
+path = "server/domain/planner/generate.py"
+kind = "hash_run"
+anchor = "a day the week s ceiling takes"
+limit = 3
+reason = "The one place ruling 9 and ruling 4 meet: ruling 9 removes hard WORK and ruling 4 forbids removing CLIMBING, and without the sentence the branch reads as a loophole in the ceiling."
+
+[[exception]]
+path = "server/domain/planner/generate.py"
+kind = "hash_run"
+anchor = "the week s ceilings bind by removing"
+limit = 5
+reason = "Records WHY the ceiling filters the emphasis row instead of rejecting the block afterwards: a displaced slot carries a Shortfall naming equipment, and an overtraining ceiling is not a gap in the climber's gym."
+
+[[exception]]
+path = "tests/test_phase_guide.py"
+kind = "hash_run"
+anchor = "the other two claims of phase guide"
+limit = 3
+reason = "One authored sentence carries three executable claims on two different denominators; without this the reader cannot tell which arm measures wall minutes and which measures all of them."
+
+[[exception]]
+path = "tests/test_phase_guide.py"
+kind = "docstring"
+anchor = "tests.test_phase_guide._Climber"
+limit = 4
+reason = "The @cache key trap: a weakness dimension left off the dataclass hands every arm the None plan and calls the difference measured, which is exactly the silent pass this file exists to prevent."
+
+[[exception]]
+path = "tests/test_phase_guide.py"
+kind = "hash_run"
+anchor = "the sweep the per climber copy"
+limit = 3
+reason = "Records why the copy arms sweep the declared weakness at all: PHASE_GUIDE is the same prose whatever the climber declared, so its claims owe every value of that lever."
+
+[[exception]]
+path = "tests/test_phase_guide.py"
+kind = "docstring"
+anchor = "tests.test_phase_guide.test_the_copys_LAST_claim_is_measured_against_the_qualities_the_block_is_FOR"
+limit = 14
+reason = "Carries the granularity decision (per climber, because the copy is rendered to every climber on two screens), the ONE-denominator choice with its reason, and the enumeration of all three claims in the sentence."
+
+[[exception]]
+path = "tests/test_phase_guide.py"
+kind = "docstring"
+anchor = "tests.test_phase_guide.test_a_DECLARED_WEAKNESS_LEAVES_the_base_blocks_general_strength_A_TURN"
+limit = 13
+reason = "Ruling 21's decision record, and the only place N is argued: the mechanism, the 23-of-24 defect it replaced, and why 3 rather than 2 or 4 - measured on both sides, the yield count inside a three-week base block and the plan-wide weakness multiplier it costs."
+
+[[exception]]
+path = "tests/test_planner_climbing_floor.py"
+kind = "hash_run"
+anchor = "barrows 3 2 4 2 s two weekly frequency"
+limit = 7
+reason = "Restates the ceilings independently of climbing.py per this file's anti-agreement discipline, and carries why the hard set is the three energy systems and not INTENSITY_TIERS' top tier."
+
+[[exception]]
+path = "tests/test_planner_climbing_floor.py"
+kind = "hash_run"
+anchor = "the taper is exempt and this is"
+limit = 8
+reason = "The exemption must read as sourced rather than as a hole, so it names SS3.3, the two taper guards it would fight, the measured taper hard-day counts, and that PERFORMANCE is not exempt."
+
+[[exception]]
+path = "tests/test_planner_climbing_floor.py"
+kind = "hash_run"
+anchor = "4 2 s worked example is per stage"
+limit = 3
+reason = "Records that the ceiling is per stage and that performance and taper reach zero through the library rather than through the ceiling, which is why the arm asserts them."
+
+[[exception]]
+path = "tests/test_planner_climbing_floor.py"
+kind = "hash_run"
+anchor = "the declared weakness which is"
+limit = 3
+reason = "The lever had no number behind it and every plan-shape test in the repo passed None; the reader needs the mechanism before either half of the guard makes sense."
+
+[[exception]]
+path = "tests/test_planner_climbing_floor.py"
+kind = "hash_run"
+anchor = "a one session week is exempt from"
+limit = 4
+reason = "The exemption is a MEASUREMENT, not an assumption: a solo week has no supplementary pass so the plan is byte-identical at every weakness value, and the two seconds figures prove it."
+
+[[exception]]
+path = "tests/test_planner_climbing_floor.py"
+kind = "docstring"
+anchor = "tests.test_planner_climbing_floor._weekly_aspect_sessions"
+limit = 7
+reason = "Records that _weekly_matrix collapses the aspect dimension away so this view is new, and that a session CARRIES a quality by containing a block of it - a count keyed on the opener misses two of the three passes."
+
+[[exception]]
+path = "tests/test_planner_climbing_floor.py"
+kind = "docstring"
+anchor = "tests.test_planner_climbing_floor.test_at_most_THREE_DAYS_A_WEEK_carry_hard_energy_system_work"
+limit = 6
+reason = "Carries the before measurement (4 or 5 hard days in 80 of 120 weeks), the taper exemption pointer, and why the anti-vacuity arm exists - all three are what tell an overtraining guard from a tuning knob."
+
+[[exception]]
+path = "tests/test_planner_climbing_floor.py"
+kind = "docstring"
+anchor = "tests.test_planner_climbing_floor.test_ANAEROBIC_CAPACITY_sessions_stay_under_the_ceiling_FOR_THAT_PHASE"
+limit = 5
+reason = "Holds the measured before distribution (136 of 480 weeks at 3 or more, to seven a week against a ceiling of two) and the note that performance and taper are asserted rather than re-implemented."
+
+[[exception]]
+path = "tests/test_planner_climbing_floor.py"
+kind = "docstring"
+anchor = "tests.test_planner_climbing_floor.test_a_DECLARED_WEAKNESS_RAISES_its_own_aspects_minutes"
+limit = 8
+reason = "Records that four files pass a weakness and none of them measures its effect, the measured multiplier, and the one-session exemption that is why the parametrisation starts at two."
+
+[[exception]]
+path = "tests/test_planner_climbing_floor.py"
+kind = "docstring"
+anchor = "tests.test_planner_climbing_floor.test_a_DECLARED_WEAKNESS_cannot_push_a_BASE_BLOCKS_TAIL_past_its_ceiling"
+limit = 10
+reason = "This guard was RED when written and the docstring is where that is recorded: 21.6-23.6% before the weekly frequency ceilings against a ceiling of 20, 19.2% after, so the reader knows what closed it."
+
+[[exception]]
+path = "server/domain/planner/generate.py"
+kind = "docstring"
+anchor = "server.domain.planner.generate._week_ceiling_allows"
+limit = 8
+reason = "One predicate stands for both of Barrows' weekly ceilings across three placement passes; the docstring carries why it reads the drafts rather than a counter, and why a block landing in a session that already carries the quality passes."
+
+[[exception]]
+path = "server/domain/planner/climbing.py"
+kind = "docstring"
+anchor = "server.domain.planner.climbing.week_ceiling_governs"
+limit = 7
+reason = "A one-line predicate whose whole point is that two modules read it instead of restating the set: the docstring names both callers, because a refusal reason added without coming through here leaves selection.py's import-time floor measuring a set the generator no longer uses."
+
+[[exception]]
+path = "server/domain/planner/generate.py"
+kind = "docstring"
+anchor = "server.domain.planner.generate._no_other_route"
+limit = 8
+reason = "Records why ruling 21's yield rotates over these aspects and not over the whole secondary pool - measured, the plain pool still deleted general strength from 8 of 24 profiles because a base block is only three weeks long."
+
+[[exception]]
+path = "server/domain/planner/selection.py"
+kind = "hash_run"
+anchor = "ruling 21 slot 1 is the declared"
+limit = 3
+reason = "The constant states the ruling; the third line is the pointer to where N is argued, because the measurement belongs with the sweep that produced it and not beside a Final."
+
+[[exception]]
+path = "server/domain/planner/selection.py"
+kind = "hash_run"
+anchor = "generate py try supplementary filters"
+limit = 5
+reason = "The floor exists for one caller in another module: the comment has to name the filter, the IndexError it prevents, and why the subtraction goes through week_ceiling_governs rather than restating ENERGY_SYSTEM_ASPECTS here."
+
+[[exception]]
+path = "tests/test_phase_guide.py"
+kind = "docstring"
+anchor = "tests.test_phase_guide.test_the_copys_POWER_ENDURANCE_AEROBIC_claim_is_a_DAY_COUNT_claim"
+limit = 12
+reason = "Ruling 24's floor was revoked, so this guard is the whole mechanism behind an authored sentence and has to say so. It also has to state its GRANULARITY and why: the same claim read per profile is green on 18 of 18 while 12 of those 72 WEEKS hold none, and no day boundary repairs it - a reader who pooled it back would not know."
+
+[[exception]]
+path = "tests/test_phase_guide.py"
+kind = "docstring"
+anchor = "tests.test_phase_guide._weeks_by_phase"
+limit = 5
+reason = "The fixture exists ONLY because pooling the weeks hides a claim the copy makes about every week, and the two measurements that differ are the reason - without them the next reader collapses it back into _sessions_by_phase."
+
+[[exception]]
+path = "server/domain/planner/climbing.py"
+kind = "hash_run"
+anchor = "the twin of this floor for the power endurance"
+limit = 3
+reason = "A floor that was DECLINED on the merits is invisible next to the floor that was kept, and this is the file a reader would add it to; the run names the ruling, the revocation and the guard that replaced it so it is not reintroduced as an improvement."
+
+[[exception]]
+path = "tests/test_phase_guide.py"
+kind = "docstring"
+anchor = "tests.test_phase_guide.test_the_copys_POWER_ENDURANCE_claim_about_WHAT_IS_BIGGEST_FLIPS_WITH_THE_DAYS"
+limit = 14
+reason = "Ruling 31's accepted consequence is counter-intuitive enough that the docstring must carry both regimes' measurements and the structural cause, plus why the second arm exists at all - the copy's words ORDINARY CLIMBING are only honest while the filler is the majority."
+
+[[exception]]
+path = "tests/test_phase_guide.py"
+kind = "docstring"
+anchor = "tests.test_phase_guide.test_PLAN_GOALs_claim_that_MORE_DAYS_IS_A_LONGER_WEEK"
+limit = 12
+reason = "Half of the sentence it guards is a DECLARED divergence that nothing in the app can measure, so the docstring has to say which half is asserted, which half is declared, and where the declaration's numbers live."
+
+[[exception]]
+path = "tests/test_planner_climbing_floor.py"
+kind = "hash_run"
+anchor = "the register and empty is a measurement again"
+limit = 8
+reason = "An empty register reads as green by accident, so the run has to name WHICH gate ruling 32 opened and record that the climbing-floor gate was never the mechanism - a rewrite of it measured byte-identical, so a future reader would otherwise re-attempt it."
+
+[[exception]]
+path = "tests/test_phase_guide.py"
+kind = "hash_run"
+anchor = "ruling 29 s filler family restated and"
+limit = 3
+reason = "Round 5's first attribution guard read the function it was testing and stayed green under sabotage; the warning against importing OPEN_CLIMBING_KEYS here is the whole reason the tuple is duplicated."
+
+[[exception]]
+path = "server/domain/planner/climbing.py"
+kind = "hash_run"
+anchor = "how long a session runs warm up"
+limit = 12
+reason = "Ruling 25's numbers are the high end of one source and above another's measured population, so the table has to say whose choice it is and that the sources must never be cited for it."
+
+[[exception]]
+path = "server/domain/planner/climbing.py"
+kind = "docstring"
+anchor = "server.domain.planner.climbing.session_window_across"
+limit = 5
+reason = "Names the defect it replaces (a session took ONE block's window) and states why it does not re-open ruling 3, which forbids lowering a window but not raising one."
+
+[[exception]]
+path = "server/domain/planner/generate.py"
+kind = "hash_run"
+anchor = "flat every session every level"
+limit = 6
+reason = "Ruling 26 leaves a DECLARED divergence from Dylan's 5-10% warm-up budget at the beginner end; a reader who trims this restores a claim nothing checks, and it also records what was refused."
+
+[[exception]]
+path = "server/domain/planner/generate.py"
+kind = "docstring"
+anchor = "server.domain.planner.generate._session_ceiling"
+limit = 4
+reason = "The 45-minute max-hang ceiling was the single thing that made ruling 25's advanced target unreachable at any block count, and the next reader needs to know raising it is ruling 3 compliant."
+
+[[exception]]
+path = "server/domain/planner/generate.py"
+kind = "docstring"
+anchor = "server.domain.planner.generate._session_floor"
+limit = 5
+reason = "Two floors now exist and confusing them is the measured failure: reading ruling 25's length where ruling 3's belongs put every climbing band 30 points over its target range."
+
+[[exception]]
+path = "server/domain/planner/generate.py"
+kind = "docstring"
+anchor = "server.domain.planner.generate._band_top_allows"
+limit = 5
+reason = "Both exemptions are measured failures of not having them, and the solo-week one is load-bearing for ruling 4, which is absolute."
+
+[[exception]]
+path = "tests/test_planner_climbing_floor.py"
+kind = "hash_run"
+anchor = "ruling 25 s per level session length"
+limit = 5
+reason = "Restated independently of the modules like every other table in this file, and the attribution warning has to travel with the numbers or a future audit files them as sourced."
+
+
+
+[[exception]]
+path = "server/domain/planner/climbing.py"
+kind = "docstring"
+anchor = "server.domain.planner.climbing.session_floor_pct"
+limit = 5
+reason = "Ruling 27 put the session LENGTH through this factor as well as the window floor, and that is precisely what makes ruling 17's >=40% unload floor hold by construction rather than by accident — a reader who does not know that will scale one and not the other."
+
+[[exception]]
+path = "server/domain/planner/climbing.py"
+kind = "hash_run"
+anchor = "ruling 27 s whole granularity a session short of the length above takes one block of plain climbing"
+limit = 5
+reason = "Kilian's own words and his own figure, quoted so a future audit cannot file 30 minutes as sourced; plus the consequence that the bands above are FLOORS and overshoot is correct."
+
+[[exception]]
+path = "server/domain/planner/generate.py"
+kind = "docstring"
+anchor = "server.domain.planner.generate._fill_session_length"
+limit = 9
+reason = "Ruling 27's whole mechanism in one place: why it runs last (the finger floor's slot), why it is one block (MAX_BLOCKS_PER_SESSION never had to rise), and Kilian's sentence that sizes the chunk."
+
+[[exception]]
+path = "server/domain/planner/generate.py"
+kind = "docstring"
+anchor = "server.domain.planner.generate._place"
+limit = 5
+reason = "`fill_seconds` is the one dose the generator sizes itself, so the docstring names the authored row whose shape it copies and says sets are never padded to buy it."
+
+[[exception]]
+path = "server/domain/planner/generate.py"
+kind = "hash_run"
+anchor = "one chunk per set so the longest set a fill can produce is length fill minutes"
+limit = 3
+reason = "Why the chunk is spent in chunk-sized sets rather than in one set: a 100-minute gap otherwise reads as a single 100-minute lap. The rounding direction is load-bearing for the floor."
+
+[[exception]]
+path = "tests/test_planner_climbing_floor.py"
+kind = "docstring"
+anchor = "tests.test_planner_climbing_floor._is_length_fill"
+limit = 13
+reason = "Says the shape is read off the blueprint rather than off a flag, and why: a flag would be a wire-contract change carried for a test. GREW for ruling 41: the fill is now identified by OPEN_CLIMBING_KEYS membership and not by shape alone, and the measurement that made the family clause necessary - a rest-free expandable endurance row matching the shape on its second set - has to sit where the clause does."
+
+[[exception]]
+path = "tests/test_planner_climbing_floor.py"
+kind = "docstring"
+anchor = "tests.test_planner_climbing_floor.test_every_session_lands_inside_its_types_window_AND_ITS_PHASES_LENGTH"
+limit = 17
+reason = "Ruling 27's whole clause in one guard: both edges, the phase scaling that makes ruling 17 hold by construction, and the widening of ruling 3 the ceiling arm now permits with the two measured sessions that exceed a SESSION_WINDOWS ceiling named."
+
+[[exception]]
+path = "tests/test_planner_climbing_floor.py"
+kind = "docstring"
+anchor = "tests.test_planner_climbing_floor.test_a_fixed_volume_protocol_is_never_padded_and_an_expandable_one_is_capped"
+limit = 12
+reason = "The ruling 27 arm has to say why it cannot become a hole for a padded authored block, because a reader's first reaction to an exemption inside a padding guard is that it is one. GREW by the correction: the docstring's own claim that the shape arm cannot be reached by a padded authored block was false, and a claim a test states about itself is exactly what no CI job can catch."
+
+[[exception]]
+path = "tests/test_planner_climbing_floor.py"
+kind = "hash_run"
+anchor = "empty and that is a measurement ruling 27 s length fill repaired every one of the seven rows"
+limit = 8
+reason = "An empty register with no history reads as a register nobody filled in. The seven repaired rows and their accepted losses are listed so a regression is recognisable; the mechanisms each was accepted on went with the rows."
+
+[[exception]]
+path = "tests/test_sessions_completion.py"
+kind = "hash_run"
+anchor = "only partial needs three blocks it is the which third the name is about"
+limit = 3
+reason = "Records why the fixture stopped needing two three-block sessions, so the next reader does not restore the tighter helper and get one session back."
+
+[[exception]]
+path = "tests/test_planner_climbing_floor.py"
+kind = "docstring"
+anchor = "tests.test_planner_climbing_floor.test_the_measured_climbing_share_lands_inside_its_bands_target_range"
+limit = 14
+reason = "An OPEN RED on 108 rows has to carry its own numbers and the reason it is not re-based, or the next reader either reads it as new breakage or quietly widens the ceiling that ruling 27 says may not be widened without a sabotage proof."
+
+[[exception]]
+path = "server/domain/exercises.py"
+kind = "hash_run"
+anchor = "open climbing the length fill climb for fun is also training is kilian s doctrine"
+limit = 17
+reason = "Ruling 29's attribution warning and ruling 30's whole design in one place: why the doctrine is Kilian's and never the sources', why the family is four rows rather than one (instructions sits on the spec, so per-phase cue text has no other home), and why the technique row is prescribed in every phase - it is the fallback that makes the fill a filter."
+
+[[exception]]
+path = "server/domain/planner/generate.py"
+kind = "hash_run"
+anchor = "ruling 29 made this a filter the filler family is ordered by the phase s own"
+limit = 6
+reason = "Ruling 30's two invariants are one choice here, and the reason the walk exists at all: a day ruling 9's hard-energy ceiling has made easy cannot be credited with the block's own hard quality without putting that injury ceiling back."
+
+[[exception]]
+path = "server/domain/planner/selection.py"
+kind = "docstring"
+anchor = "server.domain.planner.selection.ordinary"
+limit = 5
+reason = "Says what the subtraction is FOR rather than what it does: open climbing has no dose to progress, so it may only ever arrive as the length fill and never as a session's prescribed work."
+
+[[exception]]
+path = "server/domain/planner/selection.py"
+kind = "docstring"
+anchor = "server.domain.planner.selection.open_climbing_fill"
+limit = 18
+reason = "The phase's own emphasis order is what makes both of ruling 30's invariants one decision, and the sentence naming _validate_open_climbing_fill is what tells a reader why this can be indexed as a filter rather than searched as a ranking. GREW by F11's second surface: both surfaces now rank by aspect_rank(), and the measurement refusing a rank WEIGHT here (1242 of 6000 fills credited off-lead on a hard day, against ruling 30's pinned 0) has to sit where the next reader would try it."
+
+[[exception]]
+path = "server/domain/planner/selection.py"
+kind = "docstring"
+anchor = "server.domain.planner.selection._validate_open_climbing_fill"
+limit = 12
+reason = "An import-time check owes its reason at the raise site: a phase whose only filler is an energy-system quality leaves sessions short of ruling 25's length on every day the hard-energy ceiling has already made easy, and a shorter session is what ruling 27 exists to remove. GREW by the correction that the check is any and not ends-in: the docstring described an ordering invariant the code never had."
+
+[[exception]]
+path = "tests/test_exercise_library.py"
+kind = "hash_run"
+anchor = "ruling 30 s first invariant kilian 2026 09 06 add what is the intention on the block"
+limit = 6
+reason = "Kilian's sentence, plus the containment trap that makes a plain membership assertion vacuous here: power endurance contains power, so the matcher deletes every other aspect name first and that has to be explained where the helper is."
+
+[[exception]]
+path = "tests/test_exercise_library.py"
+kind = "docstring"
+anchor = "tests.test_exercise_library.test_every_OPEN_CLIMBING_row_TELLS_THE_CLIMBER_WHAT_THE_BLOCK_IS_FOR"
+limit = 10
+reason = "Three claims in one guard and each needs its reason: the cue is the only place a protocol-free block can state its intention, the dose has no progression because it is time on the wall, and the gear is a boulder wall so it is not gated the way the rope aerobic rows are."
+
+[[exception]]
+path = "tests/test_planner_climbing_floor.py"
+kind = "hash_run"
+anchor = "kilian s target bands this and the two tables below are restated independently of"
+limit = 5
+reason = "The high edge is kept in the table and never asserted, which is exactly the kind of thing a reader deletes as dead; the run says why it stays and points at the reason constant."
+
+[[exception]]
+path = "tests/test_planner_climbing_floor.py"
+kind = "hash_run"
+anchor = "ruling 28 s replacement guard and the three regimes are wall pref s whole contract"
+limit = 5
+reason = "Why this guard is a hand-built draft rather than a plan sweep: the promise is about candidate ORDER, which no finished plan records, and the week share that stood in for it stopped separating once the fill became the largest item in a session."
+
+[[exception]]
+path = "tests/test_planner_climbing_floor.py"
+kind = "hash_run"
+anchor = "one laps block so session window across gives the draft a 30 minute window floor"
+limit = 4
+reason = "The fixture's two load-bearing choices: LAPS is what makes the `first` regime reachable at all, and _wall_pref reads wall_seconds off the draft rather than off the block's equipment, so the block's gear is deliberately arbitrary."
+
+[[exception]]
+path = "tests/test_planner_climbing_floor.py"
+kind = "docstring"
+anchor = "tests.test_planner_climbing_floor.test__wall_pref_WITHHOLDS_THE_WALL_from_a_session_at_its_bands_top"
+limit = 13
+reason = "Three regimes, each with the measurement that put it there, plus the sabotage result that made this test necessary - 36 of 36 beginner rows stayed green under the band ceiling it replaces."
+
+[[exception]]
+path = "tests/test_planner_climbing_floor.py"
+kind = "hash_run"
+anchor = "honest 0 of 1632 with wall pref forced to first 14 the advanced band is where this"
+limit = 5
+reason = "Names the granularity choice and its evidence: beginner and intermediate sessions legitimately end all-climbing (226 and 44 of 1632), so a zero at those levels would be a false claim rather than a stricter one."
+
+[[exception]]
+path = "tests/test_planner_climbing_floor.py"
+kind = "docstring"
+anchor = "tests.test_planner_climbing_floor.test_an_ADVANCED_loading_session_always_keeps_room_for_work_off_the_wall"
+limit = 6
+reason = "Says what this arm covers that the unit arm cannot - a preference computed right and then ignored - and why an advanced session with nothing off the wall is the visible symptom."
+
+[[exception]]
+path = "tests/test_planner_climbing_floor.py"
+kind = "hash_run"
+anchor = "ruling 29 30 measured over 6 climbers x sessions 1 7 x gaps 0 3 6"
+limit = 4
+reason = "The population the two zeros were measured over, without which a zero looks like an unmeasured aspiration rather than a count."
+
+[[exception]]
+path = "tests/test_planner_climbing_floor.py"
+kind = "docstring"
+anchor = "tests.test_planner_climbing_floor.test_the_LENGTH_FILL_is_ONE_block_carrying_THE_BLOCKS_OWN_INTENTION"
+limit = 13
+reason = "Two arms from two different rulings, and the second needs its one exception spelled out: the fill walks off the block's own quality only on a day ruling 9's ceiling has made easy, which is why an off-lead fill on a hard day is the defect and not the design."
+
+[[exception]]
+path = "tests/test_planner_climbing_floor.py"
+kind = "hash_run"
+anchor = "ruling 23 s cause as the number it repaired before the boulder reachable row all four"
+limit = 8
+reason = "Carries the 12-of-12 defect this repaired and, more importantly, the boundary: 12 boulder power-endurance weeks still hold no aerobic block and closing THAT is ruling 24's floor, which is not implemented - so the guard cannot be read as proving a per-week floor exists."
+
+[[exception]]
+path = "tests/test_planner_climbing_floor.py"
+kind = "docstring"
+anchor = "tests.test_planner_climbing_floor.test_a_BOULDERER_GETS_AEROBIC_WORK_in_the_power_endurance_block"
+limit = 7
+reason = "Ruling 23's cause is not an emphasis-order problem and a reader will assume it is; and the dose arm has to say out loud that it reads only a boulderer's rows, or it will be mistaken for the aspect-wide RPE ceiling that lives in another file."
+
+[[exception]]
+path = "tests/test_planner_climbing_floor.py"
+kind = "hash_run"
+anchor = "what each block is for as ruling 30 states it restated independently of"
+limit = 6
+reason = "The independent restatement is not a formality here and the run carries the proof: reading open_climbing_fill(phase)[0] instead left the arm GREEN when the filler order was reversed, because the test's idea of leading reversed with it."
+
+[[exception]]
+path = "server/domain/exercises.py"
+kind = "hash_run"
+anchor = "f18 a declared divergence ruling"
+limit = 10
+reason = "A divergence no guard can carry: the row's dose says An Cap, its name says Aero Pow, and the reason it stays filed under power is a structural hole in DELIBERATELY_UNPRESCRIBED that neither file states on its own. The second half says the rest-shortening progression is a CONSEQUENCE of that kept filing, so nobody re-files it as a separate divergence."
+
+[[exception]]
+path = "server/domain/exercises.py"
+kind = "hash_run"
+anchor = "f25 a declared divergence ruling"
+limit = 5
+reason = "The operative-rest reading and the phase arithmetic are both load-bearing: without them the next reader re-files this row to anaerobic_capacity and empties the no-equipment taper week that is the only reason it exists."
+
+[[exception]]
+path = "server/domain/exercises.py"
+kind = "hash_run"
+anchor = "a declared divergence ruling 45"
+limit = 5
+reason = "The one endurance row under §7's work floor, and what keeps it there is a named guard in another file - a reader who raises it to 600 s would otherwise learn why only by breaking test_phase_guide.py."
+
+[[exception]]
+path = "server/domain/planner/climbing.py"
+kind = "hash_run"
+anchor = "f14 a declared divergence and not"
+limit = 8
+reason = "The whole divergence in one place: three measured shares, the source band they miss, the length-fill cause that accounts for most of it, and why no floor guard is owed. Without it a 4-6% strength share reads as an authoring oversight and gets floored by the next reader."
+
+[[exception]]
+path = "server/domain/vocabulary.py"
+kind = "hash_run"
+anchor = "describes what this generator prescribes"
+limit = 6
+reason = "Issue #100 was closed on the ground that this field is not dead payload, and nothing executable can state that: the field's only reader is client copy, so the reason has to sit where a deletion would be proposed."
+
+[[exception]]
+path = "tests/test_exercise_library.py"
+kind = "docstring"
+anchor = "tests.test_exercise_library.test_no_ENDURANCE_row_is_DOSED_OVER_THE_AEROBIC_CAPACITY_RPE_CEILING"
+limit = 4
+reason = "Names F19 as the defect and says why the ceiling is aspect-wide rather than per-cell, which is what stops it being read as a duplicate of the boulder-reachability guard's dose arm."
+
+[[exception]]
+path = "tests/test_exercise_library.py"
+kind = "docstring"
+anchor = "tests.test_exercise_library.test_every_DOSED_row_sits_inside_its_SECTION_7_REST_TO_WORK_BAND"
+limit = 16
+reason = "The guard's whole scope, which is the part a reader cannot recompute: the counts that make up the checkable set, the aspect-keyed reading that was measured and refused at 10 of 10 false positives, and the work_seconds blind spot that biases what is readable toward the rows that are wrong."
+
+[[exception]]
+path = "tests/test_exercise_library.py"
+kind = "docstring"
+anchor = "tests.test_exercise_library.test_the_ASPECT_COPYS_REST_TO_WORK_FLOOR_is_TRUE_OF_EVERY_DOSED_ROW"
+limit = 14
+reason = "The denominator and the granularity, which a reader cannot recompute: 8 readable rows of 21, why the other 13 are unreadable or exempt, and why the sentence names a FLOOR instead of section 7's 1-2x band, which one filed row breaks at 3-4x under a ruling that keeps it there."
+
+[[exception]]
+path = "tests/test_exercise_library.py"
+kind = "docstring"
+anchor = "tests.test_exercise_library.test_the_SECTION_7_SHAPE_REGISTER_names_every_shape_the_library_actually_HAS"
+limit = 4
+reason = "Both directions and what each one catches: an unnamed shape is a row no band reads, which is invisible from every other test, and a named shape the library has dropped is a stale exemption."
+
+[[exception]]
+path = "server/domain/planner/generate.py"
+kind = "hash_run"
+anchor = "spread s two terms swapped which is the whole of issue"
+limit = 10
+reason = "Records the measured negative that stops the cheaper fix being re-attempted: applying the swap at _wall_picks alone leaves the same aliasing in the supplementary and top-up passes, and that measured two further guards red."
+
+[[exception]]
+path = "server/domain/planner/progression.py"
+kind = "hash_run"
+anchor = "declared neither source gives a figure dylan says progress the weight"
+limit = 5
+reason = "The step size is the app's own and NEITHER source gives a figure, so the attribution has to sit beside the constants rather than in a plan file the next reader will not open."
+
+[[exception]]
+path = "tests/test_planner_climbing_floor.py"
+kind = "hash_run"
+anchor = "ruling 46 s rounds rule restated here for"
+limit = 7
+reason = "Records what this register replaced: a ceiling = authored pin that guarded AGAINST the progression both sources require, and the reason it is keyed on the pair rather than on the aspect."
+
+[[exception]]
+path = "tests/test_planner_progression.py"
+kind = "hash_run"
+anchor = "anti vacuity floors 90 of what the sweep measured"
+limit = 13
+reason = "Carries the measured cell counts the floors are 90% of, so a future reader can tell a drifted sweep from a rule that has stopped firing altogether. Names both re-bases: ruling 41's wall row cut the shorter-rest arm from 57 pairs to 15, and ruling 50 answered that by widening the sampling unit rather than by lowering a floor, which is the one thing a reader must not undo here."
+
+[[exception]]
+path = "server/domain/planner/climbing.py"
+kind = "hash_run"
+anchor = "real hangboard sessions a loading week owes by band"
+limit = 12
+reason = "Guard 5: the strict beginner < intermediate < advanced ordering owes a written reason now that the zero is Kilian's decision rather than a mis-attribution, and its consequence - the strict < forbids any future beginner habituation protocol from raising this floor - is exactly what a reader who does not know HABITUATION_PROTOCOLS exists would try next."
+[[exception]]
+path = "server/domain/planner/climbing.py"
+kind = "hash_run"
+anchor = "what the sources do scale by level hangboard content"
+limit = 5
+reason = "Names the one thing both sources agree on that the frequency table diverges from, and why the rule is held as a protocol set rather than an exercise key: BASE authors a geared and a gearless HOLD row, so the rule survives a climber who owns neither."
+[[exception]]
+path = "server/domain/planner/climbing.py"
+kind = "docstring"
+anchor = "server.domain.planner.climbing.content_protocols_for"
+limit = 9
+reason = "Distinguishes this filter from the finger FLOOR above, which is the confusion that made widening FINGER_PROTOCOLS look like the fix for #118, and carries the measurement that settled it: 115 of 115 beginner BASE finger blocks were max hangs or repeaters."
+[[exception]]
+path = "server/domain/planner/generate.py"
+kind = "hash_run"
+anchor = "ruling 35 the band scales what an aspect is trained with"
+limit = 3
+reason = "Says why the level rule is a FILTER and not a rank: _pick takes the longest candidate whenever the session is short of its window floor, so a rank is invisible on that branch and would have shipped inert."
+[[exception]]
+path = "tests/test_planner_climbing_floor.py"
+kind = "hash_run"
+anchor = "real max hang repeater sessions a loading week owes per band"
+limit = 11
+reason = "Guard 5's second end. The mis-attribution lived in two places and so does its replacement, because this file restates the table independently; the strictness reason and its consequence have to read the same at both ends or the next reader repairs one of them."
+[[exception]]
+path = "tests/test_planner_climbing_floor.py"
+kind = "hash_run"
+anchor = "profile sessions whose base weeks never draw habituation row"
+limit = 7
+reason = "Carries the mechanism behind every registered pair (a BASE week's finger slot is fifth in the emphasis and the beginner band spends 85-90% of the week on a wall) and the measurement that the grade gap is NOT a dimension of it, which is the half of #118 that used to read zero."
+[[exception]]
+path = "tests/test_planner_climbing_floor.py"
+kind = "docstring"
+anchor = "tests.test_planner_climbing_floor.test_a_BEGINNERS_BASE_WEEKS_HABITUATE_the_fingers_and_never_load_them"
+limit = 8
+reason = "Says why the guard reads per LEVEL - the seven-profile union in test_planner_library_reach.py was green while this shipped broken - and records the before measurement, 115 of 115 BASE finger blocks loaded and the authored habituation row in none of 60 plans."
+[[exception]]
+path = "tests/test_planner_climbing_floor.py"
+kind = "docstring"
+anchor = "tests.test_planner_climbing_floor.test_the_HABITUATION_RULE_IS_THE_BEGINNER_BANDS_ALONE"
+limit = 8
+reason = "Records why the arm samples 5 and 7 sessions only: at 2 for every band and at 3 for the advanced one a BASE week reaches no finger slot at all, 30 of 80 plans, which is slot scarcity and not content and would read as a weakened arm otherwise."
+[[exception]]
+path = "server/domain/exercises.py"
+kind = "hash_run"
+anchor = "ruling 41 the on wall endurance row strength and power had no candidate for"
+limit = 8
+reason = "Ruling 41's whole basis at the row a future reader meets it: every other endurance row those two phases prescribe is OFF the wall, which is why endurance was absent from wall_led_aspects() there, and why 100% of the weeks left with An Cap and no aerobic work were 2-session weeks whose off-wall allowance cannot afford a 1200 s row."
+[[exception]]
+path = "server/domain/exercises.py"
+kind = "hash_run"
+anchor = "600 s is 7 s aero cap work floor exactly and deliberately not a second more"
+limit = 7
+reason = "The dose decision and its counterfactual. 900 s closes the same 124 weeks and costs 4050 more endurance minutes in strength out of power and technique, so the floor is the answer; ruling 45 and ruling 30 are the two edges the number sits between and both have to be readable here."
+[[exception]]
+path = "tests/test_planner_progression.py"
+kind = "hash_run"
+anchor = "pools of exactly one exercise which no index can move week to week"
+limit = 5
+reason = "Says which four pools the 2 to 6 re-base is - strength and power endurance, both disciplines - so a future second on-wall endurance row in either phase reads as the decision it is instead of as a register drifting back down."
+[[exception]]
+path = "server/domain/planner/selection.py"
+kind = "hash_run"
+anchor = "turns a wall led aspect gets in wall aspect turns capped at one more than a session s"
+limit = 4
+reason = "F11's prohibition at the constant itself: seven readings were measured to lift this cap and every one turns a shipped ruling's guard red, so the next reader must be sent to the register before touching it."
+[[exception]]
+path = "server/domain/planner/selection.py"
+kind = "docstring"
+anchor = "server.domain.planner.selection.aspect_rank"
+limit = 4
+reason = "Names the ONE definition of rank that both of F11's surfaces read, which is the whole of ruling 38's 'a fix to one surface only is not a fix' - two independent code paths computing their own rank is how the second surface arrived defective after the finding was filed."
+[[exception]]
+path = "server/domain/planner/selection.py"
+kind = "docstring"
+anchor = "server.domain.planner.selection._rank_weighted_ring"
+limit = 3
+reason = "The largest-quotient interleave is the mechanism that turns a priority ORDER into a proportion, and the reason it exists (a run of four endurance turns hides every aspect behind it) is not inferable from the loop."
+[[exception]]
+path = "server/domain/planner/selection.py"
+kind = "docstring"
+anchor = "server.domain.planner.selection.wall_aspect_turns"
+limit = 36
+reason = "F11 / ruling 38's whole measured basis and the register of seven refused readings with the ruling each one breaks. This is a PROHIBITION, not a reason - the next agent asked to lift the cap has to be able to read what lifting it costs, including the offset fact (a 2-session week visits 6 of a 16-long ring's rotations) that no ruling had measured."
+[[exception]]
+path = "tests/test_planner_climbing_floor.py"
+kind = "hash_run"
+anchor = "ruling 33 s an cap aero cap co occurrence claim which ruling 41 s easy climbing flush"
+limit = 11
+reason = "The guard's SCOPE and why: STRENGTH and POWER only, with POWER_ENDURANCE out by ruling 24 and CLAUDE.md's re-filing prohibition, and BASE and DELOAD out because they measured 0%. A guard whose scope reached the power-endurance weeks would be a re-file of a declined finding however it was worded."
+[[exception]]
+path = "tests/test_planner_climbing_floor.py"
+kind = "hash_run"
+anchor = "from this many sessions a week up every such week carries aerobic work"
+limit = 3
+reason = "Names the boundary and its cause (slot scarcity in a two or three day week) rather than leaving 5 as a magic number in two assertions."
+[[exception]]
+path = "tests/test_planner_climbing_floor.py"
+kind = "hash_run"
+anchor = "the residual per sessions phase measured over 6 climbers x 3 weakness values with ruling"
+limit = 5
+reason = "The before figures the register is measured against (132/216 strength and 165/213 power weeks at EVERY session count) and the statement that it is exact in both directions, which is what stops it becoming a tolerance."
+[[exception]]
+path = "tests/test_planner_climbing_floor.py"
+kind = "docstring"
+anchor = "tests.test_planner_climbing_floor._weeks_with_anaerobic_but_no_aerobic"
+limit = 6
+reason = "Records why the read is per WEEK: ruling 24's amendment measured the same claim per profile true 18 of 18 and green while 12 of those profiles' 72 weeks held none. Granularity is the guard here and a future reader will otherwise simplify it to a per-plan read."
+[[exception]]
+path = "tests/test_planner_climbing_floor.py"
+kind = "docstring"
+anchor = "tests.test_planner_climbing_floor.test_an_ANAEROBIC_CAPACITY_WEEK_ALSO_TRAINS_AEROBIC_CAPACITY_from_five_sessions"
+limit = 10
+reason = "Rulings 33 and 41 together: the scope, and why the row that makes this green had to be on the WALL - the alternative that forced aerobic work through the supplementary pass cost 56 general_strength blocks against a strength share F14 already declares short."
+[[exception]]
+path = "tests/test_planner_climbing_floor.py"
+kind = "docstring"
+anchor = "tests.test_planner_climbing_floor.test_the_AEROBIC_CO_OCCURRENCE_GAP_BELOW_FIVE_SESSIONS_IS_EXACTLY_THE_REGISTER"
+limit = 3
+reason = "Says that this arm is what stops the claim above being read as one the whole plan makes, which is the difference between a scoped claim and a false one."
+[[exception]]
+path = "tests/test_planner_selection.py"
+kind = "hash_run"
+anchor = "f11 ruling 38 s declared divergence as the numbers that declare it max wall turns caps a"
+limit = 9
+reason = "F11's outcome as a declared divergence, with the pointer to the seven refused readings and the note that ruling 41's row is why two phases are flat and not the three F11 was filed against."
+[[exception]]
+path = "tests/test_planner_selection.py"
+kind = "docstring"
+anchor = "tests.test_planner_selection.test_the_WALL_TURN_CAP_FLATTENS_EXACTLY_THESE_PAIRS_AND_THESE_PHASES"
+limit = 7
+reason = "Says what the arm is FOR - the cap decides which qualities a two or three session week gets at all, because such a week visits six of a sixteen-long ring's rotations - so a future reader does not read it as a style pin."
+[[exception]]
+path = "tests/test_planner_selection.py"
+kind = "docstring"
+anchor = "tests.test_planner_selection.test_BOTH_of_F11s_SURFACES_RANK_BY_THE_SAME_AUTHORED_ORDER"
+limit = 14
+reason = "Ruling 38's 'a fix to one surface only is not a fix', the independent-restatement reason (a test that asks the code what its own ordering is agrees with a reversed one), and the measurement refusing a rank WEIGHT on the filler surface. All three are what tell this arm from a tautology."
+
+[[exception]]
+path = "server/domain/exercises.py"
+kind = "hash_run"
+anchor = "the app s own conversion not a sourced figure ruling 50"
+limit = 7
+reason = "Ruling 50's declared divergence, at the row it describes: §5.4 gives this circuit no seconds at all, so the 90 s is the app converting the row's own move count at a rate borrowed from two OTHER attributes. Without it the dose reads as sourced, and the 25 s it replaces - the move count leaked into a seconds field - reads as a typo rather than as the class of defect F26 was."
+
+[[exception]]
+path = "tests/test_planner_progression.py"
+kind = "docstring"
+anchor = "tests.test_planner_progression.test_a_DRAWN_CELL_AFTER_WEEK_ONE_LEFT_ITS_AUTHORED_DOSE_BEHIND"
+limit = 7
+reason = "Why the sampling unit is a drawn CELL and not a week-PAIR, which is the whole of ruling 50's guard half: _pool_index rotates the pool by week, so a pair needs the same row drawn twice in one block and broken_circuit_redpoint made 0 pairs from 136 drawn blocks. A reader who does not know that deletes this arm as a duplicate of the pair arm beside it."

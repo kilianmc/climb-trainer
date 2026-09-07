@@ -63,7 +63,7 @@ const ANSWERS: Record<Step, Partial<Profile>> = {
   targetGrade: { target_grade_id: 42 },
   // Monday, Wednesday, Friday.
   availability: { sessions_per_week: 3, available_weekdays: 0b0010101 },
-  // All three columns `0006` added, because all three are the step's question. The eight
+  // All three columns `0006` added, because all three are the step's question. The
   // ratings ride along with them and are deliberately NOT part of the test — since #54 the
   // sliders are optional detail behind a disclosure, so a row written from an untouched
   // default would credit a step nobody answered.
@@ -123,9 +123,9 @@ describe('an untouched profile', () => {
 
   it('needs ALL THREE of the aspects step, and never credits it off ratings', () => {
     // ⚠️ The regression #54 could reintroduce most easily. Until `0006` this step was
-    // "at least one `aspect_ratings` row", which was sound while eight visible sliders plus
+    // "at least one `aspect_ratings` row", which was sound while visible sliders plus
     // a deliberate Continue click WERE the question. They are not any more: they sit behind
-    // a disclosure, so eight rows written from untouched defaults would credit a step the
+    // a disclosure, so rows written from untouched defaults would credit a step the
     // user never answered. The three columns are the question now.
     const ratingsOnly: Profile = {
       ...EMPTY,

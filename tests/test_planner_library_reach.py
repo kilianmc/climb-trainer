@@ -1,11 +1,11 @@
 """⚠️ GUARD. Every exercise in the library is reachable by some profile, and one plan is varied.
 
 DB-free. Nothing in the gate could see an exercise no plan can prescribe: 762 tests passed while
-six of 85 were structurally unreachable — three wall `core_tension` drills that fell between the
-climbing pass's on-the-wall filter and the supplementary pass's off-the-wall one, and three
-off-the-wall `power` exercises whose aspect the climbing pass had already spent. This is the
-"compute the invariant from the data" shape (PR #63: 20 exercises in the wrong tuple, ruff, mypy
-and 266 tests blind), so reach is MEASURED off `generate()` rather than reasoned about.
+six of the then-85 were structurally unreachable — three wall `core_tension` drills that fell
+between the climbing pass's on-the-wall filter and the supplementary pass's off-the-wall one,
+and three off-the-wall `power` exercises whose aspect the climbing pass had already spent. This
+is the "compute the invariant from the data" shape (PR #63: 20 exercises in the wrong tuple,
+ruff, mypy and 266 tests blind), so reach is MEASURED off `generate()` rather than reasoned.
 
 `_ACCEPTABLY_UNREACHABLE` is the register, asserted in BOTH directions on the idiom of
 `DELIBERATELY_UNPRESCRIBED` and `CELLS_WITH_NO_GEARLESS_OPTION`: an orphan not listed is a
@@ -30,12 +30,51 @@ _ALL_EQUIPMENT = tuple(sorted(spec.key for spec in EQUIPMENT))
 # with a reason a reviewer can check; a row added to make this test pass is the failure it
 # exists to catch. `origin/dev` before PR A had three (`density_hangs`, `onsight_volume_on_rope`,
 # `system_board_repeats`), all of which are reachable now.
-_ACCEPTABLY_UNREACHABLE: dict[str, str] = {}
+# ⚠️ "No profile has the equipment" is never one of those reasons: `_PROFILES` hands every plan
+# the FULL vocabulary, so an orphan here is always a rotation or a sampling gap, never a purchase.
+_ACCEPTABLY_UNREACHABLE: dict[str, str] = {
+    "campus_board_bumps": (
+        "Authored for the POWER block, which ruling 51 dropped. Its one surviving row is "
+        "PERFORMANCE and no week of the new plan draws it. Shown: put a POWER block anywhere "
+        "in the plan and the row is prescribed again."
+    ),
+    "loaded_jump_squats": (
+        "Rows in STRENGTH and POWER only; ruling 51 dropped POWER and the STRENGTH pool "
+        "reaches this off-wall power row at no week of the block. Shown: restoring a POWER "
+        "block prescribes it again."
+    ),
+    "weighted_pull_ups": (
+        "Rows in STRENGTH, POWER and TAPER; ruling 51 dropped POWER and neither surviving row "
+        "is drawn at any week. Shown: restoring a POWER block prescribes it again."
+    ),
+    "weighted_hanging_knee_raises": (
+        "Rows in STRENGTH and POWER only, and `core_tension` is a SUPPORT_ASPECTS rotation "
+        "that never reaches it in the strength block. Shown: restoring a POWER block "
+        "prescribes it again."
+    ),
+    "open_hand_drag_hangs": (
+        "A WEEK-POSITION orphan, not a phase one: `_spread` draws this hangboard row in "
+        "STRENGTH weeks 10-11 and 17-18 and never in weeks 5-7, which is the single strength "
+        "block a sixteen-week plan has. It was reachable only because these profiles used to "
+        "be 28-32-week plans carrying a SECOND strength block at weeks 17-19. Shown: slide "
+        "the strength block to weeks 9-11 or 17-19 and six or seven blocks of it appear."
+    ),
+    "auto_belay_interval_laps": (
+        "The other WEEK-POSITION orphan, and NOT a power-block casualty. Its only row is "
+        "POWER_ENDURANCE, and it is drawn when that block sits at weeks 5-7, 13-15 or 17-19 "
+        "and at none of weeks 9-11, which is where ruling 51 puts it. Shown: slide the "
+        "power-endurance block to any other slot and the row is prescribed again."
+    ),
+}
 
-# Both disciplines x all three bands, at the largest grade gap so every phase appears. Measured:
-# these six plans between them reach all 85 exercises in ~0.2 s, so the guard is cheap enough to
-# sit in the local gate. `sessions_per_week` is varied because the band's block budget is what
-# decides how much of a pool the climbing pass ever draws on.
+# Both disciplines x all three bands, with `sessions_per_week` varied because the band's block
+# budget is what decides how much of a pool the climbing pass ever draws on. These seven plans
+# between them reach 100 of 106 exercises in ~0.3 s, so the guard sits in the local gate.
+# ⚠️ THE TARGET GRADES NO LONGER VARY THE LENGTH (ruling 49), so the max-gap targets are inert
+# here and the last row is no longer a short plan. A candidate pool is indexed by `_spread`,
+# which counts WEEKS, and two rows are now drawn only at week numbers no plan has - see
+# `_ACCEPTABLY_UNREACHABLE`. ⚠️ Do NOT restore a length dimension by hand-lengthening a
+# profile: `mesocycle_spans()` is the one source of the shape.
 _PROFILES: tuple[tuple[Discipline, GradeSystemKey, str, str, int], ...] = (
     (Discipline.SPORT, GradeSystemKey.FRENCH, "6a", "8c", 3),
     (Discipline.SPORT, GradeSystemKey.FRENCH, "6c", "8c", 5),
@@ -43,15 +82,27 @@ _PROFILES: tuple[tuple[Discipline, GradeSystemKey, str, str, int], ...] = (
     (Discipline.BOULDER, GradeSystemKey.FONT, "6A", "8B+", 3),
     (Discipline.BOULDER, GradeSystemKey.FONT, "6C", "8B+", 5),
     (Discipline.BOULDER, GradeSystemKey.FONT, "7C", "8B+", 7),
+    (Discipline.SPORT, GradeSystemKey.FRENCH, "6a", "6b+", 5),
 )
 
 # Kilian's requirement, and the floor is a SHARE of what the discipline can see rather than a
-# count: 4 of 85 exercises are boulder-only and 13 rope-only, so a sport plan tops out at 81 and
-# a boulder plan at 72, and a count would ask the two for different things. Measured today:
-# beginner 59/81 and 51/72 (73%, 71%), intermediate 76/81 and 68/72 (94%), advanced 81/81 and
-# 69/72 (100%, 96%). Beginner is lowest by arithmetic, not by defect — the band puts 85-90% of
-# its minutes on a wall, so there is little room left for the off-the-wall half of the library.
-_DISTINCT_SHARE_FLOOR_PCT = 68
+# count: 4 of 106 exercises are boulder-only and 13 rope-only, so a sport plan tops out at 102
+# and a boulder plan at 93, and a count would ask the two for different things. ⚠️ RE-MEASURED
+# at ruling 49's sixteen weeks: beginner 67.6% and 65.6%, intermediate 83.3% and 82.8%,
+# advanced 85.3% and 86.0%, the 5-session beginner 78.4%. Beginner is lowest by arithmetic, not
+# by defect — the band puts 85-90% of a loading week's minutes on a wall.
+#
+# ⚠️ **RE-BASELINED 68 → 63** (Kilian, 2026-09-04), and the old number was not a stricter version
+# of this one: it was measuring a DEFECT. Four long accessories (`one_arm_lockoff_negatives`,
+# `shoulder_band_arcs`, `steep_wall_tension_drill`, `toes_to_bar`) were reachable ONLY through a
+# session running UNDER its type's window floor, where `_pick` took the longest candidate that
+# fit instead of its plain rotation; round 3's climbing top-up closed that path. Widening
+# `_length_pick`'s pool is not the way back and its docstring holds the numbers.
+# ⚠️ 63 STANDS and is NOT re-based here — green on 7 of 7 under ruling 51's order. ⚠️ But its
+# SLACK is gone: the lowest profile fell 79.2% -> 65.6% (61 of 93) against a floor needing 59,
+# so TWO exercises could go undrawn now where fifteen could before. Moving it is KILIAN'S call.
+# Shown to fail: `_pick` as `pool[0]` draws 58/101 = 57.4%.
+_DISTINCT_SHARE_FLOOR_PCT = 63
 
 
 def _plan(

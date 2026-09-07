@@ -103,11 +103,13 @@ describe('one row per week, seven slots per row', () => {
 });
 
 describe('the aspect codes', () => {
-  it('maps all eight seeded aspects to a 1-to-3-character code, both directions', () => {
+  it('maps every seeded aspect to a 1-to-3-character code, both directions', () => {
     // Written out independently of `ASPECT_CODES`, so the map is checked rather than echoed.
     const expected = {
       finger_strength: 'FS',
+      general_strength: 'GS',
       power: 'P',
+      anaerobic_capacity: 'AC',
       power_endurance: 'PE',
       endurance: 'E',
       technique: 'T',
@@ -116,6 +118,7 @@ describe('the aspect codes', () => {
       mobility: 'M',
     };
     expect(ASPECT_KEYS).toEqual(Object.keys(expected));
+    expect(new Set(Object.values(expected)).size).toBe(Object.keys(expected).length);
     for (const [key, code] of Object.entries(expected)) {
       expect(aspectCode(key)).toBe(code);
       expect(code.length).toBeLessThanOrEqual(3);
@@ -128,7 +131,7 @@ describe('the aspect codes', () => {
   });
 
   it('gives an aspect with no code yet its initials rather than nothing', () => {
-    // ⚠️ There is no general `strength` aspect, so a strength day reads `P` today — issue #98.
+    // An aspect seeded after this table renders short rather than unrenderable.
     expect(aspectCode('lock_off_strength')).toBe('LOS');
     expect(aspectOfCode('LOS')).toBeNull();
   });

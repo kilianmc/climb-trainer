@@ -363,6 +363,11 @@ def test_a_MISSING_EXERCISE_KEY_raises_rather_than_inserting_NULL_or_skipping_th
     prescribed_key = preview.json()["mesocycles"][0]["microcycles"][0]["sessions"][0]["blocks"][0][
         "exercise_key"
     ]
+    # Both self-FKs are NO ACTION deliberately (CLAUDE.md), so the row cannot go while another
+    # exercise points at it. Cleared first, not dodged: the delete is still the prescribed row.
+    prescribed_id = db_session.scalar(select(Exercise.id).where(Exercise.key == prescribed_key))
+    for column in (Exercise.progression_of_id, Exercise.regression_of_id):
+        db_session.execute(update(Exercise).where(column == prescribed_id).values({column: None}))
     db_session.execute(delete(Exercise).where(Exercise.key == prescribed_key))
     db_session.flush()
 

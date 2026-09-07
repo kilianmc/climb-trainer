@@ -36,10 +36,13 @@ import {
  * would credit a step nobody looked at.
  */
 
-/** The eight seeded climbing aspects, so "sends the eight ratings" means eight. */
+/** The seeded climbing aspects, so "sends the ratings" means all of them. Written out rather
+    than imported, so the fixture mirrors the vocabulary instead of echoing it. */
 const ASPECT_KEYS = [
   'finger_strength',
+  'general_strength',
   'power',
+  'anaerobic_capacity',
   'power_endurance',
   'endurance',
   'technique',
@@ -291,8 +294,8 @@ describe('the availability step, whose default answer is "any day"', () => {
   });
 });
 
-describe('the aspects step, which is three picks and not eight sliders', () => {
-  it('sends all three answers plus the eight ratings, in one body', () => {
+describe('the aspects step, which is three picks and not a row of sliders', () => {
+  it('sends all three answers plus every rating, in one body', () => {
     // The scores ride along because picking a strength or a weakness writes that aspect's
     // score too — the two picks have their own columns since `0006`, and the ratings are the
     // optional detail behind the disclosure.
@@ -308,16 +311,16 @@ describe('the aspects step, which is three picks and not eight sliders', () => {
   });
 
   it('sends NOTHING while any one of the three is missing', () => {
-    // ⚠️ Not a partial body. Sending the ratings alone would write eight rows for a step
+    // ⚠️ Not a partial body. Sending the ratings alone would write a row per aspect for a step
     // that has no answer, which is exactly what `completion.ts` stopped crediting.
     expect(patchFor('aspects', { ...ANSWERED, currentGradeId: null })).toEqual({});
     expect(patchFor('aspects', { ...ANSWERED, strengthAspectId: null })).toEqual({});
     expect(patchFor('aspects', { ...ANSWERED, weaknessAspectId: null })).toEqual({});
   });
 
-  it('is NOT submittable on eight untouched 3s', () => {
+  it('is NOT submittable on untouched 3s', () => {
     // ⚠️ The behaviour change #54 made, and the one a refactor is most likely to undo: this
-    // step used to be submittable the moment it rendered, because eight visible sliders plus
+    // step used to be submittable the moment it rendered, because visible sliders plus
     // a deliberate Continue click were a real answer. They are behind a disclosure now, so
     // they are not.
     const untouched = draftFrom(EMPTY_PROFILE, VOCABULARY);
@@ -444,7 +447,7 @@ describe('accountPatch, which belongs to no step', () => {
 describe('patchForAll, the editor single Save', () => {
   it('sends NOTHING for no steps — the honesty gate', () => {
     // ⚠️ The assertion that stops the editor's Save from stamping a step the user never
-    // touched. Folding in every step would write `injuries: []` and eight default ratings
+    // touched. Folding in every step would write `injuries: []` and a default rating per aspect
     // for someone who opened the editor to change their target grade, and the bar would
     // credit two steps they never saw. **The bar may only report answers a user gave.**
     expect(patchForAll(ANSWERED, [])).toEqual({});
