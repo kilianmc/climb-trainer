@@ -708,10 +708,10 @@ def _fill_session_length(
     sized to the gap and never shorter than `LENGTH_FILL_MINUTES`.
 
     Runs LAST, after the hangboard floor and every supplementary round, so it can never take a
-    slot a floor is owed — the failure that returned ruling 15's finger loss when the length was
-    chased earlier. One block, which is why neither `MAX_BLOCKS_PER_SESSION` nor the library's
-    doses had to rise to reach the target. A session with no blocks is a Recovery day and stays
-    one, and a session already at its length is left alone rather than padded.
+    slot a floor is owed — chasing the length earlier returned ruling 15's accepted finger loss,
+    which `_ACCEPTED_FINGER_GAPS` in `tests/test_planner_climbing_floor.py` states. One block, so
+    neither `MAX_BLOCKS_PER_SESSION` nor the library's doses had to rise. A session with no
+    blocks is a Recovery day and stays one, and one already at its length is never padded.
     """
     for draft in drafts:
         gap = _session_floor(draft, phase) - draft.seconds

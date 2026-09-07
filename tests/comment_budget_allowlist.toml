@@ -8561,7 +8561,7 @@ path = "tests/test_planner_climbing_floor.py"
 kind = "hash_run"
 anchor = "empty and that is a measurement ruling 27 s length fill repaired every one of the seven rows"
 limit = 8
-reason = "An empty register with no history reads as a register nobody filled in. The seven repaired rows and their accepted losses are listed so a regression is recognisable, and the archive that holds their mechanisms is named."
+reason = "An empty register with no history reads as a register nobody filled in. The seven repaired rows and their accepted losses are listed so a regression is recognisable; the mechanisms each was accepted on went with the rows."
 
 [[exception]]
 path = "tests/test_sessions_completion.py"

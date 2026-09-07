@@ -3,10 +3,10 @@ DB-free. CLAUDE.md's hard rule binds the plan generator by name, and this is the
 gate that can see a generated *sentence*: `tests/test_schema_no_weight_targets.py` guards
 identifiers and is structurally blind to prose, which is where a recommendation would live.
 
-The second half is the `String(80)` widths on `plan.name` and `planned_session.title`. The
-blueprint deliberately does not check them (a column width is not a CHECK), so a string that fits
-the preview and not the column would first appear in PR #11b's bulk insert. Shown to fail before
-being trusted; captures in `.claude/pr-11a-state.md`.
+The second half is the column widths, read off the model: `plan.name`, `planned_session.title`
+and `plan.generator_version`. The blueprint deliberately does not check them (a column width is
+not a CHECK), so a string that fits the preview and not the column would first appear in #11b's
+bulk insert. Shown to fail before being trusted.
 """
 
 import re
@@ -20,7 +20,7 @@ from sqlalchemy.sql.elements import KeyedColumnElement
 from server.domain.exercises import EXERCISES
 from server.domain.grades import Discipline, GradeSystemKey, ordinal_of
 from server.domain.planner.blueprint import PlanBlueprint
-from server.domain.planner.contract import REFUSAL_MESSAGES, PlannerInput
+from server.domain.planner.contract import GENERATOR_VERSION, REFUSAL_MESSAGES, PlannerInput
 from server.domain.planner.generate import TITLE_MAX_CHARS, generate
 from server.domain.vocabulary import INJURY_AREAS
 from server.models import Plan, PlannedSession
@@ -178,6 +178,12 @@ def test_the_generators_title_bound_IS_the_columns_width() -> None:
     by the column appeared on one it does not. `_title` is bounded by `TITLE_MAX_CHARS`, so
     this pins that constant to the column rather than sampling for the overflow."""
     assert TITLE_MAX_CHARS == _width_of(PlannedSession.__table__.c.title)
+
+
+def test_the_generator_version_fits_its_column() -> None:
+    """`GENERATOR_VERSION` is inserted into `plan.generator_version` verbatim, and no plan tree
+    carries it, so the sampling arm above cannot see it."""
+    assert len(GENERATOR_VERSION) <= _width_of(Plan.__table__.c.generator_version)
 
 
 def _width_of(column: KeyedColumnElement[Any]) -> int:

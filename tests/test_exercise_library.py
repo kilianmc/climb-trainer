@@ -24,6 +24,7 @@ from collections import Counter
 from dataclasses import dataclass
 
 import pytest
+from sqlalchemy import Enum, String
 
 from server.domain.exercises import (
     CELLS_WITH_NO_GEARLESS_OPTION,
@@ -37,13 +38,22 @@ from server.domain.exercises import (
 from server.domain.planner.generate import _spec_seconds
 from server.domain.planner.selection import ASPECT_NAMES, candidates, on_the_wall
 from server.domain.vocabulary import (
+    ASCENT_TAGS,
     CLIMBING_ASPECTS,
     EQUIPMENT,
     INJURY_AREAS,
     Phase,
     ProtocolKind,
+    ReferenceSpec,
 )
-from server.models import SUBSTITUTION_HINT_MAX
+from server.models import (
+    AscentTag,
+    Base,
+    ClimbingAspect,
+    Equipment,
+    Exercise,
+    InjuryArea,
+)
 
 # ⚠️ PUBLIC because `tests/test_planner_gearless.py` imports it: a shortfall message is the
 # other place an improvised-edge suggestion could appear, and the two must be checked by the
@@ -690,6 +700,10 @@ POWER_ENDURANCE_COPY = (
     "Making hard moves while already pumped — around thirty of them, on rests at "
     "least as long as the work."
 )
+
+# "around thirty of them" is PINNED, not proven: `ExerciseSpec` carries no move count, so nothing
+# here can read the number. The pin makes a reword deliberate; it does not make the clause true.
+
 # "on rests at least as long as the work": the FLOOR the sentence puts under rest, as a multiple
 # of the work. Two arms read it — one per row, one on the tightest row the aspect ships.
 COPY_CLAIMS_REST_TO_WORK_FLOOR = 1.0
@@ -782,19 +796,51 @@ def test_the_ON_WALL_POWER_SUPERLATIVE_in_the_authored_copy_still_holds() -> Non
                 )
 
 
+_PersistedRow = tuple[tuple[ReferenceSpec | ExerciseSpec, ...], type[Base], frozenset[str]]
+
+# Every authored tuple the seed PERSISTS, the model whose columns bound it, and the fields that
+# land in one. `PHASE_GUIDE` is absent because nothing seeds it: it lands in no column at all.
+
+# ⚠️ `Enum` SUBCLASSES `String` and carries a `length`, so the native enum columns are excluded
+# below: their length is the vocabulary's own and a bad value there is not a too-long string.
+PERSISTED_STRINGS: tuple[_PersistedRow, ...] = (
+    (CLIMBING_ASPECTS, ClimbingAspect, frozenset({"key", "name", "description"})),
+    (EQUIPMENT, Equipment, frozenset({"key", "name", "description"})),
+    (INJURY_AREAS, InjuryArea, frozenset({"key", "name", "description"})),
+    (ASCENT_TAGS, AscentTag, frozenset({"key", "name", "description", "category"})),
+    (EXERCISES, Exercise, frozenset({"key", "name", "instructions", "substitution_hint"})),
+)
+
+
 def test_authored_strings_fit_their_columns() -> None:
     """A too-long string is an `IntegrityError` at seed time, i.e. in production.
 
-    The columns are `exercise.name` String(96), `instructions` String(2000) and
-    `substitution_hint` String(SUBSTITUTION_HINT_MAX).
+    Every limit is READ OFF the column. The field sets are compared too: on the columns alone a
+    renamed field matches nothing, and this test would then stay green on zero comparisons.
     """
-    for spec in EXERCISES:
-        assert len(spec.name) <= 96, f"{spec.key}: name is {len(spec.name)} characters"
-        assert len(spec.instructions) <= 2000, f"{spec.key}: instructions too long"
-        if spec.substitution_hint is not None:
-            assert len(spec.substitution_hint) <= SUBSTITUTION_HINT_MAX, (
-                f"{spec.key}: substitution_hint is {len(spec.substitution_hint)} characters"
-            )
+    for specs, model, fields in PERSISTED_STRINGS:
+        limits = {
+            column.name: column.type.length
+            for column in model.__table__.columns
+            if isinstance(column.type, String)
+            and not isinstance(column.type, Enum)
+            and column.type.length is not None
+        }
+        covered = frozenset(field for field in limits if hasattr(specs[0], field))
+        assert covered == fields, (
+            f"{model.__name__} bounds {sorted(covered)} of the fields its specs author, against "
+            f"the {sorted(fields)} recorded beside it. One end of a pair was renamed, and a pair "
+            f"that no longer meets is a length this test stopped checking."
+        )
+        for spec in specs:
+            for field in sorted(covered):
+                value = getattr(spec, field)
+                if value is None:
+                    continue
+                assert len(value) <= limits[field], (
+                    f"{spec.key}: {field} is {len(value)} characters and {model.__name__}."
+                    f"{field} is String({limits[field]}). The seed raises an IntegrityError."
+                )
 
 
 def test_progression_links_name_a_real_exercise() -> None:

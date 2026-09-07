@@ -122,8 +122,8 @@ ASPECT_EMPHASIS: Final[Mapping[Phase, tuple[str, ...]]] = MappingProxyType(
             "antagonist_prehab",
             "mobility",
         ),
-        # Aerobic endurance sits LAST, on one wall turn: at equal turns its far longer exercises
-        # take more minutes than PE's do. Ruling 20 supersedes ruling 13's INDEX and nothing else.
+        # Endurance LAST, one wall turn: its rows are far longer, so equal turns cost more minutes.
+        # Ruling 13 moved it 1→7 so PE wins its own block; ruling 20's 7→8 changes ONLY that index.
         Phase.POWER_ENDURANCE: (
             "power_endurance",
             "technique",

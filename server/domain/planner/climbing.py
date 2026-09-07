@@ -126,14 +126,14 @@ CLIMBING_TARGET_PCT: Final[Mapping[Level, tuple[int, int]]] = MappingProxyType(
     {Level.BEGINNER: (85, 90), Level.INTERMEDIATE: (75, 82), Level.ADVANCED: (50, 62)}
 )
 
-# ⚠️ F14, a DECLARED DIVERGENCE and NOT a fixed defect (ruling 39, measured 2026-09-06 over a
-# 72-plan sweep). `general_strength` + `finger_strength` + `core_tension` take 3.6 / 4.9 / 6.0%
-# of prescribed session minutes by level — 2.8 / 4.0 / 5.1% counting the warm-up — against
-# Dylan's 15-20%, and no level reaches 15% in ANY phase (the highest is advanced `power` at
-# 10.4%). Largely a CONSEQUENCE of ruling 27's length fill, which is 42 / 54 / 65% of those same
-# minutes by level, rather than an authoring omission. **No floor guard, deliberately:** 15% is
-# not landable at that measurement, and a floor red on every profile from the day it lands is a
-# wish rather than a guard.
+# ⚠️ F14, a DECLARED DIVERGENCE and NOT a fixed defect (ruling 39, re-measured 2026-09-07 over the
+# same 72-plan sweep, pooled over every week a plan carries). `general_strength` +
+# `finger_strength` + `core_tension` take 4.6 / 5.4 / 6.1% of prescribed block minutes by level —
+# 3.6 / 4.4 / 5.2% counting the warm-up — against Dylan's 15-20%, and no (level, phase) cell
+# reaches 15% (the highest is advanced `strength` at 8.5%). Largely a CONSEQUENCE of ruling 27's
+# length fill, 44 / 55 / 64% of those same minutes, rather than an authoring omission. **No floor
+# guard, deliberately:** 15% is not landable at that measurement, and a floor red on every profile
+# from the day it lands is a wish rather than a guard.
 
 # Wall blocks a session spends by choice — the lever the target band actually moves, because a
 # session is three blocks and an advanced climber's second one is where supplementary work goes.
