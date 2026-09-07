@@ -6,17 +6,20 @@ for the wrong grade, a send pyramid with a bar in the wrong column, and a "grade
 that quietly generates twelve weeks of the wrong training. None of that shows up as an
 exception, which is exactly why the invariants are asserted rather than inspected.
 
-No database involved: `server.domain.grades` is pure by design.
+No database involved: the ladder is pure Python, and a column's width is model metadata.
 """
 
 import pytest
+from sqlalchemy import Enum, String
 
 from server.domain.grades import (
     GRADE_SYSTEMS,
     GRADES,
     CrossDisciplineError,
     Discipline,
+    GradeSpec,
     GradeSystemKey,
+    GradeSystemSpec,
     NoEquivalentGradeError,
     UnknownGradeError,
     convert,
@@ -25,6 +28,7 @@ from server.domain.grades import (
     ordinal_of,
     systems_for,
 )
+from server.models import Base, Grade, GradeSystem
 
 _SYSTEM_KEYS = tuple(spec.key for spec in GRADE_SYSTEMS)
 
@@ -164,3 +168,39 @@ def test_v_scale_covers_vb_through_v17_with_no_gaps() -> None:
     """The scale users actually pick from in the UI — a missing rung is a missing option."""
     labels = [grade.label for grade in grades_for(GradeSystemKey.V_SCALE)]
     assert labels == ["VB", *[f"V{n}" for n in range(18)]]
+
+
+_PersistedRow = tuple[tuple[GradeSystemSpec | GradeSpec, ...], type[Base], frozenset[str]]
+
+# Every authored tuple the seed PERSISTS, the model whose columns bound it, and the fields
+# landing in one. `discipline` is absent: `Enum` subclasses `String`, carrying its own length.
+PERSISTED_STRINGS: tuple[_PersistedRow, ...] = (
+    (GRADE_SYSTEMS, GradeSystem, frozenset({"key", "name"})),
+    (GRADES, Grade, frozenset({"label"})),
+)
+
+
+def test_authored_strings_fit_their_columns() -> None:
+    """A too-long string is an `IntegrityError` at seed time, i.e. in production. Limits are READ
+    OFF the column; the field sets are compared too, so a rename cannot leave this green."""
+    for specs, model, fields in PERSISTED_STRINGS:
+        limits = {
+            column.name: column.type.length
+            for column in model.__table__.columns
+            if isinstance(column.type, String)
+            and not isinstance(column.type, Enum)
+            and column.type.length is not None
+        }
+        covered = frozenset(field for field in limits if hasattr(specs[0], field))
+        assert covered == fields, (
+            f"{model.__name__} bounds {sorted(covered)} of the fields its specs author, against "
+            f"the {sorted(fields)} recorded beside it. One end of a pair was renamed, and a pair "
+            f"that no longer meets is a length this test stopped checking."
+        )
+        for spec in specs:
+            for field in sorted(covered):
+                value = getattr(spec, field)
+                assert len(value) <= limits[field], (
+                    f"{spec}: {field} is {len(value)} characters and {model.__name__}.{field} is "
+                    f"String({limits[field]}). The seed raises an IntegrityError."
+                )

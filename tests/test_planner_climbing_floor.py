@@ -6,7 +6,7 @@ restated from `server/domain/planner/climbing.py`: the PR #63 lesson was that 20
 the wrong tuple with 266 tests passing, and only recomputing the matrix caught it. The session
 windows are the second half — a fixed-volume protocol must never be padded, because low volume *is*
 the protocol — and WHICH climbing is the third: a phase's authored emphasis has to be where its
-minutes go. Shown to fail before being trusted; captures in `.claude/pr-a-state.md`.
+minutes go. Shown to fail before being trusted.
 """
 
 from collections import Counter
@@ -158,13 +158,13 @@ class _AcceptedFingerGap:
 
 
 # The register, and EMPTY is a MEASUREMENT again: ruling 32 opened the one gate that cost a row.
-# §3.4's ordering repaired both of ruling 15's rows once; ruling 25's session length put the
-# intermediate 2x/week hangboard loss back; ruling 32 had `_fill_finger_strength` read
-# `_block_ceiling` instead of restating three blocks, because that session was losing to block
-# COUNT and not to anything about training. ⚠️ The CLIMBING FLOOR never was involved and must not be
-# "repaired": it refuses 0 of 216 evaluations over 1176 weeks, passes the week that used to fail
-# at 81.5% against its 75% floor, and a rewrite of it measured byte-identical over those weeks.
-# Whether the row is registered or the slot is opened is Kilian's, so neither was done here.
+# §3.4's ordering once repaired BOTH losses ruling 15 ACCEPTED rather than fixed — intermediate
+# 2x/week's third loading-week hangboard session, and 420 s / 120 s of climbing on two boulder
+# profiles at 2→3. Ruling 25's session length put the hangboard one back; ruling 32 had
+# `_fill_finger_strength` read `_block_ceiling` instead of restating three blocks, because that
+# session was losing to block COUNT, not to training. ⚠️ The CLIMBING FLOOR never was involved
+# and must not be "repaired": it refuses 0 of 216 evaluations over 1176 weeks and a rewrite of
+# it measured byte-identical. Registering a row or opening the slot is Kilian's, not done here.
 _ACCEPTED_FINGER_GAPS: tuple[_AcceptedFingerGap, ...] = ()
 
 # Quality first. The fixed-volume protocols are the ones whose adaptation is decided by the
@@ -441,7 +441,6 @@ class _AcceptedInversion:
 # each was accepted at: advanced sport 7c full-vocab gap 3 at 1→2 (500 s) and at 6→7 (120 s),
 # advanced boulder 7C full-vocab gap 3 at 1→2 (490 s) and at 2→3 (700 s), intermediate sport 6c
 # full-vocab gap 3 at 1→2 (184 s), and both intermediate wall-only gap-4 rows at 4→5 (388 s).
-# Their three authored mechanisms are archived verbatim in `~/.claude/plans/ct-item3a-state.md`.
 # Ruling 4 is unchanged and absolute; this register is its exception list and it now has none.
 _ACCEPTED_INVERSIONS: tuple[_AcceptedInversion, ...] = ()
 

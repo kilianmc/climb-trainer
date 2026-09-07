@@ -5,8 +5,7 @@ Retiring one bodyweight exercise can take a phase below the three fillable aspec
 and nothing else in the gate would notice — the generator would keep returning a plan, one block
 thinner, with a shortfall that reads as normal. **Kilian 2026-08-24, closing issue #61: the
 generator GENERATES and names the shortfall** — never a refusal for lack of gear, never a gate.
-This is what makes that promise mechanical. Shown to fail before being trusted; captures in
-`.claude/pr-11a-state.md`.
+This is what makes that promise mechanical. Shown to fail before being trusted.
 """
 
 from datetime import date

@@ -532,9 +532,11 @@ def test_PLAN_GOALs_claim_that_MORE_DAYS_IS_A_LONGER_WEEK() -> None:
     count instead of being divided by it.
 
     ⚠️ The OTHER half of that sentence — that this lands 2–4× above every band Lattice measured,
-    and that it is KILIAN'S choice and not the sources' — is a DECLARATION, stated in the copy on
-    ruling 17's precedent and carrying its numbers in `climbing.py`'s SESSION_MINUTES_TARGET
-    comment. Nothing in the app can measure Lattice's population, so it is not asserted here.
+    and that it is KILIAN'S choice and not the sources' — is a DECLARATION, on the precedent
+    ruling 17 set for its unload floor: a deliberate divergence from the sources is DECLARED in
+    the user-facing copy, which then claims only what the app delivers, because softening it
+    restores a claim nothing checks. Its numbers are in `climbing.py`'s SESSION_MINUTES_TARGET
+    comment, and nothing in the app can measure Lattice's population, so it is not asserted here.
     """
     for _level, discipline, system, grade in _CLIMBERS:
         by_days = [
