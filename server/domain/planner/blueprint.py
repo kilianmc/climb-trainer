@@ -44,7 +44,7 @@ from typing import Final
 from server.domain.grades import Discipline
 from server.domain.vocabulary import ActivityKind, Phase, ProtocolKind
 
-# `ck_plan_week_count_in_range`. The upper bound is why `MAX_BLOCKS` exists at all.
+# `ck_plan_week_count_in_range`, mirrored here because the domain may not import the model.
 MIN_WEEK_COUNT: Final = 1
 MAX_WEEK_COUNT: Final = 52
 
@@ -58,7 +58,6 @@ class NoteKind(enum.StrEnum):
     """
 
     FEWER_SESSIONS_THAN_REQUESTED = "fewer_sessions_than_requested"
-    TARGET_BEYOND_ONE_PLAN = "target_beyond_one_plan"
 
 
 @dataclass(frozen=True, slots=True)

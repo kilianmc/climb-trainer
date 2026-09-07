@@ -173,7 +173,9 @@ def test_the_phase_guide_arrives_whole_and_KEYED_BY_PHASE(vocabulary: dict[str, 
     """The shape, not the prose (`tests/test_phase_guide.py` owns coverage of `Phase`) — and
     pinned HERE because `/api/library` is CDN-cached and the plan payload repeats a phase."""
     rows = vocabulary["phase_guide"]
-    assert [row["phase"] for row in rows] == [member.value for member in Phase]
+    shipped = [guide.phase.value for guide in PHASE_GUIDE]
+    assert [row["phase"] for row in rows] == shipped
+    assert shipped == [member.value for member in Phase if member.value in set(shipped)]
     for row in rows:
         assert set(row) == {"phase", "label", "summary", "how_to_train", "links"}
         assert row["links"]

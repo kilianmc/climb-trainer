@@ -71,11 +71,7 @@ from server.domain.planner.climbing import (
     week_climbing_floor_pct,
 )
 from server.domain.planner.contract import PlannerInput
-from server.domain.planner.periodisation import (
-    beyond_one_plan_note,
-    block_count_for,
-    mesocycle_spans,
-)
+from server.domain.planner.periodisation import mesocycle_spans
 from server.domain.planner.progression import progressed
 from server.domain.planner.schedule import (
     DAYS_PER_WEEK,
@@ -159,10 +155,9 @@ class _Draft:
 
 def generate(planner_input: PlannerInput) -> PlanBlueprint:
     """Build the whole plan. Raises `CannotPlanError` only for an empty weekday mask."""
-    gap = planner_input.grade_gap
-    # ONE read of the block count. `week_count` is the spans' own extent so the two cannot
+    # ONE read of the length. `week_count` is the spans' own extent so the two cannot
     # disagree; `tests/test_planner_periodisation.py` sabotages that read to prove it.
-    spans = mesocycle_spans(block_count_for(gap))
+    spans = mesocycle_spans()
     week_count = spans[-1].end_week
     weekdays = choose_weekdays(planner_input.available_weekdays, planner_input.sessions_per_week)
 
@@ -186,18 +181,17 @@ def generate(planner_input: PlannerInput) -> PlanBlueprint:
         current_grade_id=None,
         start_date=planner_input.start_date,
         week_count=week_count,
-        grade_gap=gap,
+        grade_gap=planner_input.grade_gap,
         mesocycles=mesocycles,
         shortfalls=_rolled_up(mesocycles),
-        notes=_notes(planner_input, scheduled=len(weekdays), gap=gap),
+        notes=_notes(planner_input, scheduled=len(weekdays)),
     )
 
 
-def _notes(planner_input: PlannerInput, *, scheduled: int, gap: int) -> tuple[ScheduleNote, ...]:
+def _notes(planner_input: PlannerInput, *, scheduled: int) -> tuple[ScheduleNote, ...]:
     """Everything the plan says about itself. Never a gate — the plan is complete either way."""
     possible = (
         fewer_sessions_note(requested=planner_input.sessions_per_week, scheduled=scheduled),
-        beyond_one_plan_note(gap),
     )
     return tuple(note for note in possible if note is not None)
 

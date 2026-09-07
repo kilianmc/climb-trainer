@@ -1340,6 +1340,27 @@ def _aspect_minutes(
     return seconds
 
 
+@cache
+def _prescribed_aspect_seconds(
+    discipline: Discipline,
+    system: GradeSystemKey,
+    label: str,
+    sessions: int,
+    weakness: str | None,
+) -> Mapping[str, int]:
+    """`_aspect_minutes` with ruling 29's elastic filler subtracted, so what a declaration BUYS
+    reads apart from what the length fill gives back. Keys from the library, not spelled out."""
+    plan = generate(_input(discipline, system, label, sessions, 0b111_1111, weakness=weakness))
+    seconds: Counter[str] = Counter()
+    for mesocycle in plan.mesocycles:
+        for microcycle in mesocycle.microcycles:
+            for session in microcycle.sessions:
+                for block in session.blocks:
+                    if block.exercise_key not in OPEN_CLIMBING_KEYS:
+                        seconds[block.aspect_key] += _block_seconds(block)
+    return seconds
+
+
 def _day_tier(session: SessionBlueprint) -> int:
     """How hard the DAY is: its hardest block on §3.4's chain, because the source's second half
     is about the day. A block-less Recovery session sinks past every tier there is."""
@@ -1744,8 +1765,60 @@ def test_ANAEROBIC_CAPACITY_sessions_stay_under_the_ceiling_FOR_THAT_PHASE(
     )
 
 
+# The session counts the rise arm sweeps, named rather than repeated so `_WEAKNESS_INVERSIONS`
+# can be checked against the parametrisation it claims to except.
+_WEAKNESS_SESSION_COUNTS: tuple[int, ...] = (2, 3, 5, 7)
+
+# Ruling 29's filler runs to 84.6% of a profile's tagged total, so the PRESCRIBED half is what a
+# declaration answers for: 48 of 48 gain 2220-18014 s of it, and this floor is 90% of that 2220.
+_WEAKNESS_PRESCRIBED_GAIN_FLOOR_SECONDS = 1998
+
+
+@dataclass(frozen=True, slots=True)
+class _WeaknessInversion:
+    """One (climber, sessions, weakness) whose DECLARATION lowers its own aspect's total, on
+    `_AcceptedInversion`'s idiom: DATA, with a leash, asserted in both directions below."""
+
+    label: str
+    sessions: int
+    weakness: str
+    max_loss_seconds: int
+    reason: str
+
+
+_WEAKNESS_INVERSIONS: tuple[_WeaknessInversion, ...] = (
+    _WeaknessInversion(
+        label="7C",
+        sessions=2,
+        weakness="power_endurance",
+        max_loss_seconds=1262,
+        reason=(
+            "PERVERSE, not a shortfall, and the only one of the 48 rows that runs backwards: "
+            "declaring power endurance LOWERS it, 38554 -> 37292 s (642 -> 621 min, -3.3%). No "
+            "reader may take that number as correct-by-design. The declaration is honoured "
+            "everywhere else in the plan — base +1680 s, the deloads +960 s — and the whole loss "
+            "is inside the power-endurance block itself, -3902 s. MECHANISM, finding F28: "
+            "`_intended_aspect`'s slot-1 rotation is keyed on the PLAN-ABSOLUTE week number "
+            "(`turn = week_no - 1 + session_index`), so WHERE a block sits decides which turns "
+            "its sessions land on. Ruling 51 puts this block at weeks 9-11, whose six sessions "
+            "take only four distinct turns at two days a week (8, 9, 9, 10, 10, 11) and hit "
+            "ruling 21's yield turn 9 TWICE; on those two, slot 1 goes to `finger_strength` and "
+            "the elastic `open_climbing_power_endurance` fill contracts 1302 s and 1600 s to "
+            "make room. That fill is 32630 of 38554 s = 84.6% of this profile's tagged total, "
+            "so its -4682 s beats the +3420 s of prescribed circuits the declaration buys. NOT "
+            "the length and NOT the dropped POWER block: measured control, holding 16 weeks and "
+            "four blocks and swapping only the middle two so this block sits at weeks 5-7, the "
+            "same row reads 31851 -> 37507 s, +5656 s GREEN. Restoring the POSITION fixes it, "
+            "restoring the length does not. The fix — making the rotation's turn BLOCK-RELATIVE "
+            "— is UNPRICED and declined inside item 3b: it changes what every user is "
+            "prescribed and needs its own 24-profile sweep."
+        ),
+    ),
+)
+
+
 @pytest.mark.parametrize(("level", "discipline", "system", "label"), _CLIMBERS)
-@pytest.mark.parametrize("sessions", [2, 3, 5, 7])
+@pytest.mark.parametrize("sessions", _WEAKNESS_SESSION_COUNTS)
 @pytest.mark.parametrize("weakness", _WEAKNESSES)
 def test_a_DECLARED_WEAKNESS_RAISES_its_own_aspects_minutes(
     level: Level,
@@ -1755,14 +1828,14 @@ def test_a_DECLARED_WEAKNESS_RAISES_its_own_aspects_minutes(
     sessions: int,
     weakness: str,
 ) -> None:
-    """⚠️ GUARD, the first half of the lever nothing measured. `weakness_aspect_key` is a
-    categorical override of one block slot per session and every plan-shape test in the repo
-    passed `None`; the four files that do pass one assert strings, widths and determinism and
-    never its effect. ⚠️ Re-measured on THIS parametrisation, which the earlier "2.0x-6.4x" note
-    did not match: 1.26x-3.42x plan-wide before ruling 21's yield and 1.14x-2.67x after it.
+    """⚠️ GUARD, the first half of the lever nothing measured: four files pass a weakness and
+    all assert strings, widths and determinism rather than its effect. TWO halves now. The
+    PRESCRIBED minutes of the declared aspect rise on 48 of 48 rows by 2220-18014 s; the TOTAL
+    rises on 47 of 48 at 1.064x-1.282x, because ruling 29's filler runs to 84.6% of a tagged
+    total and can give back more than a declaration bought — F28, `_WEAKNESS_INVERSIONS`.
 
-    A one-session week is exempt: see `_WEAKNESS_NEEDS_A_SUPPLEMENTARY_SLOT`, which is why this
-    parametrisation starts at two and not at one."""
+    A one-session week is exempt, which is why this starts at two: see
+    `_WEAKNESS_NEEDS_A_SUPPLEMENTARY_SLOT`."""
     del level
     assert sessions >= _WEAKNESS_NEEDS_A_SUPPLEMENTARY_SLOT
     baseline = _aspect_minutes(discipline, system, label, sessions, None)
@@ -1771,11 +1844,62 @@ def test_a_DECLARED_WEAKNESS_RAISES_its_own_aspects_minutes(
         f"a {label} climber at {sessions}x a week gets no {weakness} at all with nothing "
         f"declared, so the comparison below would pass on any positive number."
     )
-    assert declared[weakness] > baseline[weakness], (
+    base_prescribed = _prescribed_aspect_seconds(discipline, system, label, sessions, None)
+    declared_prescribed = _prescribed_aspect_seconds(discipline, system, label, sessions, weakness)
+    prescribed_gain = declared_prescribed[weakness] - base_prescribed[weakness]
+    assert prescribed_gain >= _WEAKNESS_PRESCRIBED_GAIN_FLOOR_SECONDS, (
         f"a {label} climber at {sessions}x a week who declares {weakness} their weakness gets "
-        f"{declared[weakness] // 60} min of it against {baseline[weakness] // 60} min with "
-        f"nothing declared. Both sources build the whole block around the declared weakness, so "
-        f"a declaration that buys no minutes is a form control wired to nothing."
+        f"{prescribed_gain} s more of it PRESCRIBED, against a floor of "
+        f"{_WEAKNESS_PRESCRIBED_GAIN_FLOOR_SECONDS} s. This is the half no length fill can pay "
+        f"back, so it is what the lever answers for: a declaration that buys no prescription is "
+        f"a form control wired to nothing, whatever the totals then do."
+    )
+    accepted = {(row.label, row.sessions, row.weakness): row for row in _WEAKNESS_INVERSIONS}
+    row = accepted.get((label, sessions, weakness))
+    if row is None:
+        assert declared[weakness] > baseline[weakness], (
+            f"a {label} climber at {sessions}x a week who declares {weakness} their weakness "
+            f"gets {declared[weakness] // 60} min of it against {baseline[weakness] // 60} min "
+            f"with nothing declared. Both sources build the whole block around the declared "
+            f"weakness. If that is a measured consequence rather than a defect it owes a row in "
+            f"_WEAKNESS_INVERSIONS carrying the DIRECTION, the mechanism and the cost."
+        )
+        return
+    loss = baseline[weakness] - declared[weakness]
+    assert loss <= row.max_loss_seconds, (
+        f"{label} at {sessions}x declaring {weakness} is an ACCEPTED INVERSION, but it now "
+        f"loses {loss} s against the {row.max_loss_seconds} s it was accepted at, so the "
+        f"exception has grown into a different one. The row reads: {row.reason}"
+    )
+
+
+def test_no_declared_weakness_inversion_has_quietly_become_true() -> None:
+    """⚠️ GUARD, reverse arm. A row that has stopped inverting, or that never named a swept
+    climber, is cover for the arm above rather than a measurement of the generator."""
+    swept = {label: (discipline, system) for _level, discipline, system, label in _CLIMBERS}
+    unchecked = sorted(
+        f"{row.label} at {row.sessions}x declaring {row.weakness}"
+        for row in _WEAKNESS_INVERSIONS
+        if row.label not in swept
+        or row.sessions not in _WEAKNESS_SESSION_COUNTS
+        or row.weakness not in _WEAKNESSES
+    )
+    assert not unchecked, (
+        f"{unchecked} are excepted in _WEAKNESS_INVERSIONS but match no parametrisation of the "
+        f"rise arm, so they are unvisited rather than accepted — which is exactly how an "
+        f"accepted exception and an unsampled gap look identical in a green suite."
+    )
+    stale: list[str] = []
+    for row in _WEAKNESS_INVERSIONS:
+        discipline, system = swept[row.label]
+        baseline = _aspect_minutes(discipline, system, row.label, row.sessions, None)
+        declared = _aspect_minutes(discipline, system, row.label, row.sessions, row.weakness)
+        if declared[row.weakness] > baseline[row.weakness]:
+            stale.append(f"{row.label} at {row.sessions}x declaring {row.weakness}")
+    assert not stale, (
+        f"{stale} are excepted in _WEAKNESS_INVERSIONS and now RAISE the declared aspect like "
+        f"every other profile. Delete those rows — the register is a measurement of the "
+        f"generator, not documentation of it."
     )
 
 
@@ -1829,7 +1953,9 @@ def test_a_DECLARED_WEAKNESS_cannot_push_a_BASE_BLOCKS_TAIL_past_its_ceiling(
 # Restated as literals and not imported, on `_THE_BLOCKS_OWN_FILLER`'s reason.
 _ANAEROBIC_ASPECT = "anaerobic_capacity"
 _AEROBIC_ASPECT = "endurance"
-_CO_OCCURRENCE_PHASES = (Phase.STRENGTH, Phase.POWER)
+# ⚠️ `POWER` LEFT this tuple with its block (ruling 51). It is not an exemption: no week of
+# any plan carries the phase, so an arm scoped to it reads nothing and passes on emptiness.
+_CO_OCCURRENCE_PHASES = (Phase.STRENGTH,)
 _CO_OCCURRENCE_WEAKNESSES: tuple[str | None, ...] = (None, "power", "power_endurance")
 
 # From this many sessions a week up, EVERY such week carries aerobic work. Below it the gap is
@@ -1842,15 +1968,14 @@ _AEROBIC_ALWAYS_FROM_SESSIONS = 5
 # POWER (77.5%) weeks with no aerobic work, at every session count including 7.
 # ⚠️ Asserted EXACTLY and in both directions: a number rising is the gap coming back, and a
 # number falling is a claim this register has stopped making. Both are decisions.
+
+# ⚠️ The four `POWER` rows were RETIRED with the block, not re-based; the STRENGTH numbers are
+# unchanged, because ruling 51 left that block on weeks 5-7 where it already was.
 _CO_OCCURRENCE_GAP_BELOW_THAT: Mapping[tuple[int, Phase], int] = {
     (1, Phase.STRENGTH): 0,
-    (1, Phase.POWER): 18,
     (2, Phase.STRENGTH): 6,
-    (2, Phase.POWER): 15,
     (3, Phase.STRENGTH): 0,
-    (3, Phase.POWER): 5,
     (4, Phase.STRENGTH): 0,
-    (4, Phase.POWER): 6,
 }
 
 

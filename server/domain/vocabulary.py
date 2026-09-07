@@ -376,8 +376,11 @@ PHASE_GUIDE: Final[tuple[PhaseGuide, ...]] = (
         "The block that builds the capacity every later block spends — mileage, movement, and "
         "enough aerobic base to recover between hard goes rather than just survive them. It goes "
         "first because its adaptations are the slowest in the plan to arrive: a real aerobic "
-        "base wants eight weeks or more of honest work, and the anaerobic capacity that starts "
-        "alongside it wants sixteen or more (Barrows §3.1).",
+        "base takes eight weeks or more of honest work, and the anaerobic capacity that starts "
+        "alongside it sixteen or more (Barrows §3.1). This block is three loading weeks and a "
+        "fourth to unload, and across the whole plan anaerobic capacity lands in four to twelve "
+        "of its sixteen weeks — fewest if you train one day a week, most if you train five or "
+        "more.",
         "Volume before intensity. Long, continuous, submaximal climbing, one to three sessions a "
         "week, progressing by adding time before adding difficulty. Finish able to do more than "
         "you did, because climbing a base block to failure costs you the plan, not just the week. "
@@ -447,32 +450,6 @@ PHASE_GUIDE: Final[tuple[PhaseGuide, ...]] = (
         ),
     ),
     PhaseGuide(
-        Phase.POWER,
-        "Power",
-        "Power is force applied fast: the hard single move, the cut-loose, the move you either do "
-        "or you don't. It runs on the alactic system, which supplies maximal effort for under "
-        "about ten seconds and, given real rest, produces very little fatigue. Training it raises "
-        "the hardest move you can do, which is usually what a grade is actually asking.",
-        "Three to five moves at genuine 100 percent, then rest until you mean it — minutes, not "
-        "seconds. Keep total volume low, arrive rested, and stop when the quality drops instead "
-        "of pushing on: one all-out effort does more for power than a pile of moderate attempts. "
-        "Getting sweaty and pumped means you have quietly switched to training something else. "
-        "Limit boulders lead the session and contact strength sits right behind them, and power "
-        "endurance is deliberately absent so the attempts stay maximal. Anaerobic capacity is "
-        "kept alive at roughly one session a week rather than dropped, because it takes months "
-        "to build and only weeks to lose.",
-        (
-            GuideLink(
-                "https://www.trainingbeta.com/4-keys-to-limit-bouldering/",
-                "Matt Pincus: four keys to limit bouldering",
-            ),
-            GuideLink(
-                "https://www.climbstrong.com/resource-posts/optimizing-first-gear-training-the-alactic-energy-system",
-                "Climb Strong: the alactic system, and why it costs little",
-            ),
-        ),
-    ),
-    PhaseGuide(
         Phase.POWER_ENDURANCE,
         "Power endurance",
         "The ability to keep making hard moves when you are already pumped — typically 20 to 60 "
@@ -490,10 +467,11 @@ PHASE_GUIDE: Final[tuple[PhaseGuide, ...]] = (
         "four days up you always get some of it, though not always in every week. What does "
         "not change is the ceiling on hard days "
         "— three a week, however many days you have — so the more days you train, the more of "
-        "this block is movement and ordinary climbing rather than intervals. At five days a "
-        "week and under, power endurance is still the biggest thing in the block; at six or "
-        "seven days that ordinary climbing is, and this plan chooses that rather than handing "
-        "you a fourth hard day. Heavy general strength is deliberately absent: strength is the "
+        "this block is movement and ordinary climbing rather than intervals. At four days a "
+        "week and under, power endurance is still the biggest thing in the block; at five the "
+        "two come out about even; at six or seven days that ordinary climbing is the bigger "
+        "half, and this plan chooses that rather than handing you a fourth hard day. Heavy "
+        "general strength is deliberately absent: strength is the "
         "quality "
         "that holds longest, so it keeps across a block this short while a heavy session would "
         "compete for exactly the recovery these ones need.",

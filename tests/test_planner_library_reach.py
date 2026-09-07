@@ -32,20 +32,49 @@ _ALL_EQUIPMENT = tuple(sorted(spec.key for spec in EQUIPMENT))
 # `system_board_repeats`), all of which are reachable now.
 # ⚠️ "No profile has the equipment" is never one of those reasons: `_PROFILES` hands every plan
 # the FULL vocabulary, so an orphan here is always a rotation or a sampling gap, never a purchase.
-_ACCEPTABLY_UNREACHABLE: dict[str, str] = {}
+_ACCEPTABLY_UNREACHABLE: dict[str, str] = {
+    "campus_board_bumps": (
+        "Authored for the POWER block, which ruling 51 dropped. Its one surviving row is "
+        "PERFORMANCE and no week of the new plan draws it. Shown: put a POWER block anywhere "
+        "in the plan and the row is prescribed again."
+    ),
+    "loaded_jump_squats": (
+        "Rows in STRENGTH and POWER only; ruling 51 dropped POWER and the STRENGTH pool "
+        "reaches this off-wall power row at no week of the block. Shown: restoring a POWER "
+        "block prescribes it again."
+    ),
+    "weighted_pull_ups": (
+        "Rows in STRENGTH, POWER and TAPER; ruling 51 dropped POWER and neither surviving row "
+        "is drawn at any week. Shown: restoring a POWER block prescribes it again."
+    ),
+    "weighted_hanging_knee_raises": (
+        "Rows in STRENGTH and POWER only, and `core_tension` is a SUPPORT_ASPECTS rotation "
+        "that never reaches it in the strength block. Shown: restoring a POWER block "
+        "prescribes it again."
+    ),
+    "open_hand_drag_hangs": (
+        "A WEEK-POSITION orphan, not a phase one: `_spread` draws this hangboard row in "
+        "STRENGTH weeks 10-11 and 17-18 and never in weeks 5-7, which is the single strength "
+        "block a sixteen-week plan has. It was reachable only because these profiles used to "
+        "be 28-32-week plans carrying a SECOND strength block at weeks 17-19. Shown: slide "
+        "the strength block to weeks 9-11 or 17-19 and six or seven blocks of it appear."
+    ),
+    "auto_belay_interval_laps": (
+        "The other WEEK-POSITION orphan, and NOT a power-block casualty. Its only row is "
+        "POWER_ENDURANCE, and it is drawn when that block sits at weeks 5-7, 13-15 or 17-19 "
+        "and at none of weeks 9-11, which is where ruling 51 puts it. Shown: slide the "
+        "power-endurance block to any other slot and the row is prescribed again."
+    ),
+}
 
-# Both disciplines x all three bands, at the largest grade gap so every phase appears, PLUS one
-# short plan. Measured: these seven plans between them reach all 105 exercises in ~0.3 s, so the
-# guard is cheap enough to sit in the local gate. `sessions_per_week` is varied because the band's
-# block budget is what decides how much of a pool the climbing pass ever draws on.
-# ⚠️ The last row is the PLAN-LENGTH dimension, and it was the one this guard was missing. Six
-# max-gap plans are all 28-32 weeks, and a candidate pool is indexed by `_spread`, which counts
-# WEEKS - so a long plan and a short one do not sample the same pool positions. PR C moved the
-# base on-wall `endurance` pool from six to seven entries and `outdoor_route_mileage` (position
-# 5 of 7) went unreachable at 32 weeks while staying reachable at 20. ⚠️ Re-measured 2026-09-06:
-# only the 5- and 7-session SPORT plans draw it now and the 20-week one does not, so the length
-# dimension is not what carries that row today. A gap of 3 is the shortest plan with all five
-# training phases plus deload and taper, the same reason `test_planner_climbing_floor.py` uses it.
+# Both disciplines x all three bands, with `sessions_per_week` varied because the band's block
+# budget is what decides how much of a pool the climbing pass ever draws on. These seven plans
+# between them reach 100 of 106 exercises in ~0.3 s, so the guard sits in the local gate.
+# ⚠️ THE TARGET GRADES NO LONGER VARY THE LENGTH (ruling 49), so the max-gap targets are inert
+# here and the last row is no longer a short plan. A candidate pool is indexed by `_spread`,
+# which counts WEEKS, and two rows are now drawn only at week numbers no plan has - see
+# `_ACCEPTABLY_UNREACHABLE`. ⚠️ Do NOT restore a length dimension by hand-lengthening a
+# profile: `mesocycle_spans()` is the one source of the shape.
 _PROFILES: tuple[tuple[Discipline, GradeSystemKey, str, str, int], ...] = (
     (Discipline.SPORT, GradeSystemKey.FRENCH, "6a", "8c", 3),
     (Discipline.SPORT, GradeSystemKey.FRENCH, "6c", "8c", 5),
@@ -57,11 +86,11 @@ _PROFILES: tuple[tuple[Discipline, GradeSystemKey, str, str, int], ...] = (
 )
 
 # Kilian's requirement, and the floor is a SHARE of what the discipline can see rather than a
-# count: 4 of 105 exercises are boulder-only and 13 rope-only, so a sport plan tops out at 101
-# and a boulder plan at 92, and a count would ask the two for different things. Measured today:
-# beginner 79.2% (80/101) and 79.3% (73/92), intermediate 95.0% and 97.8%, advanced 96.0% and
-# 97.8%, short sport plan 81.2%. Beginner is lowest by arithmetic, not by defect — the band puts
-# 85-90% of a loading week's minutes on a wall, so little is left for the off-the-wall half.
+# count: 4 of 106 exercises are boulder-only and 13 rope-only, so a sport plan tops out at 102
+# and a boulder plan at 93, and a count would ask the two for different things. ⚠️ RE-MEASURED
+# at ruling 49's sixteen weeks: beginner 67.6% and 65.6%, intermediate 83.3% and 82.8%,
+# advanced 85.3% and 86.0%, the 5-session beginner 78.4%. Beginner is lowest by arithmetic, not
+# by defect — the band puts 85-90% of a loading week's minutes on a wall.
 #
 # ⚠️ **RE-BASELINED 68 → 63** (Kilian, 2026-09-04), and the old number was not a stricter version
 # of this one: it was measuring a DEFECT. Four long accessories (`one_arm_lockoff_negatives`,
@@ -69,10 +98,10 @@ _PROFILES: tuple[tuple[Discipline, GradeSystemKey, str, str, int], ...] = (
 # session running UNDER its type's window floor, where `_pick` took the longest candidate that
 # fit instead of its plain rotation; round 3's climbing top-up closed that path. Widening
 # `_length_pick`'s pool is not the way back and its docstring holds the numbers.
-# ⚠️ 63 STANDS and the slack is 16 points, caught by nothing: it was the tightest floor honest
-# behaviour supported when the lowest profile measured 64.4% (56 of 87 boulder) and the lowest
-# today is 79.2% (80 of 101), so 15 could go undrawn first. Lowering it is KILIAN'S call and is
-# not taken here. Shown to fail: `_pick` as `pool[0]` draws 58/101 = 57.4%.
+# ⚠️ 63 STANDS and is NOT re-based here — green on 7 of 7 under ruling 51's order. ⚠️ But its
+# SLACK is gone: the lowest profile fell 79.2% -> 65.6% (61 of 93) against a floor needing 59,
+# so TWO exercises could go undrawn now where fifteen could before. Moving it is KILIAN'S call.
+# Shown to fail: `_pick` as `pool[0]` draws 58/101 = 57.4%.
 _DISTINCT_SHARE_FLOOR_PCT = 63
 
 

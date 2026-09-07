@@ -65,14 +65,13 @@ _ALACTIC_WORK_SECONDS_MAX = 15
 # A rule reaching zero cells is a rule nobody is testing, which is how three prescribed mechanisms
 # shipped byte-identical in this package before anybody measured the counterfactual.
 #
-# ⚠️ RE-BASED for ruling 41's `easy_climbing_flush`: longer-work 608 (floor unchanged, it clears
-# 573), more-rounds 498 → 438, shorter-rest **57 → 15**, because `boulders_on_the_two_minute`
-# stopped landing in two loading weeks of one block and a week-PAIR is what THIS arm counts.
-#
 # ⚠️ Ruling 50 widened the SAMPLING UNIT instead of raising these: a drawn CELL needs one week
-# where a pair needs two, so the cell arm below reads 189 shorter-rest cells where this reads 15.
+# where a pair needs two, so the cell arm below reads 105 shorter-rest cells where this reads 60.
 # The pair arm STAYS — a pair is the stronger evidence when it fires.
-_CELLS_INSPECTED = {_LONGER_WORK: 573, _SHORTER_REST: 13, _MORE_ROUNDS: 394}
+#
+# ⚠️ RE-BASED ONCE for ruling 51's four blocks, at 90% of measured as the cell arm below is.
+# Shorter-rest RISES 13 -> 60: the power-endurance block moved and its rows now pair up.
+_CELLS_INSPECTED = {_LONGER_WORK: 504, _SHORTER_REST: 54, _MORE_ROUNDS: 387}
 
 # Pools of exactly one exercise, which no index can move week to week. Pinned so the arm below
 # cannot silently start passing because a pool collapsed rather than because the index works.
@@ -81,26 +80,23 @@ _CELLS_INSPECTED = {_LONGER_WORK: 573, _SHORTER_REST: 13, _MORE_ROUNDS: 394}
 # A second on-wall `endurance` row in either phase takes this back down and must be a decision.
 _SINGLETON_WALL_POOLS = 6
 
-# ⚠️ THE CELL ARM (ruling 50). Floors are 90% of the measured 762 / 189 / 1279 later-loading-week
-# cells, and the shorter-rest figure is a 12.6x widening of the pair arm's 15.
-_LATER_WEEK_CELLS_INSPECTED = {_LONGER_WORK: 685, _SHORTER_REST: 170, _MORE_ROUNDS: 1151}
+# ⚠️ THE CELL ARM (ruling 50), at 90% of the measured later-loading-week cells. Ruling 51's
+# sixteen weeks re-based those from 762/189/1279 to 635/105/1013: a shorter plan reads fewer.
+_LATER_WEEK_CELLS_INSPECTED = {_LONGER_WORK: 571, _SHORTER_REST: 94, _MORE_ROUNDS: 911}
 
-# ⚠️ Per (rule, phase), because a POOLED floor reads green while a whole phase falls to zero —
-# which is how the shorter-rest arm went quiet in `strength` and `performance`. (drawn, later).
+# ⚠️ Per (rule, phase) as (drawn, later), because a POOLED floor reads green while a whole
+# phase falls to zero. ⚠️ Ruling 51 RETIRED the three `POWER` rows rather than re-basing them.
 _COVERAGE_FLOORS: Mapping[tuple[str, Phase], tuple[int, int]] = {
     (_LONGER_WORK, Phase.BASE): (310, 202),
     (_LONGER_WORK, Phase.STRENGTH): (340, 232),
-    (_LONGER_WORK, Phase.POWER): (186, 121),
-    (_LONGER_WORK, Phase.POWER_ENDURANCE): (194, 129),
+    (_LONGER_WORK, Phase.POWER_ENDURANCE): (201, 136),
     (_SHORTER_REST, Phase.STRENGTH): (93, 0),
-    (_SHORTER_REST, Phase.POWER): (146, 89),
-    (_SHORTER_REST, Phase.POWER_ENDURANCE): (48, 16),
-    (_SHORTER_REST, Phase.PERFORMANCE): (97, 64),
+    (_SHORTER_REST, Phase.POWER_ENDURANCE): (91, 70),
+    (_SHORTER_REST, Phase.PERFORMANCE): (69, 24),
     (_MORE_ROUNDS, Phase.BASE): (220, 171),
     (_MORE_ROUNDS, Phase.STRENGTH): (329, 234),
-    (_MORE_ROUNDS, Phase.POWER): (388, 283),
-    (_MORE_ROUNDS, Phase.POWER_ENDURANCE): (198, 140),
-    (_MORE_ROUNDS, Phase.PERFORMANCE): (439, 321),
+    (_MORE_ROUNDS, Phase.POWER_ENDURANCE): (310, 162),
+    (_MORE_ROUNDS, Phase.PERFORMANCE): (485, 342),
 }
 
 # The one cell the cell arm cannot reach, with its reason as DATA rather than as a comment.
@@ -382,7 +378,8 @@ def test_a_DRAWN_CELL_IN_WEEK_ONE_OF_ITS_BLOCK_IS_THE_LIBRARYS_OWN_DOSE() -> Non
                 f"{key} in {phase.value} week 1 of {block_id} is dosed {dose} against the "
                 f"authored {spec}; a block's first loading week takes the row as written."
             )
-    assert inspected > 1000, f"only {inspected} first weeks inspected; the arm is not reading."
+    # 90% of the 972 measured at ruling 51's four blocks, re-based once from > 1000.
+    assert inspected >= 874, f"only {inspected} first weeks inspected; the arm is not reading."
 
 
 def test_the_PER_PHASE_COVERAGE_REGISTER_MATCHES_THE_SWEEP_BOTH_WAYS() -> None:
