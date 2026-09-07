@@ -11,8 +11,8 @@
  *   openapi-sha256  the OpenAPI document it was generated from
  *   types-sha256    everything below this comment block
  *
- * openapi-sha256: 1a2df4e36fdd5fcd82ec95d4066930ee2630f4dad7f4b061786d130f624eda9c
- * types-sha256: f045220fe647576fa5e77cd3d6448dba26a288435e08690a03cfc32a3fa4fd32
+ * openapi-sha256: b33338e3f0138fa40da2002da4fcc706b2636e91c3c65bc08a84a6ba10e48570
+ * types-sha256: b7606ca2d6100e430f127a1466b2f8218daf712d220a17379b5efc4234e6ecee
  */
 
 export interface paths {
@@ -945,7 +945,7 @@ export interface components {
      *     leaving the user to notice.
      * @enum {string}
      */
-    NoteKind: 'fewer_sessions_than_requested' | 'target_beyond_one_plan';
+    NoteKind: 'fewer_sessions_than_requested';
     /**
      * NoteOut
      * @description One honest caveat about the plan as a whole. `kind` is the contract, `message` is copy.

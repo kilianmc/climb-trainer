@@ -1143,13 +1143,6 @@ reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
 
 [[exception]]
 path = "server/domain/planner/periodisation.py"
-kind = "hash_run"
-anchor = "the gap at which the block count"
-limit = 3
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
-
-[[exception]]
-path = "server/domain/planner/periodisation.py"
 kind = "docstring"
 anchor = "server.domain.planner.periodisation.MesocycleSpan"
 limit = 5
@@ -1160,13 +1153,6 @@ path = "server/domain/planner/periodisation.py"
 kind = "docstring"
 anchor = "server.domain.planner.periodisation.mesocycle_spans"
 limit = 5
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
-
-[[exception]]
-path = "server/domain/planner/periodisation.py"
-kind = "docstring"
-anchor = "server.domain.planner.periodisation.beyond_one_plan_note"
-limit = 8
 reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
 
 [[exception]]
@@ -3363,29 +3349,8 @@ reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
 [[exception]]
 path = "tests/test_planner_periodisation.py"
 kind = "docstring"
-anchor = "tests.test_planner_periodisation.test_every_reachable_gap_on_both_ladders_fits_the_plan_check_constraint"
-limit = 7
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
-
-[[exception]]
-path = "tests/test_planner_periodisation.py"
-kind = "docstring"
 anchor = "tests.test_planner_periodisation.test_a_cross_ladder_pair_refuses_instead_of_producing_a_nonsense_gap"
 limit = 5
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
-
-[[exception]]
-path = "tests/test_planner_periodisation.py"
-kind = "docstring"
-anchor = "tests.test_planner_periodisation.test_block_phases_run_the_librarys_authored_cycle"
-limit = 4
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
-
-[[exception]]
-path = "tests/test_planner_periodisation.py"
-kind = "docstring"
-anchor = "tests.test_planner_periodisation.test_a_plan_that_reaches_its_target_carries_no_such_note"
-limit = 7
 reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
 
 [[exception]]
@@ -3540,13 +3505,6 @@ path = "tests/test_plans_api.py"
 kind = "docstring"
 anchor = "tests.test_plans_api.demo_auth"
 limit = 5
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
-
-[[exception]]
-path = "tests/test_plans_api.py"
-kind = "docstring"
-anchor = "tests.test_plans_api.test_a_complete_profile_gets_a_plan_whose_length_follows_the_GRADE_GAP"
-limit = 7
 reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
 
 [[exception]]

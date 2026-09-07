@@ -1,12 +1,12 @@
-"""Periodisation and the plan's date maths — the gap table, the phase order, the spans.
+"""Periodisation and the plan's date maths — the one length, the phase order, the spans.
 
 DB-free: it reads `server/domain/planner/`, so it runs in the local gate. The testing policy's
 "plan generation (phase spans, deloads, taper, volume allocation)" and "date and timezone
-maths". Nothing else is here — no assertion that `MIN_BLOCKS` is 2 (a constant table, explicitly
-on the SKIP list) and no snapshot of a generated plan. The gap table is asserted as a
-**literal**, not by re-deriving the formula: a test that recomputes it agrees with any typo in
-the implementation. The table is the decision. The four arms that `generate()` a plan sabotage
-it rather than snapshot it: a plan's own shape cannot be shown to bite on a hand-built fixture.
+maths". Nothing else is here — no snapshot of a generated plan. The length and the phase list
+are asserted as **literals**, not by re-deriving them: a test that recomputes them agrees with
+any typo in the implementation. They are the decision. The arms that `generate()` a plan
+sabotage it rather than snapshot it: a plan's own shape cannot be shown to bite on a hand-built
+fixture.
 """
 
 import sys
@@ -27,14 +27,12 @@ from server.domain.planner.blueprint import (
 from server.domain.planner.contract import CannotPlanError, PlannerInput, RefusalReason
 from server.domain.planner.generate import generate
 from server.domain.planner.periodisation import (
-    GAP_BEYOND_ONE_PLAN,
-    MAX_BLOCKS,
+    BLOCK_PHASES,
+    LOADING_WEEKS,
+    WEEK_COUNT,
     WEEKS_PER_BLOCK,
-    beyond_one_plan_note,
-    block_count_for,
-    block_phases,
+    MesocycleSpan,
     mesocycle_spans,
-    week_count_for,
 )
 from server.domain.planner.schedule import microcycle_start, session_date, week_start_on_or_after
 from server.domain.vocabulary import Phase
@@ -43,55 +41,39 @@ from server.domain.vocabulary import Phase
 # because the domain has no timezone.
 _MONDAY = date(2026, 8, 31)
 
-# The authored decision, verbatim from the approved plan. `gap <= 0` is a consolidation
-# pair, not an error: a target already met still gets a plan.
-_GAP_TABLE = {
-    -5: (2, 8),
-    -1: (2, 8),
-    0: (2, 8),
-    1: (3, 12),
-    2: (4, 16),
-    3: (5, 20),
-    4: (6, 24),
-    5: (7, 28),
-    6: (8, 32),
-    7: (8, 32),
-    25: (8, 32),
-}
+# Rulings 49 and 51, RESTATED rather than imported. What they replaced — `clamp(2 + gap, 2, 8)`
+# blocks — was an app invention, and the arm that pinned it called it "verbatim from the plan".
+_AUTHORED_WEEK_COUNT = 16
+_AUTHORED_PHASES = (Phase.BASE, Phase.STRENGTH, Phase.POWER_ENDURANCE, Phase.PERFORMANCE)
+
+# The library's authored cycle, restated: whichever middle blocks a plan carries must appear in
+# this relative order, or a quality is previewed before its own block. D2 drops `POWER`.
+_AUTHORED_MIDDLE_CYCLE = (Phase.STRENGTH, Phase.POWER, Phase.POWER_ENDURANCE)
+
+# Every gap that used to buy a different length (0 -> 8 weeks, 1 -> 12, 2 -> 16, 3 -> 20,
+# 4 -> 24, 5 -> 28, 6 -> 32), plus both ends of the widest ladder, where it clamped.
+_GAPS_THAT_USED_TO_CHANGE_THE_LENGTH = (-29, 0, 1, 2, 3, 4, 5, 6, 29)
 
 
-@pytest.mark.parametrize(("gap", "expected"), sorted(_GAP_TABLE.items()))
-def test_the_gap_table_is_the_one_that_was_authored(gap: int, expected: tuple[int, int]) -> None:
-    assert (block_count_for(gap), week_count_for(gap)) == expected
+def test_the_length_LITERAL_and_the_SPAN_DERIVATION_are_the_same_number() -> None:
+    """The two sources of the length, checked against each other and against the decision:
+    `generate()` reads the spans and `tests/test_plans_api.py` reads `WEEK_COUNT`."""
+    assert WEEK_COUNT == _AUTHORED_WEEK_COUNT
+    assert mesocycle_spans()[-1].end_week == _AUTHORED_WEEK_COUNT
+    assert len(BLOCK_PHASES) * WEEKS_PER_BLOCK == _AUTHORED_WEEK_COUNT
+    assert MIN_WEEK_COUNT <= WEEK_COUNT <= MAX_WEEK_COUNT, "ck_plan_week_count_in_range"
 
 
-def test_week_count_never_shrinks_as_the_gap_grows() -> None:
-    """Monotonic, so a harder target can never buy a shorter plan."""
-    counts = [week_count_for(gap) for gap in range(-10, 30)]
-    assert counts == sorted(counts)
-
-
-def test_every_reachable_gap_on_both_ladders_fits_the_plan_check_constraint() -> None:
-    """`ck_plan_week_count_in_range` is `week_count BETWEEN 1 AND 52`, and a violation is an
-    `IntegrityError` at insert time in PR #11b — a long way from the arithmetic that caused it.
-
-    The gaps are derived from the ladders rather than from a guessed range: a new rung on
-    either ladder widens the reachable set automatically, which is the whole point of not
-    hard-coding `range(-30, 30)` here.
-    """
+def test_every_reachable_gap_is_inside_the_plan_check_constraint() -> None:
+    """`ck_plan_week_count_in_range` is `week_count BETWEEN 1 AND 52` and a violation is an
+    `IntegrityError` at insert — a long way from the arithmetic that caused it."""
     for discipline in Discipline:
         ordinals = sorted(
             {grade.ordinal for grade in GRADES if system(grade.system).discipline is discipline}
         )
         assert ordinals, f"{discipline} has no ladder"
-        widest = ordinals[-1] - ordinals[0]
-        for gap in range(-widest, widest + 1):
-            weeks = week_count_for(gap)
-            assert MIN_WEEK_COUNT <= weeks <= MAX_WEEK_COUNT, (
-                f"gap {gap} on the {discipline} ladder yields {weeks} weeks, outside "
-                f"ck_plan_week_count_in_range"
-            )
-            assert weeks % WEEKS_PER_BLOCK == 0
+    assert MIN_WEEK_COUNT <= WEEK_COUNT <= MAX_WEEK_COUNT
+    assert WEEK_COUNT % WEEKS_PER_BLOCK == 0
 
 
 def test_a_cross_ladder_pair_refuses_instead_of_producing_a_nonsense_gap() -> None:
@@ -116,42 +98,30 @@ def test_a_cross_ladder_pair_refuses_instead_of_producing_a_nonsense_gap() -> No
     assert raised.value.reason is RefusalReason.CROSS_DISCIPLINE_GRADES
 
 
-@pytest.mark.parametrize(
-    ("blocks", "expected"),
-    [
-        (2, (Phase.BASE, Phase.PERFORMANCE)),
-        (4, (Phase.BASE, Phase.STRENGTH, Phase.POWER, Phase.PERFORMANCE)),
-        (
-            8,
-            (
-                Phase.BASE,
-                Phase.STRENGTH,
-                Phase.POWER,
-                Phase.POWER_ENDURANCE,
-                Phase.STRENGTH,
-                Phase.POWER,
-                Phase.POWER_ENDURANCE,
-                Phase.PERFORMANCE,
-            ),
-        ),
-    ],
-)
-def test_block_phases_run_the_librarys_authored_cycle(
-    blocks: int, expected: tuple[Phase, ...]
-) -> None:
-    """Base first, performance last, the middle rotating in the order
-    `server/domain/exercises.py` authored its prescriptions against — which is what makes
-    "a quality is maintained after its own block, never previewed before it" true by
-    construction rather than by luck."""
-    assert block_phases(blocks) == expected
+def test_the_FOUR_BLOCKS_are_the_ones_that_were_authored() -> None:
+    """Ruling 51's phase list, and the properties that make it the right four: the ends
+    `PHASE_GUIDE` is written against, and the library's own cycle order in the middle."""
+    assert BLOCK_PHASES == _AUTHORED_PHASES
+    assert BLOCK_PHASES[0] is Phase.BASE
+    assert BLOCK_PHASES[-1] is Phase.PERFORMANCE
+    assert len(set(BLOCK_PHASES)) == len(BLOCK_PHASES), "a repeated block is a different plan"
+    middle = BLOCK_PHASES[1:-1]
+    assert set(middle) <= set(_AUTHORED_MIDDLE_CYCLE)
+    positions = [_AUTHORED_MIDDLE_CYCLE.index(phase) for phase in middle]
+    assert positions == sorted(positions), (
+        f"{[phase.value for phase in middle]} is not in the library's authored cycle order "
+        f"{[phase.value for phase in _AUTHORED_MIDDLE_CYCLE]}, so a quality is previewed "
+        f"before its own block."
+    )
 
 
-@pytest.mark.parametrize("blocks", range(2, MAX_BLOCKS + 1))
-def test_spans_tile_the_plan_exactly_once_starting_at_week_one(blocks: int) -> None:
-    spans = mesocycle_spans(blocks)
-    assert len(spans) == 2 * blocks, "two mesocycles per block: the phase, then its unload week"
+def test_spans_tile_the_plan_exactly_once_starting_at_week_one() -> None:
+    spans = mesocycle_spans()
+    assert len(spans) == 2 * len(BLOCK_PHASES), (
+        "two mesocycles per block: the phase, then its unload week"
+    )
     assert spans[0].start_week == 1
-    assert spans[-1].end_week == blocks * WEEKS_PER_BLOCK
+    assert spans[-1].end_week == WEEK_COUNT
     assert len({span.start_week for span in spans}) == len(spans), (
         "UNIQUE (plan_id, start_week) on `mesocycle` makes a repeat uninsertable"
     )
@@ -172,6 +142,26 @@ def _plan(rungs: int = 2) -> PlanBlueprint:
             discipline=Discipline.SPORT,
             current_ordinal=_SPORT_RUNGS[0],
             target_ordinal=_SPORT_RUNGS[rungs],
+            sessions_per_week=3,
+            available_weekdays=0b010_0101,
+            strength_aspect_key=None,
+            weakness_aspect_key=None,
+            open_injury_keys=(),
+            equipment_keys=(),
+            start_date=_MONDAY,
+        )
+    )
+
+
+def _plan_at_gap(gap: int) -> PlanBlueprint:
+    """A real plan at an EXACT grade gap, taken from whichever end of the sport ladder can
+    reach it. The ladder is contiguous, so a gap is a rung count."""
+    current = _SPORT_RUNGS[-1] if gap < 0 else _SPORT_RUNGS[0]
+    return generate(
+        PlannerInput(
+            discipline=Discipline.SPORT,
+            current_ordinal=current,
+            target_ordinal=current + gap,
             sessions_per_week=3,
             available_weekdays=0b010_0101,
             strength_aspect_key=None,
@@ -222,17 +212,29 @@ def test_a_mesocycle_must_carry_exactly_the_weeks_its_span_claims() -> None:
             replace(first, **broken)
 
 
-def test_the_block_count_is_read_once_so_a_plan_cannot_misreport_its_length() -> None:
-    """Sabotage the ONE read and both halves move together. The patch has to honour its `gap`
-    and to reach the module through `sys.modules` — the arm below is why."""
+def _one_more_block() -> tuple[MesocycleSpan, ...]:
+    """`mesocycle_spans()` with a fifth block bolted on: the old last block's taper becomes a
+    deload, and a fresh performance block and taper run after it. The sabotage below."""
+    spans = list(mesocycle_spans())
+    taper = spans[-1]
+    spans[-1] = MesocycleSpan(Phase.DELOAD, taper.start_week, taper.end_week)
+    first = taper.end_week + 1
+    spans.append(MesocycleSpan(Phase.PERFORMANCE, first, first + LOADING_WEEKS - 1))
+    spans.append(MesocycleSpan(Phase.TAPER, first + LOADING_WEEKS, first + LOADING_WEEKS))
+    return tuple(spans)
+
+
+def test_the_length_is_read_once_so_a_plan_cannot_misreport_it() -> None:
+    """Sabotage the ONE read and both halves move together. The patch has to reach the module
+    through `sys.modules` — the arm below is why."""
     module = sys.modules[generate.__module__]
     monkeypatched = pytest.MonkeyPatch()
-    monkeypatched.setattr(module, "block_count_for", lambda gap: block_count_for(gap) + 1)
+    monkeypatched.setattr(module, "mesocycle_spans", _one_more_block)
     try:
         plan = _plan()
     finally:
         monkeypatched.undo()
-    expected = (block_count_for(plan.grade_gap) + 1) * WEEKS_PER_BLOCK
+    expected = WEEK_COUNT + WEEKS_PER_BLOCK
     assert plan.week_count == expected, "the extra block did not reach the length it reports"
     assert _weeks_carried(plan) == expected
     assert plan.name.startswith(f"{expected}-week"), "the name is the length the user reads"
@@ -248,11 +250,11 @@ def test_the_package_reexport_shadows_the_generate_submodule() -> None:
     assert isinstance(sys.modules[generate.__module__], ModuleType)
 
 
-@pytest.mark.parametrize("blocks", range(2, MAX_BLOCKS + 1))
-def test_deloads_land_on_every_fourth_week_and_the_taper_is_the_last_one(blocks: int) -> None:
+def test_deloads_land_on_every_fourth_week_and_the_taper_is_the_last_one() -> None:
     """A deload is a mesocycle with its own prescriptions, and the taper is the one at the
     end — so they are told apart by phase, never by a flag or a multiplier."""
-    spans = mesocycle_spans(blocks)
+    blocks = len(BLOCK_PHASES)
+    spans = mesocycle_spans()
     deloads = [span for span in spans if span.phase is Phase.DELOAD]
     tapers = [span for span in spans if span.phase is Phase.TAPER]
     assert [span.start_week for span in deloads] == [
@@ -260,26 +262,27 @@ def test_deloads_land_on_every_fourth_week_and_the_taper_is_the_last_one(blocks:
     ]
     assert all(span.start_week == span.end_week for span in deloads + tapers)
     assert len(tapers) == 1
-    assert tapers[0].end_week == spans[-1].end_week == blocks * WEEKS_PER_BLOCK
+    assert tapers[0].end_week == spans[-1].end_week == WEEK_COUNT
 
 
-@pytest.mark.parametrize("gap", [GAP_BEYOND_ONE_PLAN + 1, GAP_BEYOND_ONE_PLAN + 4])
-def test_a_capped_plan_says_the_target_is_more_than_one_plan_away(gap: int) -> None:
-    note = beyond_one_plan_note(gap)
-    assert note is not None
-    assert note.kind is NoteKind.TARGET_BEYOND_ONE_PLAN
+@pytest.mark.parametrize("gap", _GAPS_THAT_USED_TO_CHANGE_THE_LENGTH)
+def test_the_GRADE_GAP_BUYS_THE_SAME_SIXTEEN_WEEKS_whatever_it_is(gap: int) -> None:
+    """⚠️ GUARD, ruling 49 and the whole of F1. Read off a GENERATED PLAN: the length is a
+    constant in `periodisation.py`, so asserting it there proves nothing about the gap."""
+    plan = _plan_at_gap(gap)
+    assert plan.grade_gap == gap, "the fixture did not produce the gap it claims to test"
+    assert plan.week_count == _AUTHORED_WEEK_COUNT
+    assert _weeks_carried(plan) == _AUTHORED_WEEK_COUNT
+    assert plan.name.startswith(f"{_AUTHORED_WEEK_COUNT}-week")
+    assert [
+        mesocycle.phase for mesocycle in plan.mesocycles if mesocycle.phase in _AUTHORED_PHASES
+    ] == list(_AUTHORED_PHASES)
 
 
-@pytest.mark.parametrize("gap", [GAP_BEYOND_ONE_PLAN - 1, GAP_BEYOND_ONE_PLAN])
-def test_a_plan_that_reaches_its_target_carries_no_such_note(gap: int) -> None:
-    """⚠️ Both sides of the boundary, because the boundary itself moved.
-
-    Kilian, 2026-08-24: the note fires only where the clamp genuinely shortened the plan.
-    At exactly `GAP_BEYOND_ONE_PLAN` the formula wants `MAX_BLOCKS` and gets `MAX_BLOCKS`,
-    so nothing was truncated and saying otherwise is untrue. The approved plan document's
-    "gap >= 6" is superseded — this parametrisation is what stops it being restored.
-    """
-    assert beyond_one_plan_note(gap) is None
+def test_NO_NOTE_TELLS_THE_USER_THE_PLAN_WAS_CUT_SHORT() -> None:
+    """`TARGET_BEYOND_ONE_PLAN` went with the clamp — nothing is truncated now. Pinned as the
+    CLOSED set, not by name: a note kind is the client's styling contract."""
+    assert {kind.value for kind in NoteKind} == {"fewer_sessions_than_requested"}
 
 
 @pytest.mark.parametrize("offset", range(7))

@@ -31,12 +31,13 @@ from server.domain.vocabulary import (
 
 _KEYS = tuple(guide.phase.value for guide in PHASE_GUIDE)
 
+# The four blocks plus the two unload phases — what `mesocycle_spans()` can produce, restated
+# as a COUNT so the set comparison below cannot narrow itself by reading a smaller plan.
+_PHASES_A_PLAN_CARRIES = 6
+
 # What each phase's authored `how_to_train` CLAIMS, restated as data on `_BASE_WALL_EMPHASIS`'s
 # idiom. Four tables because the sentences make four different kinds of claim.
-COPY_CLAIMS_LEAD: dict[Phase, tuple[str, ...]] = {
-    Phase.POWER: ("power", "finger_strength"),
-    Phase.PERFORMANCE: ("power",),
-}
+COPY_CLAIMS_LEAD: dict[Phase, tuple[str, ...]] = {Phase.PERFORMANCE: ("power",)}
 
 # The deload names two aspects and neither leads alone: measured, technique opens 45.6% of
 # deload sessions and mobility 10.0%, so the claim is the majority they lead between them.
@@ -55,9 +56,11 @@ _MAY_PRECEDE_A_HANG = _HANGBOARD_PROTOCOLS | {ProtocolKind.LIMIT_BOULDER}
 # week carries some": the day count the re-authored sentence names as its boundary.
 COPY_CLAIMS_AEROBIC_FROM_DAYS: int = 4
 
-# "At five days a week and under, power endurance is still the biggest thing in the block; at
-# six or seven days that ordinary climbing is": one boundary, and the aspect on each side of it.
-COPY_CLAIMS_BIGGEST_UNTIL_DAYS: int = 5
+# Two boundaries with an ADMITTED flat spot between them, and the aspect on each side. The
+# five-day arm asserts the SPLIT, so "about even" is falsifiable rather than a hedge.
+COPY_CLAIMS_BIGGEST_UNTIL_DAYS: int = 4
+COPY_CLAIMS_ROUGHLY_EVEN_DAYS: int = 5
+COPY_CLAIMS_BIGGEST_FROM_DAYS: int = 6
 COPY_CLAIMS_BIGGEST_BY_DAYS: tuple[str, str] = ("power_endurance", "technique")
 
 # Ruling 29's filler family, RESTATED and never imported: "ordinary climbing" in the copy means
@@ -97,9 +100,16 @@ _A_WEAKNESS_YIELDS_SLOT_ONE = (
 COPY_CLAIMS_BASE_LEAD: str = "endurance"
 COPY_CLAIMS_BASE_START: tuple[str, ...] = ("general_strength", "anaerobic_capacity")
 
+# `PHASE_GUIDE[base]`'s adaptation-time admission, ruling 54: the source's numbers are quoted
+# as the source's, and these are the PLAN's half, which is the half a sweep can falsify.
+COPY_CLAIMS_BASE_LOADING_WEEKS: int = 3
+COPY_CLAIMS_PLAN_WEEKS: int = 16
+COPY_CLAIMS_ANAEROBIC_WEEKS: tuple[int, int] = (4, 12)
+COPY_CLAIMS_FEWEST_ANAEROBIC_AT_SESSIONS: int = 1
+COPY_CLAIMS_MOST_ANAEROBIC_FROM_SESSIONS: int = 5
+
 # Every aspect a phase's copy tells the reader is NOT prescribed there.
 COPY_CLAIMS_ABSENT: dict[Phase, tuple[str, ...]] = {
-    Phase.POWER: ("power_endurance",),
     Phase.POWER_ENDURANCE: ("general_strength",),
     Phase.PERFORMANCE: ("anaerobic_capacity",),
     Phase.TAPER: ("finger_strength", "anaerobic_capacity", "endurance"),
@@ -154,11 +164,18 @@ _WEAKNESS_SWEEP: tuple[_Climber, ...] = tuple(
 )
 
 
+# The audience of `PHASE_GUIDE[base]`'s anaerobic range: every session count AND every weakness,
+# because the paragraph is the same copy for all of them. Both halves are cached above already.
 _PE_SWEEP: tuple[_Climber, ...] = tuple(
     _Climber(discipline, system, grade, sessions)
     for _level, discipline, system, grade in _CLIMBERS
     for sessions in _EVERY_SESSION_COUNT
 )
+
+
+# The audience of `PHASE_GUIDE[base]`'s anaerobic range: every session count AND every weakness
+# value, because the paragraph is the same copy for all of them. Both halves are cached already.
+_ANAEROBIC_AUDIENCE: tuple[_Climber, ...] = tuple(dict.fromkeys(_PE_SWEEP + _WEAKNESS_SWEEP))
 
 
 @cache
@@ -271,14 +288,20 @@ def _phases_with_unusable_links(guides: tuple[PhaseGuide, ...]) -> set[Phase]:
     return broken
 
 
-def test_every_phase_has_copy_and_no_entry_is_stale() -> None:
-    """Set equality, so a missing phase and an orphaned entry both fail."""
-    assert set(_KEYS) == {member.value for member in Phase}
+def test_every_phase_A_PLAN_CAN_CARRY_HAS_COPY_and_no_entry_is_stale() -> None:
+    """⚠️ Against the phases a GENERATED PLAN holds, not the `Phase` enum, which is wider: an
+    enum-keyed check kept `POWER`'s paragraph shipping after ruling 51 took its block away."""
+    carried = {phase.value for climber in _SWEEP for phase in _weeks_by_phase(climber)}
+    assert len(carried) == _PHASES_A_PLAN_CARRIES, (
+        f"the sweep's plans carry {sorted(carried)}; the set below is compared against that, so "
+        f"a plan shape that stopped carrying a phase would quietly narrow this arm."
+    )
+    assert set(_KEYS) == carried
 
 
-def test_the_order_is_the_ENUM_declaration_order() -> None:
+def test_the_order_is_the_ENUM_DECLARATION_ORDER_of_the_phases_that_ship() -> None:
     """It is sent as an array and read as one, so its order is display order."""
-    assert _KEYS == tuple(member.value for member in Phase)
+    assert _KEYS == tuple(member.value for member in Phase if member.value in set(_KEYS))
 
 
 def test_no_phase_appears_twice() -> None:
@@ -395,25 +418,79 @@ def test_the_copys_POWER_ENDURANCE_AEROBIC_claim_is_a_DAY_COUNT_claim() -> None:
     )
 
 
+def test_the_copys_ADAPTATION_TIME_ADMISSION_IS_THE_MEASURED_SHORTFALL() -> None:
+    """⚠️ GUARD, ruling 54, over the claim's whole AUDIENCE and not `_SWEEP`, which reads
+    (8, 12) against the (4, 12) every session count and weakness value between them reach."""
+    reached: list[tuple[_Climber, int]] = []
+    for climber in _ANAEROBIC_AUDIENCE:
+        weeks = _weeks_by_phase(climber)
+        assert len(weeks[Phase.BASE]) == COPY_CLAIMS_BASE_LOADING_WEEKS, (
+            f"the copy tells {_label(climber)} the base block is "
+            f"{COPY_CLAIMS_BASE_LOADING_WEEKS} loading weeks; it is {len(weeks[Phase.BASE])}."
+        )
+        assert sum(len(one) for one in weeks.values()) == COPY_CLAIMS_PLAN_WEEKS
+        reached.append(
+            (climber, sum(sum(_weeks_holding(climber, p, "anaerobic_capacity")) for p in weeks))
+        )
+    counts = [n for _c, n in reached]
+    low, high = COPY_CLAIMS_ANAEROBIC_WEEKS
+    assert (min(counts), max(counts)) == (low, high), (
+        f"the copy admits anaerobic capacity reaches {low} to {high} of the plan's "
+        f"{COPY_CLAIMS_PLAN_WEEKS} weeks; over {len(reached)} plans it reaches {min(counts)} to "
+        f"{max(counts)}. Ruling 18 keeps it at zero in performance and taper, so the ceiling is "
+        f"structural — move the sentence, not the ruling."
+    )
+    assert {c.sessions for c, n in reached if n == low} == {
+        COPY_CLAIMS_FEWEST_ANAEROBIC_AT_SESSIONS
+    }, (
+        f"the copy says the FEWEST anaerobic weeks belong to a climber training "
+        f"{COPY_CLAIMS_FEWEST_ANAEROBIC_AT_SESSIONS} day a week; {low} weeks is reached at "
+        f"{sorted({c.sessions for c, n in reached if n == low})} days. That clause names the "
+        f"driver, so it has to be the driver."
+    )
+    assert min(c.sessions for c, n in reached if n == high) == (
+        COPY_CLAIMS_MOST_ANAEROBIC_FROM_SESSIONS
+    ), (
+        f"the copy says the MOST is reached from "
+        f"{COPY_CLAIMS_MOST_ANAEROBIC_FROM_SESSIONS} days a week; {high} weeks first appears at "
+        f"{min(c.sessions for c, n in reached if n == high)}."
+    )
+
+
 def test_the_copys_POWER_ENDURANCE_claim_about_WHAT_IS_BIGGEST_FLIPS_WITH_THE_DAYS() -> None:
     """⚠️ GUARD, per climber over EVERY session count. Ruling 31 accepted that `technique` is
     the majority quality of this block at high day counts and ordered the copy to ADMIT it, so
     this asserts the admission in BOTH regimes rather than asserting the block's own quality
     leads everywhere — which is false above five days and was the open red for five rounds.
 
-    Measured, all minutes of the block: power endurance is the largest quality on 30 of 30
-    profiles at one to five sessions a week (69.8–82.5% at one day, 32.9–47.9% at five), and
-    `technique` is the largest on 12 of 12 at six and seven (37.5–50.8% against power
-    endurance's 23.0–34.2%). Cause, structural: ruling 9 allows three hard days however many
-    days there are, so the remaining fills go to ruling 30's non-governed fallback.
+    Measured, all minutes of the block: power endurance is the largest quality on 24 of 24
+    profiles at one to four sessions a week (57.9–78.2% at one day, 35.6–54.1% at four), it is
+    the largest on 3 of 6 at exactly five, and `technique` is the largest on 12 of 12 at six
+    and seven (34.3–51.5% against power endurance's 19.2–36.4%). Cause, structural: ruling 9
+    allows three hard days however many days there are, so the remaining fills go to ruling
+    30's non-governed fallback. ⚠️ The five-day arm asserts the SPLIT, not a winner.
     ⚠️ The second arm is what earns the copy the words ORDINARY CLIMBING rather than "movement
     drills": 53–90% of those technique minutes are ruling 29's open-climbing filler.
     """
+    assert (
+        COPY_CLAIMS_BIGGEST_UNTIL_DAYS + 1
+        == COPY_CLAIMS_ROUGHLY_EVEN_DAYS
+        == COPY_CLAIMS_BIGGEST_FROM_DAYS - 1
+    ), (
+        f"the copy names three regimes and they must TILE the day counts: under "
+        f"{COPY_CLAIMS_BIGGEST_UNTIL_DAYS}, even at {COPY_CLAIMS_ROUGHLY_EVEN_DAYS}, over from "
+        f"{COPY_CLAIMS_BIGGEST_FROM_DAYS}. Overlap makes the boundary constants inert and a gap "
+        f"leaves a day count nothing below reads."
+    )
     under, over = COPY_CLAIMS_BIGGEST_BY_DAYS
+    biggest_at_five: set[str] = set()
     for climber in _PE_SWEEP:
         seconds = _climber_aspect_seconds(climber, Phase.POWER_ENDURANCE)
         total = sum(seconds.values())
         assert total, f"no power_endurance minutes for {climber}; the parametrisation is wrong."
+        if climber.sessions == COPY_CLAIMS_ROUGHLY_EVEN_DAYS:
+            biggest_at_five.add(seconds.most_common(1)[0][0])
+            continue
         claimed = under if climber.sessions <= COPY_CLAIMS_BIGGEST_UNTIL_DAYS else over
         assert seconds.most_common(1)[0][0] == claimed, (
             f"PHASE_GUIDE[power_endurance] says {claimed} is the biggest thing in the block at "
@@ -421,8 +498,14 @@ def test_the_copys_POWER_ENDURANCE_claim_about_WHAT_IS_BIGGEST_FLIPS_WITH_THE_DA
             f"climber gets {seconds.most_common(3)} — {100 * seconds[claimed] / total:.1f}% "
             f"{claimed}. Reword the sentence or change the generator — never the table alone."
         )
+    assert biggest_at_five == {under, over}, (
+        f"PHASE_GUIDE[power_endurance] says the two come out ABOUT EVEN at "
+        f"{COPY_CLAIMS_ROUGHLY_EVEN_DAYS} days a week, but across the six profiles there the "
+        f"biggest quality is {sorted(biggest_at_five)}. If one of them now wins every profile "
+        f"the boundary has moved and the sentence owes that day count, not a hedge."
+    )
     for climber in _PE_SWEEP:
-        if climber.sessions <= COPY_CLAIMS_BIGGEST_UNTIL_DAYS:
+        if climber.sessions < COPY_CLAIMS_BIGGEST_FROM_DAYS:
             continue
         blocks = [
             block
@@ -625,21 +708,25 @@ def test_a_LABELLESS_or_INSECURE_link_fails() -> None:
 
     insecure = tuple(
         replace(guide, links=(GuideLink("http://example.com", "Fine words"), guide.links[0]))
-        if guide.phase is Phase.POWER
+        if guide.phase is Phase.STRENGTH
         else guide
         for guide in PHASE_GUIDE
     )
-    assert _phases_with_unusable_links(insecure) == {Phase.POWER}
+    assert _phases_with_unusable_links(insecure) == {Phase.STRENGTH}
 
 
 def test_the_comparison_would_notice_a_phase_with_no_copy() -> None:
-    """Positive control: a detector that cannot see its own violation is worse than none."""
-    crippled = {member.value for member in Phase if member is not Phase.TAPER}
-    assert crippled != {member.value for member in Phase}
+    """Positive control: a detector that cannot see its own violation is worse than none. The
+    comparison above is against the phases a PLAN carries, so this crippled set is too."""
+    carried = {phase.value for climber in _SWEEP for phase in _weeks_by_phase(climber)}
+    crippled = carried - {Phase.TAPER.value}
+    assert crippled != carried
     assert set(_KEYS) != crippled
 
 
 def test_the_comparison_would_notice_a_STALE_entry() -> None:
-    """The other direction, which a `>=` containment check would have missed."""
-    stale = set(_KEYS) | {"anaerobic_capacity"}
-    assert stale != {member.value for member in Phase}
+    """The other direction, which a `>=` containment check would have missed — and `power` is
+    the live case: its paragraph shipped for one PR after ruling 51 took its block away."""
+    carried = {phase.value for climber in _SWEEP for phase in _weeks_by_phase(climber)}
+    for extra in ("anaerobic_capacity", Phase.POWER.value):
+        assert set(_KEYS) | {extra} != carried

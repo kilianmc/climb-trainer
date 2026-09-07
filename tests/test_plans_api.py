@@ -33,7 +33,7 @@ from sqlalchemy.orm import Session
 from server.auth.tokens import issue_access_token
 from server.domain.grades import GradeSystemKey
 from server.domain.planner import REFUSAL_MESSAGES, RefusalReason
-from server.domain.planner.periodisation import week_count_for
+from server.domain.planner.periodisation import WEEK_COUNT
 from server.models import (
     ClimbingAspect,
     Grade,
@@ -51,7 +51,8 @@ _PASSWORD = "a-long-enough-passphrase"
 # weekday chooser has exactly one answer.
 _MON_WED_SAT = 0b0100101
 
-# The demo profile's own numbers, from `server/seed.py`. Two rungs of French sport gap.
+# The demo profile's own numbers, from `server/seed.py`. Sixteen because that is the ONE
+# length every plan runs (ruling 49), not because of the profile's two-rung sport gap.
 _DEMO_WEEK_COUNT = 16
 
 
@@ -116,16 +117,11 @@ def _preview(client: TestClient, headers: dict[str, str]) -> Any:
     return client.post("/api/plans/preview", json={}, headers=headers)
 
 
-def test_a_complete_profile_gets_a_plan_whose_length_follows_the_GRADE_GAP(
+def test_a_complete_profile_gets_a_DATED_PHASE_STRUCTURED_PLAN(
     api_client: TestClient, auth: dict[str, str], db_session: Session
 ) -> None:
-    """The product promise: grades in, a dated phase-structured plan out.
-
-    `week_count` is asserted against `week_count_for(grade_gap)` rather than a literal, so
-    this test proves the endpoint *plumbs the gap through* — the gap table itself is pinned
-    literally in `tests/test_planner_periodisation.py`, and asserting it twice would make a
-    deliberate change to it fail in two places with one of them lying about the cause.
-    """
+    """The product promise: grades in, a dated phase-structured plan out. `week_count` reads
+    `WEEK_COUNT`, the source `generate()` does NOT use — it derives the length from the spans."""
     _complete_profile(api_client, auth, db_session)
 
     response = _preview(api_client, auth)
@@ -133,7 +129,7 @@ def test_a_complete_profile_gets_a_plan_whose_length_follows_the_GRADE_GAP(
     assert response.status_code == 200, response.text
     body = response.json()
     assert body["grade_gap"] > 0
-    assert body["week_count"] == week_count_for(body["grade_gap"])
+    assert body["week_count"] == WEEK_COUNT
     assert body["generator_version"] == body["generator_input"]["generator_version"]
     # The dates are the half no unit test of the domain can prove reached the wire.
     assert body["start_date"] == body["mesocycles"][0]["microcycles"][0]["start_date"]
