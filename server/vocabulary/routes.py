@@ -22,9 +22,6 @@ would have silently dropped the other five assertions. Six real cross-language a
 for six short arrays and zero database time is a good trade; a fictional consumer is not a
 reason.
 
-It is also the obvious place for a future picker of an ascent style or a protocol kind to
-read from (PR #10 onward), which is why it ships as data rather than as a comment.
-
 ## Caching: `private`, not `public, immutable`
 
 The payload is user-independent and changes only when the seed does, i.e. per deploy —

@@ -1320,7 +1320,7 @@ class LoggedSet(Base):
 
 
 class Ascent(Base):
-    """A climb, logged. The emotional payload of the whole app — always a Tier-1 write.
+    """A climb, logged. ⚠️ Ascent logging was CUT from the product on 2026-09-07.
 
     ## Grade is stored twice, on purpose
 

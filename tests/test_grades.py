@@ -2,9 +2,9 @@
 
 Squarely inside the "WRITE tests for" list in CLAUDE.md: this is critical domain logic
 whose failure mode is *silent*. A mis-seated rung does not raise — it produces a plan
-for the wrong grade, a send pyramid with a bar in the wrong column, and a "grade gap"
-that quietly generates twelve weeks of the wrong training. None of that shows up as an
-exception, which is exactly why the invariants are asserted rather than inspected.
+for the wrong grade and a "grade gap" that quietly generates twelve weeks of the wrong
+training. None of that shows up as an exception, which is exactly why the invariants are
+asserted rather than inspected.
 
 No database involved: the ladder is pure Python, and a column's width is model metadata.
 """
