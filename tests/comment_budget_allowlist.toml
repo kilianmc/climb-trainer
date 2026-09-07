@@ -6207,7 +6207,7 @@ path = "web/src/profile/grades.ts"
 kind = "block"
 anchor = "which grades the pickers offer"
 limit = 23
-reason = "Three reasons the grade floor stays client-side, re-decided once the schema opened; without them the next reader moves it into GET /api/vocabulary and breaks the ascent log."
+reason = "Three reasons the grade floor stays client-side: the seeded ladder must stay complete for convert(), a shared cached response must carry no product rule, and a stored below-floor grade must still render."
 
 [[exception]]
 path = "web/src/profile/grades.ts"

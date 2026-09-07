@@ -25,9 +25,8 @@ diary.
    of `prepare / work / rest / open` phases. Full-viewport colour changes and a huge
    countdown carry the cues, with synthesized audio and haptics on top. Every tap is a
    local write first, so it works with no signal in a basement gym.
-4. **Training diary.** Notes live on the thing they describe — the session, the set,
-   the ascent — plus free-standing journal entries, merged into one reverse-chronological
-   timeline with full-text search.
+4. **Training diary.** A note on the session it describes, plus free-standing entries for
+   how you slept, how your skin is and how it felt — read back as a trend, not a replay.
 
 ## Stack
 
