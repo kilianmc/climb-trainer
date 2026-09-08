@@ -11,7 +11,7 @@ unsent tail. ⚠️ **4xx here is PERMANENT: quarantine the flush, never retry i
 
 import logging
 from collections.abc import Sequence
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, date, datetime
 from typing import Annotated, Any, Final, Literal, NamedTuple
 from uuid import UUID
 
@@ -38,6 +38,8 @@ from server.fields import (
     SetIndex,
     SetNote,
     WorkSeconds,
+    bounded_day,
+    bounded_instant,
 )
 from server.models import (
     Activity,
@@ -57,11 +59,6 @@ router = APIRouter(prefix="/api/sessions", tags=["sessions"])
 # The same argument as `server/plans/routes.py`: this body is one climber's training, so a
 # shared-cache entry would hand a stranger their log. `private` forbids the CDN, `no-store` disk.
 _CACHE_CONTROL: Final = "private, no-store"
-
-# How far either side of the server's own UTC clock a date or an instant may sit. A year back
-# because "I forgot to log last month" is real; a day forward covers UTC+14 and phone clock skew.
-_BACKDATE_DAYS: Final = 365
-_HORIZON_DAYS: Final = 1
 
 # Matched on psycopg3's `Diagnostic.constraint_name`, never on a substring of a driver message.
 # These two are the only integrity failures this route can explain to a client.
@@ -97,24 +94,8 @@ _SET_COLUMNS: Final = (
 
 
 def _today_utc() -> date:
-    """The server's own date. Bounds judge the client's value against this."""
+    """The server's own date. The completion window is measured from it."""
     return datetime.now(UTC).date()
-
-
-def _bounded_day(value: date) -> date:
-    """A date inside the window this endpoint accepts, or a `ValueError` the client sees as 422."""
-    today = _today_utc()
-    if not today - timedelta(days=_BACKDATE_DAYS) <= value <= today + timedelta(days=_HORIZON_DAYS):
-        raise ValueError("that date is outside the window this endpoint accepts")
-    return value
-
-
-def _bounded_instant(value: datetime) -> datetime:
-    """The same window for an aware instant: bounds clock skew and silent backdating."""
-    now = datetime.now(UTC)
-    if not now - timedelta(days=_BACKDATE_DAYS) <= value <= now + timedelta(days=_HORIZON_DAYS):
-        raise ValueError("that timestamp is outside the window this endpoint accepts")
-    return value
 
 
 def _not_found(detail: str) -> HTTPException:
@@ -163,13 +144,13 @@ class LoggedSetIn(BaseModel):
     @classmethod
     def _a_plausible_weigh_in(cls, value: date | None) -> date | None:
         """The snapshot's provenance date, bounded like every other date here."""
-        return None if value is None else _bounded_day(value)
+        return None if value is None else bounded_day(value)
 
     @field_validator("completed_at")
     @classmethod
     def _a_plausible_instant(cls, value: datetime | None) -> datetime | None:
         """Bounded against clock skew and against backdating a set into last year."""
-        return None if value is None else _bounded_instant(value)
+        return None if value is None else bounded_instant(value)
 
     @model_validator(mode="after")
     def _a_weight_with_its_provenance(self) -> "LoggedSetIn":
@@ -208,13 +189,13 @@ class SessionLogRequest(BaseModel):
     @classmethod
     def _a_plausible_day(cls, value: date) -> date:
         """A session cannot have happened next month, and backdating is bounded at a year."""
-        return _bounded_day(value)
+        return bounded_day(value)
 
     @field_validator("started_at")
     @classmethod
     def _a_plausible_instant(cls, value: datetime | None) -> datetime | None:
         """The same window. `None` is "not sent" or "cleared", not a value to bound."""
-        return None if value is None else _bounded_instant(value)
+        return None if value is None else bounded_instant(value)
 
     @model_validator(mode="after")
     def _one_row_per_conflict_key(self) -> "SessionLogRequest":

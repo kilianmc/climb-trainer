@@ -3,7 +3,12 @@ import { RouterProvider, createMemoryHistory } from '@tanstack/react-router';
 import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 
-import type { ExerciseLibrary, LoggedSetInput, SessionLogRequest } from './api/types';
+import type {
+  ExerciseLibrary,
+  JournalEntryRequest,
+  LoggedSetInput,
+  SessionLogRequest,
+} from './api/types';
 import { AuthProvider, createAuth } from './auth/AuthProvider';
 import { createAppRouter, createQueryClient } from './router';
 import { makeBlock, makePlan, makeSession, makeSet, makeVocabulary } from './session/fixtures';
@@ -144,6 +149,18 @@ function stubFetch(answers: PutAnswer[] = []) {
       // from `done_block_ids`. Empty unless a test set one — one session, on today.
       if (path === '/api/sessions/completion')
         return Promise.resolve(json({ as_of: TODAY, sessions: completionRows() }));
+      // The diary box's own PUT — see `journalPuts`. It answers with the row's id, because
+      // `entryId` is the whole difference between the summary offering Save and offering Update.
+      if (path.startsWith('/api/journal/') && method === 'PUT') {
+        return Promise.resolve(
+          json({
+            client_uuid: path.slice('/api/journal/'.length),
+            entry_date: TODAY,
+            id: 900,
+            logged_session_id: null,
+          }),
+        );
+      }
       if (path.startsWith('/api/sessions/') && method === 'PUT') {
         const uuid = path.slice('/api/sessions/'.length);
         const body = JSON.parse(bodyText(init)) as SessionLogRequest;
@@ -189,6 +206,21 @@ function puts(): SessionLogRequest[] {
         new URL(urlOf(input), 'http://localhost').pathname.startsWith('/api/sessions/'),
     )
     .map(([, init]) => JSON.parse(bodyText(init)) as SessionLogRequest);
+}
+
+/** Every `PUT /api/journal/*` as `[uuid, body]`: the uuid is what makes a replay ONE row. */
+function journalPuts(): [string, JournalEntryRequest][] {
+  return vi
+    .mocked(fetch)
+    .mock.calls.filter(
+      ([input, init]) =>
+        (init?.method ?? 'GET') === 'PUT' &&
+        new URL(urlOf(input), 'http://localhost').pathname.startsWith('/api/journal/'),
+    )
+    .map(([input, init]) => [
+      new URL(urlOf(input), 'http://localhost').pathname.slice('/api/journal/'.length),
+      JSON.parse(bodyText(init)) as JournalEntryRequest,
+    ]);
 }
 
 /** ⚠️ ONLY `requestAnimationFrame` is faked: faking `setTimeout` too deadlocks the first mount,
@@ -263,6 +295,24 @@ async function started(scope: 'user' | 'demo' = 'user') {
   fireEvent.click(screen.getByRole('button', { name: `Start ${ITEM}` }));
   await settle();
   return view;
+}
+
+/** The diary, from inside the run: the control is in a top corner, so it is reachable in every
+ *  state a live run has — including mid-item, where the bottom bar is absent. */
+async function openNotes(): Promise<void> {
+  fireEvent.click(screen.getByRole('button', { name: 'Write in your diary' }));
+  await settle();
+}
+
+async function closeNotes(): Promise<void> {
+  fireEvent.click(screen.getByRole('button', { name: 'Close the notes' }));
+  await settle();
+}
+
+/** What the countdown node is SHOWING — written per frame through the ref, never rendered from
+ *  state, so this is the only place a frozen clock can be read as the climber sees it. */
+function countdown(): string | null | undefined {
+  return document.querySelector('.ct-app__player-count')?.textContent;
 }
 
 /** `exerciseLabel` falls back to a humanised key, and the fixture library is empty. */
@@ -373,7 +423,9 @@ it('QUARANTINES a 422 and omits the refused sets from the next flush', async () 
 
   // ⚠️ THE ASSERTION: the RPE follow-up is the next flush, and the refused sets are NOT in it.
   // Every refusal on the route is a fixed string, so resending could only be refused again.
-  fireEvent.change(screen.getByRole('combobox'), { target: { value: '7' } });
+  fireEvent.change(screen.getByRole('combobox', { name: /session rpe/i }), {
+    target: { value: '7' },
+  });
   await settle();
 
   const bodies = puts();
@@ -822,7 +874,9 @@ it('does NOT ask for the session RPE again after the screen is left and come bac
   await at(90);
   fireEvent.click(screen.getByRole('button', { name: 'Finish' }));
   await settle();
-  fireEvent.change(screen.getByRole('combobox'), { target: { value: '7' } });
+  fireEvent.change(screen.getByRole('combobox', { name: /session rpe/i }), {
+    target: { value: '7' },
+  });
   await settle();
   fireEvent.click(screen.getByRole('button', { name: 'Done' }));
   await settle();
@@ -913,4 +967,128 @@ it('offers “Didn’t finish it” on the RUNNING ITEM’s own controls, not in
   expect(getRun()?.pending).toEqual([]);
   expect(getRun()?.logged).toEqual([]);
   expect(getRun()?.activeBlockIndex).toBeNull();
+});
+
+it('stops the countdown while the notes are open, and gives back the same time', async () => {
+  await started();
+  await at(20);
+  // Five seconds left of the first hang, and that is the number that must not move.
+  expect(countdown()).toBe('0:05');
+
+  await openNotes();
+  expect(getRun()?.pausedAtEpochMs).toBe(START + 20 * SECOND);
+
+  // Three minutes of wall clock, which would have run the whole timeline out.
+  await at(200);
+  expect(countdown()).toBe('0:05');
+  expect(getRun()?.cursor.phaseIndex).toBe(1);
+  expect(getRun()?.pending).toEqual([]);
+
+  await closeNotes();
+  expect(getRun()?.pausedAtEpochMs).toBeNull();
+  // ⚠️ The pause SHIFTED the phase start rather than re-stamping it: paused at 0:05 left, back
+  // at 0:05 left, so the set lands five seconds after the sheet closed and not before.
+  await at(204);
+  expect(getRun()?.cursor.phaseIndex).toBe(1);
+  await at(206);
+  expect(getRun()?.pending.map((set) => set.set_index)).toEqual([1]);
+});
+
+it('leaves a pause the climber chose exactly where it was', async () => {
+  await started();
+  await at(20);
+  fireEvent.click(screen.getByRole('button', { name: `Pause ${ITEM}` }));
+  await settle();
+  expect(getRun()?.pausedAtEpochMs).toBe(START + 20 * SECOND);
+
+  // ⚠️ `togglePause` is a TOGGLE: opening took no pause, because there was nothing to stop.
+  await openNotes();
+  expect(getRun()?.pausedAtEpochMs).toBe(START + 20 * SECOND);
+  await at(120);
+  await closeNotes();
+
+  // ⚠️ And closing must not resume what it never paused — the climber who stopped the clock
+  // deliberately before writing anything down comes back to the pause they chose.
+  expect(getRun()?.pausedAtEpochMs).toBe(START + 20 * SECOND);
+  expect(screen.getByText('Paused')).toBeInTheDocument();
+  await at(300);
+  expect(getRun()?.cursor.phaseIndex).toBe(1);
+  expect(getRun()?.pending).toEqual([]);
+
+  // Their own control still resumes it, at the time it was paused at.
+  fireEvent.click(screen.getByRole('button', { name: `Resume ${ITEM}` }));
+  await settle();
+  expect(getRun()?.pausedAtEpochMs).toBeNull();
+  expect(countdown()).toBe('0:05');
+});
+
+it('attempts no pause at all when nothing is running', async () => {
+  await startedSession();
+  expect(getRun()?.activeBlockIndex).toBeNull();
+
+  await openNotes();
+  expect(getRun()?.pausedAtEpochMs).toBeNull();
+  await closeNotes();
+  expect(getRun()?.pausedAtEpochMs).toBeNull();
+
+  // ⚠️ The failure this rules out is a PHANTOM pause: a close that toggled blindly would stop
+  // the clock of the item entered next, which no press had ever asked to pause.
+  fireEvent.click(screen.getByRole('button', { name: `Start ${ITEM}` }));
+  await settle();
+  await at(20);
+  expect(getRun()?.cursor.phaseIndex).toBe(1);
+  await at(30);
+  expect(getRun()?.pending.map((set) => set.set_index)).toEqual([1]);
+});
+
+it('keeps the session bar absent while the notes are open over a running item', async () => {
+  await started();
+  await openNotes();
+
+  // Focus mode is not undone by the sheet: the one control it adds is its own way out, and no
+  // session-level action comes back within reach of a climber mid-hang.
+  expect(document.querySelector('.ct-app__player-bar')).toBeNull();
+  expect(screen.queryByRole('button', { name: 'Finish' })).toBeNull();
+  expect(screen.getByRole('button', { name: 'Close the notes' })).toBeInTheDocument();
+});
+
+it('writes the diary from INSIDE the run, and the summary carries the same words', async () => {
+  await started();
+  await openNotes();
+
+  const sheet = within(screen.getByRole('dialog'));
+  fireEvent.change(sheet.getByLabelText(/how it went/i), {
+    target: { value: 'fingers feel tweaky' },
+  });
+  await settle();
+  // Persisted on the KEYSTROKE, not on the press: a failed write loses nothing.
+  expect(getRun()?.journal.body).toBe('fingers feel tweaky');
+
+  fireEvent.click(sheet.getByRole('button', { name: 'Save this entry' }));
+  await settle();
+  expect(journalPuts()).toHaveLength(1);
+
+  await closeNotes();
+  // The item has to end before the session bar comes back — see focus mode, above.
+  fireEvent.click(screen.getByRole('button', { name: `Mark ${ITEM} completed` }));
+  await settle();
+  fireEvent.click(screen.getByRole('button', { name: 'Finish' }));
+  await settle();
+
+  // ⚠️ ONE draft, two placements: the summary shows the words typed mid-session and knows they
+  // are already stored, so it offers Update rather than a second Save.
+  const box = screen.getByLabelText(/how it went/i);
+  expect(box).toHaveProperty('value', 'fingers feel tweaky');
+  expect(document.body.textContent).toMatch(/saved to your diary/i);
+
+  fireEvent.change(box, { target: { value: 'fingers feel tweaky, backing off the crimps' } });
+  await settle();
+  fireEvent.click(screen.getByRole('button', { name: 'Update this entry' }));
+  await settle();
+
+  // ⚠️ ONE ROW: both writes went to the RUN's own uuid, which is `journal_entry`'s unique key,
+  // so the second is an edit of the first and never a second entry for one session.
+  expect(journalPuts()).toHaveLength(2);
+  expect(new Set(journalPuts().map(([uuid]) => uuid))).toEqual(new Set([getRun()?.clientUuid]));
+  expect(journalPuts().at(-1)?.[1].body).toBe('fingers feel tweaky, backing off the crimps');
 });

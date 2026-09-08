@@ -7694,6 +7694,13 @@ limit = 22
 reason = "Four decisions a rework would undo: the coloured face appears only while an ITEM is running, FOCUS MODE makes the other items absent rather than dimmed (five wrong buttons within reach of a climber mid-hang), the countdown is written through a ref and not state, and the phase is a data attribute rather than an interpolated class name markupCss.test.ts cannot see."
 
 [[exception]]
+path = "web/src/session/SessionNotes.tsx"
+kind = "block"
+anchor = "the mid session notes overlay the diary box"
+limit = 10
+reason = "The app's FIRST overlay, so this is the precedent every later one copies: focus in, focus back to the opener, a Tab that cannot leave, a visible way out, and why Escape is left to lose to the shell's own hook in the federated mount. Plus the togglePause TOGGLE trap - a blind call on open resumes the pause the climber chose, which it did until the guard caught it."
+
+[[exception]]
 path = "web/src/session/SessionSummary.tsx"
 kind = "block"
 anchor = "the last screen of every run and"
@@ -7822,9 +7829,9 @@ reason = "Why this is not IconMoon: the bare crescent already means dark theme t
 [[exception]]
 path = "web/src/session/SessionPlayer.tsx"
 kind = "block"
-anchor = "the two corners neither is a primary"
+anchor = "the two corners none of these is a primary"
 limit = 4
-reason = "CLAUDE.md forbids a primary action in a top corner; this records why these two are not one, and why each corner is its own wrapper - a control that renders nothing (no navigator.wakeLock on Firefox for Android) must leave its corner empty rather than pull the other across the screen."
+reason = "A primary action is never in a top corner; this records why these three are not one, and why each corner is its own wrapper - a control that renders nothing (no navigator.wakeLock on Firefox for Android) must leave its corner empty rather than pull the others across the screen."
 
 
 [[exception]]

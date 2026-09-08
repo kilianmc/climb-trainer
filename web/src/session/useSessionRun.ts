@@ -18,6 +18,8 @@ import {
   useSoundOn,
   vibrationAvailable,
 } from './cues';
+import { buildJournalPut } from './journal';
+import { useJournalPut } from './journalApi';
 import {
   applyAck,
   buildPut,
@@ -29,8 +31,8 @@ import {
 } from './outbox';
 import type { BlockRange, CompiledPhase } from './protocol';
 import { blockRanges, compileProtocol } from './protocol';
-import type { ItemStatus, RunItem, RunRecord } from './runStore';
-import { createRun, getRun, setRun, updateRun, useRun } from './runStore';
+import type { ItemStatus, JournalDraft, RunItem, RunRecord } from './runStore';
+import { EMPTY_JOURNAL_DRAFT, createRun, getRun, setRun, updateRun, useRun } from './runStore';
 import { localIsoDate } from './today';
 import type { WakeLockView } from './wakeLock';
 import {
@@ -379,8 +381,9 @@ export interface SessionRun {
   /** `true` while the running item is paused: the countdown is frozen, no phase advances and
    *  no cue fires. Survives a reload and a backgrounding — see `RunRecord.pausedAtEpochMs`. */
   readonly paused: boolean;
-  /** Pause the running item, or resume it. A no-op when nothing is running. */
-  readonly togglePause: () => void;
+  /** Pause the running item, or resume it. A no-op when nothing is running. ⚠️ Returns `true`
+   *  only when THIS call stopped the clock — which is the one pause an overlay may give back. */
+  readonly togglePause: () => boolean;
   /** `true` when the running item has a set after the one in progress. */
   readonly nextSetAvailable: boolean;
   /** Abandon the rest of the current set and land on the start of the next one, logging the
@@ -418,6 +421,14 @@ export interface SessionRun {
   readonly setSessionRpe: (rpe: number) => void;
   /** The Retry control after a 5xx. The same flush the triggers run, on demand. */
   readonly retryFlush: () => void;
+  /** The diary box's text, live off the record — never React state. See `JournalDraft`. */
+  readonly journal: JournalDraft;
+  /** Commit an edit to the diary box. Persisted at once; clears the saved/refused marks and
+   *  keeps `entryId`, so the control can say whether the press would create or edit a row. */
+  readonly setJournalDraft: (patch: Partial<JournalDraft>) => void;
+  /** Write the box to `journal_entry`. Its OWN PUT, like `setSessionRpe`; replays are one row. */
+  readonly saveJournal: () => void;
+  readonly isSavingJournal: boolean;
   /** Sets minted but not yet acknowledged. */
   readonly unsentCount: number;
   /** Sets a 4xx refused. **Never resent**; the summary says so. */
@@ -432,6 +443,7 @@ export function useSessionRun(): SessionRun {
   const { scope } = useAuth();
   const canWrite = writesEnabled(scope);
   const put = useSessionLogPut();
+  const journalPut = useJournalPut();
   const putRef = useRef(put);
   useEffect(() => {
     putRef.current = put;
@@ -594,6 +606,9 @@ export function useSessionRun(): SessionRun {
         updateRun((record) => ({
           ...applyAck(record, response?.sets ?? []),
           savedAtEpochMs: Date.now(),
+          // The server's own id for this session. Kept on the record because
+          // `journal_entry.logged_session_id` needs it and the query cache cannot be persisted.
+          loggedSessionId: response?.id ?? record.loggedSessionId,
         }));
       } catch (error) {
         updateRun((record) =>
@@ -768,10 +783,12 @@ export function useSessionRun(): SessionRun {
    * climber had already spent; shifting is what makes "paused at 0:04 left" resume at 0:04 left
    * however long the pause was, reload and backgrounding included.
    */
-  const togglePause = useCallback((): void => {
+  const togglePause = useCallback((): boolean => {
     const current = getRun();
-    if (current === null || current.finishedAtEpochMs !== null) return;
-    if (current.activeBlockIndex === null) return;
+    // ⚠️ `false` on every no-op, not just on a resume: a caller that pauses on open and resumes
+    // on close must not resume a clock this call never stopped.
+    if (current === null || current.finishedAtEpochMs !== null) return false;
+    if (current.activeBlockIndex === null) return false;
     const now = Math.round(nowEpoch());
     const pausedAt = current.pausedAtEpochMs;
 
@@ -779,7 +796,7 @@ export function useSessionRun(): SessionRun {
       clearBoundary();
       updateRun((record) => ({ ...record, pausedAtEpochMs: now }));
       paint(getRun(), now);
-      return;
+      return true;
     }
 
     const heldMs = Math.max(0, now - pausedAt);
@@ -796,6 +813,7 @@ export function useSessionRun(): SessionRun {
     cueBus.arm();
     paint(getRun(), now);
     armBoundary(getRun(), now);
+    return false;
   }, [armBoundary, clearBoundary, cueBus, nowEpoch, paint]);
 
   /**
@@ -896,6 +914,50 @@ export function useSessionRun(): SessionRun {
   const retryFlush = useCallback((): void => {
     void flush();
   }, [flush]);
+
+  /** Any edit clears the saved AND refused marks — a stale "Saved" beside changed words lies —
+   *  but never `entryId`: the server's row outlives the text, which is what makes Update true. */
+  const setJournalDraft = useCallback((patch: Partial<JournalDraft>): void => {
+    updateRun((record) => ({
+      ...record,
+      journal: { ...record.journal, ...patch, savedAtEpochMs: null, refusedAtEpochMs: null },
+    }));
+  }, []);
+
+  const writeJournal = useCallback(async (): Promise<void> => {
+    const current = getRun();
+    if (current === null || !canWrite) return;
+    const body = buildJournalPut(current);
+    // An empty draft is what the `not_empty` CHECK exists to refuse, so it is not sent.
+    if (body === null) return;
+    try {
+      // ⚠️ The RUN's uuid, deliberately: one session, one entry. `journal_entry`'s unique key
+      // is scoped to its own table, so sharing the uuid with `activity` collides with nothing.
+      const acked = await journalPut.mutateAsync({ clientUuid: current.clientUuid, body });
+      updateRun((record) => ({
+        ...record,
+        journal: {
+          ...record.journal,
+          savedAtEpochMs: Date.now(),
+          refusedAtEpochMs: null,
+          // The server's own row id, so a later edit offers Update rather than Save.
+          entryId: acked?.id ?? record.journal.entryId,
+        },
+      }));
+    } catch (error) {
+      // 4xx is PERMANENT, 5xx retryable — `api.ts::classifyFailure`, the outbox's own rule.
+      // Either way the text stays on the record, which is the failure this box must not have.
+      const refused = classifyFailure(error) === 'quarantine';
+      updateRun((record) => ({
+        ...record,
+        journal: { ...record.journal, refusedAtEpochMs: refused ? Date.now() : null },
+      }));
+    }
+  }, [canWrite, journalPut]);
+
+  const saveJournal = useCallback((): void => {
+    void writeJournal();
+  }, [writeJournal]);
 
   /** "Keep going" — the timer is right, the banner goes away. */
   const keepGoing = useCallback((): void => {
@@ -1037,6 +1099,10 @@ export function useSessionRun(): SessionRun {
     abort,
     setSessionRpe,
     retryFlush,
+    journal: run?.journal ?? EMPTY_JOURNAL_DRAFT,
+    setJournalDraft,
+    saveJournal,
+    isSavingJournal: journalPut.isPending,
     unsentCount: run?.pending.length ?? 0,
     quarantinedCount: run?.quarantined.length ?? 0,
     isSaving: put.isPending,

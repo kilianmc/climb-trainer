@@ -46,6 +46,7 @@ packages = [
     "server.auth",
     "server.domain",
     "server.domain.planner",
+    "server.journal",
     "server.library",
     "server.plans",
     "server.profile",

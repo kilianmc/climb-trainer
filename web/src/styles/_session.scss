@@ -46,6 +46,10 @@
   &__player {
     container: ct-player / inline-size;
 
+    // The containing block for the notes sheet, and nothing else: an out-of-flow child takes
+    // none of the four rows below, so the layout is unchanged whether it is open or not.
+    position: relative;
+
     display: grid;
     // Four rows: the corner controls, the resync slot, the scrolling body, the control bar.
     // The resync slot is an empty element when no banner is owed, so the body never changes
@@ -81,13 +85,14 @@
     color: var(--ct-fg);
   }
 
-  // The two top corners. Sound on one side, "Keep screen on" on the other, and a wrapper each
-  // so a control that renders nothing — Firefox on Android has no `navigator.wakeLock` — leaves
-  // its corner empty rather than pulling the other one across the screen.
+  // The two top corners. Cues and the diary on one side, "Keep screen on" on the other, and a
+  // wrapper each so a control that renders nothing — Firefox on Android has no
+  // `navigator.wakeLock` — leaves its corner empty rather than pulling the others across.
   //
-  // ⚠️ These are the ONLY controls allowed up here. CLAUDE.md's rule is that primary actions are
-  // never in a top corner; both of these are settings the climber owns, and Finish stays in the
-  // bottom bar where a thumb reaches it.
+  // ⚠️ NO PRIMARY ACTION up here — those live in the bottom bar, where Finish stays and a
+  // thumb reaches it. The three controls that do live here are the climber's
+  // own — the cues, the screen lock, and the diary. The diary is here by elimination: it has to
+  // be reachable while an item is RUNNING, and focus mode makes the bottom bar absent then.
   &__player-top {
     display: flex;
     align-items: start;
@@ -201,6 +206,56 @@
     gap: var(--ct-space-3);
     padding-block-start: var(--ct-space-4);
     padding-inline: var(--ct-gutter-start) var(--ct-gutter-end);
+
+    > * {
+      flex: 1 1 10rem;
+    }
+  }
+
+  // ## The notes sheet: the app's FIRST overlay, and why it is not `position: fixed`
+  //
+  // `fixed` and every viewport unit resolve against kilianmc.com's viewport in the federated
+  // mount — this file's opening rule — so the sheet is `absolute` inside the player, which is
+  // the box it is an overlay OVER. The player supplies the containing block above.
+  //
+  // OPAQUE, never translucent: glassmorphism was evaluated and REJECTED, and the fill behind
+  // this is any of four phase colours. `--ct-bg`/`--ct-fg` is the idle player's own pair, so
+  // `contrast.test.ts` already sweeps it and no new pair is introduced.
+  //
+  // Two rows: the form scrolls, the way out does not. Flat rules keyed on their own element,
+  // like everything else here — issues #95/#97 are what a `[data-…]` ancestor reaching a
+  // descendant costs, and nothing on this sheet reads a state off an ancestor at all.
+  &__overlay {
+    position: absolute;
+    inset: 0;
+    display: grid;
+    grid-template-rows: minmax(0, 1fr) auto;
+    background-color: var(--ct-bg);
+    color: var(--ct-fg);
+  }
+
+  // `minmax(0, …)` on the row plus `min-block-size: 0` here is the pair `&__player-body` needs,
+  // and for the same reason: the form scrolls INSIDE its row instead of pushing the row that
+  // holds the way out off the end of the sheet.
+  &__overlay-body {
+    min-block-size: 0;
+    padding-block: var(--ct-space-4);
+    padding-inline: var(--ct-gutter-start) var(--ct-gutter-end);
+    overflow-y: auto;
+  }
+
+  // `&__player-bar`'s twin, deliberately NOT that class: two tests read the session bar's
+  // ABSENCE as "no session-level action inside a running item", and this sheet is open at
+  // exactly that moment. Sharing the class would make both of them lie.
+  &__overlay-bar {
+    @include mixins.safe-inset-block-end(var(--ct-space-4));
+
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--ct-space-3);
+    padding-block-start: var(--ct-space-4);
+    padding-inline: var(--ct-gutter-start) var(--ct-gutter-end);
+    border-block-start: 1px solid var(--ct-border-2);
 
     > * {
       flex: 1 1 10rem;
@@ -340,6 +395,28 @@
     display: flex;
     flex-direction: column;
     gap: var(--ct-space-5);
+  }
+
+  // ## The SUMMARY's parts: the same defect as the brief above, and the same fix
+  //
+  // Its two cards, `&__actions` and `&__status` all carry zero margin too, so "Saved to your
+  // diary." sat flush against the card above AND below it. `&__status` keeps its own `margin: 0`
+  // (`_chrome.scss`) — that class is also applied to an element that IS a card, where a margin
+  // of its own would be wrong, so the rhythm cannot come from the primitive.
+  //
+  // One step down from `&__brief`'s `--ct-space-6`: Kilian asked for "a bit more space", and this
+  // is a flat list of parts rather than sections each holding several offers.
+  &__summary {
+    display: flex;
+    flex-direction: column;
+    gap: var(--ct-space-5);
+  }
+
+  // the gap owns the rhythm, so these children's own bottom margins would double it
+  &__summary > h1,
+  &__summary > &__lede,
+  &__summary > &__muted {
+    margin-block-end: 0;
   }
 
   &__offer {
