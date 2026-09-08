@@ -11,8 +11,8 @@
  *   openapi-sha256  the OpenAPI document it was generated from
  *   types-sha256    everything below this comment block
  *
- * openapi-sha256: b33338e3f0138fa40da2002da4fcc706b2636e91c3c65bc08a84a6ba10e48570
- * types-sha256: b7606ca2d6100e430f127a1466b2f8218daf712d220a17379b5efc4234e6ecee
+ * openapi-sha256: 78c2486dec9c8a034f0382d2d66ea57b0fa6e4314c11f177e80efe357ca1afff
+ * types-sha256: 0ec6661c8c0bcb13a5b7141eff67168398fb81cd4cf37f26821d18700ac0ff99
  */
 
 export interface paths {
@@ -218,6 +218,33 @@ export interface paths {
      */
     get: operations['health_api_health_get'];
     put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/journal/{client_uuid}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    /**
+     * Write Journal Entry
+     * @description Create or replace this climber's diary entry by the uuid their client minted. 200.
+     *
+     *     **Two statements**, or one when the entry names no session. A `logged_session_id` outside the
+     *     caller's own history is a 404 identical to the missing case: a caller must not be able to
+     *     learn that a stranger's session exists, let alone hang an entry off it.
+     *
+     *     Replay-safe by construction — the conflict target is `(user_id, client_uuid)`, so a retried
+     *     write and a climber who reopens the summary and submits again both end with exactly ONE row.
+     */
+    put: operations['write_journal_entry_api_journal__client_uuid__put'];
     post?: never;
     delete?: never;
     options?: never;
@@ -807,6 +834,63 @@ export interface components {
        * Format: date
        */
       started_on: string;
+    };
+    /**
+     * JournalEntryRequest
+     * @description One diary entry, replaced whole by its `client_uuid`. `extra="forbid"`.
+     *
+     *     There is no omitted-versus-null distinction here — unlike `SessionLogRequest`, every field is
+     *     sent on every request and an omitted one means cleared, because the box on the summary screen
+     *     submits whole and a merge would make "I emptied the weight field" unexpressible.
+     *
+     *     `body_weight_kg` records a **weigh-in and nothing else**. There is no goal weight, target
+     *     weight or BMI field here or anywhere in this schema, and `entry_date` alone is not an entry:
+     *     at least one of `body`, `feel`, `sleep_quality`, `skin` or `body_weight_kg` must be present,
+     *     which is `journal_entry`'s `not_empty` CHECK mirrored so that it lands as a 422.
+     */
+    JournalEntryRequest: {
+      /** Body */
+      body?: string | null;
+      /** Body Weight Kg */
+      body_weight_kg?: number | string | null;
+      /**
+       * Entry Date
+       * Format: date
+       */
+      entry_date: string;
+      /** Feel */
+      feel?: number | null;
+      /** Logged Session Id */
+      logged_session_id?: number | null;
+      /** Skin */
+      skin?: number | null;
+      /** Sleep Quality */
+      sleep_quality?: number | null;
+    };
+    /**
+     * JournalEntryResponse
+     * @description What the server now holds for this entry. **Always 200**, never a conditional 201.
+     *
+     *     A replayed PUT must not change the status code, because the client does not branch on it.
+     *     **No user free text is echoed** — `body` is absent, for `SessionLogResponse`'s reason: then
+     *     nothing in this body needs escaping downstream. The scores and the weight are absent for the
+     *     same reason it is: the client already holds what it sent, so echoing it proves nothing.
+     */
+    JournalEntryResponse: {
+      /**
+       * Client Uuid
+       * Format: uuid
+       */
+      client_uuid: string;
+      /**
+       * Entry Date
+       * Format: date
+       */
+      entry_date: string;
+      /** Id */
+      id: number;
+      /** Logged Session Id */
+      logged_session_id: number | null;
     };
     /**
      * Level
@@ -1689,6 +1773,41 @@ export interface operations {
           'application/json': {
             [key: string]: string;
           };
+        };
+      };
+    };
+  };
+  write_journal_entry_api_journal__client_uuid__put: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        client_uuid: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['JournalEntryRequest'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['JournalEntryResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
         };
       };
     };

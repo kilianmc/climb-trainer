@@ -22,12 +22,42 @@ columns' `CHECK`s are `>= 0` only, and an over-large value overflows `SMALLINT` 
 For those three, the bounds here are the only guard that exists.
 """
 
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from typing import Annotated, Final
 
 from pydantic import Field, StringConstraints
 
-from server.models import DISPLAY_NAME_MAX, LOCATION_MAX, NOTES_MAX, SET_NOTE_MAX
+from server.models import (
+    DISPLAY_NAME_MAX,
+    JOURNAL_BODY_MAX,
+    LOCATION_MAX,
+    NOTES_MAX,
+    SET_NOTE_MAX,
+)
+
+# The window every user-supplied date and instant is judged against: a year back because "I
+# forgot to log last month" is real, a day forward for UTC+14 and phone clock skew.
+BACKDATE_DAYS: Final = 365
+# `server/plans/routes.py` keeps its OWN pair: a plan's `start_date` looks FORWARD, not back.
+HORIZON_DAYS: Final = 1
+
+
+def bounded_day(value: date) -> date:
+    """A date inside the window this API accepts, or a `ValueError` the client sees as 422."""
+    today = datetime.now(UTC).date()
+    if not today - timedelta(days=BACKDATE_DAYS) <= value <= today + timedelta(days=HORIZON_DAYS):
+        raise ValueError("that date is outside the window this endpoint accepts")
+    return value
+
+
+def bounded_instant(value: datetime) -> datetime:
+    """The same window for an aware instant: bounds clock skew and silent backdating."""
+    now = datetime.now(UTC)
+    if not now - timedelta(days=BACKDATE_DAYS) <= value <= now + timedelta(days=HORIZON_DAYS):
+        raise ValueError("that timestamp is outside the window this endpoint accepts")
+    return value
+
 
 # `activity.duration_minutes`: 24 hours. A payload in seconds is the unit error this
 # catches — 3600 for a one-hour session is a 422 here rather than a retry loop.
@@ -99,12 +129,29 @@ decision, not a property of this endpoint.
 AspectScore = Annotated[int, Field(ge=1, le=5)]
 """`user_aspect_rating.score` — `CHECK (BETWEEN 1 AND 5)`."""
 
+WellbeingScore = Annotated[int, Field(ge=1, le=5)]
+"""`journal_entry.feel`, `.sleep_quality` and `.skin` — `CHECK (BETWEEN 1 AND 5)` on all three.
+
+One type for the three, for `Rpe`'s reason: it is one scale asked three ways. Deliberately NOT
+`AspectScore`, which shares the bounds and nothing else — a self-rating of finger strength is
+not a report of last night's sleep, and `feel: AspectScore` would read as a copy-paste bug.
+"""
+
 LookupId = Annotated[int, Field(ge=1)]
 """A row id in a seeded lookup table.
 
 The bound is only a sanity floor — an id that does not exist is rejected by looking it
 up, never by trusting its shape. Client-supplied ids are resolved against the reference
 table before anything is written.
+"""
+
+JournalBody = Annotated[
+    str, StringConstraints(strip_whitespace=True, min_length=1, max_length=JOURNAL_BODY_MAX)
+]
+"""`journal_entry.body` — free text, and ALREADY on CLAUDE.md's inventory (see the finding).
+
+`min_length=1` after stripping, so an empty box is `null` rather than `''`: the column is
+nullable precisely so a weigh-in on its own can be recorded without a fake empty string.
 """
 
 InjuryNote = Annotated[

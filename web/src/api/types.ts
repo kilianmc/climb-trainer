@@ -27,6 +27,11 @@ export type Grade = Schemas['GradeOut'];
 /** A seeded lookup row — a climbing aspect, a piece of equipment, an injury area. */
 export type ReferenceRow = Schemas['ReferenceRowOut'];
 export type Discipline = Schemas['Discipline'];
+
+/** `PUT /api/journal/{client_uuid}` — one diary entry, replaced whole by its uuid. */
+export type JournalEntryRequest = Schemas['JournalEntryRequest'];
+/** The ack. Carries NO free text: `body` is deliberately absent from the response. */
+export type JournalEntryResponse = Schemas['JournalEntryResponse'];
 /** The UNIVERSAL copy for one training phase. Keyed by `phase`; sent once, never per mesocycle.
  *  How the phase applies to one plan is NOT here — see `ClimbingBand` and `plan/explain.ts`. */
 export type PhaseGuide = Schemas['PhaseGuideOut'];
