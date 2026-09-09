@@ -1,12 +1,13 @@
-import { useMutation } from '@tanstack/react-query';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 
 import type { JournalEntryRequest, JournalEntryResponse } from '../api/types';
 import { useAuth } from '../auth/AuthProvider';
+import { JOURNAL_READ_KEY } from '../diary/api';
 
 import { writesEnabled } from './api';
 
-/** The one call site for `PUT /api/journal/{client_uuid}`. **No cache write at all**: nothing
- *  reads entries back yet (PR C), so `onSuccess` would have nothing true to install. */
+/** The one call site for `PUT /api/journal/{client_uuid}`. The ack carries no free text and no
+ *  scores, so there is nothing to INSTALL — `/api/journal` is marked stale instead. */
 
 export const JOURNAL_PUT_MUTATION_KEY = ['journal', 'put'] as const;
 
@@ -22,6 +23,7 @@ export interface JournalPutVariables {
  *  No `retry` — query-core defaults mutations to `0`, so a 4xx is classified once. */
 export function useJournalPut() {
   const { request, scope } = useAuth();
+  const queryClient = useQueryClient();
   const enabled = writesEnabled(scope);
 
   return useMutation({
@@ -33,6 +35,14 @@ export function useJournalPut() {
         `/api/journal/${encodeURIComponent(variables.clientUuid)}`,
         { method: 'PUT', json: variables.body },
       );
+    },
+    // ⚠️ Marking, never fabricating: the trends are the SERVER's and this response holds
+    // neither them nor the body, so the diary re-reads rather than guessing what it now says.
+    onSuccess: async (response) => {
+      if (response === null) return;
+      // `await`ed because `mutation.js` awaits `onSuccess` before dispatching `success`, so
+      // the control stays busy until the list and the charts are true.
+      await queryClient.invalidateQueries({ queryKey: JOURNAL_READ_KEY });
     },
   });
 }

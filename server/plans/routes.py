@@ -88,6 +88,7 @@ from server.domain.vocabulary import (
     ProtocolKind,
     SessionStatus,
 )
+from server.fields import PlanName
 from server.models import (
     ClimbingAspect,
     Exercise,
@@ -423,6 +424,16 @@ def _unprocessable(detail: str) -> HTTPException:
     """A well-formed request against stored state no plan can be built from. Matches
     `server/profile/routes.py::_unprocessable`, so no error-code vocabulary is invented here."""
     return HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=detail)
+
+
+# A FIXED string with no interpolation, and the SAME answer for a plan that is not this
+# climber's as for one that does not exist — `server/journal/routes.py::_not_found`'s rule.
+_NO_SUCH_PLAN: Final = "No such plan."
+
+
+def _not_found() -> HTTPException:
+    """Absent from this user's own plans. Not-yours and not-there get the same answer."""
+    return HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=_NO_SUCH_PLAN)
 
 
 def _planner_input(session: Session, user_id: int, start_date: date) -> PlannerInput:
@@ -1231,3 +1242,68 @@ def active_plan(
     response.headers["cache-control"] = _CACHE_CONTROL
     plan = session.scalars(_active_plan_query(principal.user_id).options(_PLAN_TREE)).one_or_none()
     return ActivePlanResponse(plan=None if plan is None else _plan_response(session, plan))
+
+
+class PlanNameRequest(BaseModel):
+    """The new name for a plan, and NOTHING else. `extra="forbid"`.
+
+    ⚠️ **One field, and this model must never grow a second.** There is deliberately no abandon
+    endpoint (CLAUDE.md), and a lifecycle field reaching a plan through a rename is exactly how
+    that prohibition gets bypassed later — which is also why the path is `/{plan_id}/name` and
+    not `/{plan_id}`: a general plan-patch would have to be a new route, in a diff a reviewer
+    can see.
+
+    `PlanName` strips whitespace and refuses an empty name, so `""` and `"   "` are a 422 at
+    the edge rather than a blank label on a plan card.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    name: PlanName
+
+
+class PlanNameResponse(BaseModel):
+    """The plan's id and the name now STORED — the stripped value, not the one submitted.
+
+    Echoed rather than withheld precisely because the server strips: the caller cannot know the
+    stored value from what it sent. ⚠️ It is user-typed and untrusted on OUTPUT as well as on
+    input — build DOM nodes, never assemble an HTML string (CLAUDE.md).
+    """
+
+    id: int
+    name: str
+
+
+@router.put("/{plan_id}/name")
+def rename_plan(
+    plan_id: int,
+    payload: PlanNameRequest,
+    principal: CurrentUser,
+    session: RequestSession,
+    response: Response,
+) -> PlanNameResponse:
+    """Rename ANY of this climber's own plans — active, completed or abandoned. 200.
+
+    **One statement.** The UPDATE's own `WHERE` carries the token's `user_id`, so ownership is
+    not a second lookup that could drift from it, and a plan id belonging to somebody else is
+    the same 404 as one that does not exist: a caller must not be able to learn that a
+    stranger's plan exists.
+
+    A finished plan is renameable on purpose (Kilian): the diary draws one chart per plan, and
+    the name is how a climber tells last spring's block from this one.
+
+    ⚠️ **Only `name` is writable here** — the lifecycle timestamps are not on the request
+    model and must not be added to it. See `PlanNameRequest`.
+    """
+    response.headers["cache-control"] = _CACHE_CONTROL
+    row = session.execute(
+        update(Plan)
+        .where(Plan.id == plan_id, Plan.user_id == principal.user_id)
+        .values(name=payload.name)
+        .returning(Plan.id, Plan.name)
+    ).one_or_none()
+    if row is None:
+        raise _not_found()
+    body = PlanNameResponse(id=row.id, name=row.name)
+    session.commit()
+    return body

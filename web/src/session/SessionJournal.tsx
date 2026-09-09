@@ -2,17 +2,9 @@ import { useEffect, useRef } from 'react';
 
 import { useProfileView } from '../profile/api';
 
+import { JournalFields } from './JournalFields';
 import type { JournalSaveOffer } from './journal';
-import {
-  BODY_WEIGHT_MAX,
-  BODY_WEIGHT_MIN,
-  JOURNAL_BODY_MAX,
-  JOURNAL_HEADING_ID,
-  WELLBEING_VALUES,
-  bodyWeightHint,
-  isJournalDraftEmpty,
-  journalSaveOffer,
-} from './journal';
+import { JOURNAL_HEADING_ID, isJournalDraftEmpty, journalSaveOffer } from './journal';
 import type { JournalDraft } from './runStore';
 import type { SessionRun } from './useSessionRun';
 
@@ -24,7 +16,6 @@ export function SessionJournal({ run, readOnly }: { run: SessionRun; readOnly: b
   // ⚠️ An unread profile reads as OFF, never as ON: for this one setting, erring toward not
   // asking is the only safe direction, and the summary is reached long after `/api/profile`.
   const showBodyMetrics = profile?.show_body_metrics === true;
-  const weightHint = bodyWeightHint(draft.bodyWeightKg);
   const offer: JournalSaveOffer = readOnly ? 'none' : journalSaveOffer(draft);
   const bodyRef = useRef<HTMLTextAreaElement>(null);
   const wasOffered = useRef(offer !== 'none');
@@ -46,108 +37,16 @@ export function SessionJournal({ run, readOnly }: { run: SessionRun; readOnly: b
         For your own diary. Nobody else reads it, and every part of this is optional.
       </p>
 
-      <label className="ct-app__field" htmlFor="ct-journal-body">
-        How it went
-        <textarea
-          id="ct-journal-body"
-          ref={bodyRef}
-          className="ct-app__input"
-          rows={4}
-          maxLength={JOURNAL_BODY_MAX}
-          placeholder="Fingers felt tweaky, backing off the crimps this week…"
-          value={draft.body}
-          onChange={(event) => run.setJournalDraft({ body: event.target.value })}
-        />
-      </label>
-
-      <p className="ct-app__muted">On the three below, 1 is the worst it gets and 5 the best.</p>
-      <ScoreField
-        id="ct-journal-feel"
-        label="How you feel"
-        value={draft.feel}
-        onPick={(feel) => run.setJournalDraft({ feel })}
+      <JournalFields
+        idPrefix="ct-journal"
+        values={draft}
+        showBodyMetrics={showBodyMetrics}
+        bodyRef={bodyRef}
+        onChange={run.setJournalDraft}
       />
-      <ScoreField
-        id="ct-journal-sleep"
-        label="Last night's sleep"
-        value={draft.sleepQuality}
-        onPick={(sleepQuality) => run.setJournalDraft({ sleepQuality })}
-      />
-      <ScoreField
-        id="ct-journal-skin"
-        label="Skin"
-        value={draft.skin}
-        onPick={(skin) => run.setJournalDraft({ skin })}
-      />
-
-      {showBodyMetrics ? (
-        <>
-          <label className="ct-app__field" htmlFor="ct-journal-weight">
-            Weight today (kg)
-            <input
-              id="ct-journal-weight"
-              className="ct-app__input"
-              type="number"
-              inputMode="decimal"
-              step="0.1"
-              min={BODY_WEIGHT_MIN}
-              max={BODY_WEIGHT_MAX}
-              placeholder="e.g. 71.4"
-              value={draft.bodyWeightKg}
-              onChange={(event) => run.setJournalDraft({ bodyWeightKg: event.target.value })}
-            />
-          </label>
-          {weightHint === null ? (
-            <p className="ct-app__muted">
-              Just what the scale said today. It is recorded, never scored — nothing in this app
-              asks you to change it.
-            </p>
-          ) : (
-            <p className="ct-app__error">{weightHint}</p>
-          )}
-        </>
-      ) : null}
 
       <JournalSaveState run={run} draft={draft} readOnly={readOnly} offer={offer} />
     </section>
-  );
-}
-
-/** One 1-5 select on the shared `ct-app__select` primitive — `SessionRpe`'s markup exactly,
- *  because five buttons in a row is a wall on a phone and the chevron is drawn once. */
-function ScoreField({
-  id,
-  label,
-  value,
-  onPick,
-}: {
-  id: string;
-  label: string;
-  value: number | null;
-  onPick: (value: number | null) => void;
-}) {
-  return (
-    <label className="ct-app__field" htmlFor={id}>
-      {label}
-      <span className="ct-app__select">
-        <select
-          id={id}
-          className="ct-app__input"
-          value={value ?? ''}
-          onChange={(event) => {
-            const picked = Number(event.target.value);
-            onPick(Number.isFinite(picked) && picked > 0 ? picked : null);
-          }}
-        >
-          <option value="">Rather not say</option>
-          {WELLBEING_VALUES.map((score) => (
-            <option key={score} value={score}>
-              {String(score)}
-            </option>
-          ))}
-        </select>
-      </span>
-    </label>
   );
 }
 

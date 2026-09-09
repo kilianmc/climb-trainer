@@ -1,19 +1,9 @@
-// Standalone document only — imported from `main.tsx`, never from the route tree. The federated
-// mount must not restyle kilianmc.com, so everything else lives in `app.scss` under `.ct-app`,
-// and this file is the ONLY one allowed `:root`, `html` or `body` selectors.
 @use 'tokens';
 
 :root {
   color-scheme: light dark;
 }
 
-// `.ct-app` is only as tall as its content, so on a short page (a login form) the document
-// canvas shows below it — white against `--ct-bg`, which reads as a rendering bug. A `body`
-// background propagates to the canvas, which fixes it for the whole viewport.
-//
-// The token mixin is included rather than the hex repeated: `.ct-app` stays the declaration
-// site that matters, and this file is standalone-only. Do NOT read this as licence to declare
-// tokens globally — nothing here can reach the shell.
 body {
   @include tokens.declare;
 
@@ -24,18 +14,6 @@ body {
   background: var(--ct-bg);
 }
 
-// THE STANDALONE HEIGHT ANCHOR, and this file is the only legal place for it.
-//
-// The session player is the app's first genuinely full-height screen and it is built out of an
-// in-flow `100%` chain (`_session.scss`), because `position: fixed` and `100dvh` both resolve
-// against kilianmc.com's viewport in the federated mount. A percentage block-size resolves to
-// nothing against an auto-height ancestor, so something above `.ct-app` has to be definite —
-// and `html`, `body` and `#root` are exactly the three elements that exist only in the
-// standalone document. Nothing here can reach the shell.
-//
-// `flex`, not `block-size: 100%` down the chain: a flexed item's resolved main size IS definite
-// for its children's percentages, so the app can still grow past the window without the
-// always-on scrollbar a hard `100%` on `body` produces.
 html {
   block-size: 100%;
 }
@@ -46,29 +24,22 @@ html {
   flex-direction: column;
 }
 
-// `flex-shrink: 0`: under the player gate `.ct-app` swaps its automatic content-based minimum
-// for `min-block-size: 100%`, and without this a screen taller than the window would be
-// squeezed into it instead of scrolling.
 #root > .ct-app {
   flex: 1 0 auto;
 }
 
-// The manual theme override, for the CANVAS — and this is the one place it can be done.
-//
-// `.ct-app[data-theme]` re-declares the tokens on the app element, but this `body` has its own
-// copy (see above) and would keep following the OS: a user on a light OS who picks Dark would
-// get a dark app sitting on a light canvas wherever the page is shorter than the viewport,
-// which is precisely the rendering bug the `body` background exists to prevent.
-//
-// ⚠️ It is expressed as `body:has(…)` rather than by putting the attribute on `<html>`, and the
-// difference is the federated mount: an `html[data-theme]` selector is unscoped CSS the remote
-// may not ship, and setting that attribute from the app would be writing into kilianmc.com's
-// own document element. `.ct-app` stays the only element the app touches; this file is
-// standalone-only (`main.tsx` imports it, nothing in the route tree does), so the bridge is
-// legal exactly here.
-//
-// `color-scheme` comes with it, so the UA-painted parts — scrollbars, form control internals —
-// follow the choice too rather than the OS.
+body:has(.ct-app__diary) {
+  max-block-size: 100%;
+}
+
+#root:has(.ct-app__diary) {
+  min-block-size: 0;
+}
+
+#root > .ct-app:has(.ct-app__diary) {
+  flex-shrink: 1;
+}
+
 body:has(.ct-app[data-theme='light']) {
   @include tokens.light-values;
 

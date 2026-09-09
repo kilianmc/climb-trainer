@@ -1,0 +1,273 @@
+@use 'mixins';
+@use 'sizes';
+
+@mixin styles {
+  &:has(&__diary) {
+    min-block-size: 100%;
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+
+  &:has(&__diary) > &__main {
+    grid-template-rows: minmax(0, 1fr);
+  }
+
+  &__diary {
+    position: relative;
+
+    display: grid;
+    grid-template-rows: minmax(0, 1fr);
+    block-size: 100%;
+  }
+
+  &__diary &__overlay {
+    grid-template-rows: minmax(0, max-content) auto;
+    align-content: start;
+  }
+
+  &__diarybody {
+    display: flex;
+    min-block-size: 0;
+    flex-direction: column;
+    gap: var(--ct-space-5);
+    padding-block: var(--ct-space-1) var(--ct-space-5);
+    padding-inline: var(--ct-gutter-start) var(--ct-gutter-end);
+    overflow-y: auto;
+  }
+
+  &__diarylist {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--ct-space-2);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  &__diaryrow {
+    @include mixins.tap;
+    @include mixins.focus-ring;
+    @include mixins.press;
+
+    display: flex;
+    align-items: center;
+    gap: var(--ct-space-3);
+    inline-size: 100%;
+    padding-block: var(--ct-space-2);
+    padding-inline: var(--ct-space-3);
+    border: 1px solid var(--ct-border-1);
+    border-radius: var(--ct-radius-2);
+    background: var(--ct-surface-2);
+    color: var(--ct-fg);
+    font: inherit;
+    text-align: start;
+    white-space: nowrap;
+    cursor: pointer;
+  }
+
+  &__diarydate {
+    flex: none;
+    font-size: var(--ct-text-sm);
+    font-variant-numeric: tabular-nums;
+  }
+
+  &__diaryplan,
+  &__diarynone,
+  &__diarytext {
+    flex: 0 1 auto;
+    min-inline-size: 0;
+    overflow: hidden;
+    font-size: var(--ct-text-sm);
+    text-overflow: ellipsis;
+  }
+
+  &__diaryplan,
+  &__diarynone {
+    color: var(--ct-fg-muted);
+  }
+
+  &__diarytext {
+    display: none;
+
+    @container ct-app (min-inline-size: #{sizes.$tablet}) {
+      display: block;
+    }
+  }
+
+  &__diaryphase,
+  &__diaryweek {
+    flex: none;
+    color: var(--ct-fg-muted);
+    font-size: var(--ct-text-xs);
+  }
+
+  &__diaryphase {
+    margin-inline-start: auto;
+  }
+
+  &__diaryweek {
+    font-variant-numeric: tabular-nums;
+  }
+
+  &__diarygroup {
+    display: flex;
+    flex-direction: column;
+    gap: var(--ct-space-3);
+  }
+
+  &__planhead {
+    display: flex;
+    align-items: center;
+    gap: var(--ct-space-2);
+  }
+
+  &__diarygroup h2 {
+    margin: 0;
+  }
+
+  &__chartbox {
+    --ct-chart-block: 8.25rem;
+
+    display: grid;
+    inline-size: 100%;
+    max-inline-size: calc(var(--ct-chart-block) * 320 / 132);
+    margin-inline: auto;
+    gap: var(--ct-space-4);
+
+    @container ct-app (min-inline-size: #{sizes.$tablet}) {
+      --ct-chart-block: 15.625rem;
+    }
+
+    @container ct-app (min-inline-size: #{sizes.$desktop}) {
+      --ct-chart-block: 23.3125rem;
+    }
+  }
+
+  &__chart {
+    display: flex;
+    flex-direction: column;
+    gap: var(--ct-space-1);
+  }
+
+  &__chartplot {
+    inline-size: 100%;
+    block-size: auto;
+  }
+
+  &__chartgrid {
+    stroke: var(--ct-border-1);
+    stroke-width: 1;
+  }
+
+  &__charttick {
+    fill: var(--ct-fg-muted);
+    font-size: 11px;
+    font-variant-numeric: tabular-nums;
+  }
+
+  &__chartline {
+    fill: none;
+    stroke: var(--ct-accent);
+    stroke-width: 3;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+
+  &__chartline--solid {
+    stroke-dasharray: none;
+  }
+
+  &__chartline--dashes {
+    stroke-dasharray: 6 6;
+    stroke-linecap: butt;
+  }
+
+  &__chartline--dots {
+    stroke-dasharray: 0.1 8;
+  }
+
+  &__chartweek {
+    stroke: var(--ct-border-1);
+    stroke-width: 1;
+  }
+
+  &__chartspan {
+    display: flex;
+    justify-content: space-between;
+    margin: 0;
+    color: var(--ct-fg-muted);
+    font-size: var(--ct-text-xs);
+    font-variant-numeric: tabular-nums;
+  }
+
+  &__chartlegend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--ct-space-1);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    justify-content: center;
+  }
+
+  &__chartlegend > li {
+    display: flex;
+    align-items: center;
+  }
+
+  &__chartkeybox {
+    @include mixins.tap;
+
+    display: flex;
+    align-items: center;
+    gap: var(--ct-space-1);
+    cursor: pointer;
+  }
+
+  &__chartkeybox input {
+    flex: none;
+    inline-size: 1.25rem;
+    block-size: 1.25rem;
+    accent-color: var(--ct-accent);
+    cursor: pointer;
+  }
+
+  &__chartkeybox:has(input:focus-visible) {
+    outline: 2px solid var(--ct-accent);
+    outline-offset: 2px;
+  }
+
+  &__chartswatch {
+    flex: none;
+    inline-size: 16px;
+    block-size: 16px;
+  }
+
+  &__chartkey {
+    font-size: var(--ct-text-sm);
+  }
+
+  &__chartkeystyle {
+    color: var(--ct-fg-muted);
+    font-size: var(--ct-text-xs);
+  }
+
+  &__charttable {
+    border-collapse: collapse;
+    inline-size: 100%;
+    font-size: var(--ct-text-sm);
+    font-variant-numeric: tabular-nums;
+  }
+
+  &__charttable th,
+  &__charttable td {
+    padding-block: var(--ct-space-1);
+    border-block-end: 1px solid var(--ct-border-2);
+    text-align: center;
+  }
+
+  &__charttable th {
+    color: var(--ct-fg-muted);
+    font-size: var(--ct-text-xs);
+    font-weight: 600;
+  }
+}
