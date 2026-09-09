@@ -6,7 +6,8 @@ reversed once. The reasoning, the measurements and the history are frozen verbat
 `../.archive/climb-trainer-CLAUDE-2026-09-03.md` (one level above the repo root).
 **Grep the archive by the heading named on the tripwire line; never `Read` it whole.** Guard
 docstrings elsewhere in this repo cite section headings that now live only in that archive.
-**To add a line here, archive one.**
+**To add a line here, archive one.** A finding is triaged the moment it is found — GUARD,
+TRIPWIRE, ARCHIVE or DELETE — and there is nowhere to stage one. Most findings end in DELETE.
 
 ## Tripwires
 
@@ -20,8 +21,8 @@ One line each; `→` names the archive heading that holds the reasoning.
 - Never add a `requirements.txt`: `pyproject.toml` wins and the requirements file is silently ignored → *3. Never add a `requirements.txt`*
 - Never give a secret a `VITE_*` prefix — the repo is public and the bundle is plain text; the one injected build-time value, `__BUILD_ID__`, is deliberately NOT a `VITE_*` var and must not become configurable → *4. `VITE_*` is PUBLIC, by definition*
 - The function region must match Neon's, which is fixed at project creation → *5. Function region and Neon region must match*
-- Never reflect raw request headers; diagnostics use an allowlist of names, because Vercel injects a live `x-vercel-oidc-token` on every request → *6. Never reflect raw request headers*
-- Never delete or raise `maxDuration` on `api/index.py` — it is a correctness setting, the thing that makes the client's auth abort an *outer* bound → *7. `maxDuration` is pinned*
+- Never reflect raw request headers, and any diagnostics you add must allowlist the names it returns — Vercel injects a live `x-vercel-oidc-token` on every request, which is a fact about the platform and appears nowhere in this repo to grep for → *6. Never reflect raw request headers*
+- Never delete or raise `maxDuration` on `api/index.py` — it is a correctness setting, the thing that makes the client's auth abort an *outer* bound → *7. `functions."api/index.py".maxDuration` is pinned*
 - Do not move the app into `api/`, do not delete the `sys.path` line in `api/index.py`, and add any new `server/` subpackage to `[tool.setuptools] packages` in the same commit — there is no autodiscovery → *Repo layout — do not rearrange it*
 
 ### Frontend, router, MF, PWA
@@ -38,10 +39,10 @@ One line each; `→` names the archive heading that holds the reasoning.
 - Text over a photograph on the landing page is legal ONLY behind the `--ct-scrim` overlay, and the lightest stop under any copy — `0.66` on `&__band` — is the measured 4.5:1 floor: do not lighten a stop without redoing that arithmetic → *Landing imagery*
 - `web/scripts/gen-landing-images.mjs` is an authoring tool and must never enter `build` → *Landing imagery*
 - Icons are SVG components, never `<img src="…svg">`, and an icon-only control owes its own `aria-label` → *Landing imagery* · *The nav's thresholds are MEASUREMENTS*
-- Generated API types are COMMITTED: regenerate with `npm run codegen:api`, never loosen the `openapi-sha256` digest header, and never recreate `web/src/api/vocabularies.ts`; a FastAPI or Pydantic bump fails that test and Dependabot cannot fix it → *OpenAPI codegen*
-- PWA: `registerType: 'autoUpdate'` with `injectRegister: null`; the asset generator is deliberately not a devDependency and its config stays plain JS → *PWA — only the decisions a reader would otherwise reverse*
+- Generated API types are COMMITTED: regenerate with `npm run codegen:api` and never loosen the `openapi-sha256` digest header; a FastAPI or Pydantic bump fails that test and Dependabot cannot fix it → *OpenAPI codegen*
+- PWA: the asset generator is deliberately not a devDependency and its config stays plain JS → *PWA — only the decisions a reader would otherwise reverse*
 - `&__prose` is `56ch` and the number is MEASURED — do not "fix" it up to the usual `65ch` → *The reading measure is a GRID COLUMN*
-- The four screen sizes are NAMED container sizes and some widths are deliberately not on the scale; read them out of `web/src/styles/_sizes.scss` rather than inventing one → *The four screen sizes are NAMED*
+- The four screen sizes are NAMED container sizes — three names in `web/src/styles/_sizes.scss` plus the unnamed base below the first — so read a width out of that file rather than inventing one; the px-to-rem arithmetic and the widths deliberately NOT on the scale are archive-only, because a stylesheet's prose cap is ZERO → *The four screen sizes are NAMED*
 - The reading measure and the inline gutters are a GRID COLUMN in `web/src/styles/_layout.scss` — never `max-inline-size` or `padding-inline` back on `.ct-app`, because nothing inside a capped box can reach the screen edge and the landing page must
 - `100cqi` is what makes the wide-column escape legal where `50% - 50vw` is banned, and a length unit resolves against the NEAREST container and cannot be aimed at a name — never add a `container-type` between `.ct-app` and a `cqi` consumer
 - `.ct-app`'s `isolation: isolate` is load-bearing: it is the only thing stopping an app `z-index` painting over the shell's own chrome
@@ -86,11 +87,11 @@ One line each; `→` names the archive heading that holds the reasoning.
 - Bound parameters only: never an f-string, `%`, `.format()`, `+`, or interpolated `text()`. Identifiers cannot be parameterised — use an allowlist → *Bound parameters only — never string-built SQL* · *Identifiers cannot be parameterised*
 - A 422 must never echo the request back and FastAPI's default handler does, so do not remove the custom one; never build an ORM object by splatting request data → *Validate at the edge with Pydantic*
 - Notes are untrusted on OUTPUT too: build DOM nodes, never assemble an HTML string → *Notes are untrusted on OUTPUT too*
-- When you add a free-text column, add its row to the inventory in the SAME PR — that table has been wrong three times and every time the new field did not look like "a note" (`logged_session.location`, `user_injury.note`, `invite.label`, all bound by the output-escaping rule too); the bounds themselves live in `server/fields.py` and are proven by `tests/test_profile_validation.py` → *The free-text inventory — ELEVEN fields, and three of them get forgotten*
+- When you add a free-text column, add its row to the inventory in the SAME PR — that table has been wrong on three separate OCCASIONS (fixes, not the sites disagreeing today, which is #139's) and every time the new field did not look like "a note" (`logged_session.location`, `user_injury.note`, `invite.label`, all bound by the output-escaping rule too); the bounds are SPLIT — the numbers in `server/models.py`, the Pydantic types over them in `server/fields.py` — and not every field on the inventory has either, while `tests/test_profile_validation.py` proves only the profile patch's own fields: none of that is proof of COVERAGE, which is open in #139 → *The free-text inventory — ELEVEN fields, and three of them get forgotten*
 - Never set `Cross-Origin-Resource-Policy` or `Cross-Origin-Embedder-Policy`, and we deliberately do not set HSTS → *Security response headers*
 - Drop the token before EVERY `POST /api/auth/*`, not just login and register; demo scope re-mints and cannot refresh → *Auth UI — the client half of the contract*
 - The client's give-up deadline must stay the OUTER bound and must never clear `inFlight`, and the UI tier deliberately does not release the Web Lock → *Auth UI — the client half of the contract*
-- Every route must be in `PUBLIC_ROUTE_IDS` or under `_authed`, and the route guard never reads `window.location` → *Auth UI — the client half of the contract*
+- The `_authed` route guard never reads `window.location` → *Auth UI — the client half of the contract*
 - Registration is invite-gated: per-person digests in a table, never a shared env secret, and the rejection messages must never be split → *Registration is invite-gated*
 - Do not tick any of the end-to-end security verification off from memory → *TODO — the end-to-end security verification pass*
 
@@ -110,7 +111,7 @@ One line each; `→` names the archive heading that holds the reasoning.
 - Never re-dose `lead_route_doubles`, `campus_ladders` or `hangboard_repeaters` off the sources — all three corrections were declined and the refusals stand: four laps contradicts the row's own key and a rename is a data migration, the source's campus ladder is a different up-and-down exercise with no row here, and run-to-failure repeaters is another protocol the source itself calls the least effective
 - There is no abandon endpoint, and an `IntegrityError` is never re-raised → *Persisting a plan*
 - An item is done or not — no skipped state on the server — and completion is the blocks at 100%, never the Finish button → *Logging a session* · *Session player invariants*
-- The `sets` array is a DELTA, not a replacement, and `set_index` is the whole session's 1..N ordinal → *The `sets` array is a DELTA, not a replacement*
+- The `sets` array is a DELTA, not a replacement, and `logged_set.set_index` is the whole logged session's 1..N ordinal — `prescribed_set.set_index` is NOT the same thing, it is scoped to its block by `UniqueConstraint("session_block_id", "set_index")`, so this line does not cover a reader editing `prescribed_set` → *The `sets` array is a DELTA, not a replacement*
 - `duration_minutes` only ever grows, and a session's status never moves backwards → *`duration_minutes` only ever grows*
 - A 4xx on flush is PERMANENT — quarantine it, never retry; 5xx is retryable → *Logging a session*
 - Which sets a block owns is `prescribed_set_id` membership, never an ordinal window → *Session player invariants*
@@ -127,12 +128,11 @@ One line each; `→` names the archive heading that holds the reasoning.
 - Never put a database URL in `.env` — the test URL lives in `CT_TEST_DATABASE_URL` and nowhere else, exported from `~/.zshrc`, which a non-interactive shell does not read → *Local Postgres for the test suite*
 - An exported variable beats the file, and the Vite dev proxy is NOT Vercel's rewrite → *`.env` is loaded for you — but only outside Vercel*
 - The dev database and the test database are the same database, and a local database means LOCAL ACCOUNTS ONLY → *Local Postgres for the test suite* · *Local development*
-- A dev server running during the gate can blank every route; the trigger is UNCONFIRMED, so do not substitute a fresh guess for the recorded one → *A dev server and the gate at the same time can blank every route*
+- A dev server running during the gate can blank every route; the trigger is UNCONFIRMED, so do not substitute a fresh guess for the recorded one, and recovery is a restart of BOTH servers — Vite with `web/node_modules/.vite` deleted, a plain restart having not been enough, and `uvicorn --reload`, because a stale one 404s any route added since it booted → *A dev server and the gate at the same time can blank every route*
 - A guard test must be SHOWN to fail before it is trusted: break the thing, capture the red, restore, and put the failure in the PR → *A guard test must be SHOWN to fail*
 - Measure the counterfactual before shipping a mechanism somebody prescribed, and let the sabotage decide which condition is load-bearing — three in one PR measured byte-identical over the whole sweep and were dropped, one of them green under the very thing it existed to deliver → *Three prescribed mechanisms measured BYTE-IDENTICAL*
 - A class name in markup with no CSS fails SILENTLY, and interpolated class names are that guard's one blind spot → *A class name in markup with no CSS fails SILENTLY*
-- Prose is capped and an executable claim must not be prose: plain comments 2 lines, module docstrings 10, wire-contract docstrings 20; over-cap needs a row in `tests/comment_budget_allowlist.toml` with a real reason, and `BASELINE_RATCHET` may only go down → *Prose is capped, and an executable claim must not be prose*
-- Never weaken the generated digest header to satisfy gitleaks, and `useDefault = true` must stay in the gitleaks config or the default ruleset is REPLACED → *Quality gate*
+- Prose is capped and an executable claim must not be prose: plain comments 2 lines, module docstrings 10, wire-contract docstrings 20; over-cap needs a row in `tests/comment_budget_allowlist.toml` with a real reason, and `BASELINE_RATCHET` may only go down. A stylesheet's cap is ZERO and takes no allowlist row at all — delete the comment → *Prose is capped, and an executable claim must not be prose*
 
 ## Quality gate
 
@@ -158,21 +158,6 @@ Working agreement:
   function. **Ask Kilian first, and say what you are about to apply before you dispatch it.**
 - Test critical logic, core user paths and anything that can lose user data; skip static or
   presentational UI, and ask rather than defaulting to writing a test → *Testing policy*.
-
-## Findings inbox — one line each, dated. Emptied at every promotion to main.
-
-New findings land HERE, never as a new `##` section. At each promotion every line goes to
-exactly ONE of these, then leaves the inbox:
-  1. a GUARD     — the claim is executable, so it becomes a test  (best outcome)
-  2. a TRIPWIRE  — a prohibition nobody could infer from working code (one line, stays above)
-  3. the ARCHIVE — reasoning, or history
-  4. DELETED     — it did not matter after all  (most lines should end here)
-
-- 2026-09-08: `sessions/routes.py::_fold_sessions` drops its last session whenever the row count lands exactly on `_COMPLETION_ROWS_MAX` with nothing actually cut — a false-positive truncation, and that endpoint has no flag telling a client it happened. `journal`'s read fetches `cap + 1` instead. Found while building `GET /api/journal`.
-- 2026-09-08: recovering the blanked dev server is **restart Vite with `web/node_modules/.vite` deleted** — a plain restart was not enough (Kilian: "always do the restart of the vite server and clean the cache"). Observed right after `npm run check:web` ran while his server was up, which matches the recorded symptom; the trigger itself is still UNCONFIRMED. A stale `uvicorn --reload` also 404s a route added since it booted, so restart both.
-- 2026-09-08: **`.scss` is outside the prose budget** — `SCOPED_SUFFIXES` covers `.py`, `.ts`, `.tsx`, `.yml`, `.yaml` only, so a stylesheet's comments are uncapped and unread by `tests/test_comment_budget.py`. `_diary.scss` now carries ~33 lines of chart and full-height-chain doctrine that a `.ts` module docstring's 10-line cap would have refused. Executable, so it is a GUARD: add `.scss` and ratchet, or decide stylesheets are exempt on purpose and say so where the suffix list lives.
-- 2026-09-09: `JournalResponse.trends` (`body_weight_kg` and `body_weight_direction`) now has **no client consumer**: the diary's Body weight section was deleted outright (Kilian) and the weigh-in is a column of the readings table, which reads the entries themselves. The wire and the server are deliberately untouched — triage it with the unused columns/wire issue at the next promotion.
-- 2026-09-08: **the web suite has a flake class, not a flake.** `diaryScreen.test.tsx`'s `settle()` (one macrotask) is wrong for any click that triggers a SECOND read, and `sessionReminder.test.tsx:131` timed out once under the full 62-file parallel run on a bare `findByRole` that passes alone. Both are the harness racing a real fetch, not the app. Two sightings in one day, so it is worth a look before it lands in CI as an intermittent red.
 
 ## Where things live
 

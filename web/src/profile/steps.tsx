@@ -20,10 +20,10 @@ import { DEFAULT_ASPECT_SCORE, STRENGTH_SCORE, WEAKNESS_SCORE, type ProfileDraft
  *
  * ## Closed inputs, everywhere
  *
- * There is exactly one free-text field in this whole flow (an injury note, bounded at 500
- * characters server-side). Everything else is a select, a checkbox or a slider over a
- * seeded vocabulary, submitted as ids — CLAUDE.md's cheapest injection defence is having
- * nothing to inject into.
+ * These four groups hold exactly one free-text field (an injury note, bounded at 500
+ * characters server-side). The display name belongs to NO step, so it is not here — it is
+ * the editor's Account section. Everything else is a select, a checkbox or a slider over a
+ * seeded vocabulary, submitted as ids: nothing to inject into is the cheapest defence.
  *
  * Per the testing policy these are not unit-tested: they render the props they were given.
  * What is tested is the part that can be wrong invisibly — `patchFor` in `draft.ts`, which
