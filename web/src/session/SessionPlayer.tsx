@@ -37,8 +37,8 @@ import { formatElapsed } from './useSessionRun';
  * and `useSessionRun` writes its `textContent` per frame; a `setState` at 60 Hz re-renders the
  * whole tree sixty times a second. `initialClockText` is here only so the first paint is right.
  *
- * ⚠️ **The phase goes in `data-phase`, never in an interpolated class name.** See `_session.scss`
- * — `` `ct-app__player--${phase}` `` is `markupCss.test.ts`'s one blind spot and would trip it in
+ * ⚠️ **The phase goes in `data-phase`, never in an interpolated class name.**
+ * `` `ct-app__player--${phase}` `` is `markupCss.test.ts`'s one blind spot and would trip it in
  * both directions at once. The item's state is `data-state` for the same reason.
  */
 export function SessionPlayer({ run, readOnly }: { run: SessionRun; readOnly: boolean }) {

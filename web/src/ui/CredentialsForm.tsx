@@ -25,8 +25,7 @@ import type { Credentials } from '../auth/authClient';
  * GROUPS it at the end of the form behind a hairline rule and stretches it to the card's full
  * width. It does **not** anchor it to the bottom of the viewport: that needs `position: fixed` or
  * a full-height container, and both resolve against kilianmc.com's viewport in the federated
- * mount. See `styles/_chrome.scss` for the measurement and for why real bottom-anchoring waits
- * for the session player.
+ * mount, so a real bottom bar waits for the session player.
  */
 export interface CredentialsFormValues extends Credentials {
   /** Empty unless `requestInviteCode` is set. */

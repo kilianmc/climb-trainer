@@ -36,8 +36,15 @@ export function bodyWeightHint(raw: string): string | null {
   return `A weigh-in is a number between ${String(BODY_WEIGHT_MIN)} and ${String(BODY_WEIGHT_MAX)} kg.`;
 }
 
+/** The five fields the CHECK counts — the form's whole state, with none of the run store's
+ *  send bookkeeping. Two callers now: the session box, and the diary's edit. */
+export type JournalFieldValues = Pick<
+  JournalDraft,
+  'body' | 'feel' | 'sleepQuality' | 'skin' | 'bodyWeightKg'
+>;
+
 /** Nothing to send: every one of the CHECK's five fields is absent. */
-export function isJournalDraftEmpty(draft: JournalDraft): boolean {
+export function isJournalDraftEmpty(draft: JournalFieldValues): boolean {
   return (
     draft.body.trim() === '' &&
     draft.feel === null &&

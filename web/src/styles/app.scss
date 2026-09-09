@@ -1,27 +1,10 @@
-// The design system entry, and the ONLY stylesheet the federated mount gets. Imported from
-// `routes/__root.tsx` so both mounts pick it up from the single route tree.
-//
-// EVERYTHING here is scoped under the one `.ct-app` element, design tokens included: in the
-// federated mount this stylesheet is injected into kilianmc.com's document, so a `:root`,
-// `html`, `body` or `*` rule would restyle the live portfolio. The only file allowed those
-// selectors is `global.scss`, which `main.tsx` alone imports. `designGuard.test.ts` enforces
-// it, because there is no stylelint here to.
-//
-// `@use` only — never `@import`, which is deprecated in Dart Sass and re-emits a partial once
-// per importer.
-//
-// The rejections behind the look, all still binding (CLAUDE.md "UI design direction"):
-//   - no `backdrop-filter` and no translucent surfaces — elevation is a distinct opaque
-//     surface colour + a hairline + one shadow step;
-//   - container queries, not media queries, for anything whose right answer depends on how
-//     much room the app got, because the federated mount's viewport is kilianmc.com's;
-//   - tokens on `.ct-app`, not `:root`.
 @use 'tokens';
 @use 'layout';
 @use 'primitives';
 @use 'card';
 @use 'session';
 @use 'plan';
+@use 'diary';
 @use 'bento';
 @use 'chrome';
 @use 'profile';
@@ -30,19 +13,10 @@
 
 .ct-app {
   @include tokens.declare;
-  // The System/Light/Dark override. `[data-theme]` absent = follow the OS, which is what
-  // `declare` alone already does — see `_tokens.scss` for why this beats the media query.
   @include tokens.overrides;
 
-  // ⚠️ **A stacking context of its own, so no `z-index` inside the app can escape it.** The nav's
-  // label tooltips need to paint over the first card, which comes later in the DOM, and in the
-  // federated mount this stylesheet is injected into kilianmc.com's document — an index that
-  // escaped `.ct-app` could paint over the portfolio's own chrome. One declaration closes that
-  // for every z-index the app will ever have, present and future.
   isolation: isolate;
 
-  // The query container everything mount-sensitive asks. Named, so a card's own `ct-card`
-  // container can never accidentally answer a question about the app's width.
   container: ct-app / inline-size;
 
   box-sizing: border-box;
@@ -59,12 +33,6 @@
   font-size: var(--ct-text-base);
   line-height: var(--ct-leading);
 
-  // Mobile-first, and honest about safe-area insets from the start: this app is used
-  // one-handed on a phone in a gym, often in landscape on a bouldering mat.
-  //
-  // ⚠️ Only the BLOCK padding is here. The reading measure and the inline gutters moved into
-  // `_layout.scss` as a grid column, because nothing inside a `max-inline-size` box can reach the
-  // edge of the screen and the landing page has to — read that file before putting them back.
   padding-block: max(var(--ct-space-4), env(safe-area-inset-top))
     max(var(--ct-space-5), env(safe-area-inset-bottom));
 
@@ -85,14 +53,12 @@
     font-size: var(--ct-text-base);
   }
 
-  // `layout` first: it declares `--ct-measure` and the gutters that the rest read, and its
-  // `> *` placement rules are the ones every later, more specific rule is allowed to beat.
-  // `landing` last, for the same reason in reverse.
   @include layout.styles;
   @include primitives.styles;
   @include card.styles;
   @include session.styles;
   @include plan.styles;
+  @include diary.styles;
   @include bento.styles;
   @include chrome.styles;
   @include profile.styles;

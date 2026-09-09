@@ -10,6 +10,7 @@ line numbers; five staleness arms below make an unearned entry a hard failure.
 """
 
 import ast
+import re
 import tomllib
 from dataclasses import dataclass, replace
 from datetime import date
@@ -29,8 +30,15 @@ MODULE_DOCSTRING_CAP: Final = 10
 # Wire-contract docstrings get the most: FastAPI ships them to API consumers as the OpenAPI
 # `description`, so their audience is outside this repo and cannot read the code instead.
 WIRE_CONTRACT_CAP: Final = 20
+# Stylesheets get NOTHING (Kilian): "remove all comments from scss, we dont need any".
+STYLE_CAP: Final = 0
 
-CAPS: Final = {"module": MODULE_DOCSTRING_CAP, "wire": WIRE_CONTRACT_CAP, "plain": CAP}
+CAPS: Final = {
+    "module": MODULE_DOCSTRING_CAP,
+    "wire": WIRE_CONTRACT_CAP,
+    "plain": CAP,
+    "style": STYLE_CAP,
+}
 
 # The ratchet. Entries whose reason starts with BASELINE are the un-reviewed backlog; new
 # comments obey the cap from day one, so this number may only ever go DOWN. Lower it in the
@@ -64,11 +72,19 @@ MIN_REASON_LENGTH: Final = 40
 MIN_ANCHOR_LENGTH: Final = 30
 
 SCOPE: Final = ("server", "migrations", "tests", "web/src", ".github")
-KINDS: Final = ("hash_run", "docstring", "slash_run", "block")
+KINDS: Final = ("hash_run", "docstring", "slash_run", "slash_tail", "block")
 # `.github/` is in scope for its workflows: a `#` run there is prose nothing else in the gate
 # reads, which is how 15- and 28-line runs grew in two files no cap applied to.
 YAML_SUFFIXES: Final = {".yml", ".yaml"}
-SCOPED_SUFFIXES: Final = {".py", ".ts", ".tsx"} | YAML_SUFFIXES
+# `.scss` was outside the suffix list entirely, which is how 1,657 lines of layout and colour
+# doctrine grew in 16 files no cap applied to. In scope at a cap of ZERO, with no exemption.
+STYLE_SUFFIXES: Final = {".scss"}
+SCOPED_SUFFIXES: Final = {".py", ".ts", ".tsx"} | YAML_SUFFIXES | STYLE_SUFFIXES
+
+# A quoted span is not code, so a `//` inside one is not a comment. The trailing-comment
+# boundary follows `web/src/test/sourceScan.ts`: whitespace or start of line before the slashes.
+QUOTED: Final = re.compile(r"'[^']*'|\"[^\"]*\"")
+TRAILING_COMMENT: Final = re.compile(r"(?:^|\s)//")
 
 # Detected by MARKER, not by path: a path list rots the moment a generator's output moves,
 # whereas the marker travels with the file. Two generators, two spellings — TanStack Router
@@ -299,6 +315,28 @@ def _yaml_runs(path: Path, lines: list[str]) -> list[Comment]:
     return [replace(run, tier="module") if run.line == 1 else run for run in runs]
 
 
+def _trailing_comments(path: Path, lines: list[str], excluded: list[range]) -> list[Comment]:
+    """A `//` AFTER code. Out of scope elsewhere for length; a stylesheet's cap is presence."""
+    skip = {number for span in excluded for number in span}
+    found: list[Comment] = []
+    for number, raw in enumerate(lines, start=1):
+        stripped = raw.strip()
+        if number in skip or not stripped or stripped.startswith("//"):
+            continue
+        if TRAILING_COMMENT.search(QUOTED.sub("", raw)):
+            found.append(
+                Comment(_relative(path), "slash_tail", normalise(stripped), 1, number, "style")
+            )
+    return found
+
+
+def _style_runs(path: Path, source: str, lines: list[str]) -> list[Comment]:
+    """Every stylesheet form on one tier: an own-line run, a `/* */` block, a trailing `//`."""
+    blocks, ranges = _block_comments(path, source)
+    runs = blocks + _own_line_runs(path, lines, "//", "slash_run", ranges)
+    return [replace(run, tier="style") for run in runs] + _trailing_comments(path, lines, ranges)
+
+
 def _block_comments(path: Path, source: str) -> tuple[list[Comment], list[range]]:
     """`/* ... */`, JSDoc included. Span is newlines + 1.
 
@@ -336,6 +374,8 @@ def collect() -> list[Comment]:
             comments.extend(_own_line_runs(path, lines, "#", "hash_run", excluded))
         elif path.suffix in YAML_SUFFIXES:
             comments.extend(_yaml_runs(path, lines))
+        elif path.suffix in STYLE_SUFFIXES:
+            comments.extend(_style_runs(path, source, lines))
         else:
             blocks, block_ranges = _block_comments(path, source)
             comments.extend(blocks)
@@ -629,6 +669,47 @@ def test_the_workflows_are_in_scope_so_a_regrown_comment_run_is_caught() -> None
     scoped = {_relative(path) for path in scoped_files()}
     assert ".github/workflows/ci.yml" in scoped
     assert ".github/workflows/migrate.yml" in scoped
+
+
+def test_the_style_detector_sees_all_three_forms_and_every_one_is_over_the_cap() -> None:
+    """Positive control. At a cap of zero ONE line of any form is already a violation."""
+    source = "/* why */\n.a {\n  color: red; // trailing\n}\n// one\n// two\n"
+    found = _style_runs(Path("sample.scss"), source, source.splitlines())
+    assert [(comment.kind, comment.span) for comment in found] == [
+        ("block", 1),
+        ("slash_run", 2),
+        ("slash_tail", 1),
+    ]
+    assert all(comment.tier == "style" and comment.span > comment.cap for comment in found)
+
+
+def test_the_style_detector_does_not_read_a_url_or_a_quoted_string_as_a_comment() -> None:
+    """The two false positives that would make a stylesheet impossible to keep green."""
+    source = ".a {\n  background: url(https://example.com/a//b.png);\n  content: '// not one';\n}\n"
+    assert _style_runs(Path("sample.scss"), source, source.splitlines()) == []
+
+
+def test_every_stylesheet_is_in_scope_so_the_prose_cannot_regrow(comments: list[Comment]) -> None:
+    """`.scss` was outside `SCOPED_SUFFIXES`, by suffix, which is why nothing ever capped it."""
+    sheets = sorted(_relative(path) for path in scoped_files() if path.suffix in STYLE_SUFFIXES)
+    assert "web/src/styles/app.scss" in sheets, f"the design-system entry is out of scope: {sheets}"
+    assert "web/src/styles/_diary.scss" in sheets, f"a partial is out of scope: {sheets}"
+    assert len(sheets) >= 16, f"only {len(sheets)} stylesheet(s) in scope: {sheets}"
+    assert CAPS["style"] == 0, "a stylesheet carries no prose at all — that is the whole rule"
+    prose = [comment for comment in comments if comment.tier == "style"]
+    assert not prose, f"{len(prose)} stylesheet comment(s): {[str(c.path) for c in prose[:20]]}"
+
+
+def test_no_allowlist_entry_may_exempt_a_stylesheet(allowlist: list[Entry]) -> None:
+    """Zero means zero: a dead exemption here is worse than none, so there is no way to buy one."""
+    exempted = [entry for entry in allowlist if Path(entry.path).suffix in STYLE_SUFFIXES]
+    formatted = "\n".join(
+        f"  {entry.path} {entry.kind} '{entry.anchor}'" for entry in exempted[:20]
+    )
+    assert not exempted, (
+        f"{len(exempted)} allowlist entry(ies) name a stylesheet. A stylesheet's cap is zero and "
+        f"takes no exceptions — delete the comment instead:\n{formatted}"
+    )
 
 
 def test_the_docstring_detector_counts_the_lines_a_reader_sees() -> None:

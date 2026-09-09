@@ -23,8 +23,8 @@ import {
  * character column. It is emphatically **not** "raise `max-inline-size` and let the text run 140
  * characters wide", which is the change that looks like using the space and is unreadable.
  *
- * `ct-app__bleed` is how a section escapes the reading measure, and `_layout.scss` documents why
- * it is a grid column rather than `100vw` or `position: fixed`: this file renders in BOTH mounts
+ * `ct-app__bleed` is how a section escapes the reading measure, and it is a grid column rather
+ * than `100vw` or `position: fixed` because this file renders in BOTH mounts
  * from one route tree, and in the federated mount those two resolve against kilianmc.com's
  * viewport rather than the card the remote was given.
  *

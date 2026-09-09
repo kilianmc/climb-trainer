@@ -1,58 +1,7 @@
 @use 'sizes';
 
-// The page frame: a centred reading measure with a FULL-BLEED escape hatch, built entirely out
-// of intrinsic sizing.
-//
-// ## What this replaces, and why it is not just `max-inline-size` on `.ct-app`
-//
-// Until this file, `.ct-app` carried `padding-inline` + `max-inline-size: 46rem` +
-// `margin-inline: auto` itself. Nothing inside a box like that can reach the edge of the screen:
-// escaping a `max-inline-size` from the inside requires knowing the distance to the edge, and
-// the two usual ways of expressing that — `margin-inline: calc(50% - 50vw)` and
-// `position: fixed` — are BOTH banned here, because this stylesheet lives in the route tree
-// both mounts share and in the federated mount they resolve against **kilianmc.com's**
-// viewport, not against the card the remote was given. (Same trap as `_chrome.scss`'s deferred
-// bottom anchoring, and asserted on the built remote stylesheet by `distContract.test.ts`.)
-//
-// So the measure moved down one level and became a GRID COLUMN instead:
-//
-//   [ct-bleed-start] gutter | [ct-measure-start] measure [ct-measure-end] | gutter [ct-bleed-end]
-//
-// Ordinary children sit in `ct-measure`; a `&__bleed` child spans `ct-bleed`. **There is no
-// length in here that refers to anything outside the grid container** — the only relative unit
-// is `100%`, which is the container's own inline size. That is what makes it correct in both
-// mounts with no branching: standalone the container is the document, federated it is the
-// `ProjectViewer` card, and each simply reports its own width. It also cannot overflow, which
-// the `50% - 50vw` idiom can (it ignores the scrollbar and produces a horizontal one).
-//
-// ## Two levels, because a grid does not reach through a child
-//
-// `.ct-app` places the nav in the measure and `<main>` in the bleed; `.ct-app__main` then
-// re-establishes the same grid so a ROUTE's own children can choose. A landing section is a
-// child of `<main>`, not of `.ct-app`, so one level cannot serve both.
-//
-// ## What did NOT change, deliberately
-//
-// The measure column is `min(--ct-measure, 100%)` **minus both gutters**, which reproduces the
-// old content box exactly rather than approximately: at a 1440px viewport that is 704px in both
-// versions (the old `.ct-app` was 736px wide with 16px of padding each side), and at 390px it is
-// 358px in both. App screens are unchanged to the pixel.
-//
-// ⚠️ The one real difference: `container: ct-app / inline-size` now measures the FULL available
-// width rather than the capped 46rem content box, so the `@container ct-app (min-inline-size:
-// 34rem)` thresholds in `_card.scss` and `_bento.scss` are crossed ~32px of viewport earlier
-// (bento goes two-column at a 544px viewport instead of 576px). Left as-is rather than
-// compensated: `ct-app` now means "how much room the app got", which is what those queries are
-// actually asking, and in the FEDERATED mount nothing changes at all — the card is narrower than
-// 46rem, so the cap never bound there. The card internals are untouched either way, because
-// above a 768px viewport both versions give the full-width bento tile the same 704px.
 @mixin measured-grid {
   display: grid;
-  // ⚠️ `start`, and it became load-bearing when the session player made `.ct-app` fill the
-  // document (`global.scss`, `_session.scss`). A grid's default `align-content` is `stretch`,
-  // so implicit `auto` rows share out any leftover block space — the nav row would have grown
-  // to half the window on every short screen. It is a no-op wherever the height is the
-  // content's, and the player's own `1fr` row absorbs the space before this is consulted.
   align-content: start;
   grid-template-columns:
     [ct-bleed-start] minmax(var(--ct-gutter-start), 1fr)
@@ -65,34 +14,16 @@
 }
 
 @mixin styles {
-  // The gutters carry the safe-area insets that used to sit in `.ct-app`'s `padding-inline`,
-  // under the same `max()` floor: this app is used in landscape on a bouldering mat, so a notch
-  // inset is not hypothetical. Only the gutters honour them — a full-bleed photo band is
-  // supposed to run under the notch, which is what `viewport-fit=cover` is for.
   --ct-measure: 46rem;
   --ct-gutter-start: max(var(--ct-space-4), env(safe-area-inset-left));
   --ct-gutter-end: max(var(--ct-space-4), env(safe-area-inset-right));
 
   @include measured-grid;
 
-  // `> *`, not a list of known children: the three status renders in `ui/status.tsx`
-  // re-establish `.ct-app` around a bare card, so an unplaced child would auto-place into the
-  // gutter column. Auto-placement is the wrong default here.
   > * {
     grid-column: ct-measure;
   }
 
-  // Specificity (0,2,0) beats the `> *` above regardless of source order, which is worth having
-  // in a file whose mixins are `@include`d into one selector.
-  //
-  // Two Sass traps are why these three rules look the way they do, and both fail QUIETLY:
-  //
-  //  - `& > &__main`, not `> &__main`. Where `&` appears in a selector Sass does not also prepend
-  //    the parent, so the short form emits a literal `> .ct-app__main` — invalid CSS that Dart
-  //    Sass only warns about (`bogus-combinators`) and that hard-fails the build at lightningcss.
-  //  - the last two stay FLAT rather than nested inside the block above. Under a complex parent
-  //    (`.ct-app > .ct-app__main`) Sass appends a `&__x` suffix to the parent's LAST compound, so
-  //    a nested `&__bleed` would compile to `.ct-app__main__bleed` and match nothing at all.
   & > &__main {
     grid-column: ct-bleed;
 
@@ -107,65 +38,15 @@
     grid-column: ct-bleed;
   }
 
-  // The WIDE column: layout-shaped content, bounded, and reachable at ANY depth.
-  //
-  // Issue #99. The plan screen is the case: the timeline and the phase week table are TABLES, not
-  // prose, and both sat in a 704px measure on a 1440px screen. Widening `--ct-measure` is the
-  // wrong fix — it is the READING measure, and `&__prose` beside it was measured too.
-  //
-  // ⚠️ **Not `&__bleed`, and it cannot be.** `&__bleed` is a DIRECT-CHILD placement rule; the week
-  // table is `main > section > details > table`. A `<details>` cannot pass grid placement through
-  // either — its contents sit behind a shadow slot (`::details-content`), so its light children
-  // are the grid items of nothing — and lifting the table out of the disclosure would stop it
-  // collapsing with its phase. So this escape is INTRINSIC rather than a placement, and the class
-  // works wherever it lands.
-  //
-  // ⚠️ **`cqi` is why this is allowed where `50% - 50vw` is banned.** `100cqi` is the inline size
-  // of the nearest query container, which here is `.ct-app` itself: the app's own width in BOTH
-  // mounts, never kilianmc.com's viewport. Nor can it produce the horizontal scrollbar the `vw`
-  // idiom does — the container is measured inside the scrollbar, and the width stops a gutter
-  // short of it. ⚠️ It relies on there being no `container-type` between `.ct-app` and the
-  // element: a length unit resolves against the nearest container on that axis and CANNOT be
-  // pointed at a name. `ct-card` and `ct-player` are the only others, and neither is an ancestor
-  // of the two call sites.
-  //
-  // Below `$desktop` there is no rule at all, so the element is an ordinary child of the measure:
-  // mobile and tablet have nothing worth gaining. The cap is `$big` — past the big-screen size the
-  // extra room goes back to the gutters rather than into a 1400px table row.
   & &__wide {
     @container ct-app (min-inline-size: #{sizes.$desktop}) {
       --ct-wide: min(#{sizes.$big}, 100cqi - var(--ct-gutter-start) - var(--ct-gutter-end));
 
       inline-size: var(--ct-wide);
-      // Symmetric NEGATIVE margins. `%` is the containing block — the measure column, which is
-      // already centred in the container — so centring on it centres in the container.
       margin-inline: calc((100% - var(--ct-wide)) / 2);
     }
   }
 
-  // The reading measure INSIDE a bleed section. Two of them, because they answer different
-  // questions: `&__measured` restates the app's own 46rem column (so a bleed section's non-prose
-  // contents line up with the cards above it), while `&__prose` is the typographic one — the
-  // ~65–75 character column that is the whole point of breaking out. Widening the measure and
-  // letting the text run the full width of a desktop window is the opposite of what this
-  // redesign is for.
-  //
-  // `ch` is font-relative and therefore mount-safe; it is deliberately not a `rem` constant,
-  // because the number that matters is a character count.
-  //
-  // A column NARROWER than the measure, centred inside it.
-  //
-  // The auth screens are the case, and it was a real misread of the frame: a credentials form
-  // capped at `26rem` is deliberate — nobody wants a 700px-wide password field — but a grid item
-  // with a `max-inline-size` and the default `justify-self: stretch` resolves to START, so the
-  // card sat hard left in a 44rem column while its own heading sat at the column's edge above it.
-  // Verified in the compiled sheet: `.ct-app__form { max-inline-size: 26rem }` with no inline
-  // margin anywhere.
-  //
-  // ⚠️ It is a WRAPPER rather than `margin-inline: auto` on the form, because the heading and the
-  // lede are SIBLINGS of the form: centring only the card would leave the title behind. One grid
-  // child, one left edge for everything inside it. No `display` or `gap` here on purpose — the
-  // children keep their own block margins, so nothing double-spaces.
   &__narrow {
     inline-size: 100%;
     max-inline-size: 26rem;
@@ -179,14 +60,6 @@
     padding-inline: var(--ct-gutter-start) var(--ct-gutter-end);
   }
 
-  // ⚠️ **`56ch`, and the number is MEASURED, not the usual `65ch` cargo cult.** `ch` is the
-  // advance of "0", which in this stack's system font is 9.8px at 1rem — wider than the average
-  // prose character, so `Nch` always holds MORE than N characters. Counted in Chrome at a 1440px
-  // viewport (per-character `Range` rects grouped by line box), `68ch` gave **80 characters** on
-  // the hero lede and **90** on the band's copy, i.e. straight past the upper bound. At `56ch`
-  // the same blocks measure **70** (lede), **68** (band) and 72–79 with a mean of 74 on the
-  // widest bento tile's paragraph — inside the target, with the widest card line at its edge.
-  // Re-measure if the font stack changes; do not "round it up to 65ch".
   &__prose {
     max-inline-size: 56ch;
   }

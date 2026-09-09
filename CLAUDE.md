@@ -35,13 +35,28 @@ One line each; `→` names the archive heading that holds the reasoning.
 - No `position: fixed` and no viewport units anywhere the route tree can reach — an inline style never becomes CSS, so there is no backstop → *Accessibility is part of the design*
 - Full height is an in-flow `100%` chain over flexed `body` and `#root`, not `fixed` and not `100dvh`; a plain `min-block-size: 100%` collapses to zero → *The full-height chain*
 - Do not use `backdrop-filter` and do not reintroduce translucent "glass" surfaces → *Glassmorphism: considered and REJECTED*
-- No text over a photograph on the landing page, and the scrim that made it possible is deleted — do not reintroduce it → *Landing imagery*
+- Text over a photograph on the landing page is legal ONLY behind the `--ct-scrim` overlay, and the lightest stop under any copy — `0.66` on `&__band` — is the measured 4.5:1 floor: do not lighten a stop without redoing that arithmetic → *Landing imagery*
 - `web/scripts/gen-landing-images.mjs` is an authoring tool and must never enter `build` → *Landing imagery*
 - Icons are SVG components, never `<img src="…svg">`, and an icon-only control owes its own `aria-label` → *Landing imagery* · *The nav's thresholds are MEASUREMENTS*
 - Generated API types are COMMITTED: regenerate with `npm run codegen:api`, never loosen the `openapi-sha256` digest header, and never recreate `web/src/api/vocabularies.ts`; a FastAPI or Pydantic bump fails that test and Dependabot cannot fix it → *OpenAPI codegen*
 - PWA: `registerType: 'autoUpdate'` with `injectRegister: null`; the asset generator is deliberately not a devDependency and its config stays plain JS → *PWA — only the decisions a reader would otherwise reverse*
 - `&__prose` is `56ch` and the number is MEASURED — do not "fix" it up to the usual `65ch` → *The reading measure is a GRID COLUMN*
-- The four screen sizes are NAMED container sizes and some widths are deliberately not on the scale; read them out of `web/src/styles/_tokens.scss` rather than inventing one → *The four screen sizes are NAMED*
+- The four screen sizes are NAMED container sizes and some widths are deliberately not on the scale; read them out of `web/src/styles/_sizes.scss` rather than inventing one → *The four screen sizes are NAMED*
+- The reading measure and the inline gutters are a GRID COLUMN in `web/src/styles/_layout.scss` — never `max-inline-size` or `padding-inline` back on `.ct-app`, because nothing inside a capped box can reach the screen edge and the landing page must
+- `100cqi` is what makes the wide-column escape legal where `50% - 50vw` is banned, and a length unit resolves against the NEAREST container and cannot be aimed at a name — never add a `container-type` between `.ct-app` and a `cqi` consumer
+- `.ct-app`'s `isolation: isolate` is load-bearing: it is the only thing stopping an app `z-index` painting over the shell's own chrome
+- A scrolling or ellipsising track is `minmax(0, 1fr)` with `min-block-size: 0` / `min-inline-size: 0` on the item — a bare `1fr` or an implicit `auto` track floors at its content and blows the row out
+- `web/src/styles/_diary.scss`'s `&__chartbox` keeps `inline-size: 100%` although it looks redundant: cross-axis `auto` margins suppress the flex `stretch` and the `<svg>` then falls back to 300x150 — do not "simplify" it away
+- The build target is Vite's `baseline-widely-available` (Chrome 111): `subgrid` and the `lh` unit are both outside it and were rejected on that fact — re-evaluate only when the baseline moves
+- A focused control's `font-size` stays explicitly at or above 16px — iOS Safari zooms the page below it — and the fix is never to disable pinch-zoom in the viewport meta
+- Reduced motion drops the TRANSITION and nothing else — the colour, the fill, the ring and the countdown still change, instantly: reduced motion is not reduced information
+- The `--ct-tap` 44px floor is on BOTH axes of every control and no consumer may round it down
+- The visually-hidden idiom is the 1px clip: never `display: none` or `visibility: hidden` (both REMOVE the node from the accessibility tree) and never `clip-path: inset(50%)`, which a zero-size box lets some screen readers skip
+- The nav's five thresholds are MEASURED content widths, never screen sizes — a conventional 768/1024 pair was explicitly rejected — and the icon band's upper bound is the label threshold minus `0.001rem`, because container ranges are inclusive
+- `&__actionbar` is a grouping primitive that anchors nothing: never `position: sticky` on it, whose range as the last child of a content-sized form is about zero — a real bottom bar is the last row of a full-height grid
+- The phase timeline's x axis is DAYS: `weeks × a constant` makes February and March the same width and every band edge after the first a lie, and nothing is rounded to a week
+- The brand tile does NOT follow the accent — `BrandMark`, `web/public/mark.svg` and the generated PWA icons carry the same three fixed values in both schemes — and dark has no shadow scale, which is not an omission to complete
+- A scroller inside the route tree keeps its overscroll to itself; in the federated mount the page it would otherwise chain to is kilianmc.com's
 - The phase week table never transposes, its short codes are applied by CLIPPING rather than `display: none`, and its sizing custom properties are component-scoped and must not move into the token file → *The phase week table*
 - Expand-all and collapse-all are ICON-ONLY at every width, and clicking a phase expands before it scrolls, then moves focus (Kilian) → *The plan timeline is measured in DAYS*
 - Light and dark have two known gaps that are documented rather than fixed (Kilian's call); do not "fix" either without asking → *Light and dark: the `data-theme` override*
@@ -153,13 +168,18 @@ exactly ONE of these, then leaves the inbox:
   3. the ARCHIVE — reasoning, or history
   4. DELETED     — it did not matter after all  (most lines should end here)
 
+- 2026-09-08: `sessions/routes.py::_fold_sessions` drops its last session whenever the row count lands exactly on `_COMPLETION_ROWS_MAX` with nothing actually cut — a false-positive truncation, and that endpoint has no flag telling a client it happened. `journal`'s read fetches `cap + 1` instead. Found while building `GET /api/journal`.
+- 2026-09-08: recovering the blanked dev server is **restart Vite with `web/node_modules/.vite` deleted** — a plain restart was not enough (Kilian: "always do the restart of the vite server and clean the cache"). Observed right after `npm run check:web` ran while his server was up, which matches the recorded symptom; the trigger itself is still UNCONFIRMED. A stale `uvicorn --reload` also 404s a route added since it booted, so restart both.
+- 2026-09-08: **`.scss` is outside the prose budget** — `SCOPED_SUFFIXES` covers `.py`, `.ts`, `.tsx`, `.yml`, `.yaml` only, so a stylesheet's comments are uncapped and unread by `tests/test_comment_budget.py`. `_diary.scss` now carries ~33 lines of chart and full-height-chain doctrine that a `.ts` module docstring's 10-line cap would have refused. Executable, so it is a GUARD: add `.scss` and ratchet, or decide stylesheets are exempt on purpose and say so where the suffix list lives.
+- 2026-09-09: `JournalResponse.trends` (`body_weight_kg` and `body_weight_direction`) now has **no client consumer**: the diary's Body weight section was deleted outright (Kilian) and the weigh-in is a column of the readings table, which reads the entries themselves. The wire and the server are deliberately untouched — triage it with the unused columns/wire issue at the next promotion.
+- 2026-09-08: **the web suite has a flake class, not a flake.** `diaryScreen.test.tsx`'s `settle()` (one macrotask) is wrong for any click that triggers a SECOND read, and `sessionReminder.test.tsx:131` timed out once under the full 62-file parallel run on a bare `findByRole` that passes alone. Both are the harness racing a real fetch, not the app. Two sightings in one day, so it is worth a look before it lands in CI as an intermittent red.
+
 ## Where things live
 
 - `README.md` — the pitch only: *What it does* and *Stack*. No section may return to it, and no ten-word run of prose may live in both files.
 - `../issuesplan.md` — current versions, the applied revision, and every open issue.
 - Module docstrings carry the detail: `server/db.py` (engine and session wiring), `server/auth/`
-  (one file per auth concern), `server/domain/grades.py` (the ordinal ladder) and
-  `web/src/styles/_layout.scss` (the reading measure as a grid column).
+  (one file per auth concern) and `server/domain/grades.py` (the ordinal ladder).
 - The doc guards: `tests/test_claude_md_claims.py` (every path, script, env var and README
   section this file names still resolves), `tests/test_docs_layout.py` (the pitch stays a pitch),
   `tests/test_comment_budget.py` (the prose caps and the allowlist's staleness arms). This

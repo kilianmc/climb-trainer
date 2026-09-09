@@ -256,7 +256,7 @@ export function IconPower(props: IconProps) {
  * ## The three tones, and the geometry
  *
  * Tile `--ct-accent`, holds knocked out in `--ct-accent-fg`, and the route a QUIET tone between
- * the two (`_chrome.scss` carries the measurements). That is the app's existing BUTTON pairing
+ * the two. That is the app's existing BUTTON pairing
  * plus a mix of it, so no new colour pair enters the system — `contrast.test.ts:87` already
  * asserts `['accent-fg', 'accent']` in both schemes.
  *
@@ -280,8 +280,7 @@ export function BrandMark() {
       <rect x="122" y="118" width="284" height="284" fill="currentColor" />
       {/* ⚠️ Two classes, not one: the route is a QUIET tone and the holds are the bright
           knockout, which is the figure-ground relationship `mark.svg` is drawn with. Knocking
-          both out at full strength reads as a fat zigzag with lumps. See `_chrome.scss` for the
-          measured tones. */}
+          both out at full strength reads as a fat zigzag with lumps. */}
       <path
         className="ct-app__brand-route"
         d="M168 352 L232 264 L312 296 L352 176"
@@ -454,6 +453,65 @@ export function IconMuted(props: IconProps) {
     <Icon {...props}>
       <path d="M4 9.5h3.2L12 5.5v13L7.2 14.5H4z" />
       <path d="M16 9.5l5 5M21 9.5l-5 5" />
+    </Icon>
+  );
+}
+
+/** Rename — a pencil, the only diagonal glyph in the family, with a band across it so it is a
+ *  pencil rather than a stroke. Icon-only, so the caller owes the label. */
+export function IconPencil(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M4 20l1.2-4.2L16.4 4.6l3 3L8.2 18.8z" />
+      <path d="M14.4 6.6l3 3" />
+    </Icon>
+  );
+}
+
+/** Newest entry first. Lines shortening downward beside a down arrow; icon-only, so the caller
+ *  owes the label — `IconSortOldest` is its mirror. */
+export function IconSortNewest(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M3 6h12M3 11h8M3 16h5" />
+      <path d="M19 5.5v13" />
+      <path d="M16.5 16 19 18.5 21.5 16" />
+    </Icon>
+  );
+}
+
+/** Newest PLAN first: `IconSortNewest`'s arrow over `IconCalendar`'s body, narrowed to x2-14.5 to
+ *  clear the arrow's column. ⚠️ The ARROW is what says the direction, so it stays (Kilian). */
+export function IconPlanSortNewest(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <rect x="2" y="7" width="12.5" height="10" rx="2" />
+      <path d="M6.2 7v10M10.3 7v10" />
+      <path d="M19 5.5v13" />
+      <path d="M16.5 16 19 18.5 21.5 16" />
+    </Icon>
+  );
+}
+
+/** Oldest PLAN first — `IconPlanSortNewest` with the arrow mirrored, and nothing else moved. */
+export function IconPlanSortOldest(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <rect x="2" y="7" width="12.5" height="10" rx="2" />
+      <path d="M6.2 7v10M10.3 7v10" />
+      <path d="M19 18.5v-13" />
+      <path d="M16.5 8 19 5.5 21.5 8" />
+    </Icon>
+  );
+}
+
+/** Oldest entry first — `IconSortNewest` mirrored, on the `IconSound`/`IconMuted` precedent. */
+export function IconSortOldest(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M3 6h5M3 11h8M3 16h12" />
+      <path d="M19 18.5v-13" />
+      <path d="M16.5 8 19 5.5 21.5 8" />
     </Icon>
   );
 }

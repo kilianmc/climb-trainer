@@ -8,6 +8,7 @@ import { SessionNotes } from './SessionNotes';
 import type { JournalDraft } from './runStore';
 import { EMPTY_JOURNAL_DRAFT } from './runStore';
 import type { SessionRun } from './useSessionRun';
+import { forbiddenCopyHits } from '../test/forbiddenCopy';
 
 /** The box's two non-wire rules: `show_body_metrics` off means the weigh-in is ABSENT, and no
  *  copy frames weight as reducible. ⚠️ The schema guard walks NAMES, so it sees neither. */
@@ -182,7 +183,7 @@ describe('the vanishing control must not strand keyboard focus', () => {
     const { rerender } = render(
       <SessionJournal run={fakeRun({ body: 'words' })} readOnly={false} />,
     );
-    const feel = screen.getByLabelText(/how you feel/i);
+    const feel = screen.getByLabelText(/energy/i);
     feel.focus();
     rerender(<SessionJournal run={fakeRun(SAVED)} readOnly={false} />);
     expect(document.activeElement).toBe(feel);
@@ -197,22 +198,6 @@ describe('the vanishing control must not strand keyboard focus', () => {
 
 /** ⚠️ Matched against RENDERED markup, never the source: the source NAMES these words in order
  *  to forbid them, and a guard that reads a prohibition as a violation gets deleted at once. */
-const FORBIDDEN_COPY = [
-  'lose',
-  'losing',
-  'lighter',
-  'leaner',
-  'slimmer',
-  'shed',
-  'overweight',
-  'goal weight',
-  'target weight',
-  'ideal weight',
-  'racing weight',
-  'climbing weight',
-  'bmi',
-  'body fat',
-];
 
 describe('the app never recommends losing weight', () => {
   it.each([
@@ -229,18 +214,14 @@ describe('the app never recommends losing weight', () => {
     );
     // `innerHTML`, so a `placeholder` or an `aria-label` is covered too, not just text nodes.
     const copy = container.innerHTML.toLowerCase();
-    for (const banned of FORBIDDEN_COPY) {
-      expect(copy, `"${banned}" is in this box's copy`).not.toContain(banned);
-    }
+    expect(forbiddenCopyHits(copy), "this box's copy").toEqual([]);
   });
 
   it('says nothing about reducing it on the demo account either', () => {
     profile = BASE_PROFILE;
     const { container } = render(<SessionJournal run={fakeRun()} readOnly={true} />);
     const copy = container.innerHTML.toLowerCase();
-    for (const banned of FORBIDDEN_COPY) {
-      expect(copy, `"${banned}" is in this box's copy`).not.toContain(banned);
-    }
+    expect(forbiddenCopyHits(copy), "this box's copy").toEqual([]);
   });
 
   it('would CATCH such a sentence — the wordlist is not vacuous', () => {
@@ -249,8 +230,14 @@ describe('the app never recommends losing weight', () => {
     const sample =
       'Your goal weight is 65 kg — lose 6 kg to be a lighter, leaner climber; ' +
       'losing it lowers your BMI.';
-    const hits = FORBIDDEN_COPY.filter((banned) => sample.toLowerCase().includes(banned));
-    expect(hits).toEqual(['lose', 'losing', 'lighter', 'leaner', 'goal weight', 'bmi']);
+    expect(forbiddenCopyHits(sample)).toEqual([
+      'lose',
+      'losing',
+      'lighter',
+      'leaner',
+      'goal weight',
+      'bmi',
+    ]);
   });
 });
 

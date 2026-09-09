@@ -32,6 +32,25 @@ export type Discipline = Schemas['Discipline'];
 export type JournalEntryRequest = Schemas['JournalEntryRequest'];
 /** The ack. Carries NO free text: `body` is deliberately absent from the response. */
 export type JournalEntryResponse = Schemas['JournalEntryResponse'];
+/** `GET /api/journal` — every entry this climber wrote, newest first, plus body weight's own
+ *  trailing mean. ⚠️ The 1-5 chart is drawn from the ENTRIES; nothing on the client averages. */
+export type Journal = Schemas['JournalResponse'];
+/** One stored entry. `client_uuid` is here because the edit path PUTs by it and must REPLACE. */
+export type JournalEntry = Schemas['JournalEntryOut'];
+/** Where an entry falls in a plan. `null` on an entry is NORMAL, not an error. */
+export type JournalEntryPlan = Schemas['EntryPlanOut'];
+/** The one DERIVED figure: body weight's trailing mean. `null` means too little to average. */
+export type JournalTrends = Schemas['JournalTrends'];
+/** One point of the weight mean. Never a single weigh-in — seven readings make one point. */
+export type TrendPoint = Schemas['TrendPoint'];
+/** Which way that mean runs. ⚠️ A VALUELESS enum — the words are the client's, and no value may
+ *  read as approval, a target or an outcome (CLAUDE.md, "never recommends losing weight"). */
+export type WeightDirection = Schemas['WeightDirection'];
+/** One plan the returned entries reference, with the weeks its own chart is ruled in. ⚠️ The
+ *  NAME lives HERE and nowhere else: it is renameable, so a second copy per entry would drift. */
+export type JournalPlan = Schemas['JournalPlanOut'];
+/** One stored week of one plan: `microcycle.start_date` as the server holds it, never derived. */
+export type JournalPlanWeek = Schemas['PlanWeekOut'];
 /** The UNIVERSAL copy for one training phase. Keyed by `phase`; sent once, never per mesocycle.
  *  How the phase applies to one plan is NOT here — see `ClimbingBand` and `plan/explain.ts`. */
 export type PhaseGuide = Schemas['PhaseGuideOut'];
@@ -91,6 +110,10 @@ export type ClimbingBand = Schemas['ClimbingBandOut'];
  * ActivePlanResponse` carries the reasoning.
  */
 export type ActivePlanResponse = Schemas['ActivePlanResponse'];
+/** `PUT /api/plans/{plan_id}/name`. ⚠️ The reply carries the STRIPPED value, and it is user-typed
+ *  on OUTPUT as well as input: render it as a text node, never as assembled HTML. */
+export type PlanNameRequest = Schemas['PlanNameRequest'];
+export type PlanNameResponse = Schemas['PlanNameResponse'];
 export type PlanMesocycle = Schemas['MesocycleOut'];
 export type PlanMicrocycle = Schemas['MicrocycleOut'];
 export type PlanSession = Schemas['SessionOut'];

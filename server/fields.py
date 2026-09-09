@@ -33,6 +33,7 @@ from server.models import (
     JOURNAL_BODY_MAX,
     LOCATION_MAX,
     NOTES_MAX,
+    PLAN_NAME_MAX,
     SET_NOTE_MAX,
 )
 
@@ -201,4 +202,18 @@ string: two representations of "no name" is a distinction no query wants to reme
 ⚠️ That also means **PATCH cannot clear a display name** — `null` means "no change" on this
 endpoint, and an empty string is refused. Clearing one needs `POST /api/profile/reset` or a
 future explicit affordance; it is not reachable by accident, which is the intended trade.
+"""
+
+
+PlanName = Annotated[
+    str, StringConstraints(strip_whitespace=True, min_length=1, max_length=PLAN_NAME_MAX)
+]
+"""`plan.name` — free text already on the schema's inventory, mirroring `String(PLAN_NAME_MAX)`.
+
+The generator authors the first name and `PUT /api/plans/{plan_id}/name` replaces it, so the
+column is user-typed on the way in and untrusted on OUTPUT as well. No new column, so the
+inventory gains no row — only a Pydantic half it never had.
+
+`min_length=1` after stripping, so `""` and `"   "` are a 422 rather than a blank label on a
+plan card. Unlike the notes there is no null to fall back to: the column is NOT NULL.
 """

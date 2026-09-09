@@ -3,7 +3,7 @@ import type { PlanTree } from '../api/types';
 import { MONTH_NAMES } from './blueprint';
 
 /* The plan's own calendar as ONE grid measured in DAYS, so a phase segment and a month band are
-   cut from the same ruler. `styles/_plan.scss` carries why weeks-times-a-constant cannot work. */
+   cut from the same ruler. `weeks x a constant` would make February and March the same width. */
 
 /* ⚠️ Pure and deterministic: today arrives as an ISO string, exactly as `phaseToggles.ts` takes
    it, and every date is arithmetic on integers — no `new Date()`, no local timezone. */
