@@ -58,7 +58,8 @@
       "eslint": "$eslint"
     },
     "openapi-typescript": {
-      "typescript": "$typescript"
+      "typescript": "$typescript",
+      "js-yaml": "4.3.2"
     }
   }
 }
