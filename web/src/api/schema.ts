@@ -11,8 +11,8 @@
  *   openapi-sha256  the OpenAPI document it was generated from
  *   types-sha256    everything below this comment block
  *
- * openapi-sha256: c1f8c636e1d84f720f2cb769ebef7ca2f9a03e371520c2b4d0162b52da3e17ed
- * types-sha256: 45e01f955be0bf4036569f8ef192bc1be5147f2746cee34913f5a922864a8954
+ * openapi-sha256: 2f2d622165558b9bec4a5d56d3293bf55a039d67813ebb02467d93b85cec7d01
+ * types-sha256: 9732ffa9a5c2e637f786b7b7f5d3c7b1f281f8aece8d06c20788d7aeb937c69f
  */
 
 export interface paths {
@@ -540,6 +540,40 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/sessions/volume': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Read Aspect Volume
+     * @description How many sets this climber has logged against each climbing aspect.
+     *
+     *     **Sets, not minutes** — `AspectVolumeOut` carries the reason, which is a fact about the
+     *     schema rather than a preference.
+     *
+     *     **The join runs through `logged_set.exercise_id`, which is NOT NULL**, so off-plan sets
+     *     count and no row is lost. The prescription-side path could do neither: its
+     *     `prescribed_set_id` is nullable and `session_block` snapshots no aspect at all.
+     *
+     *     **Totals only, and the per-day rows are folded HERE rather than sent.** One chart over ten
+     *     numbers is what reads them, and a per-day series on the wire with no reader is exactly the
+     *     orphaned-wire-field shape already on the register.
+     *
+     *     **One statement, one Neon wake**, and read-only: a demo token may call it. There is no
+     *     window parameter — the row cap is the bound, and `truncated` reports it.
+     */
+    get: operations['read_aspect_volume_api_sessions_volume_get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/sessions/{client_uuid}': {
     parameters: {
       query?: never;
@@ -675,6 +709,59 @@ export interface components {
       rated_at: string;
       /** Score */
       score: number;
+    };
+    /**
+     * AspectVolumeOut
+     * @description One climbing aspect and the sets logged against it inside the returned window.
+     *
+     *     ⚠️ **`sets` counts `logged_set` ROWS. It is not minutes, and there is no per-aspect
+     *     minutes figure to send.** `activity.duration_minutes` is session-level and a session mixes
+     *     aspects across its blocks, `session_block` deliberately snapshots no aspect at all, and
+     *     `logged_set.actual_work_seconds` is nullable — summing it would silently undercount every
+     *     rep-based exercise while looking like a total. A set count is the one per-aspect quantity
+     *     this schema can answer honestly.
+     *
+     *     Every seeded aspect is present, `sets = 0` included: "I have not touched power endurance in
+     *     a month" is the answer this view exists to give, and an absent row cannot say it.
+     */
+    AspectVolumeOut: {
+      /** Aspect Key */
+      aspect_key: string;
+      /** Sets */
+      sets: number;
+    };
+    /**
+     * AspectVolumeResponse
+     * @description This climber's per-aspect training volume, over the window the row cap allowed.
+     *
+     *     `aspects` is every seeded aspect in `CLIMBING_ASPECTS` order, which is
+     *     `climbing_aspect.sort_order` — the content order, so this payload is deterministic and
+     *     complete. ⚠️ **The chart DOES re-sort it**, busiest aspect first, because a bar is a share
+     *     of the busiest: the wire order is the stable one, not the displayed one.
+     *     `from_date`, `to_date` and `training_days` describe the window the totals actually cover,
+     *     all three empty exactly when nothing is logged.
+     *
+     *     `truncated` says the row cap bit and older training is missing from these totals, so the UI
+     *     can admit it rather than presenting a partial sum as a lifetime one. It is exact rather
+     *     than a guess: the read asks for one row PAST the cap and `_usable_volume_rows` tests that
+     *     with a STRICT `>`, so a window holding exactly the cap does not cry wolf.
+     *
+     *     ⚠️ **A day the cap split is dropped WHOLE rather than half-counted**, which is where this
+     *     read parts company with `_fold_sessions`. `truncated` promises "older training is missing";
+     *     it cannot say "one of these totals is short", so a surviving half-day would understate an
+     *     aspect with nothing on the wire to reveal it.
+     */
+    AspectVolumeResponse: {
+      /** Aspects */
+      aspects: components['schemas']['AspectVolumeOut'][];
+      /** From Date */
+      from_date: string | null;
+      /** To Date */
+      to_date: string | null;
+      /** Training Days */
+      training_days: number;
+      /** Truncated */
+      truncated: boolean;
     };
     /**
      * BlockOut
@@ -2372,6 +2459,26 @@ export interface operations {
         };
         content: {
           'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  read_aspect_volume_api_sessions_volume_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['AspectVolumeResponse'];
         };
       };
     };
