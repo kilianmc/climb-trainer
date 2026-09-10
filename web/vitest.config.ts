@@ -22,8 +22,7 @@ export default defineConfig({
     globals: true,
     setupFiles: ['./src/test/setup.ts'],
     css: false,
-    // Vitest does not exclude dist/ by default, and naming `exclude` REPLACES the
-    // defaults rather than adding to them, so .git has to be restated here too.
+    // Naming `exclude` replaces vitest's defaults rather than extending them.
     exclude: ['**/node_modules/**', '**/.git/**', '**/dist/**'],
   },
 });

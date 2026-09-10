@@ -249,8 +249,6 @@ function unhashedUrls(html: string, webmanifest: string): string[] {
   return [...new Set(all)];
 }
 
-// Roughly twice the 629.66 KiB workbox reports today, so a route split moves the count
-// and not this ceiling. An @module-federation/vite bump moves that figure.
 const PRECACHE_BYTE_CEILING = 1_250_000;
 
 describe('the precache manifest baked into dist/sw.js', () => {
@@ -262,7 +260,6 @@ describe('the precache manifest baked into dist/sw.js', () => {
 
   it('parsed a manifest out of the worker, so nothing below passes on an empty list', () => {
     expect(distFile('sw.js')).toContain('.precache(');
-    // 51 today.
     expect(entries.length, 'no precache entry was parsed out of dist/sw.js').toBeGreaterThan(30);
   });
 
@@ -277,7 +274,6 @@ describe('the precache manifest baked into dist/sw.js', () => {
   });
 
   it('parsed the boot hrefs, so the arm below is not iterating an empty list', () => {
-    // 21 today.
     expect(hrefs.length, 'no boot href was parsed out of dist/index.html').toBeGreaterThan(15);
   });
 
