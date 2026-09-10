@@ -341,7 +341,7 @@ def test_the_token_regex_keeps_hyphens_dots_underscores_and_slashes() -> None:
     """The trap that produced nine phantom failures against correct documentation."""
     assert TOKEN.findall("`web/src/mf-contract.test.ts`") == ["web/src/mf-contract.test.ts"]
     assert TOKEN.findall("server/auth/*.py") == ["server/auth/*.py"]
-    assert TOKEN.findall(".github/dependabot.yml") == [".github/dependabot.yml"]
+    assert TOKEN.findall(".github/pull_request_template.md") == [".github/pull_request_template.md"]
 
 
 def test_the_fence_stripper_hides_shell_snippets_from_the_path_arm() -> None:

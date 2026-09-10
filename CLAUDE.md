@@ -122,8 +122,8 @@ One line each; `→` names the archive heading that holds the reasoning.
 ### Docs, tests and dependencies
 
 - Pin every version to one verified against the registry in the same turn, never one recalled from memory → *Dependency policy*
-- `.github/dependabot.yml` and `workflow_dispatch` registration are read from the DEFAULT branch (`main`) only, and alerts are raised there too, so that class of file needs a two-sided `dev` + `main` copy → *`.github/dependabot.yml`* · *Branch model*
-- Some pinned action SHAs are immutable releases Dependabot can never bump; check those by hand → *Pinned actions Dependabot can never bump*
+- A `workflow_dispatch` registration in `.github/workflows/*.yml` is read from the DEFAULT branch (`main`) only — as are Dependabot alerts — so any file in that class needs a two-sided `dev` + `main` copy → *Branch model*
+- Nothing bumps an action pin on a schedule and only a security advisory can, so every pin in `.github/workflows/*.yml` is checked BY HAND against the action's tag list; a green gate does not distinguish "current" from "abandoned" → *Pinned actions Dependabot can never bump*
 - Never hardcode a version literal in Python: the root `package.json` is the sole source of truth, and `web/package.json` and `pyproject.toml` stay at `0.0.0` → *Versioning*
 - Never put a database URL in `.env` — the test URL lives in `CT_TEST_DATABASE_URL` and nowhere else, exported from `~/.zshrc`, which a non-interactive shell does not read → *Local Postgres for the test suite*
 - An exported variable beats the file, and the Vite dev proxy is NOT Vercel's rewrite → *`.env` is loaded for you — but only outside Vercel*
