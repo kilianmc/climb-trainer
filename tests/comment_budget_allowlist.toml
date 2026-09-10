@@ -8192,6 +8192,13 @@ reason = "A reverse arm reads as redundant until someone knows what it caught: a
 
 [[exception]]
 path = "tests/test_planner_climbing_floor.py"
+kind = "docstring"
+anchor = "tests.test_planner_climbing_floor.test_no_single_exercise_DOMINATES_a_plan"
+limit = 24
+reason = "Ruling 55 is the only home for why issue #89 closed as a non-defect, and a ceiling with no measurement behind it is a number the next reader re-picks: it carries what this sweep reads at HEAD, what a one-line narrowing of prescribable() turns that into, and PR #120's own quoted figure - the three re-derivable facts that put both ceilings where they are, and none of them rests on a sweep an older commit does not have."
+
+[[exception]]
+path = "tests/test_planner_climbing_floor.py"
 kind = "hash_run"
 anchor = "this sweep used to be sessions"
 limit = 9

@@ -380,6 +380,11 @@ _BEGINNERS = tuple(row for row in _CLIMBERS if row[0] is Level.BEGINNER)
 _WALL_ONLY: tuple[str, ...] = ("bouldering_wall",)
 _SESSION_STEPS: tuple[int, ...] = (1, 2, 3, 4, 5, 6)
 
+# Ruling 55's two ceilings: the most of one plan any single exercise may take. The measured
+# maxima and why the gap to them is this wide are in `test_no_single_exercise_DOMINATES_a_plan`.
+_MONOCULTURE_BLOCK_SHARE_PCT = 17
+_MONOCULTURE_MINUTE_SHARE_PCT = 23
+
 
 @dataclass(frozen=True, slots=True)
 class _Sweep:
@@ -645,6 +650,81 @@ def test_no_accepted_monotonicity_exception_has_quietly_become_true() -> None:
         f"{stale} are accepted in _ACCEPTED_INVERSIONS and now lose no climbing at all. Delete "
         f"those rows — the register is a measurement of the generator, not documentation of it."
     )
+
+
+def _heaviest_exercise(plan: PlanBlueprint) -> tuple[tuple[str, int, int], tuple[str, int, int]]:
+    """`(key, its blocks, all blocks)` and `(key, its seconds, all seconds)` for the exercise
+    taking most of each. Ruling 29's filler family is out of the numerator AND the denominator."""
+    blocks: Counter[str] = Counter()
+    seconds: Counter[str] = Counter()
+    for mesocycle in plan.mesocycles:
+        for microcycle in mesocycle.microcycles:
+            for session in microcycle.sessions:
+                for block in session.blocks:
+                    if block.exercise_key in OPEN_CLIMBING_KEYS:
+                        continue
+                    blocks[block.exercise_key] += 1
+                    seconds[block.exercise_key] += _block_seconds(block)
+    block_key, block_count = blocks.most_common(1)[0]
+    minute_key, minute_seconds = seconds.most_common(1)[0]
+    return (
+        (block_key, block_count, sum(blocks.values())),
+        (minute_key, minute_seconds, sum(seconds.values())),
+    )
+
+
+@pytest.mark.parametrize("sweep", _MONOTONICITY_SWEEP, ids=lambda sweep: sweep.label)
+def test_no_single_exercise_DOMINATES_a_plan(sweep: _Sweep) -> None:
+    """⚠️ GUARD, ruling 55. No ONE exercise may take more than its ceiling of a generated plan.
+
+    This is what issue #89 is CLOSED on, and "~36 exercises carry ~80% of every plan" is not the
+    metric: that head count is mostly set by the ELIGIBLE POOL, which the climber's equipment
+    decides, so it moves on a purchase rather than on a defect, and there is no concentrated head
+    in a generated plan to begin with. Ruling 47 already priced the one route to moving the number
+    — re-weighting the rotation — as presence and not proportion. What a plan does owe is that
+    nothing in it is a MONOCULTURE, and that is a per-plan ceiling on its single largest exercise.
+
+    BOTH halves, because PR #120 fixed a real monoculture at its cause and stated the result in
+    MINUTES while the metric #89 tracked is BLOCKS: a ceiling on one leaves the other to regress.
+    ⚠️ `OPEN_CLIMBING_KEYS` is out of both shares — those blocks are ruling 27's length fill
+    arriving by ruling 29's decision, so counting them would measure a ruling, not a defect.
+
+    Measured over eighteen plans per row here (`_SESSION_STEPS` x `None` and both `_WEAKNESSES`),
+    216 across the twelve: the worst plan gives one exercise 14.85% of its blocks
+    (`push_ups_with_scapular_control`, advanced wall-only at 5 sessions) and 19.79% of its minutes
+    (`outdoor_redpoint_burns` in a one-session week, where block LENGTH rather than repetition is
+    what concentrates). Both ceilings are deliberately wider than a rounding on those, and the gap
+    is priced at HEAD rather than against a sweep no older commit has: narrow `prescribable()` to
+    one row per cell — the pre-#120 condition, and a one-line break — and this same sweep puts
+    `limit_boulders` at 17.50% of blocks and 30.78% of minutes, over both. `8edc819`'s own body is
+    the historical anchor and needs no measurement of mine: 25.5-27.9% of a plan's minutes.
+    """
+    for sessions in _SESSION_STEPS:
+        for weakness in (None, *_WEAKNESSES):
+            plan = generate(
+                _input(
+                    sweep.discipline,
+                    sweep.system,
+                    sweep.grade,
+                    sessions,
+                    0b111_1111,
+                    gap=sweep.gap,
+                    equipment=sweep.equipment,
+                    weakness=weakness,
+                )
+            )
+            where = f"{sweep.label} at {sessions}/wk, weakness {weakness}"
+            (key, count, blocks), (minute_key, seconds, total) = _heaviest_exercise(plan)
+            assert count * 100 <= _MONOCULTURE_BLOCK_SHARE_PCT * blocks, (
+                f"{where} gives {key} {count} of the plan's {blocks} prescribed blocks "
+                f"({100 * count / blocks:.1f}%), against a ceiling of "
+                f"{_MONOCULTURE_BLOCK_SHARE_PCT}%. One exercise is running the plan."
+            )
+            assert seconds * 100 <= _MONOCULTURE_MINUTE_SHARE_PCT * total, (
+                f"{where} gives {minute_key} {seconds} of the plan's {total} prescribed seconds "
+                f"({100 * seconds / total:.1f}%), against a ceiling of "
+                f"{_MONOCULTURE_MINUTE_SHARE_PCT}%. One exercise is running the plan."
+            )
 
 
 @pytest.mark.parametrize(("level", "discipline", "system", "label"), _CLIMBERS)
