@@ -103,6 +103,8 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
+/** A router bump is the likely cause if the navigating cases below go red: the pin that holds
+ *  them, and why, is on `createRemoteHistory` in `remoteHistory.ts`. */
 describe('the federated entry', () => {
   it('mounts, navigates and unmounts without touching the host origin', async () => {
     const before = window.location.href;
