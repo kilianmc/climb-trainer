@@ -249,7 +249,6 @@ function unhashedUrls(html: string, webmanifest: string): string[] {
   return [...new Set(all)];
 }
 
-// Twice the 613,576 bytes measured today, so a route split moves the count and not this.
 const PRECACHE_BYTE_CEILING = 1_250_000;
 
 describe('the precache manifest baked into dist/sw.js', () => {
@@ -261,7 +260,6 @@ describe('the precache manifest baked into dist/sw.js', () => {
 
   it('parsed a manifest out of the worker, so nothing below passes on an empty list', () => {
     expect(distFile('sw.js')).toContain('.precache(');
-    // 43 today.
     expect(entries.length, 'no precache entry was parsed out of dist/sw.js').toBeGreaterThan(30);
   });
 
@@ -276,7 +274,6 @@ describe('the precache manifest baked into dist/sw.js', () => {
   });
 
   it('parsed the boot hrefs, so the arm below is not iterating an empty list', () => {
-    // 22 today: the module script, 19 modulepreloads and 2 stylesheets.
     expect(hrefs.length, 'no boot href was parsed out of dist/index.html').toBeGreaterThan(15);
   });
 

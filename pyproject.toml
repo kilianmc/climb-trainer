@@ -4,7 +4,7 @@ version = "0.0.0"
 description = "climb-trainer API — versioning lives in the root package.json"
 requires-python = ">=3.13"
 dependencies = [
-    "alembic==1.19.1",
+    "alembic==1.19.2",
     # argon2id password hashing (server/auth/passwords.py). The reference implementation
     # of the algorithm OWASP recommends for new password storage.
     "argon2-cffi==25.1.0",
@@ -18,7 +18,7 @@ dependencies = [
     "fastapi==0.141.1",
     # psycopg3 (NOT asyncpg) — see server/db.py for why. The [binary] extra ships a
     # wheel with libpq bundled, so the Vercel Python image needs no system libpq.
-    "psycopg[binary]==3.3.4",
+    "psycopg[binary]==3.3.5",
     # HS256 access tokens (server/auth/tokens.py). Verification is stateless on purpose,
     # so it must never need the database.
     "pyjwt==2.13.0",
@@ -36,7 +36,7 @@ dev = [
     "httpx==0.28.1",
     "mypy==2.3.1",
     "pytest==9.1.1",
-    "ruff==0.16.5",
+    "ruff==0.16.6",
     "uvicorn==0.52.4",
 ]
 
