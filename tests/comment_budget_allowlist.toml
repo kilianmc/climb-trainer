@@ -1075,7 +1075,7 @@ reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
 path = "server/domain/planner/generate.py"
 kind = "docstring"
 anchor = "server.domain.planner.generate"
-limit = 28
+limit = 27
 reason = "The four invariants are priority-ordered and the fourth exists only because the second never relaxes; and two user-facing safety rules bind every string this module builds."
 
 [[exception]]
@@ -1138,7 +1138,7 @@ reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
 path = "server/domain/planner/periodisation.py"
 kind = "docstring"
 anchor = "server.domain.planner.periodisation"
-limit = 33
+limit = 31
 reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
 
 [[exception]]
@@ -1362,7 +1362,7 @@ reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
 path = "server/fields.py"
 kind = "docstring"
 anchor = "server.fields"
-limit = 31
+limit = 23
 reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
 
 [[exception]]
@@ -2139,7 +2139,7 @@ reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
 path = "server/vocabulary/routes.py"
 kind = "docstring"
 anchor = "server.vocabulary.routes"
-limit = 37
+limit = 34
 reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
 
 [[exception]]
@@ -5268,7 +5268,7 @@ reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
 path = "web/src/main.tsx"
 kind = "block"
 anchor = "standalone entry climb kilianmc"
-limit = 13
+limit = 10
 reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
 
 [[exception]]
@@ -5401,7 +5401,7 @@ reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
 path = "web/src/plan/api.ts"
 kind = "block"
 anchor = "the one read that costs a generation"
-limit = 35
+limit = 34
 reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
 
 [[exception]]
@@ -6206,8 +6206,8 @@ reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
 path = "web/src/profile/grades.ts"
 kind = "block"
 anchor = "which grades the pickers offer"
-limit = 23
-reason = "Three reasons the grade floor stays client-side, re-decided once the schema opened; without them the next reader moves it into GET /api/vocabulary and breaks the ascent log."
+limit = 22
+reason = "Three reasons the grade floor stays client-side: the seeded ladder must stay complete for convert(), a shared cached response must carry no product rule, and a stored below-floor grade must still render."
 
 [[exception]]
 path = "web/src/profile/grades.ts"
@@ -6383,13 +6383,6 @@ kind = "slash_run"
 anchor = "virtual pwa register is created"
 limit = 4
 reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
-
-[[exception]]
-path = "web/src/pwaContract.test.ts"
-kind = "block"
-anchor = "four pwa properties claude md records"
-limit = 20
-reason = "Four config properties whose breach is silent; each bullet names the failure the setting prevents, which is the only place that mapping is written down."
 
 [[exception]]
 path = "web/src/registerSubmit.test.tsx"
@@ -6892,7 +6885,7 @@ reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
 path = "web/src/routes/_authed/plan.lazy.tsx"
 kind = "slash_run"
 anchor = "the precedence a plan the climber"
-limit = 4
+limit = 3
 reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
 
 [[exception]]
@@ -6906,7 +6899,7 @@ reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
 path = "web/src/routes/_authed/plan.lazy.tsx"
 kind = "block"
 anchor = "everything the climber can do about"
-limit = 13
+limit = 10
 reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
 
 [[exception]]
@@ -7221,7 +7214,7 @@ reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
 path = "web/src/ui/CredentialsForm.tsx"
 kind = "block"
 anchor = "the one email password form shared"
-limit = 26
+limit = 25
 reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
 
 [[exception]]
@@ -7326,7 +7319,7 @@ reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
 path = "web/src/ui/icons.tsx"
 kind = "block"
 anchor = "two classes not one the route is"
-limit = 4
+limit = 3
 reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
 
 [[exception]]
@@ -7459,7 +7452,7 @@ reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
 path = "tests/test_sessions_log.py"
 kind = "docstring"
 anchor = "tests.test_sessions_log"
-limit = 56
+limit = 54
 reason = "CLAUDE.md requires a guard test to be SHOWN to fail: this carries the eleven sabotages and the exact red output of each, including the three that revealed a guard was weaker than it looked (the replay arm survives replace semantics, the planned-session 404 has a second layer, and the cardio 409 is the same status either way)."
 
 [[exception]]
@@ -7620,21 +7613,21 @@ reason = "The five invariants the machine exists to hold: rAF not setInterval, p
 path = "web/src/session/useSessionRun.ts"
 kind = "block"
 anchor = "a timed set that ran to its boundary"
-limit = 26
+limit = 3
 reason = "The five invariants the machine exists to hold: rAF not setInterval, performance.now for maths, the ref-written countdown, one cue per tick, and that starting the SESSION starts no timer."
 
 [[exception]]
 path = "web/src/session/useSessionRun.ts"
 kind = "block"
 anchor = "one flush whatever triggered it"
-limit = 26
+limit = 9
 reason = "The five invariants the machine exists to hold: rAF not setInterval, performance.now for maths, the ref-written countdown, one cue per tick, and that starting the SESSION starts no timer."
 
 [[exception]]
 path = "web/src/session/useSessionRun.ts"
 kind = "block"
 anchor = "restart this phase re stamp the"
-limit = 26
+limit = 5
 reason = "The five invariants the machine exists to hold: rAF not setInterval, performance.now for maths, the ref-written countdown, one cue per tick, and that starting the SESSION starts no timer."
 
 [[exception]]
@@ -7662,7 +7655,7 @@ reason = "Rejection and a hidden tab are normal outcomes, and the new paragraph 
 path = "web/src/session/wakeLock.ts"
 kind = "block"
 anchor = "hold a screen wake lock for as"
-limit = 11
+limit = 7
 reason = "Rejection and a hidden tab are normal outcomes, and the new paragraph is load-bearing: this is safe to call when the preference is already on, which is what makes a press do something after the OS drops the lock."
 
 [[exception]]
@@ -7694,10 +7687,17 @@ limit = 22
 reason = "Four decisions a rework would undo: the coloured face appears only while an ITEM is running, FOCUS MODE makes the other items absent rather than dimmed (five wrong buttons within reach of a climber mid-hang), the countdown is written through a ref and not state, and the phase is a data attribute rather than an interpolated class name markupCss.test.ts cannot see."
 
 [[exception]]
+path = "web/src/session/SessionNotes.tsx"
+kind = "block"
+anchor = "the mid session notes overlay the diary box"
+limit = 10
+reason = "The app's FIRST overlay, so this is the precedent every later one copies: focus in, focus back to the opener, a Tab that cannot leave, a visible way out, and why Escape is left to lose to the shell's own hook in the federated mount. Plus the togglePause TOGGLE trap - a blind call on open resumes the pause the climber chose, which it did until the guard caught it."
+
+[[exception]]
 path = "web/src/session/SessionSummary.tsx"
 kind = "block"
 anchor = "the last screen of every run and"
-limit = 10
+limit = 8
 reason = "Peak-end: why the run always ends here and never on the last set, and why the save state is a sentence rather than a spinner."
 
 [[exception]]
@@ -7822,9 +7822,9 @@ reason = "Why this is not IconMoon: the bare crescent already means dark theme t
 [[exception]]
 path = "web/src/session/SessionPlayer.tsx"
 kind = "block"
-anchor = "the two corners neither is a primary"
+anchor = "the two corners none of these is a primary"
 limit = 4
-reason = "CLAUDE.md forbids a primary action in a top corner; this records why these two are not one, and why each corner is its own wrapper - a control that renders nothing (no navigator.wakeLock on Firefox for Android) must leave its corner empty rather than pull the other across the screen."
+reason = "A primary action is never in a top corner; this records why these three are not one, and why each corner is its own wrapper - a control that renders nothing (no navigator.wakeLock on Firefox for Android) must leave its corner empty rather than pull the others across the screen."
 
 
 [[exception]]
@@ -8054,7 +8054,7 @@ reason = "The register's editing rule, the three keys origin/dev carried (the on
 path = "tests/test_planner_library_reach.py"
 kind = "hash_run"
 anchor = "both disciplines x all three bands"
-limit = 12
+limit = 8
 reason = "Records the MEASUREMENT that added the seventh profile: a candidate pool is indexed by a WEEK count, so 28-32-week plans and a 20-week plan do not sample the same pool positions. It also records that the row this was found on no longer depends on the short plan, which is the only way a reader can tell the profile is kept on the mechanism rather than on that one row."
 
 [[exception]]
@@ -8082,7 +8082,7 @@ reason = "Why a length-driven slot abandons the rotation, and why it takes the l
 path = "tests/test_planner_climbing_floor.py"
 kind = "hash_run"
 anchor = "the dimension this sweeps is plan length and it is the one the gate was missing round 3 reordered wall pref"
-limit = 16
+limit = 10
 reason = "Records two MEASUREMENTS a reader cannot recover from the code: which dimension exposes the _wall_pref sabotage (plan length, re-measured at 65.8-68.6% against the 65 ceiling), and why the advanced ceiling is 65 - a re-baseline off deload weeks that dev itself already breached at 62.3%, then off §3.4's ordering, and due back down at the fixed 12-week plan length. Without it the next reader trims the gaps back, or reads 65 as a weakened guard."
 
 [[exception]]
@@ -8166,7 +8166,7 @@ reason = "Names the coverage this re-scoped guard GAVE UP against the pairwise o
 path = "tests/test_planner_safety.py"
 kind = "docstring"
 anchor = "tests.test_planner_safety.test_the_generators_title_bound_IS_the_columns_width"
-limit = 4
+limit = 3
 reason = "Says why a second arm exists beside the sampled one: a title long enough to be refused by the column appeared on a profile the sampled arm does not generate."
 
 [[exception]]
@@ -8404,7 +8404,7 @@ reason = "The floor exists for one caller in another module: the comment has to 
 path = "tests/test_phase_guide.py"
 kind = "docstring"
 anchor = "tests.test_phase_guide.test_the_copys_POWER_ENDURANCE_AEROBIC_claim_is_a_DAY_COUNT_claim"
-limit = 12
+limit = 10
 reason = "Ruling 24's floor was revoked, so this guard is the whole mechanism behind an authored sentence and has to say so. It also has to state its GRANULARITY and why: the same claim read per profile is green on 18 of 18 while 12 of those 72 WEEKS hold none, and no day boundary repairs it - a reader who pooled it back would not know."
 
 [[exception]]
@@ -8560,7 +8560,7 @@ reason = "The ruling 27 arm has to say why it cannot become a hole for a padded 
 path = "tests/test_planner_climbing_floor.py"
 kind = "hash_run"
 anchor = "empty and that is a measurement ruling 27 s length fill repaired every one of the seven rows"
-limit = 8
+limit = 7
 reason = "An empty register with no history reads as a register nobody filled in. The seven repaired rows and their accepted losses are listed so a regression is recognisable; the mechanisms each was accepted on went with the rows."
 
 [[exception]]
@@ -8574,28 +8574,28 @@ reason = "Records why the fixture stopped needing two three-block sessions, so t
 path = "tests/test_planner_climbing_floor.py"
 kind = "docstring"
 anchor = "tests.test_planner_climbing_floor.test_the_measured_climbing_share_lands_inside_its_bands_target_range"
-limit = 14
+limit = 7
 reason = "An OPEN RED on 108 rows has to carry its own numbers and the reason it is not re-based, or the next reader either reads it as new breakage or quietly widens the ceiling that ruling 27 says may not be widened without a sabotage proof."
 
 [[exception]]
 path = "server/domain/exercises.py"
 kind = "hash_run"
 anchor = "open climbing the length fill climb for fun is also training is kilian s doctrine"
-limit = 17
+limit = 16
 reason = "Ruling 29's attribution warning and ruling 30's whole design in one place: why the doctrine is Kilian's and never the sources', why the family is four rows rather than one (instructions sits on the spec, so per-phase cue text has no other home), and why the technique row is prescribed in every phase - it is the fallback that makes the fill a filter."
 
 [[exception]]
 path = "server/domain/planner/generate.py"
 kind = "hash_run"
 anchor = "ruling 29 made this a filter the filler family is ordered by the phase s own"
-limit = 6
+limit = 5
 reason = "Ruling 30's two invariants are one choice here, and the reason the walk exists at all: a day ruling 9's hard-energy ceiling has made easy cannot be credited with the block's own hard quality without putting that injury ceiling back."
 
 [[exception]]
 path = "server/domain/planner/selection.py"
 kind = "docstring"
 anchor = "server.domain.planner.selection.ordinary"
-limit = 5
+limit = 4
 reason = "Says what the subtraction is FOR rather than what it does: open climbing has no dose to progress, so it may only ever arrive as the length fill and never as a session's prescribed work."
 
 [[exception]]
@@ -8616,84 +8616,84 @@ reason = "An import-time check owes its reason at the raise site: a phase whose 
 path = "tests/test_exercise_library.py"
 kind = "hash_run"
 anchor = "ruling 30 s first invariant kilian 2026 09 06 add what is the intention on the block"
-limit = 6
+limit = 5
 reason = "Kilian's sentence, plus the containment trap that makes a plain membership assertion vacuous here: power endurance contains power, so the matcher deletes every other aspect name first and that has to be explained where the helper is."
 
 [[exception]]
 path = "tests/test_exercise_library.py"
 kind = "docstring"
 anchor = "tests.test_exercise_library.test_every_OPEN_CLIMBING_row_TELLS_THE_CLIMBER_WHAT_THE_BLOCK_IS_FOR"
-limit = 10
+limit = 9
 reason = "Three claims in one guard and each needs its reason: the cue is the only place a protocol-free block can state its intention, the dose has no progression because it is time on the wall, and the gear is a boulder wall so it is not gated the way the rope aerobic rows are."
 
 [[exception]]
 path = "tests/test_planner_climbing_floor.py"
 kind = "hash_run"
 anchor = "kilian s target bands this and the two tables below are restated independently of"
-limit = 5
+limit = 4
 reason = "The high edge is kept in the table and never asserted, which is exactly the kind of thing a reader deletes as dead; the run says why it stays and points at the reason constant."
 
 [[exception]]
 path = "tests/test_planner_climbing_floor.py"
 kind = "hash_run"
 anchor = "ruling 28 s replacement guard and the three regimes are wall pref s whole contract"
-limit = 5
+limit = 4
 reason = "Why this guard is a hand-built draft rather than a plan sweep: the promise is about candidate ORDER, which no finished plan records, and the week share that stood in for it stopped separating once the fill became the largest item in a session."
 
 [[exception]]
 path = "tests/test_planner_climbing_floor.py"
 kind = "hash_run"
 anchor = "one laps block so session window across gives the draft a 30 minute window floor"
-limit = 4
+limit = 3
 reason = "The fixture's two load-bearing choices: LAPS is what makes the `first` regime reachable at all, and _wall_pref reads wall_seconds off the draft rather than off the block's equipment, so the block's gear is deliberately arbitrary."
 
 [[exception]]
 path = "tests/test_planner_climbing_floor.py"
 kind = "docstring"
 anchor = "tests.test_planner_climbing_floor.test__wall_pref_WITHHOLDS_THE_WALL_from_a_session_at_its_bands_top"
-limit = 13
+limit = 12
 reason = "Three regimes, each with the measurement that put it there, plus the sabotage result that made this test necessary - 36 of 36 beginner rows stayed green under the band ceiling it replaces."
 
 [[exception]]
 path = "tests/test_planner_climbing_floor.py"
 kind = "hash_run"
 anchor = "honest 0 of 1632 with wall pref forced to first 14 the advanced band is where this"
-limit = 5
+limit = 4
 reason = "Names the granularity choice and its evidence: beginner and intermediate sessions legitimately end all-climbing (226 and 44 of 1632), so a zero at those levels would be a false claim rather than a stricter one."
 
 [[exception]]
 path = "tests/test_planner_climbing_floor.py"
 kind = "docstring"
 anchor = "tests.test_planner_climbing_floor.test_an_ADVANCED_loading_session_always_keeps_room_for_work_off_the_wall"
-limit = 6
+limit = 5
 reason = "Says what this arm covers that the unit arm cannot - a preference computed right and then ignored - and why an advanced session with nothing off the wall is the visible symptom."
 
 [[exception]]
 path = "tests/test_planner_climbing_floor.py"
 kind = "hash_run"
 anchor = "ruling 29 30 measured over 6 climbers x sessions 1 7 x gaps 0 3 6"
-limit = 4
+limit = 3
 reason = "The population the two zeros were measured over, without which a zero looks like an unmeasured aspiration rather than a count."
 
 [[exception]]
 path = "tests/test_planner_climbing_floor.py"
 kind = "docstring"
 anchor = "tests.test_planner_climbing_floor.test_the_LENGTH_FILL_is_ONE_block_carrying_THE_BLOCKS_OWN_INTENTION"
-limit = 13
+limit = 12
 reason = "Two arms from two different rulings, and the second needs its one exception spelled out: the fill walks off the block's own quality only on a day ruling 9's ceiling has made easy, which is why an off-lead fill on a hard day is the defect and not the design."
 
 [[exception]]
 path = "tests/test_planner_climbing_floor.py"
 kind = "hash_run"
 anchor = "ruling 23 s cause as the number it repaired before the boulder reachable row all four"
-limit = 8
+limit = 7
 reason = "Carries the 12-of-12 defect this repaired and, more importantly, the boundary: 12 boulder power-endurance weeks still hold no aerobic block and closing THAT is ruling 24's floor, which is not implemented - so the guard cannot be read as proving a per-week floor exists."
 
 [[exception]]
 path = "tests/test_planner_climbing_floor.py"
 kind = "docstring"
 anchor = "tests.test_planner_climbing_floor.test_a_BOULDERER_GETS_AEROBIC_WORK_in_the_power_endurance_block"
-limit = 7
+limit = 6
 reason = "Ruling 23's cause is not an emphasis-order problem and a reader will assume it is; and the dose arm has to say out loud that it reads only a boulderer's rows, or it will be mistaken for the aspect-wide RPE ceiling that lives in another file."
 
 [[exception]]
@@ -8742,7 +8742,7 @@ reason = "Issue #100 was closed on the ground that this field is not dead payloa
 path = "tests/test_exercise_library.py"
 kind = "docstring"
 anchor = "tests.test_exercise_library.test_no_ENDURANCE_row_is_DOSED_OVER_THE_AEROBIC_CAPACITY_RPE_CEILING"
-limit = 4
+limit = 3
 reason = "Names F19 as the defect and says why the ceiling is aspect-wide rather than per-cell, which is what stops it being read as a duplicate of the boulder-reachability guard's dose arm."
 
 [[exception]]
@@ -8763,7 +8763,7 @@ reason = "The denominator and the granularity, which a reader cannot recompute: 
 path = "tests/test_exercise_library.py"
 kind = "docstring"
 anchor = "tests.test_exercise_library.test_the_SECTION_7_SHAPE_REGISTER_names_every_shape_the_library_actually_HAS"
-limit = 4
+limit = 3
 reason = "Both directions and what each one catches: an unnamed shape is a row no band reads, which is invisible from every other test, and a named shape the library has dropped is a stale exemption."
 
 [[exception]]
@@ -8791,7 +8791,7 @@ reason = "Records what this register replaced: a ceiling = authored pin that gua
 path = "tests/test_planner_progression.py"
 kind = "hash_run"
 anchor = "anti vacuity floors 90 of what the sweep measured"
-limit = 13
+limit = 12
 reason = "Carries the measured cell counts the floors are 90% of, so a future reader can tell a drifted sweep from a rule that has stopped firing altogether. Names both re-bases: ruling 41's wall row cut the shorter-rest arm from 57 pairs to 15, and ruling 50 answered that by widening the sampling unit rather than by lowering a floor, which is the one thing a reader must not undo here."
 
 [[exception]]

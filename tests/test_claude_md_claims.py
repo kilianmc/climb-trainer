@@ -32,16 +32,18 @@ HEADING: Final = re.compile(r"^(#{2,6})\s+(.*)$")
 
 PATH_PREFIXES: Final = ("server/", "web/", "tests/", "migrations/", "api/", "scripts/", ".github/")
 
-# Paths CLAUDE.md names on purpose that do NOT exist. Each one is a deliberate statement about
-# an absence, so it needs a reason rather than a filesystem hit.
+# Paths that must NOT exist, whether or not any document still names one. Each carries the
+# reason its absence is load-bearing; the arm below is what enforces it.
 ABSENT_PATHS: Final = {
     "web/src/api/vocabularies.ts": (
-        "documented as GONE — the hand-written vocabulary mirror retired by PR #9's codegen. "
-        "The tripwire exists to stop somebody recreating it."
+        "must stay absent: a hand-written mirror of the vocabularies, retired by PR #9's "
+        "codegen. Recreating it splits one source of truth across a generated file and a "
+        "hand-edited one, and the hand-edited copy drifts without failing anything."
     ),
 }
 
-# 19 paths are extracted today; the floor only has to be high enough to catch a broken regex.
+# The floor only has to be high enough to catch a broken regex; the real count is asserted,
+# so it must not be restated here where it would rot.
 PATH_FLOOR: Final = 15
 
 # Curated LITERALS, not a regex: backticked `[A-Z_]{4,}` also yields `NULL`, `TIMESTAMPTZ` and

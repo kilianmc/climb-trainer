@@ -12,14 +12,13 @@ import type { Grade, Vocabulary } from '../api/types';
  * simply the label the seed hangs on ordinal 1003. **It fails open** — a discipline with no `5`
  * keeps every grade, because an empty picker is a dead end and a long one is not.
  *
- * ## ⚠️ Why the floor stays on the CLIENT, re-decided when the schema opened
+ * ## ⚠️ Why the floor stays on the CLIENT
  *
  * - **The ladder is domain truth and must stay complete.** `server/domain/grades.py::convert`
  *   maps between systems by ordinal, so a missing rung breaks a conversion, not just a picker.
  * - **`GET /api/vocabulary` is shared reference data behind a one-hour cache**, so a product
- *   rule baked into it is inherited by every future consumer — and the next one is an ascent
- *   log, where **Font 4 is a real thing to have climbed**. "We do not offer that as a GOAL" is
- *   not the claim "that grade does not exist".
+ *   rule baked into it is inherited by every future consumer. "We do not offer that as a
+ *   GOAL" is not the claim "that grade does not exist".
  * - **A stored below-floor grade must still render.** Filtering the *options* while
  *   `grades.find(...)` still resolves the *value* is exactly what stops the select going blank.
  */

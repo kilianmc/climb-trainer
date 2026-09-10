@@ -4,6 +4,7 @@ import {
   IconCheck,
   IconCross,
   IconEndPhase,
+  IconJournal,
   IconNextSet,
   IconPause,
   IconPlay,
@@ -12,6 +13,7 @@ import {
 
 import { ItemRow } from './ItemRow';
 import { KeepScreenOn } from './KeepScreenOn';
+import { SessionNotes, useSessionNotes } from './SessionNotes';
 import type { CompiledPhase } from './protocol';
 import { SoundToggle } from './SoundToggle';
 import type { ItemView, ResyncNotice, SessionRun } from './useSessionRun';
@@ -35,8 +37,8 @@ import { formatElapsed } from './useSessionRun';
  * and `useSessionRun` writes its `textContent` per frame; a `setState` at 60 Hz re-renders the
  * whole tree sixty times a second. `initialClockText` is here only so the first paint is right.
  *
- * ⚠️ **The phase goes in `data-phase`, never in an interpolated class name.** See `_session.scss`
- * — `` `ct-app__player--${phase}` `` is `markupCss.test.ts`'s one blind spot and would trip it in
+ * ⚠️ **The phase goes in `data-phase`, never in an interpolated class name.**
+ * `` `ct-app__player--${phase}` `` is `markupCss.test.ts`'s one blind spot and would trip it in
  * both directions at once. The item's state is `data-state` for the same reason.
  */
 export function SessionPlayer({ run, readOnly }: { run: SessionRun; readOnly: boolean }) {
@@ -47,13 +49,14 @@ export function SessionPlayer({ run, readOnly }: { run: SessionRun; readOnly: bo
     activeBlockIndex === null
       ? null
       : (run.items.find((item) => item.blockIndex === activeBlockIndex) ?? null);
+  const notes = useSessionNotes(run);
 
   return (
     <div className="ct-app__bleed ct-app__player" data-phase={phase?.kind ?? 'idle'}>
-      {/* The two corners. Neither is a primary action — CLAUDE.md's rule is that those live in
-          the bottom bar, and both of these are settings the climber owns rather than steps in
-          the session. Two wrappers rather than one flex row, so a hidden control leaves its
-          corner empty instead of pulling the other one across the screen. */}
+      {/* The two corners. None of these is a primary action — those live in the bottom bar, and
+          all three are the climber's own settings and diary rather than steps in the session.
+          Two wrappers rather than one flex row, so a hidden control leaves its corner empty
+          instead of pulling the other one across the screen. */}
       <div className="ct-app__player-top">
         <div className="ct-app__player-corner">
           <SoundToggle
@@ -61,6 +64,11 @@ export function SessionPlayer({ run, readOnly }: { run: SessionRun; readOnly: bo
             soundOn={run.soundOn}
             onToggle={run.toggleSound}
           />
+          {/* ⚠️ Up here in EVERY state a live run has, not only between sets: Kilian writes
+              things down mid-session, and the bar it would otherwise sit in is absent then. */}
+          <Control label="Write in your diary" onClick={notes.openNotes}>
+            <IconJournal />
+          </Control>
         </div>
         <div className="ct-app__player-corner">
           {/* ⚠️ `held`, the sentinel's real state — never the click. See `KeepScreenOn`. */}
@@ -127,6 +135,12 @@ export function SessionPlayer({ run, readOnly }: { run: SessionRun; readOnly: bo
       ) : (
         <div />
       )}
+
+      {/* Out of flow, so it takes none of the four rows above — see `_session.scss`. LAST, so it
+          paints over them, and the opener it returns focus to is still mounted behind it. */}
+      {notes.open ? (
+        <SessionNotes run={run} readOnly={readOnly} onClose={notes.closeNotes} />
+      ) : null}
     </div>
   );
 }

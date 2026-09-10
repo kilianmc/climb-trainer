@@ -4,7 +4,7 @@ import { humanise } from '../library/browse';
 import { weekdayName } from './blueprint';
 
 /* One phase, week by week: 7 weekday columns x one row per week, ONE BLOCK PER DAY. The
-   codes are Kilian's own; `styles/_plan.scss` carries why they are clipped, never hidden. */
+   codes are Kilian's own, and they are applied by CLIPPING rather than `display: none`. */
 
 /** Monday first, matching `planned_session.weekday` and `blueprint.ts::weekdayName`. */
 export const WEEKDAY_COUNT = 7;
@@ -58,6 +58,23 @@ function initials(key: string): string {
 
 export function aspectCode(key: string): string {
   return ASPECT_CODES[key] ?? initials(key);
+}
+
+/* ⚠️ A PHASE is a DIFFERENT key space from an aspect: five of the seven `Phase` values name no
+   aspect at all, and `performance` would take `power`'s initial, so it is spelled out here. */
+const PHASE_CODES: Readonly<Record<string, string>> = {
+  base: 'B',
+  strength: 'S',
+  power: 'P',
+  power_endurance: 'PE',
+  performance: 'PF',
+  deload: 'D',
+  taper: 'T',
+};
+
+/** The short form of a mesocycle's phase, for a row too narrow for the guide's own label. */
+export function phaseCode(phase: string): string {
+  return PHASE_CODES[phase] ?? initials(phase);
 }
 
 /** The other direction, so the legend and the cells cannot drift apart. */

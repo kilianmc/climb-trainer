@@ -4,7 +4,7 @@ A package to match `server/plans/`'s shape, and `routes.py` is the whole of it: 
 `schemas.py` anywhere in this repo, so the request and response models live inline beside the
 one handler that reads them.
 
-**Ascents are deliberately absent.** A send is the emotional payload of the whole app and
-needs its own contract rather than a nested array here, so `ascent` and `ascent_tag_link` stay
-unwritten until the follow-up issue this PR files.
+**Never write `ascent` or `ascent_tag_link` from here — not as a nested array on this
+payload, not at all.** Ascent logging was cut from the product on 2026-09-07 and those tables
+survive only because dropping them is a separate contract-phase migration.
 """

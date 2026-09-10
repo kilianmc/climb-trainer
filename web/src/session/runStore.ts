@@ -23,7 +23,7 @@ import { blockRanges } from './protocol';
 
 export const RUN_STORAGE_KEY = 'ct:run';
 /** Bumped whenever `RunRecord` changes shape. A record from another version is discarded. */
-export const RUN_VERSION = 5;
+export const RUN_VERSION = 6;
 
 /**
  * Where one ITEM — one block of the session — has got to.
@@ -51,6 +51,38 @@ export interface RunItem {
    */
   readonly setIndexOffset: number;
 }
+
+/** What the climber typed on the summary, before it reached `journal_entry`. ⚠️ On the RECORD
+ *  so a failed write cannot lose it — `summaryClosedAtEpochMs`'s reasoning exactly. */
+export interface JournalDraft {
+  /** Raw and untrimmed — a reload gives back exactly what was typed. */
+  readonly body: string;
+  readonly feel: number | null;
+  readonly sleepQuality: number | null;
+  readonly skin: number | null;
+  /** The raw STRING, not a number: parsing per keystroke makes "71." unrepresentable, so
+   *  nobody could ever type "71.4". Parsed once, at send time. */
+  readonly bodyWeightKg: string;
+  /** When the server acknowledged this exact text. Any later edit clears it. */
+  readonly savedAtEpochMs: number | null;
+  /** A 4xx refused it. Never resent UNEDITED — `outbox.ts::quarantine`'s doctrine. */
+  readonly refusedAtEpochMs: number | null;
+  /** `journal_entry.id` once the server acked one — `loggedSessionId`'s rule. ⚠️ An EDIT MUST
+   *  NOT CLEAR IT: it alone separates Save from Update, and a 4xx never sets it. */
+  readonly entryId: number | null;
+}
+
+/** No entry started. Every field absent is the state `journal_entry`'s `not_empty` refuses. */
+export const EMPTY_JOURNAL_DRAFT: JournalDraft = {
+  body: '',
+  feel: null,
+  sleepQuality: null,
+  skin: null,
+  bodyWeightKg: '',
+  savedAtEpochMs: null,
+  refusedAtEpochMs: null,
+  entryId: null,
+};
 
 export interface RunRecord {
   readonly v: number;
@@ -99,6 +131,11 @@ export interface RunRecord {
    * with the remaining time it was paused at, because nothing advanced in between.
    */
   readonly pausedAtEpochMs: number | null;
+  /** The server's `activity.id`, once a flush has been acked. ⚠️ On the RECORD, not read from
+   *  the query cache: that cache is memory-only, so a reload would unlink every later entry. */
+  readonly loggedSessionId: number | null;
+  /** The diary box on the summary. Persisted, so a refused or unsent write keeps the text. */
+  readonly journal: JournalDraft;
 }
 
 export interface RunSeed {
@@ -143,6 +180,8 @@ export function createRun(seed: RunSeed): RunRecord {
     summaryClosedAtEpochMs: null,
     hiddenAtEpochMs: null,
     pausedAtEpochMs: null,
+    loggedSessionId: null,
+    journal: EMPTY_JOURNAL_DRAFT,
   };
 }
 
@@ -238,6 +277,20 @@ function isIndexArray(value: unknown): value is number[] {
   return Array.isArray(value) && value.every(isFinite_);
 }
 
+function isJournalDraft(value: unknown): value is JournalDraft {
+  if (!isRecord(value)) return false;
+  return (
+    typeof value.body === 'string' &&
+    typeof value.bodyWeightKg === 'string' &&
+    isNullableFinite(value.feel) &&
+    isNullableFinite(value.sleepQuality) &&
+    isNullableFinite(value.skin) &&
+    isNullableFinite(value.savedAtEpochMs) &&
+    isNullableFinite(value.refusedAtEpochMs) &&
+    isNullableFinite(value.entryId)
+  );
+}
+
 function isSetArray(value: unknown): value is LoggedSetInput[] {
   return (
     Array.isArray(value) &&
@@ -287,10 +340,12 @@ export function parseRun(raw: string | null): RunRecord | null {
     !isNullableFinite(parsed.savedAtEpochMs) ||
     !isNullableFinite(parsed.summaryClosedAtEpochMs) ||
     !isNullableFinite(parsed.hiddenAtEpochMs) ||
-    !isNullableFinite(parsed.pausedAtEpochMs)
+    !isNullableFinite(parsed.pausedAtEpochMs) ||
+    !isNullableFinite(parsed.loggedSessionId)
   ) {
     return null;
   }
+  if (!isJournalDraft(parsed.journal)) return null;
   return parsed as unknown as RunRecord;
 }
 

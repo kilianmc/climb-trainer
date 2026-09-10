@@ -17,6 +17,7 @@ from fastapi.responses import JSONResponse
 
 from server.auth.deps import enforce_auth
 from server.auth.routes import router as auth_router
+from server.journal.routes import router as journal_router
 from server.library.routes import router as library_router
 from server.plans.routes import router as plans_router
 from server.profile.routes import router as profile_router
@@ -106,6 +107,7 @@ def validation_error_handler(request: Request, exc: RequestValidationError) -> J
 
 
 app.include_router(auth_router)
+app.include_router(journal_router)
 app.include_router(library_router)
 app.include_router(plans_router)
 app.include_router(profile_router)

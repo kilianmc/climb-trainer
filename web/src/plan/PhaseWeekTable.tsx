@@ -5,14 +5,14 @@ import type { PlanMesocycle } from '../api/types';
 import { WEEKDAY_LABELS, phaseWeeks } from './phaseWeek';
 
 /* This phase, week by week: 7 weekday columns x one row per week, at every width. It never
-   transposes — narrow shrinks the same grid. `styles/_plan.scss` carries the geometry. */
+   transposes — narrow shrinks the same grid, and the short codes are CLIPPED, never hidden. */
 
 function cell(row: number, column: number): CSSProperties {
   return { '--rw': row, '--cw': column } as CSSProperties;
 }
 
 /** ⚠️ The legend is the table's own `<caption>`: FIRST in the DOM, as HTML requires, and last
- *  on screen via `caption-side: bottom`. `styles/_plan.scss` carries why. */
+ *  on screen via `caption-side: bottom`. */
 export function PhaseWeekTable({ mesocycle }: { mesocycle: PlanMesocycle }) {
   const model = phaseWeeks(mesocycle);
   if (model.rows.length === 0) return null;

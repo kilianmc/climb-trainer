@@ -1,3 +1,4 @@
+import { SessionJournal } from './SessionJournal';
 import { elapsedMinutes } from './clock';
 import type { RunRecord } from './runStore';
 import { sessionCompletion } from './runStore';
@@ -38,7 +39,7 @@ export function SessionSummary({
   const completion = sessionCompletion(record);
 
   return (
-    <>
+    <div className="ct-app__summary">
       <h1>Session done</h1>
       <p className="ct-app__lede">
         {String(done)} set{done === 1 ? '' : 's'} in {String(minutes)} minute
@@ -54,6 +55,7 @@ export function SessionSummary({
 
       <SessionRpe run={run} />
       <SaveState run={run} record={record} readOnly={readOnly} />
+      <SessionJournal run={run} readOnly={readOnly} />
 
       {/* ⚠️ Kilian: "if i click session done by mistake i cannot go back … that way i can finish
           a session i had pending." Secondary, and beside Done rather than in place of it. */}
@@ -74,7 +76,7 @@ export function SessionSummary({
           ? ' Nothing is written down either way on the demo account.'
           : ' It does not undo the finish — this session is already in your diary, and anything you do now is added to it.'}
       </p>
-    </>
+    </div>
   );
 }
 

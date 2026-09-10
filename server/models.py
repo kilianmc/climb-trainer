@@ -122,6 +122,9 @@ JOURNAL_BODY_MAX = 4000
 # `user_profile.display_name`. 64 rather than 120: it is a name on a screen, not a route
 # name, and it is the same bound `invite.label` uses for the same kind of short label.
 DISPLAY_NAME_MAX = 64
+# `plan.name`. A short label: the generator authors "16-week sport plan" and the rename
+# route replaces it, and `server/fields.py::PlanName` mirrors this number rather than repeat.
+PLAN_NAME_MAX = 80
 # `exercise.substitution_hint`. Authored content, not user input, so it has no Pydantic
 # request bound — the same 255 the lookup tables' `description` uses, for the same reason.
 SUBSTITUTION_HINT_MAX = 255
@@ -791,7 +794,7 @@ class Plan(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("app_user.id", ondelete="CASCADE"))
-    name: Mapped[str] = mapped_column(String(80))
+    name: Mapped[str] = mapped_column(String(PLAN_NAME_MAX))
     discipline: Mapped[Discipline] = mapped_column(discipline_enum)
     target_grade_id: Mapped[int | None] = mapped_column(ForeignKey("grade.id"), nullable=True)
     current_grade_id: Mapped[int | None] = mapped_column(ForeignKey("grade.id"), nullable=True)
@@ -1320,7 +1323,7 @@ class LoggedSet(Base):
 
 
 class Ascent(Base):
-    """A climb, logged. The emotional payload of the whole app — always a Tier-1 write.
+    """A climb, logged. ⚠️ Ascent logging was CUT from the product on 2026-09-07.
 
     ## Grade is stored twice, on purpose
 

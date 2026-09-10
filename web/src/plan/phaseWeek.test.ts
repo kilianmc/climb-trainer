@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import type { PlanBlock, PlanMesocycle, PlanSession } from '../api/types';
 
-import { ASPECT_KEYS, aspectCode, aspectOfCode, phaseWeeks } from './phaseWeek';
+import { ASPECT_KEYS, aspectCode, aspectOfCode, phaseCode, phaseWeeks } from './phaseWeek';
 
 /* The week table's model: a transform with edges (an empty weekday, a day with several blocks)
    and a code map the legend and the cells both read. */
@@ -134,5 +134,26 @@ describe('the aspect codes', () => {
     // An aspect seeded after this table renders short rather than unrenderable.
     expect(aspectCode('lock_off_strength')).toBe('LOS');
     expect(aspectOfCode('LOS')).toBeNull();
+  });
+});
+
+describe('a phase code', () => {
+  it('is distinct for every phase — `performance` cannot take `power`’s initial', () => {
+    const phases = [
+      'base',
+      'strength',
+      'power',
+      'power_endurance',
+      'performance',
+      'deload',
+      'taper',
+    ];
+    const codes = phases.map((phase) => phaseCode(phase));
+    expect(new Set(codes).size).toBe(phases.length);
+    for (const code of codes) expect(code.length).toBeLessThanOrEqual(3);
+  });
+
+  it('gives a phase with no code yet its initials rather than nothing', () => {
+    expect(phaseCode('peak_taper')).toBe('PT');
   });
 });

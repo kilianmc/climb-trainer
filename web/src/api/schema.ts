@@ -11,8 +11,8 @@
  *   openapi-sha256  the OpenAPI document it was generated from
  *   types-sha256    everything below this comment block
  *
- * openapi-sha256: b33338e3f0138fa40da2002da4fcc706b2636e91c3c65bc08a84a6ba10e48570
- * types-sha256: b7606ca2d6100e430f127a1466b2f8218daf712d220a17379b5efc4234e6ecee
+ * openapi-sha256: c1f8c636e1d84f720f2cb769ebef7ca2f9a03e371520c2b4d0162b52da3e17ed
+ * types-sha256: 45e01f955be0bf4036569f8ef192bc1be5147f2746cee34913f5a922864a8954
  */
 
 export interface paths {
@@ -225,6 +225,68 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/journal': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Read Journal
+     * @description This climber's diary entries, newest first, with body weight's trailing mean over them.
+     *
+     *     **Two to four statements**, and no per-row N+1: the profile's `show_body_metrics`, the
+     *     entries with their plan attribution, then one bounded lookup for the referenced plans' weeks
+     *     (only when an entry has a plan) and the EXISTS behind `has_entries_outside_plan` (only for a
+     *     plan-scoped read). Read-only, so a demo token may call it.
+     *
+     *     ⚠️ **Attribution is deterministic when plans OVERLAP**, which abandoned plans routinely do —
+     *     `EntryPlanOut` states the order — and an entry attributed to nothing is normal, not an error.
+     *
+     *     ⚠️ **The weight series is a trailing mean, never a raw day-to-day line**, and neither it
+     *     nor its direction is computed at all when `show_body_metrics` is off. The per-entry weigh-in
+     *     is still returned: the PUT replaces an entry whole, so a client editing without it would
+     *     erase it.
+     *
+     *     ⚠️ **Nothing smooths `feel`, `sleep_quality` or `skin`** — `JournalTrends` says why.
+     */
+    get: operations['read_journal_api_journal_get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/journal/{client_uuid}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    /**
+     * Write Journal Entry
+     * @description Create or replace this climber's diary entry by the uuid their client minted. 200.
+     *
+     *     **Two statements**, or one when the entry names no session. A `logged_session_id` outside the
+     *     caller's own history is a 404 identical to the missing case: a caller must not be able to
+     *     learn that a stranger's session exists, let alone hang an entry off it.
+     *
+     *     Replay-safe by construction — the conflict target is `(user_id, client_uuid)`, so a retried
+     *     write and a climber who reopens the summary and submits again both end with exactly ONE row.
+     */
+    put: operations['write_journal_entry_api_journal__client_uuid__put'];
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/library': {
     parameters: {
       query?: never;
@@ -334,6 +396,37 @@ export interface paths {
      *     `tests/test_plans_api.py` counts rows after a successful preview.
      */
     post: operations['preview_plan_api_plans_preview_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/plans/{plan_id}/name': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    /**
+     * Rename Plan
+     * @description Rename ANY of this climber's own plans — active, completed or abandoned. 200.
+     *
+     *     **One statement.** The UPDATE's own `WHERE` carries the token's `user_id`, so ownership is
+     *     not a second lookup that could drift from it, and a plan id belonging to somebody else is
+     *     the same 404 as one that does not exist: a caller must not be able to learn that a
+     *     stranger's plan exists.
+     *
+     *     A finished plan is renameable on purpose (Kilian): the diary draws one chart per plan, and
+     *     the name is how a climber tells last spring's block from this one.
+     *
+     *     ⚠️ **Only `name` is writable here** — the lifecycle timestamps are not on the request
+     *     model and must not be added to it. See `PlanNameRequest`.
+     */
+    put: operations['rename_plan_api_plans__plan_id__name_put'];
+    post?: never;
     delete?: never;
     options?: never;
     head?: never;
@@ -680,6 +773,29 @@ export interface components {
      */
     Discipline: 'boulder' | 'sport';
     /**
+     * EntryPlanOut
+     * @description Where one entry falls in one plan. **Null attribution is NORMAL** — see `JournalResponse`.
+     *
+     *     `phase` is the `Phase` enum value and nothing else: the client already holds the copy for it
+     *     from `GET /api/vocabulary`'s `phase_guide`, and a second display label here is how two
+     *     copies of the same sentence start disagreeing. `week_no` is the plan's own 1-based week.
+     *
+     *     ⚠️ **Deterministic when two plans' weeks OVERLAP**, which abandoned plans routinely do: the
+     *     plan reached through the entry's own `logged_session_id` wins, then the ACTIVE plan, then the
+     *     newest by `created_at`, then the highest id. `tests/test_journal_read.py` pins the order.
+     *
+     *     ⚠️ **The plan's NAME is not here.** `plan_id` resolves in `JournalResponse.plans`, which
+     *     holds it once: the name is renameable (`PUT /api/plans/{plan_id}/name`), and a renameable
+     *     string carried on every entry as well is two copies that a rename makes disagree.
+     */
+    EntryPlanOut: {
+      phase: components['schemas']['Phase'];
+      /** Plan Id */
+      plan_id: number;
+      /** Week No */
+      week_no: number;
+    };
+    /**
      * ExerciseLibraryResponse
      * @description The whole library. An object rather than a bare array, so the payload can grow a
      *     sibling field (a content revision, say) without breaking every client.
@@ -807,6 +923,182 @@ export interface components {
        * Format: date
        */
       started_on: string;
+    };
+    /**
+     * JournalEntryOut
+     * @description One entry exactly as stored, and the plan it falls under.
+     *
+     *     **`body` IS returned here**, unlike `JournalEntryResponse` — reading entries back is this
+     *     endpoint's whole purpose. ⚠️ **`body` here, and `name` on every `JournalResponse.plans`
+     *     row, are user-typed and untrusted on OUTPUT as well as on input: build DOM nodes, never
+     *     assemble an HTML string** (CLAUDE.md).
+     *
+     *     `client_uuid` is returned because the edit path PUTs by it, and that PUT must REPLACE this
+     *     row rather than mint a second one. `body_weight_kg` is returned whatever `show_body_metrics`
+     *     says, because the PUT replaces an entry whole: a client that edited one without the stored
+     *     weigh-in in hand would silently erase it.
+     */
+    JournalEntryOut: {
+      /** Body */
+      body: string | null;
+      /** Body Weight Kg */
+      body_weight_kg: string | null;
+      /**
+       * Client Uuid
+       * Format: uuid
+       */
+      client_uuid: string;
+      /**
+       * Entry Date
+       * Format: date
+       */
+      entry_date: string;
+      /** Feel */
+      feel: number | null;
+      /** Id */
+      id: number;
+      /** Logged Session Id */
+      logged_session_id: number | null;
+      plan: components['schemas']['EntryPlanOut'] | null;
+      /** Skin */
+      skin: number | null;
+      /** Sleep Quality */
+      sleep_quality: number | null;
+    };
+    /**
+     * JournalEntryRequest
+     * @description One diary entry, replaced whole by its `client_uuid`. `extra="forbid"`.
+     *
+     *     There is no omitted-versus-null distinction here — unlike `SessionLogRequest`, every field is
+     *     sent on every request and an omitted one means cleared, because the box on the summary screen
+     *     submits whole and a merge would make "I emptied the weight field" unexpressible.
+     *
+     *     `body_weight_kg` records a **weigh-in and nothing else**. There is no goal weight, target
+     *     weight or BMI field here or anywhere in this schema, and `entry_date` alone is not an entry:
+     *     at least one of `body`, `feel`, `sleep_quality`, `skin` or `body_weight_kg` must be present,
+     *     which is `journal_entry`'s `not_empty` CHECK mirrored so that it lands as a 422.
+     */
+    JournalEntryRequest: {
+      /** Body */
+      body?: string | null;
+      /** Body Weight Kg */
+      body_weight_kg?: number | string | null;
+      /**
+       * Entry Date
+       * Format: date
+       */
+      entry_date: string;
+      /** Feel */
+      feel?: number | null;
+      /** Logged Session Id */
+      logged_session_id?: number | null;
+      /** Skin */
+      skin?: number | null;
+      /** Sleep Quality */
+      sleep_quality?: number | null;
+    };
+    /**
+     * JournalEntryResponse
+     * @description What the server now holds for this entry. **Always 200**, never a conditional 201.
+     *
+     *     A replayed PUT must not change the status code, because the client does not branch on it.
+     *     **No user free text is echoed** — `body` is absent, for `SessionLogResponse`'s reason: then
+     *     nothing in this body needs escaping downstream. The scores and the weight are absent for the
+     *     same reason it is: the client already holds what it sent, so echoing it proves nothing.
+     */
+    JournalEntryResponse: {
+      /**
+       * Client Uuid
+       * Format: uuid
+       */
+      client_uuid: string;
+      /**
+       * Entry Date
+       * Format: date
+       */
+      entry_date: string;
+      /** Id */
+      id: number;
+      /** Logged Session Id */
+      logged_session_id: number | null;
+    };
+    /**
+     * JournalPlanOut
+     * @description One plan the returned entries reference, and the weeks its own chart is ruled in.
+     *
+     *     ⚠️ **`name` lives HERE and nowhere else on this response** — see `EntryPlanOut`. It is
+     *     user-typed and untrusted on OUTPUT as well as on input: build DOM nodes, never assemble an
+     *     HTML string (CLAUDE.md).
+     *
+     *     `weeks` is in week order and carries the dates `microcycle` actually holds, because a
+     *     client that computed them from `start_date` would be re-implementing a scheduling rule —
+     *     and `GET /api/plans/active` reaches only the ACTIVE plan's, so an older plan's chart had
+     *     no ruler at all before this.
+     */
+    JournalPlanOut: {
+      /** Name */
+      name: string;
+      /** Plan Id */
+      plan_id: number;
+      /** Weeks */
+      weeks: components['schemas']['PlanWeekOut'][];
+    };
+    /**
+     * JournalResponse
+     * @description This climber's diary entries, newest first, with body weight's trailing mean over them.
+     *
+     *     `entries` is newest-first, for the list, and is also what the 1-5 chart is drawn from — the
+     *     client orders it itself. `trends` is oldest-first. **An entry whose `plan` is null is
+     *     NORMAL** — dated before any plan existed, or in a gap between two — and the UI says so
+     *     rather than inventing a fallback.
+     *
+     *     `plans` is the lookup every returned entry's `plan_id` resolves in: one row per plan the
+     *     entries reference, carrying that plan's name once and its stored week starts in week order,
+     *     so each plan's own chart has a real time axis. Empty when no entry is attributed to a plan.
+     *
+     *     `truncated` says the row cap bit and older entries are not shown, so the UI can admit it.
+     *
+     *     `has_entries_outside_plan` answers "is there other history to open?" for a plan-scoped read
+     *     and is an EXISTS, never the other entries themselves. It is `false` for an unscoped read,
+     *     where there is no outside.
+     */
+    JournalResponse: {
+      /** Entries */
+      entries: components['schemas']['JournalEntryOut'][];
+      /** Has Entries Outside Plan */
+      has_entries_outside_plan: boolean;
+      /** Plans */
+      plans: components['schemas']['JournalPlanOut'][];
+      trends: components['schemas']['JournalTrends'];
+      /** Truncated */
+      truncated: boolean;
+    };
+    /**
+     * JournalTrends
+     * @description What this endpoint DERIVES from the weigh-ins: a trailing mean, oldest-first, and which
+     *     way that mean runs. Fewer than seven weigh-ins is **absent rather than a two-point
+     *     pseudo-trend**, and every point is the mean of a FULL window, so the row cap can only
+     *     shorten the series.
+     *
+     *     ⚠️ **`body_weight_kg` is a TRAILING MEAN, never a raw day-to-day line**: raw daily weight is
+     *     hydration, food and time of day presented as signal. Seven readings per point, so no point
+     *     is a single weigh-in and no weigh-in can be read back out of the series.
+     *
+     *     ⚠️ **`body_weight_direction` is a fact about that series and carries no valence**: the first
+     *     smoothed point against the last, no target, no outcome, and **no copy** — the words are the
+     *     client's. The app never recommends losing weight (CLAUDE.md), so no value here may ever be
+     *     named for one. It is present exactly when the series is.
+     *
+     *     ⚠️ **Both are null whenever `show_body_metrics` is off** and nothing is computed for either.
+     *     No goal weight, target weight or BMI, here or ever (`tests/test_schema_no_weight_targets.py`).
+     *
+     *     ⚠️ **`feel`, `sleep_quality` and `skin` are NOT smoothed and not here** — a subjective 1-5
+     *     score is not noise, the reading IS the datum, so the client plots the entries (Kilian).
+     */
+    JournalTrends: {
+      body_weight_direction: components['schemas']['WeightDirection'] | null;
+      /** Body Weight Kg */
+      body_weight_kg: components['schemas']['TrendPoint'][] | null;
     };
     /**
      * Level
@@ -993,6 +1285,37 @@ export interface components {
       summary: string;
     };
     /**
+     * PlanNameRequest
+     * @description The new name for a plan, and NOTHING else. `extra="forbid"`.
+     *
+     *     ⚠️ **One field, and this model must never grow a second.** There is deliberately no abandon
+     *     endpoint (CLAUDE.md), and a lifecycle field reaching a plan through a rename is exactly how
+     *     that prohibition gets bypassed later — which is also why the path is `/{plan_id}/name` and
+     *     not `/{plan_id}`: a general plan-patch would have to be a new route, in a diff a reviewer
+     *     can see.
+     *
+     *     `PlanName` strips whitespace and refuses an empty name, so `""` and `"   "` are a 422 at
+     *     the edge rather than a blank label on a plan card.
+     */
+    PlanNameRequest: {
+      /** Name */
+      name: string;
+    };
+    /**
+     * PlanNameResponse
+     * @description The plan's id and the name now STORED — the stripped value, not the one submitted.
+     *
+     *     Echoed rather than withheld precisely because the server strips: the caller cannot know the
+     *     stored value from what it sent. ⚠️ It is user-typed and untrusted on OUTPUT as well as on
+     *     input — build DOM nodes, never assemble an HTML string (CLAUDE.md).
+     */
+    PlanNameResponse: {
+      /** Id */
+      id: number;
+      /** Name */
+      name: string;
+    };
+    /**
      * PlanOut
      * @description A whole plan — previewed or persisted — plus what would be needed to reproduce it.
      *
@@ -1064,6 +1387,22 @@ export interface components {
     PlanPreviewRequest: {
       /** Start Date */
       start_date?: string | null;
+    };
+    /**
+     * PlanWeekOut
+     * @description One week of one plan: the STORED `microcycle.start_date`, never `start + 7 * (n - 1)`.
+     *
+     *     `week_no` is the plan's own 1-based week and is sent rather than left to the list index,
+     *     so nothing downstream re-derives which week a tick belongs to.
+     */
+    PlanWeekOut: {
+      /**
+       * Start Date
+       * Format: date
+       */
+      start_date: string;
+      /** Week No */
+      week_no: number;
     };
     /**
      * PrescriptionOut
@@ -1485,6 +1824,19 @@ export interface components {
        */
       token_type: 'bearer';
     };
+    /**
+     * TrendPoint
+     * @description One point of a smoothed series: the mean of the seven samples ENDING at `entry_date`.
+     */
+    TrendPoint: {
+      /**
+       * Entry Date
+       * Format: date
+       */
+      entry_date: string;
+      /** Value */
+      value: number;
+    };
     /** ValidationError */
     ValidationError: {
       /** Context */
@@ -1516,6 +1868,13 @@ export interface components {
       /** Plan Goal */
       plan_goal: string;
     };
+    /**
+     * WeightDirection
+     * @description Which way the smoothed weight series runs. A direction, never a judgement —
+     *     `JournalTrends` holds the rule and `tests/test_journal_read.py` guards the names.
+     * @enum {string}
+     */
+    WeightDirection: 'up' | 'down' | 'steady';
   };
   responses: never;
   parameters: never;
@@ -1693,6 +2052,72 @@ export interface operations {
       };
     };
   };
+  read_journal_api_journal_get: {
+    parameters: {
+      query?: {
+        plan_id?: number | null;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['JournalResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  write_journal_entry_api_journal__client_uuid__put: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        client_uuid: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['JournalEntryRequest'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['JournalEntryResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
   read_library_api_library_get: {
     parameters: {
       query?: {
@@ -1797,6 +2222,41 @@ export interface operations {
         };
         content: {
           'application/json': components['schemas']['PlanOut'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  rename_plan_api_plans__plan_id__name_put: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        plan_id: number;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['PlanNameRequest'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['PlanNameResponse'];
         };
       };
       /** @description Validation Error */

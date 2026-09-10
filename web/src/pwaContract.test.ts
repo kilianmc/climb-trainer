@@ -7,29 +7,14 @@ import { describe, expect, it } from 'vitest';
 
 import { stripComments } from './test/sourceScan';
 
-/**
- * Four PWA properties CLAUDE.md records, none of which anything else in the gate could see. Modelled on `mf-contract.test.ts`, and for the same reason it gives: this is not
- * config restated, it is a contract whose breach is **silent** — every check stays green and the
- * damage lands on a visitor's phone.
- *
- * - **`runtimeCaching` for `/api`** would put authenticated JSON in Cache Storage, on disk, where
- *   it **survives logout** and nothing in the app clears it.
- * - **Dropping the `/api` `navigateFallbackDenylist`** recreates deployment trap 2 inside the
- *   browser: the worker answers an API request with `index.html`, `res.ok` is true and
- *   `apiFetch` throws `NotJsonError` far from the cause.
- * - **`registerType: 'prompt'`** waits for the page to ask for the new worker, and nothing in the
- *   app asks: there is no update prompt, so a precached build would never be taken up.
- * - **`injectRegister` other than `null`** either double-registers (we register from `main.tsx`)
- *   or emits an inline script the production CSP's `script-src 'self'` blocks outright.
- *
- * Asserted against the SOURCE config rather than `dist/sw.js` deliberately: `distContract.test.ts`
- * already introduces one ordering dependency on `build`, and there is no reason to add a second
- * for a property the config states directly.
- */
+/** Four VitePWA properties whose breach is SILENT: every check stays green and the damage lands
+ * on a visitor's phone. Each `it` below states the rule it enforces and why it matters. */
 const CONFIG = stripComments(
   readFileSync(fileURLToPath(new URL('../vite.config.ts', import.meta.url)), 'utf8'),
 );
 
+// Read from the SOURCE config, not `dist/sw.js`: `distContract.test.ts` already owns the one
+// ordering dependency on `build`, and every property here is stated directly in the config.
 /** Each detector takes source text, so the positive controls can run the real thing. */
 const hasPromptRegisterType = (s: string) => /registerType:\s*'prompt'/.test(s);
 const hasAutoUpdate = (s: string) => /registerType:\s*'autoUpdate'/.test(s);
@@ -45,20 +30,20 @@ describe('the PWA contract in vite.config.ts', () => {
     expect(CONFIG).toContain('navigateFallback:');
   });
 
-  it('activates a new worker itself rather than waiting to be asked', () => {
+  it('activates a new worker itself — `prompt` would wait for an update prompt the app never shows, so a precached build would never be taken up', () => {
     expect(hasAutoUpdate(CONFIG)).toBe(true);
     expect(hasPromptRegisterType(CONFIG)).toBe(false);
   });
 
-  it('injects no registration of its own, so `main.tsx` stays the only one', () => {
+  it('injects no registration of its own — anything but null either double-registers alongside `main.tsx` or emits an inline script the CSP `script-src self` blocks', () => {
     expect(hasNullInjectRegister(CONFIG)).toBe(true);
   });
 
-  it('keeps /api out of the navigation fallback', () => {
+  it('keeps /api out of the navigation fallback — without the denylist the worker answers an API request with index.html, `res.ok` is true, and `apiFetch` throws NotJsonError far from the cause', () => {
     expect(hasApiNavigateFallbackDenylist(CONFIG)).toBe(true);
   });
 
-  it('caches no API response at runtime — not for /api, not for anything', () => {
+  it('caches no API response at runtime — `runtimeCaching` would put authenticated JSON in Cache Storage, on disk, where it survives logout and nothing clears it', () => {
     expect(hasRuntimeCaching(CONFIG)).toBe(false);
   });
 });
