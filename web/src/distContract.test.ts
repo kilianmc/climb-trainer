@@ -249,9 +249,8 @@ function unhashedUrls(html: string, webmanifest: string): string[] {
   return [...new Set(all)];
 }
 
-// Roughly twice the 629.66 KiB workbox reported today, so a route split moves the count
-// and not this. The figure tracks the MF chunk graph, so a @module-federation/vite bump
-// moves it: 1.21.5 took it from 623.55 KiB.
+// Roughly twice the 629.66 KiB workbox reports today, so a route split moves the count
+// and not this ceiling. An @module-federation/vite bump moves that figure.
 const PRECACHE_BYTE_CEILING = 1_250_000;
 
 describe('the precache manifest baked into dist/sw.js', () => {
