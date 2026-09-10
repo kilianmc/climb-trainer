@@ -140,3 +140,10 @@ export type LoggedSetAck = Schemas['LoggedSetAck'];
  * Derived server-side, per session; `percent` is `null` when the session has no blocks. */
 export type SessionCompletionResponse = Schemas['SessionCompletionResponse'];
 export type SessionCompletion = Schemas['SessionCompletionOut'];
+
+/** `GET /api/sessions/volume` — sets logged per climbing aspect, folded server-side. ⚠️ SETS,
+ * not minutes: no per-aspect duration is stored and `actual_work_seconds` is nullable. */
+export type AspectVolumeResponse = Schemas['AspectVolumeResponse'];
+/** One aspect's total. Every seeded aspect is present, zeros included — an untrained aspect is
+ * the answer the view exists to give, and an absent row cannot say it. */
+export type AspectVolume = Schemas['AspectVolumeOut'];

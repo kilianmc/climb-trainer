@@ -1,6 +1,7 @@
 import { createFileRoute, Link } from '@tanstack/react-router';
 
 import { useAuth } from '../../auth/AuthProvider';
+import { AspectVolume } from '../../progress/AspectVolume';
 import { useProfileView } from '../../profile/api';
 import {
   STEP_TITLES,
@@ -40,6 +41,9 @@ function Dashboard() {
           </Link>
         </div>
       </div>
+      {/* Not in demo mode, as `UnfinishedProfile` is not: the demo account's logged sets are
+          the seed's, not this visitor's own training. */}
+      {scope !== 'demo' && <AspectVolume />}
       {scope !== 'demo' && <UnfinishedProfile />}
     </>
   );

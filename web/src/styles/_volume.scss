@@ -1,0 +1,52 @@
+@mixin styles {
+  &__volume {
+    inline-size: 100%;
+    border-collapse: collapse;
+    font-size: var(--ct-text-sm);
+
+    th,
+    td {
+      padding-block: var(--ct-space-1);
+      text-align: start;
+    }
+
+    thead th {
+      color: var(--ct-fg-muted);
+      font-weight: 500;
+    }
+
+    tbody th {
+      padding-inline-end: var(--ct-space-2);
+      font-weight: 400;
+      white-space: nowrap;
+    }
+  }
+
+  &__volume-cell {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: var(--ct-space-2);
+  }
+
+  &__volume-track {
+    min-inline-size: 0;
+    block-size: 0.5rem;
+    overflow: hidden;
+    border: 1px solid var(--ct-border-strong);
+    border-radius: var(--ct-radius-pill);
+    background: var(--ct-bg);
+  }
+
+  &__volume-bar {
+    display: block;
+    block-size: 100%;
+    border-radius: var(--ct-radius-pill);
+    background: var(--ct-accent);
+  }
+
+  &__volume-sets {
+    color: var(--ct-fg);
+    font-variant-numeric: tabular-nums;
+  }
+}
