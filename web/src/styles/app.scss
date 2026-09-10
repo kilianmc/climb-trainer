@@ -9,6 +9,7 @@
 @use 'chrome';
 @use 'profile';
 @use 'library';
+@use 'volume';
 @use 'landing';
 
 .ct-app {
@@ -63,5 +64,6 @@
   @include chrome.styles;
   @include profile.styles;
   @include library.styles;
+  @include volume.styles;
   @include landing.styles;
 }

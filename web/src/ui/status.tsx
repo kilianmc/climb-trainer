@@ -55,6 +55,14 @@ export function RouteNotFound() {
   );
 }
 
+/** The router types a boundary's `error` as `unknown` and preserves falsy throws, so a string,
+ *  a plain object, `null` or `0` arrives here as readily as an `Error`. */
+function errorText(error: unknown): string {
+  if (error instanceof Error && error.message.trim() !== '') return error.message;
+  if (typeof error === 'string' && error.trim() !== '') return error;
+  return 'An unexpected error occurred.';
+}
+
 /**
  * `reset` is what TanStack hands an `errorComponent`; both props are optional because this
  * component is also rendered directly, outside any router, by `rootStatusScope.test.tsx`.
@@ -73,7 +81,7 @@ export function RouteNotFound() {
  * throws on the click, taking the error boundary down from inside the error boundary. Both cases
  * are checked for that reason.
  */
-export function RouteError({ error, reset }: { error: Error; reset?: () => void }) {
+export function RouteError({ error, reset }: { error: unknown; reset?: () => void }) {
   const router: ReturnType<typeof useRouter> | null | undefined = useRouter({ warn: false });
 
   function retry() {
@@ -86,7 +94,7 @@ export function RouteError({ error, reset }: { error: Error; reset?: () => void 
     <Scoped>
       <section className="ct-app__card ct-app__card--danger">
         <h1>Something broke</h1>
-        <p className="ct-app__status ct-app__status--error">{error.message}</p>
+        <p className="ct-app__status ct-app__status--error">{errorText(error)}</p>
         <button type="button" className="ct-app__button" onClick={retry}>
           Try again
         </button>

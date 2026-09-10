@@ -24,7 +24,7 @@ from sqlalchemy.orm import Session
 
 from server.auth.deps import CurrentUser, RequestSession
 from server.domain.grades import Discipline
-from server.domain.vocabulary import ActivityKind, SessionStatus
+from server.domain.vocabulary import CLIMBING_ASPECTS, ActivityKind, SessionStatus
 from server.fields import (
     SETS_PER_REQUEST_MAX,
     ActualReps,
@@ -43,6 +43,8 @@ from server.fields import (
 )
 from server.models import (
     Activity,
+    ClimbingAspect,
+    Exercise,
     LoggedSession,
     LoggedSet,
     Microcycle,
@@ -769,3 +771,145 @@ def session_completion(
             for planned_session_id, fold in _fold_sessions(rows).items()
         ],
     )
+
+
+# A hard server-side maximum (→ *Validate at the edge with Pydantic*, in the archive), in
+# (day x aspect) ROWS: 200+ training days even if every day touched all ten aspects.
+_VOLUME_ROWS_MAX: Final = 2000
+
+
+class AspectVolumeOut(BaseModel):
+    """One climbing aspect and the sets logged against it inside the returned window.
+
+    ⚠️ **`sets` counts `logged_set` ROWS. It is not minutes, and there is no per-aspect
+    minutes figure to send.** `activity.duration_minutes` is session-level and a session mixes
+    aspects across its blocks, `session_block` deliberately snapshots no aspect at all, and
+    `logged_set.actual_work_seconds` is nullable — summing it would silently undercount every
+    rep-based exercise while looking like a total. A set count is the one per-aspect quantity
+    this schema can answer honestly.
+
+    Every seeded aspect is present, `sets = 0` included: "I have not touched power endurance in
+    a month" is the answer this view exists to give, and an absent row cannot say it.
+    """
+
+    aspect_key: str
+    sets: int
+
+
+class AspectVolumeResponse(BaseModel):
+    """This climber's per-aspect training volume, over the window the row cap allowed.
+
+    `aspects` is every seeded aspect in `CLIMBING_ASPECTS` order, which is
+    `climbing_aspect.sort_order` — the content order, so this payload is deterministic and
+    complete. ⚠️ **The chart DOES re-sort it**, busiest aspect first, because a bar is a share
+    of the busiest: the wire order is the stable one, not the displayed one.
+    `from_date`, `to_date` and `training_days` describe the window the totals actually cover,
+    all three empty exactly when nothing is logged.
+
+    `truncated` says the row cap bit and older training is missing from these totals, so the UI
+    can admit it rather than presenting a partial sum as a lifetime one. It is exact rather
+    than a guess: the read asks for one row PAST the cap and `_usable_volume_rows` tests that
+    with a STRICT `>`, so a window holding exactly the cap does not cry wolf.
+
+    ⚠️ **A day the cap split is dropped WHOLE rather than half-counted**, which is where this
+    read parts company with `_fold_sessions`. `truncated` promises "older training is missing";
+    it cannot say "one of these totals is short", so a surviving half-day would understate an
+    aspect with nothing on the wire to reveal it.
+    """
+
+    aspects: list[AspectVolumeOut]
+    from_date: date | None
+    to_date: date | None
+    training_days: int
+    truncated: bool
+
+
+def _volume_query(user_id: int) -> Select[Any]:
+    """ONE statement: this climber's logged sets, counted per (training day x aspect). Grouped
+    by DAY rather than to a bare total because the fold below has to see WHERE a cut fell."""
+    return (
+        select(
+            Activity.occurred_on,
+            ClimbingAspect.key.label("aspect_key"),
+            func.count(LoggedSet.id).label("sets"),
+        )
+        .select_from(LoggedSet)
+        .join(LoggedSession, LoggedSession.activity_id == LoggedSet.logged_session_id)
+        .join(Activity, Activity.id == LoggedSession.activity_id)
+        .join(Exercise, Exercise.id == LoggedSet.exercise_id)
+        .join(ClimbingAspect, ClimbingAspect.id == Exercise.climbing_aspect_id)
+        # ⚠️ Scoped by the token's `user_id`, taken from the principal and never the request.
+        .where(Activity.user_id == user_id)
+        .group_by(Activity.occurred_on, ClimbingAspect.key, ClimbingAspect.sort_order)
+        # Newest day first, so the cap cuts the OLDEST; `sort_order` makes a day deterministic.
+        .order_by(Activity.occurred_on.desc(), ClimbingAspect.sort_order)
+        # One MORE than the cap, so `truncated` is exact rather than a false positive on the
+        # read that happens to hold exactly `_VOLUME_ROWS_MAX` rows. The extra row is cut.
+        .limit(_VOLUME_ROWS_MAX + 1)
+    )
+
+
+class _VolumeRows(NamedTuple):
+    """The rows the cap left usable, and whether it cut anything away."""
+
+    rows: Sequence[Any]
+    truncated: bool
+
+
+def _usable_volume_rows(rows: Sequence[Any]) -> _VolumeRows:
+    """The rows safe to total, and whether the cap cut anything. `AspectVolumeResponse` holds
+    both rules: a strict `>` past a `LIMIT` of cap+1, and a day the cut split dropped whole."""
+    if len(rows) <= _VOLUME_ROWS_MAX:
+        return _VolumeRows(rows, False)
+    kept = list(rows[:_VOLUME_ROWS_MAX])
+    split_day = rows[_VOLUME_ROWS_MAX].occurred_on
+    if kept and kept[-1].occurred_on == split_day:
+        kept = [row for row in kept if row.occurred_on != split_day]
+    return _VolumeRows(kept, True)
+
+
+def _aspect_volume(rows: Sequence[Any]) -> AspectVolumeResponse:
+    """One total per aspect, padded from `CLIMBING_ASPECTS` in its order so an untrained aspect
+    still appears and a newly seeded one cannot be forgotten here."""
+    usable = _usable_volume_rows(rows)
+    totals: dict[str, int] = {}
+    days: set[date] = set()
+    for row in usable.rows:
+        totals[row.aspect_key] = totals.get(row.aspect_key, 0) + row.sets
+        days.add(row.occurred_on)
+    return AspectVolumeResponse(
+        aspects=[
+            AspectVolumeOut(aspect_key=spec.key, sets=totals.get(spec.key, 0))
+            for spec in CLIMBING_ASPECTS
+        ],
+        from_date=min(days) if days else None,
+        to_date=max(days) if days else None,
+        training_days=len(days),
+        truncated=usable.truncated,
+    )
+
+
+@router.get("/volume")
+def read_aspect_volume(
+    principal: CurrentUser,
+    session: RequestSession,
+    response: Response,
+) -> AspectVolumeResponse:
+    """How many sets this climber has logged against each climbing aspect.
+
+    **Sets, not minutes** — `AspectVolumeOut` carries the reason, which is a fact about the
+    schema rather than a preference.
+
+    **The join runs through `logged_set.exercise_id`, which is NOT NULL**, so off-plan sets
+    count and no row is lost. The prescription-side path could do neither: its
+    `prescribed_set_id` is nullable and `session_block` snapshots no aspect at all.
+
+    **Totals only, and the per-day rows are folded HERE rather than sent.** One chart over ten
+    numbers is what reads them, and a per-day series on the wire with no reader is exactly the
+    orphaned-wire-field shape already on the register.
+
+    **One statement, one Neon wake**, and read-only: a demo token may call it. There is no
+    window parameter — the row cap is the bound, and `truncated` reports it.
+    """
+    response.headers["cache-control"] = _CACHE_CONTROL
+    return _aspect_volume(session.execute(_volume_query(principal.user_id)).all())

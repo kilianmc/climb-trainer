@@ -12,8 +12,8 @@ export const STANDALONE_ORIGIN = 'https://climb.kilianmc.com';
  * Memory history for the federated mount, with `<Link>` hrefs rendered as absolute
  * standalone URLs. Relative hrefs resolve against the HOST document, so cmd-click,
  * middle-click and "copy link address" would leave the viewer for a 404 on
- * kilianmc.com (issue #16). Left-clicks are unaffected: only `<Link>` reads
- * `createHref`, while `push`/`replace` get the raw path.
+ * kilianmc.com (issue #16). Left-clicks stay in-app only up to react-router 1.170.33, for
+ * the reason on the assignment below; `push`/`replace` always get the raw path.
  *
  * `createMemoryHistory` hardcodes `createHref` to the identity and accepts no option for
  * it, hence the assignment. **Never spread a history object** — `location` and `length`
@@ -21,6 +21,8 @@ export const STANDALONE_ORIGIN = 'https://climb.kilianmc.com';
  */
 export function createRemoteHistory(): RouterHistory {
   const history = createMemoryHistory({ initialEntries: ['/'] });
+  // The pin: do not restore the caret, and do not pass 1.170.33 until #16 is reworked.
+  // From 1.170.34 (TanStack #8308) a scheme here makes `<Link>` external and drops its onClick.
   history.createHref = (path) => `${STANDALONE_ORIGIN}${path}`;
   return history;
 }
