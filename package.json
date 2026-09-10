@@ -1,10 +1,10 @@
 {
   "name": "climb-trainer",
-  "version": "9.3.0",
+  "version": "9.4.0",
   "private": true,
   "description": "Climbing training app — plan generator, guided session player, training diary",
   "engines": {
-    "node": ">=24.15.0"
+    "node": "^24.15.0 || >=26.0.0"
   },
   "scripts": {
     "dev": "npm --prefix web run dev",
