@@ -419,7 +419,7 @@ function SessionOutcome({ record, items }: { record: RunRecord; items: readonly 
         {String(completion.percent)}% of the session — {String(completion.blocksDone)} of{' '}
         {String(completion.blockCount)} part{completion.blockCount === 1 ? '' : 's'} fully logged.
       </p>
-      <ol className="ct-app__items">
+      <ol className="ct-app__items ct-app__items--flush">
         {items.map((item) => (
           <ItemRow key={item.blockIndex} item={item} />
         ))}

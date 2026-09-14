@@ -199,7 +199,7 @@ function ActiveExercise({
   return (
     <details className="ct-app__disclosure" key={item.blockIndex}>
       <summary>Detailed info</summary>
-      <ExerciseDetail exercise={exercise} vocabulary={detail} />
+      <ExerciseDetail exercise={exercise} vocabulary={detail} compactShot />
     </details>
   );
 }

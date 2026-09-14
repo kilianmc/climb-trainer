@@ -39,11 +39,12 @@ export function exerciseVocabulary(
 export interface ExerciseDetailProps {
   exercise: LibraryExercise;
   vocabulary: ExerciseVocabulary;
+  compactShot?: boolean;
 }
 
 /** ⚠️ A FRAGMENT of `<details>`' own children: `ct-app__disclosure` spaces it, the element
  *  carries keyboard and expanded state, and the name is the summary's, not a second copy. */
-export function ExerciseDetail({ exercise, vocabulary }: ExerciseDetailProps) {
+export function ExerciseDetail({ exercise, vocabulary, compactShot = false }: ExerciseDetailProps) {
   const aspect = vocabulary.aspects.get(exercise.climbing_aspect_id) ?? null;
   const equipment = namesOf(exercise.equipment_ids, vocabulary.equipmentNames);
   const contraindicated = namesOf(exercise.contraindicated_injury_area_ids, vocabulary.injuryNames);
@@ -86,7 +87,7 @@ export function ExerciseDetail({ exercise, vocabulary }: ExerciseDetailProps) {
         </div>
         {/* ⚠️ Twenty-one exercises across three aspects have no art, so the placeholder is a
             NORMAL state: a decorative mark plus real text, never an empty box. */}
-        <p className="ct-app__exshot">
+        <p className={compactShot ? 'ct-app__exshot ct-app__exshot--compact' : 'ct-app__exshot'}>
           {icon === null ? (
             <>
               <IconArtPending className="ct-app__exshotmark" />
