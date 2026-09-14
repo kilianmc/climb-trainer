@@ -143,10 +143,9 @@ EXERCISES: Final[tuple[ExerciseSpec, ...]] = (
         equipment_keys=("hangboard",),
         contraindication_keys=("fingers", "elbow"),
         instructions=(
-            "Warm up thoroughly first. Hang a 20 mm edge in a half-crimp with the "
-            "shoulders engaged, elbows slightly bent, for the prescribed seconds. Add or "
-            "remove load so the last two seconds are hard but the grip never opens. Stop "
-            "the set the moment the position collapses."
+            "Hang a 20 mm edge in a half-crimp with the shoulders engaged, elbows slightly bent, "
+            "for the prescribed seconds. Add or remove load so the last two seconds are hard but "
+            "the grip never opens. Stop the set the moment the position collapses."
         ),
         # No substitution hint, and that is the safety boundary — see the module docstring.
         prescriptions=(
@@ -241,12 +240,11 @@ EXERCISES: Final[tuple[ExerciseSpec, ...]] = (
         # The finger-strength floor: no gear at all. See the module docstring.
         contraindication_keys=("fingers",),
         instructions=(
-            "Press the fingertips of one hand into the palm of the other and pull as if "
-            "closing a crimp, holding the shape for the prescribed seconds. The opposing "
-            "hand is the load, so it can never spike. This is a floor for weeks with no "
-            "access to a board, not a replacement for one: real progression needs a real "
-            "edge, and improvising an edge from a door frame or a towel is how pulleys "
-            "get injured."
+            "Press the fingertips of one hand into the palm of the other and pull as if closing a "
+            "crimp, holding the shape for the prescribed seconds. The opposing hand is the load, "
+            "so it can never spike. This is a floor for weeks with no access to a board, not a "
+            "replacement for one. Real progression needs a real edge, and improvising an edge "
+            "from a door frame or a towel is how pulleys get injured."
         ),
         prescriptions=(
             PrescriptionSpec(
@@ -269,9 +267,9 @@ EXERCISES: Final[tuple[ExerciseSpec, ...]] = (
         contraindication_keys=("fingers", "elbow"),
         instructions=(
             "Bodyweight only, on the smallest edge you can hold in a half-crimp for the "
-            "prescribed seconds without the grip opening. The edge depth is the load, so "
-            "there is no percentage to chase: drop one size only when the last second of "
-            "every set is still controlled."
+            "prescribed seconds without the grip opening. The edge depth is the load, so there is "
+            "no percentage to chase. Drop one size only when the last second of every set is "
+            "still controlled."
         ),
         # No substitution hint, and no `intensity_pct` — the edge IS the intensity here.
         progression_of_key="max_hangs_20mm",
@@ -299,10 +297,10 @@ EXERCISES: Final[tuple[ExerciseSpec, ...]] = (
         equipment_keys=("hangboard", "weight_belt"),
         contraindication_keys=("fingers", "elbow", "shoulder"),
         instructions=(
-            "A comfortable edge, a half-crimp, and enough hung weight that the prescribed "
-            "seconds are all you could hold. Add load in small steps across a block rather "
-            "than in one jump, and end the set the moment the fingers start to open — the "
-            "last repetition of a hang protocol is where pulleys go."
+            "A comfortable edge, a half-crimp, and enough hung weight that the prescribed seconds "
+            "are all you could hold. Add load in small steps across a block rather than in one "
+            "jump. The last repetition of a hang protocol is where pulleys go. End the set the "
+            "moment the fingers start to open."
         ),
         # No substitution hint: added load belongs on a belt or a harness, and the rest of
         # the safety boundary is in the module docstring.
@@ -374,10 +372,10 @@ EXERCISES: Final[tuple[ExerciseSpec, ...]] = (
         equipment_keys=("hangboard",),
         contraindication_keys=("fingers", "elbow"),
         instructions=(
-            "Long hangs on a big edge at a load you could hold for twice the time, "
-            "accumulating minutes rather than chasing a maximum. Deliberately dull: it "
-            "builds tissue tolerance for the blocks where the hangs get heavy, and it is "
-            "the finger session that fits a week already full of hard climbing."
+            "Long hangs on a big edge at a load you could hold for twice the time, accumulating "
+            "minutes rather than chasing a maximum. Deliberately dull. It builds tissue tolerance "
+            "for the blocks where the hangs get heavy, and it is the finger session that fits a "
+            "week already full of hard climbing."
         ),
         regression_of_key="max_hangs_20mm",
         prescriptions=(
@@ -415,11 +413,11 @@ EXERCISES: Final[tuple[ExerciseSpec, ...]] = (
         equipment_keys=("no_hang_device",),
         contraindication_keys=("fingers", "elbow"),
         instructions=(
-            "Set the device on the floor, take a half-crimp on the edge and lift until the "
-            "load leaves the ground, holding for the prescribed seconds with the arm nearly "
-            "straight. Nothing is suspended, so a failing grip sets the weight down instead "
-            "of dropping you — which is what makes this the protocol to use around a shaky "
-            "elbow or a return from a finger injury."
+            "Set the device on the floor, take a half-crimp on the edge and lift until the load "
+            "leaves the ground, holding for the prescribed seconds with the arm nearly straight. "
+            "Nothing is suspended, so a failing grip sets the weight down instead of dropping "
+            "you. That is what makes this the protocol to use around a shaky elbow or a return "
+            "from a finger injury."
         ),
         prescriptions=(
             PrescriptionSpec(
@@ -456,10 +454,10 @@ EXERCISES: Final[tuple[ExerciseSpec, ...]] = (
         equipment_keys=("no_hang_device",),
         contraindication_keys=("fingers", "wrist", "elbow"),
         instructions=(
-            "Pinch the block between thumb and fingers and lift it to the prescribed hold "
-            "time, one hand at a time. The thumb is the muscle climbing trains least and "
-            "pinches ask for most, so keep the wrist neutral and the load honest — a pinch "
-            "that slips through the fingers is not a rep."
+            "Pinch the block between thumb and fingers and lift it to the prescribed hold time, "
+            "one hand at a time. Sets are per hand. The thumb is the muscle climbing trains "
+            "least and pinches ask for most. Keep the wrist neutral and the load honest — a "
+            "pinch that slips through the fingers is not a rep."
         ),
         prescriptions=(
             PrescriptionSpec(
@@ -497,9 +495,9 @@ EXERCISES: Final[tuple[ExerciseSpec, ...]] = (
         contraindication_keys=("fingers", "elbow"),
         instructions=(
             "Against an immovable load, pull as hard as you possibly can for three to five "
-            "seconds, then rest completely. Intent is the whole stimulus: nothing moves, "
-            "the fingers never reach failure, and a set that lasts longer than five seconds "
-            "has become a strength hold instead of a recruitment pull."
+            "seconds, then rest completely. Intent is the whole stimulus. Nothing moves and the "
+            "fingers never reach failure. A set that lasts longer than five seconds has become a "
+            "strength hold instead of a recruitment pull."
         ),
         prescriptions=(
             PrescriptionSpec(
@@ -522,10 +520,11 @@ EXERCISES: Final[tuple[ExerciseSpec, ...]] = (
         equipment_keys=("hangboard", "resistance_bands"),
         contraindication_keys=("fingers", "elbow", "shoulder"),
         instructions=(
-            "Hang one hand on a comfortable edge with a band taking just enough weight that "
-            "the prescribed seconds are all you have. Take the band down a size across a "
-            "block rather than removing it in one step, and keep the shoulder pulled in — "
-            "a one-arm hang punishes a passive shoulder faster than a two-arm one."
+            "Hang one hand on a comfortable edge with a band taking just enough weight that the "
+            "prescribed seconds are all you have. Sets are per hand: run them on one, then "
+            "repeat on the other. Take the band down a size across a block rather than removing "
+            "it in one step. Keep the shoulder pulled in — a one-arm hang punishes a passive "
+            "shoulder faster than a two-arm one."
         ),
         # No substitution hint: the band is assistance on a real edge, and everything else
         # would be an improvised one. See the module docstring.
@@ -554,10 +553,10 @@ EXERCISES: Final[tuple[ExerciseSpec, ...]] = (
         equipment_keys=("no_hang_device",),
         contraindication_keys=("fingers", "elbow"),
         instructions=(
-            "Seven on, three off, six times through, lifting the device from the floor "
-            "instead of hanging off a board. Nothing is suspended, so the load comes off the "
-            "moment the grip fades and the elbows take none of the shock — which is what "
-            "makes this the density session to run when the boards have been busy."
+            "Seven on, three off, six times through, lifting the device from the floor instead of "
+            "hanging off a board. Nothing is suspended, so the load comes off the moment the grip "
+            "fades and the elbows take none of the shock. That is what makes this the density "
+            "session to run when the boards have been busy."
         ),
         regression_of_key="hangboard_repeaters",
         prescriptions=(
@@ -602,10 +601,10 @@ EXERCISES: Final[tuple[ExerciseSpec, ...]] = (
         equipment_keys=("pull_up_bar", "weight_belt"),
         contraindication_keys=("elbow", "shoulder"),
         instructions=(
-            "Low reps with enough added weight that the last one is slow but never ugly. "
-            "Full hang at the bottom with the shoulders engaged, chin past the bar at the "
-            "top, and no kick — the point is force through a locked-in shoulder, which is "
-            "what a hard first move off the ground actually asks for."
+            "Low reps with enough added weight that the last one is slow but never ugly. Full "
+            "hang at the bottom with the shoulders engaged, chin past the bar at the top, and no "
+            "kick. The point is force through a locked-in shoulder, which is what a hard first "
+            "move off the ground actually asks for."
         ),
         substitution_hint="No belt? A packed backpack carries the same load.",
         prescriptions=(
@@ -630,12 +629,12 @@ EXERCISES: Final[tuple[ExerciseSpec, ...]] = (
         # The general-strength floor: no gear at all. See the module docstring.
         contraindication_keys=("knee", "hip"),
         instructions=(
-            "Long stance, back knee tracking down towards the floor, front foot flat, and "
-            "stand back up through the front leg. Reps are per leg, so a set of five is five "
-            "each side. Every hard step-through in climbing is loaded on one leg with the hips "
-            "off-centre and a two-legged squat never trains that. Depth first, load second: "
-            "put the rear foot on a step when bodyweight alone stops being hard, and only add "
-            "weight once the full range is easy."
+            "Long stance, back knee tracking down towards the floor, front foot flat, and stand "
+            "back up through the front leg. Reps are per leg, so a set of five is five each side. "
+            "Every hard step-through in climbing is loaded on one leg with the hips off-centre "
+            "and a two-legged squat never trains that. Depth first, load second. Put the rear "
+            "foot on a step when bodyweight alone stops being hard, and only add weight once the "
+            "full range is easy."
         ),
         substitution_hint="Bodyweight too easy? A packed backpack adds load with no kit at all.",
         prescriptions=(
@@ -666,10 +665,10 @@ EXERCISES: Final[tuple[ExerciseSpec, ...]] = (
         equipment_keys=("pull_up_bar",),
         contraindication_keys=("elbow", "shoulder"),
         instructions=(
-            "Hold a one-arm lock-off at the top with the other hand assisting as little as "
-            "it must, then lower under control for the count. The slow half is the point: "
-            "most people can pull past a hold they cannot stop at, and the moves that get "
-            "dropped are the ones that need stopping."
+            "Hold a one-arm lock-off at the top with the other hand assisting as little as it "
+            "must, then lower under control for the count. Sets are per side: run them on one "
+            "arm, then the other. The slow half is the point. Most people can pull past a hold "
+            "they cannot stop at, and the moves that get dropped are the ones that need stopping."
         ),
         substitution_hint="No bar? Rings work, with the shoulder free to rotate.",
         progression_of_key="weighted_pull_ups",
@@ -727,11 +726,11 @@ EXERCISES: Final[tuple[ExerciseSpec, ...]] = (
         protocol_kind=ProtocolKind.STRAIGHT_SETS,
         contraindication_keys=("lower_back", "hip", "knee"),
         instructions=(
-            "Alternate a slow single-leg hip thrust with a single-leg Romanian deadlift, "
-            "keeping the hips level in both. Reps are per leg, so a set of six is six each "
-            "side. Hamstrings and glutes are what hold a heel hook in and pull the body into "
-            "steep ground, and they are the muscles climbers train least — controlled beats "
-            "heavy here, because the tissue you want is the bit that cramps on a hard heel."
+            "Alternate a slow single-leg hip thrust with a single-leg Romanian deadlift, keeping "
+            "the hips level in both. Reps are per leg, so a set of six is six each side. "
+            "Hamstrings and glutes are what hold a heel hook in and pull the body into steep "
+            "ground, and they are the muscles climbers train least. Controlled beats heavy here, "
+            "because the tissue you want is the bit that cramps on a hard heel."
         ),
         substitution_hint=(
             "Bodyweight stopped being enough? A weight held at the chest or in the free hand "
@@ -763,13 +762,12 @@ EXERCISES: Final[tuple[ExerciseSpec, ...]] = (
         equipment_keys=("free_weights",),
         contraindication_keys=("lower_back", "hip"),
         instructions=(
-            "Hinge at the hips with a flat back and stand up with the load one rep at a "
-            "time, resetting the brace before each. Low reps and heavy: this is the whole "
-            "posterior chain learning to produce force through a locked spine, which is what "
-            "a rock-over, a mantel and a high heel hook all ask for. Add load a little at a "
-            "time, and stop the set when the back rounds rather than when the legs give out. "
-            "Whether a climber needs this at all is genuinely contested — the plan keeps the "
-            "volume low for that reason."
+            "Hinge at the hips with a flat back and stand up with the load one rep at a time, "
+            "resetting the brace before each. Low reps and heavy. This is the whole posterior "
+            "chain learning to produce force through a locked spine, which is what a rock-over, a "
+            "mantel and a high heel hook all ask for. Add load a little at a time. Stop the set "
+            "when the back rounds rather than when the legs give out. Whether a climber needs "
+            "this at all is genuinely contested — the plan keeps the volume low for that reason."
         ),
         substitution_hint=(
             "No barbell? A heavy kettlebell or a packed pack held between the hands hinges "
@@ -994,9 +992,8 @@ EXERCISES: Final[tuple[ExerciseSpec, ...]] = (
         contraindication_keys=("fingers", "shoulder"),
         instructions=(
             "Pick one hard move you can just do, and do it again and again with a full rest "
-            "between attempts, stopping the set when it stops feeling identical. Repeating "
-            "a move you already have is how the movement becomes fast rather than merely "
-            "possible."
+            "between attempts. Repeating a move you already have is how the movement becomes fast "
+            "rather than merely possible. Stop the set when it stops feeling identical."
         ),
         regression_of_key="limit_boulders",
         prescriptions=(
@@ -1030,9 +1027,9 @@ EXERCISES: Final[tuple[ExerciseSpec, ...]] = (
         contraindication_keys=("fingers", "shoulder", "ankle"),
         instructions=(
             "Attempts on a boulder at your limit, with the pads set and the landing checked "
-            "before the first pull. Real rock gives fewer attempts per session than a wall "
-            "does — skin and conditions decide the count — so rest hard between them and "
-            "stop while the attempts still look like the good ones."
+            "before the first pull. Real rock gives fewer attempts per session than a wall does — "
+            "skin and conditions decide the count. Rest hard between them. Stop while the "
+            "attempts still look like the good ones."
         ),
         substitution_hint="Nothing dry to climb on? Indoor limit boulders train the same thing.",
         prescriptions=(
@@ -1052,10 +1049,10 @@ EXERCISES: Final[tuple[ExerciseSpec, ...]] = (
         equipment_keys=("bouldering_wall",),
         contraindication_keys=("fingers", "shoulder", "ankle"),
         instructions=(
-            "Jumping moves and swinging catches on big holds: commit fully, catch with the "
+            "Jumping moves and swinging catches on big holds. Commit fully, catch with the "
             "shoulders engaged, and step off rather than riding a failed attempt to the mat. "
-            "Coordination is the trainable part here, not force, so stop the set when the "
-            "timing goes rather than when the arms do."
+            "Coordination is the trainable part here, not force. Stop the set when the timing "
+            "goes rather than when the arms do."
         ),
         prescriptions=(
             PrescriptionSpec(
@@ -1112,13 +1109,13 @@ EXERCISES: Final[tuple[ExerciseSpec, ...]] = (
         equipment_keys=("bouldering_wall",),
         contraindication_keys=("fingers", "shoulder"),
         instructions=(
-            "Pick problems at around three-quarters of the hardest you can climb first try, "
-            "and start a new one every two minutes on the clock: climb, step off, wait out "
-            "the rest, go again. Every other power option here is a maximum effort and this "
-            "one deliberately is not — a dozen or more fast, clean problems cost far less to "
-            "recover from than a dozen limit attempts, which is what makes this the power "
-            "session you can put in a week that already has hard sessions in it. Stop when "
-            "the movement stops looking crisp rather than when the clock runs out."
+            "Pick problems at around three-quarters of the hardest you can climb first try, and "
+            "start a new one every two minutes on the clock. Climb, step off, wait out the rest, "
+            "go again. Every other power option here is a maximum effort and this one "
+            "deliberately is not. A dozen or more fast, clean problems cost far less to recover "
+            "from than a dozen limit attempts. That is what makes this the power session you can "
+            "put in a week that already has hard sessions in it. Stop when the movement stops "
+            "looking crisp rather than when the clock runs out."
         ),
         substitution_hint=(
             "No wall? Standing broad and squat jumps on the same two-minute clock keep the "
@@ -1160,11 +1157,11 @@ EXERCISES: Final[tuple[ExerciseSpec, ...]] = (
         contraindication_keys=("fingers", "shoulder"),
         instructions=(
             "One big fast move, or a two-move burst, then step off and wait out a rest eight "
-            "times as long as the work. Six seconds on and forty-eight off is what keeps "
-            "every repetition genuinely explosive, and the rest is not generosity: it is "
-            "what an all-out effort costs. This is the cheapest on-the-wall power work in the "
-            "library in minutes and the easiest to spoil — progress it by moving on harder "
-            "holds or adding intervals, never by shortening the gaps."
+            "times as long as the work. Six seconds on and forty-eight off is what keeps every "
+            "repetition genuinely explosive. The rest is not generosity: it is what an all-out "
+            "effort costs. This is the cheapest on-the-wall power work in the library in minutes "
+            "and the easiest to spoil — progress it by moving on harder holds or adding "
+            "intervals, never by shortening the gaps."
         ),
         substitution_hint=(
             "No wall? A maximal standing jump on the same clock trains the same intent."
@@ -1208,12 +1205,11 @@ EXERCISES: Final[tuple[ExerciseSpec, ...]] = (
         equipment_keys=("bouldering_wall",),
         contraindication_keys=("fingers", "shoulder"),
         instructions=(
-            "Choose problems whose difficulty is the size of the moves rather than the size "
-            "of the holds — long reaches and hard pulls between holds you can actually keep "
-            "— and take a full rest before each attempt. Picking for span instead of for "
-            "skin is what makes this a power session you can repeat later in the week, and "
-            "it is where a power block belongs on a day the fingers are tired but the arms "
-            "are not."
+            "Choose problems whose difficulty is the size of the moves rather than the size of "
+            "the holds — long reaches and hard pulls between holds you can actually keep. Take a "
+            "full rest before each attempt. Picking for span instead of for skin is what makes "
+            "this a power session you can repeat later in the week, and it is where a power block "
+            "belongs on a day the fingers are tired but the arms are not."
         ),
         substitution_hint=(
             "Nothing with the reach? The same intent on the steepest wall you have, feet "
@@ -1294,10 +1290,10 @@ EXERCISES: Final[tuple[ExerciseSpec, ...]] = (
         instructions=(
             "One committing move to a big hold, caught with the shoulders already engaged, "
             "repeated from the same start with a full rest between attempts. This is the "
-            "high-force half of a jumping move and it is not the coordination drill: dyno "
-            "and swing catches are done at a moderate effort to learn the timing, and these "
-            "are done near your maximum to train the catch itself. Big holds only, because "
-            "the whole load arrives on the fingers at the worst moment of the move."
+            "high-force half of a jumping move and it is not the coordination drill. Dyno and "
+            "swing catches are done at a moderate effort to learn the timing, and these are done "
+            "near your maximum to train the catch itself. Big holds only, because the whole load "
+            "arrives on the fingers at the worst moment of the move."
         ),
         progression_of_key="dyno_and_swing_practice",
         prescriptions=(
@@ -1320,14 +1316,13 @@ EXERCISES: Final[tuple[ExerciseSpec, ...]] = (
         equipment_keys=("bouldering_wall",),
         contraindication_keys=("fingers", "elbow", "shoulder"),
         instructions=(
-            "Set yourself a hard circuit of around twenty-five moves, split it into three or "
-            "four sections, and work the sections one at a time before ever trying the whole "
-            "thing. Then link them: two sections, then three, then the lot. The prescribed "
-            "seconds are that whole circuit at climbing pace, so spend them on the sections "
-            "and the part-links until the whole thing goes, and on one continuous lap after "
-            "that. It is redpointing as a training method rather than as an outcome, and the "
-            "reason it belongs in a gym is that you can build the circuit to be exactly what "
-            "you are bad at."
+            "Set yourself a hard circuit of around twenty-five moves, split it into three or four "
+            "sections, and work the sections one at a time before ever trying the whole thing. "
+            "Then link them: two sections, then three, then the lot. The prescribed seconds are "
+            "that whole circuit at climbing pace. Spend them on the sections and the part-links "
+            "until the whole thing goes, and on one continuous lap after that. It is redpointing "
+            "as a training method rather than as an outcome, and the reason it belongs in a gym "
+            "is that you can build the circuit to be exactly what you are bad at."
         ),
         substitution_hint=(
             "Nothing long enough set? Build the circuit out of holds from three problems "
@@ -1398,10 +1393,10 @@ EXERCISES: Final[tuple[ExerciseSpec, ...]] = (
         equipment_keys=("outdoor_routes",),
         contraindication_keys=("fingers", "elbow", "shoulder"),
         instructions=(
-            "On a rope, work the two or three hardest moves of a route in isolation, hanging "
-            "the bolt between attempts and doing them again. It is the strength session a "
-            "rock-only climber actually has access to: the movement is the real thing, the "
-            "rests are as long as you make them, and the volume stays low."
+            "On a rope, work the two or three hardest moves of a route in isolation, hanging the "
+            "bolt between attempts and doing them again. It is the strength session a rock-only "
+            "climber actually has access to. The movement is the real thing, the rests are as "
+            "long as you make them, and the volume stays low."
         ),
         substitution_hint="Nothing outdoors? Hard linked moves on a steep indoor route.",
         prescriptions=(
@@ -1426,9 +1421,9 @@ EXERCISES: Final[tuple[ExerciseSpec, ...]] = (
         contraindication_keys=("fingers", "shoulder", "ankle"),
         instructions=(
             "One hard move on rock, repeated from the same start with a full rest between "
-            "attempts. Rock holds do not give a second chance at a bad body position, which "
-            "is why repeating a single move outdoors teaches more per attempt than a whole "
-            "problem does — and why the strength block does not have to move indoors."
+            "attempts. Rock holds do not give a second chance at a bad body position. That is why "
+            "repeating a single move outdoors teaches more per attempt than a whole problem does "
+            "— and why the strength block does not have to move indoors."
         ),
         substitution_hint="Nothing dry? The same single-move repeats on a wall.",
         prescriptions=(
@@ -1450,12 +1445,11 @@ EXERCISES: Final[tuple[ExerciseSpec, ...]] = (
         equipment_keys=("lead_wall",),
         contraindication_keys=("fingers", "elbow"),
         instructions=(
-            "Climb hard for a minute, lower, take the prescribed rest, repeat. The rest is "
-            "twice the work: long enough to start the next interval able to climb it, short "
-            "enough that the burn from the last one is still there. The timer is the "
-            "authority, not how recovered you feel. Choose a route sustained enough "
-            "that you are pumped at the end of the first interval and have to fight "
-            "through the last one."
+            "Climb hard for a minute, lower, take the prescribed rest, repeat. The rest is twice "
+            "the work. Long enough to start the next interval able to climb it, short enough that "
+            "the burn from the last one is still there. The timer is the authority, not how "
+            "recovered you feel. Choose a route sustained enough that you are pumped at the end "
+            "of the first interval and have to fight through the last one."
         ),
         prescriptions=(
             PrescriptionSpec(
@@ -1498,14 +1492,14 @@ EXERCISES: Final[tuple[ExerciseSpec, ...]] = (
         # The anaerobic-capacity floor: no gear at all. See the module docstring.
         contraindication_keys=("fingers",),
         instructions=(
-            "Press the fingertips of one hand into the palm of the other and pull as if "
-            "closing a crimp, holding that effort for the whole work interval and taking the "
-            "rest exactly on the clock. Sets are per hand: run them on one, then repeat on the "
-            "other. The opposing hand is the load, so it can never spike — and there is nothing "
-            "external to add, so this progresses by holding the same effort for one more "
-            "interval and never by loading it heavier. It is a floor for weeks with no wall and "
-            "no board, not a replacement for either: this capacity is trained by climbing, and "
-            "improvising an edge from a door frame or a towel is how pulleys get injured."
+            "Press the fingertips of one hand into the palm of the other and pull as if closing a "
+            "crimp, holding that effort for the whole work interval and taking the rest exactly "
+            "on the clock. Sets are per hand: run them on one, then repeat on the other. The "
+            "opposing hand is the load, so it can never spike. There is nothing external to add, "
+            "so this progresses by holding the same effort for one more interval and never by "
+            "loading it heavier. It is a floor for weeks with no wall and no board, not a "
+            "replacement for either. This capacity is trained by climbing, and improvising an "
+            "edge from a door frame or a towel is how pulleys get injured."
         ),
         prescriptions=(
             PrescriptionSpec(
@@ -1573,12 +1567,12 @@ EXERCISES: Final[tuple[ExerciseSpec, ...]] = (
         equipment_keys=("bouldering_wall",),
         contraindication_keys=("fingers", "elbow"),
         instructions=(
-            "Link two moderate problems back to back without coming off, aiming for twelve "
-            "to fifteen moves and about forty seconds of climbing, then rest three times as "
-            "long and go again. Expect to come off on roughly one link in four: this works "
-            "at an intensity you cannot always finish. Progress it by linking harder or "
-            "longer problems and never by cutting the rest — a shorter rest makes it a "
-            "different session, and this is the quality that takes four months to build."
+            "Link two moderate problems back to back without coming off, aiming for twelve to "
+            "fifteen moves and about forty seconds of climbing, then rest three times as long and "
+            "go again. Expect to come off on roughly one link in four: this works at an intensity "
+            "you cannot always finish. Progress it by linking harder or longer problems and never "
+            "by cutting the rest. A shorter rest makes it a different session, and this is the "
+            "quality that takes four months to build."
         ),
         substitution_hint=(
             "Problems too short to reach twelve moves? Reverse the first one back down to "
@@ -1616,12 +1610,12 @@ EXERCISES: Final[tuple[ExerciseSpec, ...]] = (
         equipment_keys=("bouldering_wall",),
         contraindication_keys=("fingers", "elbow"),
         instructions=(
-            "Traverse a line of twelve to fifteen hard enough moves in about forty seconds, "
-            "drop off, and take two and a half times that as rest. A traverse is the version "
-            "of this you can make any length you like, which is why it sits beside linked "
-            "problems: a gym whose problems are all six moves long cannot reach forty "
-            "seconds any other way. It is the opposite of ARC traversing — that is a "
-            "conversation-pace pump you never fail, and this leaves you powered out."
+            "Traverse a line of twelve to fifteen hard enough moves in about forty seconds, drop "
+            "off, and take two and a half times that as rest. A traverse is the version of this "
+            "you can make any length you like, which is why it sits beside linked problems. A gym "
+            "whose problems are all six moves long cannot reach forty seconds any other way. It "
+            "is the opposite of ARC traversing — that is a conversation-pace pump you never fail, "
+            "and this leaves you powered out."
         ),
         substitution_hint=("Nowhere to traverse? Two linked problems reach the same move count."),
         prescriptions=(
@@ -1694,10 +1688,10 @@ EXERCISES: Final[tuple[ExerciseSpec, ...]] = (
         # is, and the library withholds those same two movements elsewhere for those flags.
         contraindication_keys=("lower_back", "wrist", "knee", "ankle"),
         instructions=(
-            "Forty seconds of work and twenty of rest through squat jumps, push-ups, "
-            "hollow holds and mountain climbers, then a long rest before the next round. "
-            "It trains the same anaerobic system a pumped route does, which is what makes "
-            "it worth doing on a week with no wall."
+            "Squat jumps, push-ups, hollow holds and mountain climbers, each for the "
+            "prescribed seconds with the prescribed rest between them, then a long rest "
+            "before the next round. It trains the same anaerobic system a pumped route "
+            "does, which is what makes it worth doing on a week with no wall."
         ),
         substitution_hint=(
             "Add a packed backpack once bodyweight rounds stop leaving you breathing hard."
@@ -1747,11 +1741,11 @@ EXERCISES: Final[tuple[ExerciseSpec, ...]] = (
         equipment_keys=("bouldering_wall",),
         contraindication_keys=("fingers", "elbow"),
         instructions=(
-            "Climb an easy boulder up, reverse it down, and keep going for the prescribed "
-            "seconds — usually two or three laps — then rest about as long as you climbed. "
-            "Downclimbing doubles the time on the wall for the same problem, which is what "
-            "turns a boulder into an interval, and roughly thirty moves against a rest of "
-            "about the same length is the shape that trains climbing while already pumped."
+            "Climb an easy boulder up, reverse it down, and keep going for the prescribed seconds "
+            "— usually two or three laps — then rest about as long as you climbed. Downclimbing "
+            "doubles the time on the wall for the same problem, which is what turns a boulder "
+            "into an interval. Roughly thirty moves against a rest of about the same length is "
+            "the shape that trains climbing while already pumped."
         ),
         prescriptions=(
             PrescriptionSpec(
@@ -1835,10 +1829,10 @@ EXERCISES: Final[tuple[ExerciseSpec, ...]] = (
         equipment_keys=("outdoor_routes",),
         contraindication_keys=("fingers", "elbow", "shoulder"),
         instructions=(
-            "Full-effort attempts on a route near your limit, with a real rest between "
-            "them — long enough that the forearms are genuinely back, which outdoors "
-            "usually means longer than it feels. Two good burns beat four tired ones, and "
-            "the last one of the day is where most trips lose skin for nothing."
+            "Full-effort attempts on a route near your limit, with a real rest between them. Long "
+            "enough that the forearms are genuinely back, which outdoors usually means longer "
+            "than it feels. Two good burns beat four tired ones, and the last one of the day is "
+            "where most trips lose skin for nothing."
         ),
         substitution_hint="Nothing outdoors? Hard lead laps on a sustained indoor route.",
         prescriptions=(
@@ -1886,12 +1880,12 @@ EXERCISES: Final[tuple[ExerciseSpec, ...]] = (
         equipment_keys=("bouldering_wall",),
         contraindication_keys=("elbow",),
         instructions=(
-            "Traverse continuously on easy holds for the prescribed minutes, at an "
-            "intensity you could hold a conversation at. One unbroken block is the "
-            "exercise: twenty to forty minutes without stepping off is what the aerobic "
-            "adaptation asks for, and breaking it into rounds with rests makes it a "
-            "different session. A light forearm pump that never becomes a real one is the "
-            "target; if you have to stop, drop the difficulty rather than the time."
+            "Traverse continuously on easy holds for the prescribed minutes, at an intensity you "
+            "could hold a conversation at. One unbroken block is the exercise. The prescribed "
+            "minutes without stepping off are what the aerobic adaptation asks for, and breaking "
+            "it into rounds with rests makes it a different session. A light forearm pump that "
+            "never becomes a real one is the target. If you have to stop, drop the difficulty "
+            "rather than the time."
         ),
         prescriptions=(
             # One continuous block, not rounds: the source band is 20-40 minutes unbroken,
@@ -1908,12 +1902,12 @@ EXERCISES: Final[tuple[ExerciseSpec, ...]] = (
         equipment_keys=("bouldering_wall",),
         contraindication_keys=("elbow",),
         instructions=(
-            "Climb easy problems back to back for the prescribed minutes, stepping off one "
-            "and starting the next with barely a pause, at a grade you could keep going at "
-            "for half an hour. It is the same aerobic block as ARC traversing and a "
-            "different experience of it: traversing is one continuous line at one intensity, "
-            "and this is whole problems, so the feet, the reading and the topping out all "
-            "keep working. Drop the grade rather than the time if the forearms start to fill."
+            "Climb easy problems back to back for the prescribed minutes, stepping off one and "
+            "starting the next with barely a pause, at a grade you could keep going at for half "
+            "an hour. It is the same aerobic block as ARC traversing and a different experience "
+            "of it. Traversing is one continuous line at one intensity, and this is whole "
+            "problems, so the feet, the reading and the topping out all keep working. Drop the "
+            "grade rather than the time if the forearms start to fill."
         ),
         substitution_hint=(
             "Not enough easy problems set? Traverse between them instead of walking."
@@ -1931,12 +1925,12 @@ EXERCISES: Final[tuple[ExerciseSpec, ...]] = (
         equipment_keys=("bouldering_wall",),
         contraindication_keys=("elbow",),
         instructions=(
-            "Link two or three problems into one long boulder and climb it end to end, then "
-            "step off, rest, and do it again. Twenty to thirty moves a lap, sustained enough "
-            "that the forearms fill and never so hard that a move is in doubt: stop each lap "
-            "while you could still have done another, and take the grade down rather than the "
-            "length. This is the aerobic layer underneath a power-endurance week, not a burn "
-            "\u2014 the burn is what the four-by-fours are for."
+            "Link two or three problems into one long boulder and climb it end to end, then step "
+            "off, rest, and do it again. Twenty to thirty moves a lap, sustained enough that the "
+            "forearms fill and never so hard that a move is in doubt. Stop each lap while you "
+            "could still have done another. Take the grade down rather than the length. This is "
+            "the aerobic layer underneath a power-endurance week, not a burn — the burn is what "
+            "the four-by-fours are for."
         ),
         substitution_hint=(
             "Nothing long enough set? Climb a problem, reverse it, and climb it again."
@@ -1966,13 +1960,13 @@ EXERCISES: Final[tuple[ExerciseSpec, ...]] = (
         equipment_keys=("bouldering_wall",),
         contraindication_keys=("elbow",),
         instructions=(
-            "Finish with a few unhurried minutes of the easiest climbing in the gym: traverse, "
-            "or link the warm-up problems back to back, at a grade where no move is ever in "
-            "doubt and you could hold a conversation the whole way up. This is the aerobic "
-            "layer underneath a heavy block and it is meant to be the smallest thing in the "
-            "session \u2014 it moves blood through forearms that have just done hard work and "
-            "it keeps the capacity the next block will spend. Stop while it still feels easy; "
-            "if a real pump arrives, drop the grade rather than the time."
+            "Finish with a few unhurried minutes of the easiest climbing in the gym. Traverse, or "
+            "link the warm-up problems back to back, at a grade where no move is ever in doubt "
+            "and you could hold a conversation the whole way up. This is the aerobic layer "
+            "underneath a heavy block and it is meant to be the smallest thing in the session — "
+            "it moves blood through forearms that have just done hard work and it keeps the "
+            "capacity the next block will spend. Stop while it still feels easy; if a real pump "
+            "arrives, drop the grade rather than the time."
         ),
         substitution_hint=(
             "Wall too busy to traverse? Climb the easiest problem on it up and down instead."
@@ -2033,10 +2027,10 @@ EXERCISES: Final[tuple[ExerciseSpec, ...]] = (
         protocol_kind=ProtocolKind.OTHER,
         contraindication_keys=("knee", "ankle"),
         instructions=(
-            "Thirty to forty minutes of continuous easy work at a pace you could talk "
-            "through. It is the aerobic floor everything else recovers on, it costs no "
-            "skin and no gear, and it is the endurance session that still happens on a "
-            "week with no access to a wall."
+            "Continuous easy work for the prescribed minutes, at a pace you could talk through. "
+            "It is the aerobic floor everything else recovers on, it costs no skin and no gear, "
+            "and it is the endurance session that still happens on a week with no access to a "
+            "wall."
         ),
         substitution_hint=(
             "Anything continuous and conversational counts — a run, a hike, stairs or a bike."
@@ -2113,10 +2107,10 @@ EXERCISES: Final[tuple[ExerciseSpec, ...]] = (
         equipment_keys=("outdoor_routes",),
         contraindication_keys=("elbow",),
         instructions=(
-            "A day of routes well inside your grade, as many as the light and the belayer "
-            "allow. Rock rewards volume differently from a wall: the rests are real, the "
-            "sequences are never the same twice, and route fitness built this way survives "
-            "a week off far better than lap fitness does."
+            "A day of routes well inside your grade, as many as the light and the belayer allow. "
+            "Rock rewards volume differently from a wall. The rests are real, the sequences are "
+            "never the same twice, and route fitness built this way survives a week off far "
+            "better than lap fitness does."
         ),
         substitution_hint="Nothing outdoors? Indoor rope laps train the same base.",
         prescriptions=(
@@ -2183,9 +2177,9 @@ EXERCISES: Final[tuple[ExerciseSpec, ...]] = (
         contraindication_keys=("knee",),
         instructions=(
             "Fifteen to twenty easy minutes on a machine the day after a hard session, at an "
-            "effort that feels like nothing. This is not training and is not meant to be: it "
-            "moves blood through legs and back without asking the fingers or the shoulders "
-            "for anything, which is why it belongs in the weeks where everything else is hard."
+            "effort that feels like nothing. This is not training and is not meant to be. It "
+            "moves blood through legs and back without asking the fingers or the shoulders for "
+            "anything, which is why it belongs in the weeks where everything else is hard."
         ),
         substitution_hint="No machine? A flat easy walk does the same job.",
         regression_of_key="machine_zone_two_session",
@@ -2255,10 +2249,10 @@ EXERCISES: Final[tuple[ExerciseSpec, ...]] = (
         aspect_key="technique",
         protocol_kind=ProtocolKind.OTHER,
         instructions=(
-            "Rehearse the shapes climbing asks for with no wall at all: deep step-throughs, "
-            "hip turns onto a high foot, slow reaches from one leg, and holding each end "
-            "position for a breath. Slow and deliberate — this is a coordination session, "
-            "so it should never feel like conditioning."
+            "Rehearse the shapes climbing asks for with no wall at all. Deep step-throughs, hip "
+            "turns onto a high foot, slow reaches from one leg, and holding each end position for "
+            "a breath. Slow and deliberate — this is a coordination session, so it should never "
+            "feel like conditioning."
         ),
         prescriptions=(
             PrescriptionSpec(
@@ -2383,9 +2377,9 @@ EXERCISES: Final[tuple[ExerciseSpec, ...]] = (
         contraindication_keys=("fingers", "ankle"),
         instructions=(
             "A day of easy and moderate boulders on rock, as many different ones as the skin "
-            "allows. Rock does not repeat itself, so an hour of mileage outdoors asks for "
-            "more distinct movement than an evening of circuits ever will — and it is where "
-            "reading a line stops being a wall skill."
+            "allows. Rock does not repeat itself, so an hour of mileage outdoors asks for more "
+            "distinct movement than an evening of circuits ever will. That is where reading a "
+            "line stops being a wall skill."
         ),
         substitution_hint="Nothing dry to climb on? Volume on unfamiliar indoor problems.",
         prescriptions=(
@@ -2408,10 +2402,10 @@ EXERCISES: Final[tuple[ExerciseSpec, ...]] = (
         equipment_keys=("bouldering_wall",),
         contraindication_keys=("fingers", "shoulder"),
         instructions=(
-            "Practise arriving at a hold exactly at the top of the movement, when the body "
-            "is weightless for an instant, on moves you can already do. Aim to catch the "
-            "hold still rather than swinging into it: a deadpoint that lands early is a "
-            "lock-off and one that lands late is a fall, and the timing is what improves."
+            "Practise arriving at a hold exactly at the top of the movement, when the body is "
+            "weightless for an instant, on moves you can already do. Aim to catch the hold still "
+            "rather than swinging into it. A deadpoint that lands early is a lock-off and one "
+            "that lands late is a fall, and the timing is what improves."
         ),
         prescriptions=(
             PrescriptionSpec(
@@ -2436,10 +2430,10 @@ EXERCISES: Final[tuple[ExerciseSpec, ...]] = (
         equipment_keys=("bouldering_wall",),
         contraindication_keys=("hip", "knee"),
         instructions=(
-            "Climb easy steep ground turning one hip into the wall on every move — drop "
-            "knees, backsteps and flags, never square on. Getting the hips close is what "
-            "makes a long reach short, and it is a decision rather than a strength, so it "
-            "belongs on terrain easy enough to make the decision on."
+            "Climb easy steep ground turning one hip into the wall on every move — drop knees, "
+            "backsteps and flags, never square on. Getting the hips close is what makes a long "
+            "reach short, and it is a decision rather than a strength. It belongs on terrain easy "
+            "enough to make the decision on."
         ),
         prescriptions=(
             PrescriptionSpec(
@@ -2460,10 +2454,10 @@ EXERCISES: Final[tuple[ExerciseSpec, ...]] = (
         protocol_kind=ProtocolKind.LAPS,
         equipment_keys=("bouldering_wall",),
         instructions=(
-            "Slab and vertical ground climbed with the hands touching nothing, or resting "
-            "flat on the wall for balance only. It is the fastest way to find out how much "
-            "of your climbing is arms: with them gone, the feet and the hips have to do the "
-            "whole job and they will tell you immediately where the weight is."
+            "Slab and vertical ground climbed with the hands touching nothing, or resting flat on "
+            "the wall for balance only. It is the fastest way to find out how much of your "
+            "climbing is arms. With them gone, the feet and the hips have to do the whole job, "
+            "and they will tell you immediately where the weight is."
         ),
         prescriptions=(
             PrescriptionSpec(
@@ -2597,11 +2591,11 @@ EXERCISES: Final[tuple[ExerciseSpec, ...]] = (
         protocol_kind=ProtocolKind.HOLD,
         contraindication_keys=("lower_back", "neck"),
         instructions=(
-            "Lie on your back, press the lower back into the floor and lift the shoulders "
-            "and legs into a shallow dish. The flat back is the exercise: keep the legs "
-            "high enough that no gap opens under the spine, and raise them higher the "
-            "moment one does. Lowering them towards the floor is what makes the hold "
-            "harder, so only go there while the back stays down."
+            "Lie on your back, press the lower back into the floor and lift the shoulders and "
+            "legs into a shallow dish. The flat back is the exercise. Keep the legs high enough "
+            "that no gap opens under the spine, and raise them higher the moment one does. "
+            "Lowering them towards the floor is what makes the hold harder, so only go there "
+            "while the back stays down."
         ),
         regression_of_key="front_lever_progression",
         prescriptions=(
@@ -2704,10 +2698,10 @@ EXERCISES: Final[tuple[ExerciseSpec, ...]] = (
         equipment_keys=("bouldering_wall",),
         contraindication_keys=("fingers", "shoulder", "lower_back"),
         instructions=(
-            "On the steepest ground you have, climb easy moves with the feet deliberately "
-            "kept on: no cutting loose, no swinging, every foot placed and weighted before "
-            "the next hand moves. Tension is what keeps the feet on, so losing them is the "
-            "signal to stop the set."
+            "On the steepest ground you have, climb easy moves with the feet deliberately kept "
+            "on. No cutting loose, no swinging, every foot placed and weighted before the next "
+            "hand moves. Tension is what keeps the feet on, so losing them is the signal to stop "
+            "the set."
         ),
         prescriptions=(
             PrescriptionSpec(
@@ -2751,10 +2745,10 @@ EXERCISES: Final[tuple[ExerciseSpec, ...]] = (
         equipment_keys=("bouldering_wall",),
         contraindication_keys=("fingers", "knee", "hip"),
         instructions=(
-            "On steep ground, set a heel hook and pull through it to move the hips, "
-            "repeating the same move on both sides. Build the tension gradually before "
-            "loading it — a heel hook pulls hard on the hamstring behind the knee, and the "
-            "injuries come from snatching into the position rather than from holding it."
+            "On steep ground, set a heel hook and pull through it to move the hips, repeating the "
+            "same move on both sides. Build the tension gradually before loading it. A heel hook "
+            "pulls hard on the hamstring behind the knee, and the injuries come from snatching "
+            "into the position rather than from holding it."
         ),
         prescriptions=(
             PrescriptionSpec(
@@ -2776,11 +2770,10 @@ EXERCISES: Final[tuple[ExerciseSpec, ...]] = (
         equipment_keys=("resistance_bands",),
         contraindication_keys=("lower_back", "shoulder"),
         instructions=(
-            "Press a band away from the chest while it tries to rotate you, then lie down "
-            "and lower one arm and the opposite leg with the back flat. Both are "
-            "anti-movement work: the trunk's job on the wall is to refuse to twist when one "
-            "hand is pulling and one foot is pushing, and nothing else in the library trains "
-            "that directly."
+            "Press a band away from the chest while it tries to rotate you, then lie down and "
+            "lower one arm and the opposite leg with the back flat. Both are anti-movement work. "
+            "The trunk's job on the wall is to refuse to twist when one hand is pulling and one "
+            "foot is pushing, and nothing else in the library trains that directly."
         ),
         substitution_hint="No band? Hold a heavy pack off to one side and resist the pull.",
         prescriptions=(
@@ -2916,9 +2909,9 @@ EXERCISES: Final[tuple[ExerciseSpec, ...]] = (
         contraindication_keys=("wrist",),
         instructions=(
             "A band looped around the fingers, opening the hand fully against it and closing "
-            "slowly. The extensors do nothing but resist everything the forearm does all "
-            "session, and this is the cheapest insurance in the library — light load, high "
-            "reps, most days of the week."
+            "slowly. The extensors do nothing but resist everything the forearm does all session. "
+            "This is the cheapest insurance in the library — light load, high reps, most days of "
+            "the week."
         ),
         prescriptions=(
             PrescriptionSpec(
@@ -3056,9 +3049,9 @@ EXERCISES: Final[tuple[ExerciseSpec, ...]] = (
         protocol_kind=ProtocolKind.OTHER,
         equipment_keys=("foam_roller",),
         instructions=(
-            "Roll the forearms and the upper back slowly, pausing on anything that feels "
-            "tight and breathing there rather than grinding through it. Two or three "
-            "minutes each, after climbing rather than before."
+            "Roll the forearms and the upper back slowly, pausing on anything that feels tight "
+            "and breathing there rather than grinding through it. The prescribed minutes each, "
+            "after climbing rather than before."
         ),
         substitution_hint=(
             "No roller? A rolling pin or a bottle does the forearms and a rolled mat does the back."
@@ -3210,10 +3203,10 @@ EXERCISES: Final[tuple[ExerciseSpec, ...]] = (
         equipment_keys=("foam_roller",),
         contraindication_keys=("hip", "knee"),
         instructions=(
-            "Roll the front of the thigh, the side of the hip and the glute, stopping on "
-            "anything sharp and breathing until it eases. Hip flexors shorten from sitting "
-            "and from every high step, and a tight one is what stops the hips getting close "
-            "to the wall — this goes after climbing, not before."
+            "Roll the front of the thigh, the side of the hip and the glute, stopping on anything "
+            "sharp and breathing until it eases. Hip flexors shorten from sitting and from every "
+            "high step, and a tight one is what stops the hips getting close to the wall. This "
+            "goes after climbing, not before."
         ),
         substitution_hint="No roller? A ball or a bottle finds the same spots.",
         prescriptions=(
@@ -3231,10 +3224,10 @@ EXERCISES: Final[tuple[ExerciseSpec, ...]] = (
         equipment_keys=("free_weights",),
         contraindication_keys=("shoulder", "lower_back", "wrist"),
         instructions=(
-            "Hold a light plate or dumbbell straight overhead with the ribs down and the "
-            "arm beside the ear, and keep it there for the count. Range you cannot hold "
-            "under load is range you do not own, and overhead is where a climber needs to "
-            "own it — light enough that the position never breaks to reach the time."
+            "Hold a light plate or dumbbell straight overhead with the ribs down and the arm "
+            "beside the ear, and keep it there for the count. Range you cannot hold under load is "
+            "range you do not own, and overhead is where a climber needs to own it. Light enough "
+            "that the position never breaks to reach the time."
         ),
         substitution_hint="No plate? A packed backpack held overhead does the same.",
         progression_of_key="shoulder_band_arcs",
@@ -3278,12 +3271,11 @@ EXERCISES: Final[tuple[ExerciseSpec, ...]] = (
         equipment_keys=("bouldering_wall",),
         contraindication_keys=("elbow",),
         instructions=(
-            "Climb for the prescribed minutes and pick it yourself — problems, routes, "
-            "whatever you feel like getting on. These weeks are about endurance and time on the "
-            "wall, so "
-            "the only thing that matters is that you keep climbing: choose things you can do "
-            "a lot of rather than things you have to fight. Climbing for fun is training too, "
-            "and this is the block where it counts for the most."
+            "Climb for the prescribed minutes and pick it yourself — problems, routes, whatever "
+            "you feel like getting on. These weeks are about endurance and time on the wall, so "
+            "the only thing that matters is that you keep climbing. Choose things you can do a "
+            "lot of rather than things you have to fight. Climbing for fun is training too, and "
+            "this is the block where it counts for the most."
         ),
         prescriptions=(PrescriptionSpec(Phase.BASE, sets=1, work_seconds=1800, target_rpe=4),),
     ),
@@ -3295,11 +3287,11 @@ EXERCISES: Final[tuple[ExerciseSpec, ...]] = (
         equipment_keys=("bouldering_wall",),
         contraindication_keys=("elbow",),
         instructions=(
-            "Climb for the prescribed minutes, your choice of what — but this block is about "
-            "power endurance, so go looking for the boulders and routes that test it the "
-            "most: long, sustained, no rest positions, the ones that leave the forearms full "
-            "by the top. Climbing for fun is training too; here the fun is picking your own "
-            "way to get pumped."
+            "Climb for the prescribed minutes, your choice of what. This block is about power "
+            "endurance, so go looking for the boulders and routes that test it the most. Long, "
+            "sustained, no rest positions, the ones that leave the forearms full by the top. "
+            "Climbing for fun is training too; here the fun is picking your own way to get "
+            "pumped."
         ),
         prescriptions=(
             PrescriptionSpec(Phase.POWER_ENDURANCE, sets=1, work_seconds=1800, target_rpe=6),
@@ -3313,12 +3305,11 @@ EXERCISES: Final[tuple[ExerciseSpec, ...]] = (
         equipment_keys=("bouldering_wall",),
         contraindication_keys=("fingers", "elbow", "shoulder"),
         instructions=(
-            "Climb for the prescribed minutes on whatever you like, and let this block pick "
-            "the flavour: the hardest individual moves you can do. Few tries, long rests, "
-            "nothing that turns into a pump: power is what these weeks buy and it is the first "
-            "thing to go when you are tired, so stop a problem the moment it stops feeling "
-            "explosive. Climbing for fun is "
-            "training too, so choose the hard thing you actually want to try."
+            "Climb for the prescribed minutes on whatever you like, and let this block pick the "
+            "flavour: the hardest individual moves you can do. Few tries, long rests, nothing "
+            "that turns into a pump. Power is what these weeks buy and it is the first thing to "
+            "go when you are tired. Stop a problem the moment it stops feeling explosive. "
+            "Climbing for fun is training too, so choose the hard thing you actually want to try."
         ),
         prescriptions=(
             PrescriptionSpec(Phase.STRENGTH, sets=1, work_seconds=1800, target_rpe=7),
@@ -3336,11 +3327,11 @@ EXERCISES: Final[tuple[ExerciseSpec, ...]] = (
         protocol_kind=ProtocolKind.OTHER,
         equipment_keys=("bouldering_wall",),
         instructions=(
-            "Climb for the prescribed minutes with no protocol at all: your choice of "
-            "problems, your choice of how hard, and you stop when the time is up. Move well "
-            "and enjoy it: this is technique you are practising whether you mean to or not, "
-            "climbing for fun is also training, and this block is here so that "
-            "a session with time left over gets more climbing rather than more exercises."
+            "Climb for the prescribed minutes with no protocol at all. Your choice of problems, "
+            "your choice of how hard, and you stop when the time is up. Move well and enjoy it. "
+            "This is technique you are practising whether you mean to or not, and climbing for "
+            "fun is also training. This block is here so that a session with time left over gets "
+            "more climbing rather than more exercises."
         ),
         prescriptions=(
             PrescriptionSpec(Phase.BASE, sets=1, work_seconds=1800, target_rpe=4),

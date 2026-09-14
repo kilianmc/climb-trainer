@@ -6751,36 +6751,15 @@ reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
 [[exception]]
 path = "web/src/routes/_authed/library.lazy.tsx"
 kind = "block"
-anchor = "the exercise library browsed deliberately"
+anchor = "the exercise library browsed grouped by"
 limit = 17
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
+reason = "Three decisions a reader would otherwise reverse: the card is a `<details>` rather than a detail route, both reads are `staleTime: Infinity` so the screen costs no request of its own, and the screen is absent from the nav because a sixth destination invalidates `_chrome.scss`'s measured 311px threshold."
 
 [[exception]]
 path = "web/src/routes/_authed/library.lazy.tsx"
 kind = "slash_run"
 anchor = "gated on there is nothing to show"
 limit = 5
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
-
-[[exception]]
-path = "web/src/routes/_authed/library.lazy.tsx"
-kind = "block"
-anchor = "one exercise flat instructions"
-limit = 6
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
-
-[[exception]]
-path = "web/src/routes/_authed/library.lazy.tsx"
-kind = "block"
-anchor = "equipment ids is an and set so"
-limit = 3
-reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
-
-[[exception]]
-path = "web/src/routes/_authed/library.lazy.tsx"
-kind = "block"
-anchor = "a null substitution hint is a safety"
-limit = 3
 reason = "BASELINE 2026-08-27 - not yet reviewed. Trim or justify."
 
 [[exception]]

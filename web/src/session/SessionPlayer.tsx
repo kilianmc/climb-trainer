@@ -1,5 +1,8 @@
 import type { ReactNode } from 'react';
 
+import type { LibraryExercise } from '../api/types';
+import type { ExerciseVocabulary } from '../library/ExerciseDetail';
+import { ExerciseDetail } from '../library/ExerciseDetail';
 import {
   IconCheck,
   IconCross,
@@ -41,7 +44,19 @@ import { formatElapsed } from './useSessionRun';
  * `` `ct-app__player--${phase}` `` is `markupCss.test.ts`'s one blind spot and would trip it in
  * both directions at once. The item's state is `data-state` for the same reason.
  */
-export function SessionPlayer({ run, readOnly }: { run: SessionRun; readOnly: boolean }) {
+export function SessionPlayer({
+  run,
+  readOnly,
+  exercises,
+  detail,
+}: {
+  run: SessionRun;
+  readOnly: boolean;
+  exercises: ReadonlyMap<string, LibraryExercise>;
+  /** `null` until `GET /api/vocabulary` lands. Nothing about the run waits on it, so the
+   *  disclosure is simply absent — the timer, the cues and every control run regardless. */
+  detail: ExerciseVocabulary | null;
+}) {
   const phase = run.phase;
   const isOpen = phase?.kind === 'open';
   const activeBlockIndex = run.run?.activeBlockIndex ?? null;
@@ -114,6 +129,7 @@ export function SessionPlayer({ run, readOnly }: { run: SessionRun; readOnly: bo
         ) : (
           <div className="ct-app__player-controls">
             <ItemControls item={active} run={run} />
+            <ActiveExercise item={active} exercises={exercises} detail={detail} />
           </div>
         )}
       </div>
@@ -163,6 +179,28 @@ function ItemList({ run }: { run: SessionRun }) {
         </ItemRow>
       ))}
     </ol>
+  );
+}
+
+/** ⚠️ BELOW the controls, and NO `onToggle`, state or effect: opening must cost the RUNNING
+ *  player zero re-renders. Keyed by `blockIndex`, so each new block starts collapsed. */
+function ActiveExercise({
+  item,
+  exercises,
+  detail,
+}: {
+  item: ItemView;
+  exercises: ReadonlyMap<string, LibraryExercise>;
+  detail: ExerciseVocabulary | null;
+}) {
+  const exercise = exercises.get(item.exerciseKey);
+  if (exercise === undefined || detail === null) return null;
+
+  return (
+    <details className="ct-app__disclosure" key={item.blockIndex}>
+      <summary>Detailed info</summary>
+      <ExerciseDetail exercise={exercise} vocabulary={detail} />
+    </details>
   );
 }
 

@@ -23,7 +23,8 @@ export function planKey(plan: PlanTree): string {
   return plan.id == null ? `preview:${plan.start_date}` : `plan:${String(plan.id)}`;
 }
 
-/** Every phase of the plan, in order — the argument to "expand all". */
+/** Every phase of the plan, in order — the argument to "expand all". ⚠️ PHASES only: the
+ *  session and block disclosures are uncontrolled, and 672 open panels bury the plan's shape. */
 export function allPhases(plan: PlanTree): number[] {
   return plan.mesocycles.map((mesocycle) => mesocycle.start_week);
 }

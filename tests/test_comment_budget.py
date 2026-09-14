@@ -43,7 +43,7 @@ CAPS: Final = {
 # The ratchet. Entries whose reason starts with BASELINE are the un-reviewed backlog; new
 # comments obey the cap from day one, so this number may only ever go DOWN. Lower it in the
 # same PR that trims the comments — never raise it.
-BASELINE_RATCHET: Final = 982
+BASELINE_RATCHET: Final = 968
 
 # The DEADLINE. The ratchet stops the backlog GROWING; nothing stops it sitting, and a register
 # where every row still reads "not yet reviewed" a year from now is a freeze, not a cleanup. Each

@@ -16,7 +16,8 @@
     "format:check": "prettier --check .",
     "test": "vitest run",
     "generate:icons": "npx --yes @vite-pwa/assets-generator@1.0.2",
-    "images:landing": "node scripts/gen-landing-images.mjs"
+    "images:landing": "node scripts/gen-landing-images.mjs",
+    "images:icons": "node scripts/gen-exercise-icons.mjs"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.102.8",

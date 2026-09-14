@@ -2,6 +2,7 @@ import { createLazyFileRoute } from '@tanstack/react-router';
 
 import { useAuth } from '../../auth/AuthProvider';
 import { useLibrary } from '../../library/api';
+import { exerciseVocabulary } from '../../library/ExerciseDetail';
 import { useActivePlanView } from '../../plan/api';
 import { exercisesByKey } from '../../plan/blueprint';
 import { completionBySession, useSessionCompletion } from '../../plan/completion';
@@ -102,8 +103,14 @@ function Session() {
   const sessions = planSessions(plan);
   const rows = completionBySession(completion.data);
   const index = exercisesByKey(exercises);
+  // ⚠️ `null` until the vocabulary lands, and NOTHING here waits for it: with no equipment
+  // names the detail would read "None needed" on a hangboard exercise, which is a lie.
+  const detail =
+    vocabulary.data === undefined ? null : exerciseVocabulary(vocabulary.data, exercises);
 
-  if (run.status === 'running') return <SessionPlayer run={run} readOnly={readOnly} />;
+  if (run.status === 'running') {
+    return <SessionPlayer run={run} readOnly={readOnly} exercises={index} detail={detail} />;
+  }
 
   const finished = run.status === 'finished' ? run.run : null;
   const showSummary =
@@ -148,6 +155,7 @@ function Session() {
       plan={plan}
       vocabulary={vocabulary.data}
       exercises={index}
+      detail={detail}
       run={run}
       readOnly={readOnly}
       stale={finished !== null && run.unsentCount > 0 ? finished : null}

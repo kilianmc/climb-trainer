@@ -1,20 +1,16 @@
 import { createLazyFileRoute } from '@tanstack/react-router';
 
-import type { LibraryExercise, Prescription } from '../../api/types';
+import type { LibraryExercise } from '../../api/types';
 import { useLibrary } from '../../library/api';
-import {
-  groupByAspect,
-  humanise,
-  nameIndex,
-  namesOf,
-  prescriptionLine,
-} from '../../library/browse';
+import type { ExerciseVocabulary } from '../../library/ExerciseDetail';
+import { ExerciseDetail, exerciseVocabulary } from '../../library/ExerciseDetail';
+import { groupByAspect, humanise, nameIndex, prescriptionLine } from '../../library/browse';
 import { useVocabulary } from '../../profile/api';
 
 /**
- * The exercise library, browsed. Deliberately minimal (Kilian's brief): a plain list grouped by
- * aspect, no detail route, no search, no filtering, no animation — enough to read the seeded
- * content and sanity-check it, styled but not designed.
+ * The exercise library, browsed. Grouped by aspect, with no detail route, no search and no
+ * filtering: each card is a `<details>` whose summary is the short row and whose panel is
+ * `library/ExerciseDetail.tsx`, so the whole exercise is one tap away and never a navigation.
  *
  * **Two reads, and neither is a new fetch.** `useLibrary` is the hook PR #10 added and this
  * screen is its first consumer — until now it was tree-shaken dead code. `useVocabulary` is
@@ -76,8 +72,8 @@ function Library() {
     );
   }
 
-  const equipmentNames = nameIndex(vocab.equipment);
-  const injuryNames = nameIndex(vocab.injury_areas);
+  // ONCE for the whole screen, like the plan's own index: 106 cards may not each build one.
+  const detail = exerciseVocabulary(vocab, exercises);
   const groups = groupByAspect(exercises, nameIndex(vocab.climbing_aspects));
 
   return (
@@ -94,12 +90,7 @@ function Library() {
           </h2>
           <ul className="ct-app__stack">
             {group.exercises.map((exercise) => (
-              <ExerciseCard
-                key={exercise.id}
-                exercise={exercise}
-                equipmentNames={equipmentNames}
-                injuryNames={injuryNames}
-              />
+              <ExerciseCard key={exercise.id} exercise={exercise} detail={detail} />
             ))}
           </ul>
         </section>
@@ -110,61 +101,27 @@ function Library() {
 
 interface ExerciseCardProps {
   exercise: LibraryExercise;
-  equipmentNames: ReadonlyMap<number, string>;
-  injuryNames: ReadonlyMap<number, string>;
+  detail: ExerciseVocabulary;
 }
 
-/**
- * One exercise, flat. `instructions` and `substitution_hint` are plain text rendered as React
- * children, which React escapes — no `dangerouslySetInnerHTML` and no markdown pass. `media_url`
- * is read by nothing here: it is NULL across the whole library today, and an unvalidated string
- * interpolated into `src`/`href` is the stored-XSS shape CLAUDE.md rules out.
- */
-function ExerciseCard({ exercise, equipmentNames, injuryNames }: ExerciseCardProps) {
-  const equipment = namesOf(exercise.equipment_ids, equipmentNames);
-  const contraindicated = namesOf(exercise.contraindicated_injury_area_ids, injuryNames);
+/** `<details>`, not a custom toggle and not a detail route: keyboard, focus and the expanded
+ *  state come from the element, and the summary IS the short row (`plan.lazy.tsx`'s ruling). */
+function ExerciseCard({ exercise, detail }: ExerciseCardProps) {
+  const first = exercise.prescriptions[0];
 
   return (
-    <li className="ct-app__card">
-      <h3>{exercise.name}</h3>
-      <p className="ct-app__tags">
-        <span className="ct-app__badge">{humanise(exercise.protocol_kind)}</span>
-        {exercise.discipline !== null && (
-          <span className="ct-app__badge">{humanise(exercise.discipline)}</span>
-        )}
-      </p>
-      <p>{exercise.instructions}</p>
-      <dl className="ct-app__facts">
-        <dt>Equipment</dt>
-        {/* `equipment_ids` is an AND set, so an empty list means "requires nothing and is always
-            prescribable" — which is what replaces the `bodyweight` row that deliberately does not
-            exist. It is an answer, not a gap, and must not read as one. */}
-        <dd>{equipment.length === 0 ? 'None needed' : equipment.join(', ')}</dd>
-        {contraindicated.length > 0 && (
-          <>
-            <dt>Avoid with</dt>
-            <dd>{contraindicated.join(', ')}</dd>
-          </>
-        )}
-        {/* ⚠️ A NULL `substitution_hint` is a SAFETY boundary, not missing content: every finger
-            loading protocol has one, on purpose (`server/domain/exercises.py`). Absent means
-            silent — never a placeholder that invites the reader to invent an alternative. */}
-        {exercise.substitution_hint !== null && (
-          <>
-            <dt>Substitution</dt>
-            <dd>{exercise.substitution_hint}</dd>
-          </>
-        )}
-      </dl>
-      {exercise.prescriptions.length > 0 && (
-        <ul className="ct-app__terms">
-          {exercise.prescriptions.map((prescription: Prescription) => (
-            <li key={prescription.phase}>
-              <strong>{humanise(prescription.phase)}</strong> {prescriptionLine(prescription)}
-            </li>
-          ))}
-        </ul>
-      )}
+    <li>
+      <details className="ct-app__disclosure">
+        <summary>
+          <span>{exercise.name}</span>
+          <span className="ct-app__caption">
+            {first === undefined
+              ? 'No prescription'
+              : `${humanise(first.phase)} · ${prescriptionLine(first)}`}
+          </span>
+        </summary>
+        <ExerciseDetail exercise={exercise} vocabulary={detail} />
+      </details>
     </li>
   );
 }

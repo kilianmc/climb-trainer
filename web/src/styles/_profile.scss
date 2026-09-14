@@ -404,6 +404,19 @@ $confetti-tints: (
     }
   }
 
+  &__disclosure--part {
+    padding: 0;
+    border-width: 0;
+    border-radius: 0;
+    background: none;
+
+    > summary {
+      color: inherit;
+      font-weight: 400;
+      font-size: var(--ct-text-base);
+    }
+  }
+
   &__disclosure[data-completion='full'],
   &__card[data-completion='full'] {
     border-color: var(--ct-success);
@@ -442,6 +455,11 @@ $confetti-tints: (
     @include completion-pill;
 
     background: var(--ct-surface-2);
+  }
+
+  &__partline {
+    flex: 1;
+    min-inline-size: 0;
   }
 
   &__part[data-done] {
