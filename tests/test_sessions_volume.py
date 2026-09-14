@@ -244,8 +244,8 @@ def test_past_the_cap_truncates_and_keeps_a_boundary_day_the_cut_missed(
 
 
 def test_a_day_the_cap_split_is_dropped_whole(monkeypatch: pytest.MonkeyPatch) -> None:
-    """⚠️ `_fold_sessions`' trap one shape along: a surviving half-day understates an aspect
-    and `truncated` does not cover it, so the split day goes whole."""
+    """⚠️ A surviving half-day understates an aspect and `truncated` does not cover it, so the
+    split day goes whole — the rule `_usable_completion_rows` follows for a session too."""
     monkeypatch.setattr(session_routes, "_VOLUME_ROWS_MAX", 4)
 
     body = _aspect_volume(_rows((0, [_FINGERS, _POWER]), (1, [_FINGERS, _POWER, _FINGERS])))
