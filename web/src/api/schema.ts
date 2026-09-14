@@ -11,8 +11,8 @@
  *   openapi-sha256  the OpenAPI document it was generated from
  *   types-sha256    everything below this comment block
  *
- * openapi-sha256: 2f2d622165558b9bec4a5d56d3293bf55a039d67813ebb02467d93b85cec7d01
- * types-sha256: 9732ffa9a5c2e637f786b7b7f5d3c7b1f281f8aece8d06c20788d7aeb937c69f
+ * openapi-sha256: d1bb1f8220c6e1553ec19635c1027bc16d7d68684436700e465c77e339c81b6a
+ * types-sha256: cfd4b35e21f343474ee094ad26443709c0529e974423dc392db8f615190f4578
  */
 
 export interface paths {
@@ -746,10 +746,10 @@ export interface components {
      *     than a guess: the read asks for one row PAST the cap and `_usable_volume_rows` tests that
      *     with a STRICT `>`, so a window holding exactly the cap does not cry wolf.
      *
-     *     ⚠️ **A day the cap split is dropped WHOLE rather than half-counted**, which is where this
-     *     read parts company with `_fold_sessions`. `truncated` promises "older training is missing";
-     *     it cannot say "one of these totals is short", so a surviving half-day would understate an
-     *     aspect with nothing on the wire to reveal it.
+     *     ⚠️ **A day the cap split is dropped WHOLE rather than half-counted**, the same rule
+     *     `SessionCompletionResponse` follows for a session it split. `truncated` promises "older
+     *     training is missing"; it cannot say "one of these totals is short", so a surviving half-day
+     *     would understate an aspect with nothing on the wire to reveal it.
      */
     AspectVolumeResponse: {
       /** Aspects */
@@ -1710,6 +1710,15 @@ export interface components {
      *     Sessions from a stood-down plan are included when their date falls in the window and no
      *     `plan_id` was named — the response is keyed by `planned_session_id`, so a caller reads the
      *     ones it asked about.
+     *
+     *     `truncated` says the row cap bit and this window's NEWEST sessions are missing, so a client
+     *     reads a short answer as short instead of inferring it. It is a FACT rather than a guess: the
+     *     read asks for one row PAST the cap and `_usable_completion_rows` tests that with a STRICT
+     *     `>`, so a window holding exactly the cap does not cry wolf.
+     *
+     *     ⚠️ **A session the cap split is dropped WHOLE**, as in `AspectVolumeResponse`: half its
+     *     blocks understate `block_count` and put a WRONG `percent` on the wire, and `truncated`
+     *     cannot say "one of these percentages is short".
      */
     SessionCompletionResponse: {
       /**
@@ -1719,6 +1728,8 @@ export interface components {
       as_of: string;
       /** Sessions */
       sessions: components['schemas']['SessionCompletionOut'][];
+      /** Truncated */
+      truncated: boolean;
     };
     /**
      * SessionLogRequest

@@ -226,6 +226,7 @@ const PLAN: PlanTree = {
  */
 const COMPLETION: SessionCompletionResponse = {
   as_of: daysAgo(0),
+  truncated: false,
   sessions: [
     {
       planned_session_id: DONE_SESSION_ID,

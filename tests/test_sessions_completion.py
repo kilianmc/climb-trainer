@@ -27,6 +27,7 @@ from server.domain.planner.selection import BLOCKS_PER_SESSION
 from server.domain.vocabulary import ActivityKind, ProtocolKind, SessionStatus
 from server.models import ClimbingAspect, Grade, GradeSystem, PlannedSession, SessionBlock
 from server.seed import DEMO_USER_ID
+from server.sessions import routes as session_routes
 from server.sessions.routes import _CACHE_CONTROL, _COMPLETION_SPAN_DAYS
 
 _EMAIL = "completion@example.com"
@@ -540,3 +541,85 @@ def test_the_WINDOW_IS_BOUNDED(
 ) -> None:
     """ "Return everything" is the resource-exhaustion risk, and a wider read is a longer wake."""
     assert _read(api_client, auth, start, end).status_code == 422
+
+
+def _first_two_days(plan: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
+    """The plan's first two sessions on DIFFERENT days, so a window can hold exactly one of
+    them and a cut can be aimed either BETWEEN the two or inside the first."""
+    ordered = sorted(_sessions(plan), key=lambda planned: planned["scheduled_on"])
+    for planned in ordered[1:]:
+        if planned["scheduled_on"] != ordered[0]["scheduled_on"]:
+            return ordered[0], planned
+    raise AssertionError("the plan schedules only one day")
+
+
+def _loggable_blocks(planned: dict[str, Any]) -> int:
+    """`block_count`'s own rule: a block with nothing to record is out of the figure."""
+    return len([block for block in planned["blocks"] if block["sets"]])
+
+
+# --- The row cap: what it cut, and what it only LOOKS like it cut ----------------
+
+
+def test_a_window_landing_EXACTLY_ON_THE_CAP_KEEPS_ITS_LAST_SESSION(
+    api_client: TestClient,
+    auth: dict[str, str],
+    db_session: Session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """⚠️ The boundary this read used to get WRONG: landing on the cap is also what a window
+    that simply ENDS there looks like, and the newest session was dropped on that evidence."""
+    plan = _plan(api_client, auth, db_session)
+    planned = _three_block_session(plan)
+    assert _log(api_client, auth, planned, planned["blocks"][:2]).status_code == 200
+    monkeypatch.setattr(session_routes, "_COMPLETION_ROWS_MAX", len(planned["blocks"]))
+
+    response = _read(api_client, auth, planned["scheduled_on"], planned["scheduled_on"])
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert len(body["sessions"]) == 1, body["sessions"]
+    assert _row(body, planned["id"])["percent"] == 67
+    assert body["truncated"] is False
+
+
+def test_PAST_THE_CAP_the_LOST_SESSIONS_ARE_ADMITTED_ON_THE_WIRE(
+    api_client: TestClient,
+    auth: dict[str, str],
+    db_session: Session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The other direction, so the fix cannot swing into never dropping anything: a cut landing
+    BETWEEN two sessions took nothing out of the older one, which stands whole and complete."""
+    plan = _plan(api_client, auth, db_session)
+    first, later = _first_two_days(plan)
+    monkeypatch.setattr(session_routes, "_COMPLETION_ROWS_MAX", len(first["blocks"]))
+
+    response = _read(api_client, auth, first["scheduled_on"], later["scheduled_on"])
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert [row["planned_session_id"] for row in body["sessions"]] == [first["id"]]
+    assert _row(body, first["id"])["block_count"] == _loggable_blocks(first)
+    assert body["truncated"] is True
+
+
+def test_a_SESSION_THE_CAP_SPLIT_is_dropped_WHOLE(
+    api_client: TestClient,
+    auth: dict[str, str],
+    db_session: Session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Half a session's blocks understate `block_count` and put a WRONG `percent` on the wire,
+    which `truncated` cannot describe — so the split session goes, as in `_usable_volume_rows`."""
+    plan = _plan(api_client, auth, db_session)
+    first, later = _first_two_days(plan)
+    assert len(first["blocks"]) > 1, first["blocks"]
+    monkeypatch.setattr(session_routes, "_COMPLETION_ROWS_MAX", len(first["blocks"]) - 1)
+
+    response = _read(api_client, auth, first["scheduled_on"], later["scheduled_on"])
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["truncated"] is True
+    assert body["sessions"] == []

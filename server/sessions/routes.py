@@ -630,10 +630,20 @@ class SessionCompletionResponse(BaseModel):
     Sessions from a stood-down plan are included when their date falls in the window and no
     `plan_id` was named — the response is keyed by `planned_session_id`, so a caller reads the
     ones it asked about.
+
+    `truncated` says the row cap bit and this window's NEWEST sessions are missing, so a client
+    reads a short answer as short instead of inferring it. It is a FACT rather than a guess: the
+    read asks for one row PAST the cap and `_usable_completion_rows` tests that with a STRICT
+    `>`, so a window holding exactly the cap does not cry wolf.
+
+    ⚠️ **A session the cap split is dropped WHOLE**, as in `AspectVolumeResponse`: half its
+    blocks understate `block_count` and put a WRONG `percent` on the wire, and `truncated`
+    cannot say "one of these percentages is short".
     """
 
     as_of: date
     sessions: list[SessionCompletionOut]
+    truncated: bool
 
 
 def _percent(blocks_done: int, block_count: int) -> int | None:
@@ -691,9 +701,11 @@ def _completion_query(user_id: int, window: CompletionWindow) -> Select[Any]:
         # Both are primary keys, so every other selected column is functionally dependent on
         # them and Postgres needs nothing else in the GROUP BY.
         .group_by(PlannedSession.id, SessionBlock.id)
-        # Contiguous per session, which is what makes the truncation below safe to reason about.
+        # Contiguous per session, so `_usable_completion_rows` can name the cut's OWN session.
         .order_by(PlannedSession.scheduled_on, PlannedSession.id, SessionBlock.id)
-        .limit(_COMPLETION_ROWS_MAX)
+        # One MORE than the cap, so truncation is a FACT rather than a false positive on the
+        # read that happens to hold exactly `_COMPLETION_ROWS_MAX` rows. The extra row is cut.
+        .limit(_COMPLETION_ROWS_MAX + 1)
     )
 
 
@@ -706,8 +718,27 @@ class _CompletionFold(NamedTuple):
     done_block_ids: list[int]
 
 
+class _CompletionRows(NamedTuple):
+    """The rows the cap left usable, and whether it cut anything away."""
+
+    rows: Sequence[Any]
+    truncated: bool
+
+
+def _usable_completion_rows(rows: Sequence[Any]) -> _CompletionRows:
+    """The rows safe to fold, and whether the cap cut anything. `SessionCompletionResponse` holds
+    both rules: a strict `>` past a `LIMIT` of cap+1, and a session the cut split dropped whole."""
+    if len(rows) <= _COMPLETION_ROWS_MAX:
+        return _CompletionRows(rows, False)
+    kept = list(rows[:_COMPLETION_ROWS_MAX])
+    split_session_id = rows[_COMPLETION_ROWS_MAX].id
+    if kept and kept[-1].id == split_session_id:
+        kept = [row for row in kept if row.id != split_session_id]
+    return _CompletionRows(kept, True)
+
+
 def _fold_sessions(rows: Sequence[Any]) -> dict[int, _CompletionFold]:
-    """The statement's block rows, folded to one entry per session in schedule order."""
+    """The USABLE block rows, folded to one entry per session in schedule order."""
     folded: dict[int, _CompletionFold] = {}
     for row in rows:
         fold = folded.setdefault(
@@ -718,10 +749,6 @@ def _fold_sessions(rows: Sequence[Any]) -> dict[int, _CompletionFold]:
         fold.block_ids.append(row.block_id)
         if row.done:
             fold.done_block_ids.append(row.block_id)
-    # ⚠️ The cap counts BLOCK rows, so reaching it can CUT a session in half and understate its
-    # `block_count` — a wrong percentage. So the last one goes; insertion order is the ORDER BY.
-    if len(rows) == _COMPLETION_ROWS_MAX and folded:
-        folded.popitem()
     return folded
 
 
@@ -754,9 +781,12 @@ def session_completion(
     """
     response.headers["cache-control"] = _CACHE_CONTROL
     today = _today_utc()
-    rows = session.execute(_completion_query(principal.user_id, window)).all()
+    usable = _usable_completion_rows(
+        session.execute(_completion_query(principal.user_id, window)).all()
+    )
     return SessionCompletionResponse(
         as_of=today,
+        truncated=usable.truncated,
         sessions=[
             SessionCompletionOut(
                 planned_session_id=planned_session_id,
@@ -768,7 +798,7 @@ def session_completion(
                 done_block_ids=fold.done_block_ids,
                 percent=_percent(len(fold.done_block_ids), len(fold.block_ids)),
             )
-            for planned_session_id, fold in _fold_sessions(rows).items()
+            for planned_session_id, fold in _fold_sessions(usable.rows).items()
         ],
     )
 
@@ -811,10 +841,10 @@ class AspectVolumeResponse(BaseModel):
     than a guess: the read asks for one row PAST the cap and `_usable_volume_rows` tests that
     with a STRICT `>`, so a window holding exactly the cap does not cry wolf.
 
-    ⚠️ **A day the cap split is dropped WHOLE rather than half-counted**, which is where this
-    read parts company with `_fold_sessions`. `truncated` promises "older training is missing";
-    it cannot say "one of these totals is short", so a surviving half-day would understate an
-    aspect with nothing on the wire to reveal it.
+    ⚠️ **A day the cap split is dropped WHOLE rather than half-counted**, the same rule
+    `SessionCompletionResponse` follows for a session it split. `truncated` promises "older
+    training is missing"; it cannot say "one of these totals is short", so a surviving half-day
+    would understate an aspect with nothing on the wire to reveal it.
     """
 
     aspects: list[AspectVolumeOut]
