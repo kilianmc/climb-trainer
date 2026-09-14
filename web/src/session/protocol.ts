@@ -224,6 +224,9 @@ export function compileProtocol(
 export interface BlockRange {
   readonly blockIndex: number;
   readonly label: string;
+  /** The block's own `exercise_key`, off its phases. ⚠️ DERIVED, never persisted: every phase
+   *  of a block carries it already, so the frozen timeline is the only source. */
+  readonly exerciseKey: string;
   /** Index of the block's first phase in the timeline, and ONE PAST its last. */
   readonly start: number;
   readonly end: number;
@@ -249,6 +252,7 @@ export function blockRanges(timeline: readonly CompiledPhase[]): BlockRange[] {
       ranges.push({
         blockIndex: phase.blockIndex,
         label: phase.label,
+        exerciseKey: phase.exerciseKey,
         start: index,
         end: index + 1,
         setsInBlock: phase.setsInBlock,

@@ -59,9 +59,18 @@
   }
 
   &__player-controls {
-    display: flex;
-    justify-content: center;
+    display: grid;
+    gap: var(--ct-space-4);
     padding-inline: var(--ct-gutter-start) var(--ct-gutter-end);
+  }
+
+  &__player-controls > &__item-actions {
+    justify-content: center;
+  }
+
+  &__player &__exshot {
+    aspect-ratio: auto;
+    block-size: 7rem;
   }
 
   &__player-banner {

@@ -22,6 +22,7 @@ reason.
 import re
 from collections import Counter
 from dataclasses import dataclass
+from typing import Literal
 
 import pytest
 from sqlalchemy import Enum, String
@@ -691,6 +692,162 @@ def test_EVERY_ROW_WHOSE_PROSE_COUNTS_MOVES_is_TABLED_or_NAMED_AS_AN_EXCLUSION()
         f"what its work period measures. `short_rest_boulder_sets` states five to seven moves "
         f"and carries NO `work_seconds`, so nothing here can read it — authoring one onto it "
         f"arrives as this failure, which is the decision it is."
+    )
+
+
+_DurationField = Literal["work", "rest", "cycle"]
+
+
+@dataclass(frozen=True, slots=True)
+class _DurationClaim:
+    """One work or rest period a row SPELLS OUT, in seconds, with the numerals it spells.
+    `breaches` records the phases whose shipped dose the prose is KNOWN to contradict."""
+
+    field: _DurationField
+    low: int
+    high: int
+    words: tuple[str, ...]
+    breaches: tuple[tuple[Phase, int], ...] = ()
+
+
+# Restated from each row's `instructions`, in SECONDS, and never read out of them at runtime.
+# A dose that VARIES by phase is written "the prescribed seconds", which spells no number.
+DURATION_CLAIMS: dict[str, tuple[_DurationClaim, ...]] = {
+    "hangboard_repeaters": (
+        _DurationClaim("work", 7, 7, ("seven",)),
+        _DurationClaim("rest", 3, 3, ("three",)),
+    ),
+    "no_hang_recruitment_pulls": (_DurationClaim("work", 3, 5, ("three", "five")),),
+    "explosive_move_intervals": (
+        _DurationClaim("work", 6, 6, ("six",)),
+        _DurationClaim("rest", 48, 48, ("forty", "eight")),
+    ),
+    "machine_anaerobic_intervals": (_DurationClaim("work", 40, 40, ("forty",)),),
+    "two_problem_links": (_DurationClaim("work", 40, 40, ("forty",)),),
+    "traverse_intervals": (_DurationClaim("work", 40, 40, ("forty",)),),
+    "boulders_on_the_two_minute": (_DurationClaim("cycle", 120, 120, ("two",)),),
+    "machine_recovery_spin": (_DurationClaim("work", 900, 1200, ("fifteen", "twenty")),),
+}
+
+# Named exclusions, reason as DATA so it reaches whoever sees the red rather than sitting in a
+# comment. A row here spells a number that is not the period its own prescriptions dose.
+DURATION_EXCLUSIONS = {
+    "max_hangs_20mm": (
+        "'the last two seconds are hard but the grip never opens' is a cue about the END of a "
+        "hang, not its length — the dose itself is deferred to 'the prescribed seconds' and "
+        "ships at 7-10 s by phase. A row whose prose defers to the prescription states no "
+        "number for an arm above to read, which is exactly what makes it safe to vary."
+    ),
+}
+
+# Enough words to clear "Hard forty-second efforts" and "Fifteen to twenty easy minutes".
+DURATION_WINDOW = 3
+# Measured 2026-09-14: 8 rows spell a period, over 36 (row, phase, period) readings.
+DURATION_ROWS = 8
+DURATION_READINGS = 36
+
+
+def _claimed_seconds(prescription: PrescriptionSpec, field: _DurationField) -> int | None:
+    """The period the prose is about: the work, the rest WITHIN a set, or the two together —
+    "start a new one every two minutes" names the cycle and neither column alone."""
+    if field == "work":
+        return prescription.work_seconds
+    if field == "rest":
+        return prescription.rest_seconds
+    work, rest = prescription.work_seconds, prescription.rest_seconds
+    return None if work is None or rest is None else work + rest
+
+
+def numerals_near_a_duration(text: str) -> frozenset[str]:
+    """Every number word within `DURATION_WINDOW` words before a 'seconds' or 'minutes'."""
+    lowered = text.lower()
+    found: set[str] = set()
+    for match in re.finditer(r"\b(?:seconds?|minutes?)\b", lowered):
+        head = re.findall(r"[a-z0-9-]+", lowered[: match.start()])[-DURATION_WINDOW:]
+        found.update(
+            part
+            for word in head
+            for part in word.split("-")
+            if part in NUMBER_WORDS or part.isdigit()
+        )
+    return frozenset(found)
+
+
+def test_every_row_SPELLING_A_WORK_OR_REST_PERIOD_doses_EVERY_PHASE_INSIDE_IT() -> None:
+    """⚠️ GUARD. The prose and the per-phase rows render on ONE screen, so a period the text
+    spells out is a claim about every phase — F26 had a deload read 30/30 beside "forty"."""
+    readings = 0
+    for key, claims in DURATION_CLAIMS.items():
+        spec = _BY_KEY[key]
+        for claim in claims:
+            open_breaches = dict(claim.breaches)
+            for prescription in spec.prescriptions:
+                where = f"{key}/{prescription.phase.value}"
+                seconds = _claimed_seconds(prescription, claim.field)
+                assert seconds is not None, (
+                    f"{where} doses no {claim.field} period at all, yet the row's own "
+                    f"instructions spell {sorted(claim.words)} next to one. Dose it, or take "
+                    f"the number out of the prose — a claim nothing doses cannot be read."
+                )
+                readings += 1
+                recorded = open_breaches.pop(prescription.phase, None)
+                if recorded is not None:
+                    assert seconds == recorded, (
+                        f"{where} now doses {seconds} s of {claim.field} against the "
+                        f"{recorded} s recorded as an OPEN breach of its own prose "
+                        f"({claim.low}-{claim.high} s). If a ruling closed it, delete the "
+                        f"`breaches` entry so the band above starts covering the phase."
+                    )
+                    continue
+                assert claim.low <= seconds <= claim.high, (
+                    f"{where} doses {seconds} s of {claim.field} against the "
+                    f"{claim.low}-{claim.high} s its OWN instructions spell out "
+                    f"({sorted(claim.words)}), and the detail panel renders the prose and "
+                    f"this phase's row on the same screen — the reader sees the text "
+                    f"contradict the numbers beside it. Re-dose the phase, or reword to "
+                    f"'the prescribed seconds', which is how this library states a period "
+                    f"that varies by phase. Recording it in `breaches` is a RULING."
+                )
+            assert not open_breaches, (
+                f"{key} records an open breach in "
+                f"{sorted(phase.value for phase in open_breaches)}, a phase it no longer "
+                f"prescribes — drop the entry rather than leaving the register describing "
+                f"a row that is gone."
+            )
+    assert len(DURATION_CLAIMS) == DURATION_ROWS and readings == DURATION_READINGS, (
+        f"the period arm read {len(DURATION_CLAIMS)} rows and {readings} readings against the "
+        f"{DURATION_ROWS} and {DURATION_READINGS} measured. A row leaving `DURATION_CLAIMS` "
+        f"takes its prose out of the only guard that reads a spelled period against the dose."
+    )
+
+
+def test_the_DURATION_CLAIMS_still_SPELL_THE_NUMERALS_THEY_RESTATE() -> None:
+    """⚠️ GUARD, the other end. A reword that drops the numeral leaves a band above checking a
+    number nobody authored, and the completeness arm below is what catches a new one."""
+    for key, claims in DURATION_CLAIMS.items():
+        lowered = _BY_KEY[key].instructions.lower()
+        for claim in claims:
+            missing = [word for word in claim.words if not re.search(rf"\b{word}\b", lowered)]
+            assert not missing, (
+                f"{key}'s instructions no longer spell {missing}, which "
+                f"`DURATION_CLAIMS` restates as {claim.low}-{claim.high} s of {claim.field}. "
+                f"One of the two has drifted: re-derive the claim from the text, or put the "
+                f"number back. Word boundaries, so 'two' is not found inside 'twenty'."
+            )
+
+
+def test_EVERY_ROW_WHOSE_PROSE_SPELLS_A_PERIOD_is_CLAIMED_or_NAMED_AS_AN_EXCLUSION() -> None:
+    """⚠️ GUARD, both directions, on the register's own completeness — and the detector's
+    positive control: a regex that matched nothing would pass every arm above in silence."""
+    in_scope = {spec.key for spec in EXERCISES if numerals_near_a_duration(spec.instructions)}
+    named = set(DURATION_CLAIMS) | set(DURATION_EXCLUSIONS)
+    assert in_scope == named, (
+        f"spells a period in prose but is in neither register: {sorted(in_scope - named)}; "
+        f"registered but no longer spelling one: {sorted(named - in_scope)}. A row that "
+        f"spells out seconds or minutes either goes in `DURATION_CLAIMS` with the band its "
+        f"own text states, or in `DURATION_EXCLUSIONS` with the reason the number is not a "
+        f"period its prescriptions dose. Rewording to 'the prescribed seconds' is the third "
+        f"answer and the one `bodyweight_anaerobic_circuit` took: it leaves this set."
     )
 
 

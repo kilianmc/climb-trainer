@@ -19,7 +19,7 @@
  * in insertion order, which is not `sort_order`), and if the payload ever came back interleaved
  * the screen would *show* that rather than quietly tidying it away.
  */
-import type { LibraryExercise, Prescription, ReferenceRow } from '../api/types';
+import type { LibraryExercise, Prescription, ProtocolKind } from '../api/types';
 
 /** One aspect's run of exercises, in payload order. */
 export interface AspectGroup {
@@ -28,8 +28,14 @@ export interface AspectGroup {
   exercises: LibraryExercise[];
 }
 
-/** `id -> name` for one of the vocabulary's reference lists. */
-export function nameIndex(rows: readonly ReferenceRow[]): ReadonlyMap<number, string> {
+/** The two fields an index needs. A vocabulary row has them; so does a `LibraryExercise`. */
+export interface NamedRow {
+  id: number;
+  name: string;
+}
+
+/** `id -> name` for a vocabulary list, or for the library itself when a link names a row. */
+export function nameIndex(rows: readonly NamedRow[]): ReadonlyMap<number, string> {
   return new Map(rows.map((row) => [row.id, row.name]));
 }
 
@@ -86,6 +92,12 @@ export function humanise(value: string): string {
  * protocol.
  */
 export function prescriptionLine(prescription: Prescription): string {
+  return prescriptionTerms(prescription).join(' · ');
+}
+
+/** The same terms as a list, with the intensity ANCHORED when the caller passes one: without
+ *  one the percentage never says what it is of (see `library/intensity.ts`). */
+export function prescriptionTerms(prescription: Prescription, anchor?: string): readonly string[] {
   const terms: string[] = [
     `${String(prescription.sets)} ${prescription.sets === 1 ? 'set' : 'sets'}`,
   ];
@@ -98,8 +110,19 @@ export function prescriptionLine(prescription: Prescription): string {
   if (rest_between_sets_seconds !== null) {
     terms.push(`${String(rest_between_sets_seconds)}s between sets`);
   }
-  if (intensity_pct !== null) terms.push(`${String(intensity_pct)}% intensity`);
+  if (intensity_pct !== null) {
+    terms.push(
+      anchor === undefined
+        ? `${String(intensity_pct)}% intensity`
+        : `${String(intensity_pct)}% ${anchor}`,
+    );
+  }
   if (target_rpe !== null) terms.push(`RPE ${String(target_rpe)}`);
 
-  return terms.join(' · ');
+  return terms;
+}
+
+/** The protocol badge, or null where it would read "Other" and be worse than absent. */
+export function protocolBadge(kind: ProtocolKind): string | null {
+  return kind === 'other' ? null : humanise(kind);
 }

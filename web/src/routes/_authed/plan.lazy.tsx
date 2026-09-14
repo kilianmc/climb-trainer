@@ -3,9 +3,11 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 
 import type {
   LibraryExercise,
+  PlanBlock,
   PlanMicrocycle,
   PlanShortfall,
   PlanTree,
+  Phase,
   Profile,
   SessionCompletion,
   Vocabulary,
@@ -13,6 +15,8 @@ import type {
 import { ApiError } from '../../api/client';
 import { useAuth } from '../../auth/AuthProvider';
 import { useLibrary } from '../../library/api';
+import type { ExerciseVocabulary } from '../../library/ExerciseDetail';
+import { ExerciseDetail, exerciseVocabulary } from '../../library/ExerciseDetail';
 import { humanise } from '../../library/browse';
 import { IconCollapseAll, IconExpandAll } from '../../ui/icons';
 import type { PhaseGuides } from '../../plan/PhaseGuide';
@@ -20,6 +24,7 @@ import { PhaseGuideNote, phaseGuides, phaseLabel } from '../../plan/PhaseGuide';
 import { PhaseWeekTable } from '../../plan/PhaseWeekTable';
 import { PlanTimeline } from '../../plan/PlanTimeline';
 import { useActivePlanView, useCreatePlan, usePlanPreview } from '../../plan/api';
+import type { BlockOutcome } from '../../plan/completion';
 import {
   BLOCK_MARK_LABEL,
   blockOutcome,
@@ -520,6 +525,8 @@ function PlanBody({
   // phases, so the guide is indexed rather than searched per section.
   const index = exercisesByKey(exercises);
   const guides = phaseGuides(vocabulary);
+  // The third index built ONCE here, for the reason the other two are: 672 blocks at worst.
+  const detail = exerciseVocabulary(vocabulary, exercises);
 
   const storageKey = planKey(plan);
   // ONE clock read for the whole body, so the phase badges and the default-open block agree.
@@ -647,6 +654,7 @@ function PlanBody({
                     key={microcycle.week_no}
                     microcycle={microcycle}
                     index={index}
+                    detail={detail}
                     guides={guides}
                     completion={completion}
                   />
@@ -689,11 +697,13 @@ function PlanBody({
 function WeekCard({
   microcycle,
   index,
+  detail,
   guides,
   completion,
 }: {
   microcycle: PlanMicrocycle;
   index: ReadonlyMap<string, LibraryExercise>;
+  detail: ExerciseVocabulary;
   guides: PhaseGuides;
   completion: ReadonlyMap<number, SessionCompletion>;
 }) {
@@ -731,27 +741,18 @@ function WeekCard({
 
             {session.blocks.length > 0 && (
               <ul className="ct-app__terms">
-                {session.blocks.map((block) => {
-                  // Which PART got done (#95). Both the word and the row's edge are keyed on the
-                  // row's OWN `data-done`, so no enclosing phase or session can repaint it.
-                  const outcome = blockOutcome(marks, block.id);
-                  return (
-                    <li
-                      className="ct-app__part"
-                      data-done={outcome ?? undefined}
-                      key={block.order_index}
-                    >
-                      {outcome === null ? null : (
-                        <span className="ct-app__mark" data-done={outcome}>
-                          {BLOCK_MARK_LABEL[outcome]}
-                        </span>
-                      )}
-                      <strong>{exerciseLabel(block.exercise_key, index)}</strong>{' '}
-                      {humanise(block.aspect_key)} · {setsLine(block, microcycle.phase)}
-                      {block.shortfall !== null && <ShortfallNotice shortfall={block.shortfall} />}
-                    </li>
-                  );
-                })}
+                {/* Which PART got done (#95) — read here, worn on the row's OWN `data-done`
+                    inside `BlockRow`, so no enclosing phase or session can repaint it. */}
+                {session.blocks.map((block) => (
+                  <BlockRow
+                    key={block.order_index}
+                    block={block}
+                    phase={microcycle.phase}
+                    index={index}
+                    detail={detail}
+                    outcome={blockOutcome(marks, block.id)}
+                  />
+                ))}
               </ul>
             )}
 
@@ -766,6 +767,60 @@ function WeekCard({
           </details>
         );
       })}
+    </li>
+  );
+}
+
+/** ⚠️ The panel MOUNTS ON FIRST OPEN and never unmounts: 672 blocks at ~30 nodes each is 20k
+ *  for every phase toggle to reconcile. `<details>` still owns keyboard and expanded state. */
+function BlockRow({
+  block,
+  phase,
+  index,
+  detail,
+  outcome,
+}: {
+  block: PlanBlock;
+  phase: Phase;
+  index: ReadonlyMap<string, LibraryExercise>;
+  detail: ExerciseVocabulary;
+  outcome: BlockOutcome | null;
+}) {
+  const [opened, setOpened] = useState(false);
+  const exercise = index.get(block.exercise_key);
+
+  const line = (
+    <>
+      {outcome === null ? null : (
+        <span className="ct-app__mark" data-done={outcome}>
+          {BLOCK_MARK_LABEL[outcome]}
+        </span>
+      )}
+      <span className="ct-app__partline">
+        <strong>{exerciseLabel(block.exercise_key, index)}</strong> {humanise(block.aspect_key)} ·{' '}
+        {setsLine(block, phase)}
+      </span>
+    </>
+  );
+
+  return (
+    <li className="ct-app__part" data-done={outcome ?? undefined}>
+      {/* ⚠️ A key this client has never heard of stays FLAT: `exerciseLabel` still names it,
+          and an empty panel would promise detail this client has none of. */}
+      {exercise === undefined ? (
+        line
+      ) : (
+        <details
+          className="ct-app__disclosure ct-app__disclosure--part"
+          onToggle={(event) => {
+            if (event.currentTarget.open) setOpened(true);
+          }}
+        >
+          <summary>{line}</summary>
+          {opened ? <ExerciseDetail exercise={exercise} vocabulary={detail} /> : null}
+        </details>
+      )}
+      {block.shortfall !== null && <ShortfallNotice shortfall={block.shortfall} />}
     </li>
   );
 }

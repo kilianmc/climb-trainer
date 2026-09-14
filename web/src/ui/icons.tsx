@@ -515,3 +515,17 @@ export function IconSortOldest(props: IconProps) {
     </Icon>
   );
 }
+
+/** Art pending. ABSTRACT on purpose — a ridge and a dot, never a figure — and `r` is
+ *  `ICON_DISC_DIAMETER / ICON_SIDE` of the 24 grid, so the disc matches the real slices. */
+export function IconArtPending(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <circle className="ct-app__artpendingdisc" cx="12" cy="12" r="9.39" stroke="none" />
+      <g className="ct-app__artpendingmark">
+        <path d="M7.6 15.1 10.9 10.6 13.3 13.8 15 11.8 16.8 15.1" />
+        <circle cx="15.3" cy="8.6" r="1.1" />
+      </g>
+    </Icon>
+  );
+}

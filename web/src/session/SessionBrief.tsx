@@ -1,4 +1,6 @@
 import type { LibraryExercise, PlanSession, PlanTree, Vocabulary } from '../api/types';
+import type { ExerciseVocabulary } from '../library/ExerciseDetail';
+import { ExerciseDetail } from '../library/ExerciseDetail';
 import type { BlockMarks, CompletionBadge } from '../plan/completion';
 import { BLOCK_MARK_LABEL, blockOutcome } from '../plan/completion';
 import { PhaseGuideNote, PlanFacts, phaseGuides, phaseLabel } from '../plan/PhaseGuide';
@@ -30,6 +32,7 @@ export function SessionBrief({
   plan,
   vocabulary,
   exercises,
+  detail,
   run,
   readOnly,
   stale,
@@ -54,6 +57,8 @@ export function SessionBrief({
    *  phase reminder is absent while it is missing. See `routes/_authed/session.lazy.tsx`. */
   vocabulary: Vocabulary | undefined;
   exercises: ReadonlyMap<string, LibraryExercise>;
+  /** `null` until the vocabulary lands, which leaves the block rows flat. */
+  detail: ExerciseVocabulary | null;
   run: SessionRun;
   readOnly: boolean;
   /** A finished run holding sets that never reached the server, or `null`. Whichever session it
@@ -63,7 +68,7 @@ export function SessionBrief({
   finished: RunRecord | null;
   onStart: (session: PlanSession, marks: BlockMarks | null) => void;
 }) {
-  const offer = { plan, vocabulary, exercises, run, finished, onStart };
+  const offer = { plan, vocabulary, exercises, detail, run, finished, onStart };
 
   return (
     <div className="ct-app__brief">
@@ -152,6 +157,7 @@ function SessionOffer({
   plan,
   vocabulary,
   exercises,
+  detail,
   run,
   finished,
   onStart,
@@ -167,6 +173,8 @@ function SessionOffer({
   plan: PlanTree | null;
   vocabulary: Vocabulary | undefined;
   exercises: ReadonlyMap<string, LibraryExercise>;
+  /** `null` until `GET /api/vocabulary` lands, which leaves the block rows flat. */
+  detail: ExerciseVocabulary | null;
   run: SessionRun;
   finished: RunRecord | null;
   onStart: (session: PlanSession, marks: BlockMarks | null) => void;
@@ -189,6 +197,7 @@ function SessionOffer({
         plan={plan}
         vocabulary={vocabulary}
         exercises={exercises}
+        detail={detail}
         run={run}
       />
       {state === 'unfinished' || state === 'unsaved' ? (
@@ -311,6 +320,7 @@ function SessionCard({
   plan,
   vocabulary,
   exercises,
+  detail,
   run,
 }: {
   session: PlanSession;
@@ -322,6 +332,7 @@ function SessionCard({
   plan: PlanTree | null;
   vocabulary: Vocabulary | undefined;
   exercises: ReadonlyMap<string, LibraryExercise>;
+  detail: ExerciseVocabulary | null;
   run: SessionRun;
 }) {
   const loggable = loggableSets(session);
@@ -351,15 +362,32 @@ function SessionCard({
             // Which PART is logged, from the server's own `done_block_ids`, so a reload keeps
             // the day's work — and both channels are keyed on the row's OWN `data-done`.
             const outcome = blockOutcome(marks, block.id);
-            return (
-              <li className="ct-app__part" data-done={outcome ?? undefined} key={block.order_index}>
+            const exercise = detail === null ? undefined : exercises.get(block.exercise_key);
+            const line = (
+              <>
                 {outcome === null ? null : (
                   <span className="ct-app__mark" data-done={outcome}>
                     {BLOCK_MARK_LABEL[outcome]}
                   </span>
                 )}
-                <strong>{exerciseLabel(block.exercise_key, exercises)}</strong> {block.sets.length}{' '}
-                set{block.sets.length === 1 ? '' : 's'}
+                <span className="ct-app__partline">
+                  <strong>{exerciseLabel(block.exercise_key, exercises)}</strong>{' '}
+                  {block.sets.length} set{block.sets.length === 1 ? '' : 's'}
+                </span>
+              </>
+            );
+            return (
+              <li className="ct-app__part" data-done={outcome ?? undefined} key={block.order_index}>
+                {/* ⚠️ FLAT with no vocabulary and on a key this client does not know: the row
+                    still names the work, and an empty panel would promise detail it lacks. */}
+                {exercise === undefined || detail === null ? (
+                  line
+                ) : (
+                  <details className="ct-app__disclosure ct-app__disclosure--part">
+                    <summary>{line}</summary>
+                    <ExerciseDetail exercise={exercise} vocabulary={detail} />
+                  </details>
+                )}
               </li>
             );
           })}

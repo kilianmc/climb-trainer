@@ -113,6 +113,9 @@ export interface OpenOutcome {
 export interface ItemView {
   readonly blockIndex: number;
   readonly label: string;
+  /** ⚠️ Read off the FROZEN timeline, not the live plan: a second device may have re-planned
+   *  mid-run, and the player must name the exercise the run actually started. */
+  readonly exerciseKey: string;
   readonly setCount: number;
   readonly status: ItemStatus;
 }
@@ -1049,6 +1052,7 @@ export function useSessionRun(): SessionRun {
       return {
         blockIndex: item.blockIndex,
         label: range?.label ?? '',
+        exerciseKey: range?.exerciseKey ?? '',
         setCount: range?.setsInBlock ?? 0,
         status: item.status,
       };
