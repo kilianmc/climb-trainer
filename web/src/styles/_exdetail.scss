@@ -33,6 +33,11 @@
     text-align: center;
   }
 
+  &__exshot--compact {
+    aspect-ratio: auto;
+    block-size: 7rem;
+  }
+
   &__exshotimg {
     inline-size: auto;
     block-size: auto;

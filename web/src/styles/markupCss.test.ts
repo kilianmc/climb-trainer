@@ -159,7 +159,12 @@ const COMPLETION_LEAK = /\[data-completion[^\]]*\][^,{>]*\s\.ct-app__completion/
  *  property of the ROW, so no `[data-done…]` ancestor may reach a row or a mark below it. */
 const DONE_LEAK = /\[data-done[^\]]*\][^,{>]*\s\.ct-app__(?:mark|part)/;
 
-/** Every selector where a band or a mark leaks down the tree, as written in the compiled CSS. */
+/** ⚠️ The same invariant with no attribute in it (#97): a compact shot and a flush list are
+ *  properties of their own element, so no `__player` or `__card` may reach one below it. */
+const CONTAINER_LEAK = /\.ct-app__(?:player|card)[^,{>]*\s\.ct-app__(?:exshot|items)/;
+
+/** Every selector where a band, a mark or a container's variant leaks down the tree, as written
+ *  in the compiled CSS. */
 function leaks(css: string, pattern: RegExp): string[] {
   return preludes(css)
     .flatMap((prelude) => prelude.split(','))
@@ -173,6 +178,10 @@ function completionLeaks(css: string): string[] {
 
 function doneLeaks(css: string): string[] {
   return leaks(css, DONE_LEAK);
+}
+
+function containerLeaks(css: string): string[] {
+  return leaks(css, CONTAINER_LEAK);
 }
 
 /**
@@ -308,6 +317,13 @@ describe('markup and CSS describe each other', () => {
     expect(compiled).toContain('.ct-app__mark[data-done=');
   });
 
+  it('lets no player or card reach an exshot or an items list nested below it', () => {
+    expect(containerLeaks(compiled)).toEqual([]);
+    // Not vacuous: both variants are really emitted, each keyed on its own element's class.
+    expect(compiled).toContain('.ct-app__exshot--compact');
+    expect(compiled).toContain('.ct-app__items--flush');
+  });
+
   it('gives the pill to the PHASE badge alone in dark, never to a day badge', () => {
     expect(ungatedPills(compiled)).toEqual([]);
     // Not vacuous: the real stylesheet emits pill rules, from both of the two gates.
@@ -369,6 +385,32 @@ describe('positive control', () => {
       [],
     );
     expect(doneLeaks(".ct-app__part[data-done='missed'] { border-color: red; }")).toEqual([]);
+  });
+
+  it('reports the container-keyed shot and list, the same shape with no attribute in it', () => {
+    expect(containerLeaks('.ct-app__player .ct-app__exshot { block-size: 7rem; }')).toEqual([
+      '.ct-app__player .ct-app__exshot',
+    ]);
+    expect(containerLeaks('.ct-app__card .ct-app__items { padding-inline: 0; }')).toEqual([
+      '.ct-app__card .ct-app__items',
+    ]);
+    // At any depth: the shot sits five levels under the player, so no combinator can reach it.
+    expect(
+      containerLeaks(
+        '.ct-app__player .ct-app__player-body .ct-app__disclosure .ct-app__exshot { block-size: 1rem; }',
+      ),
+    ).toHaveLength(1);
+  });
+
+  it('allows the element-owned variant, and the child combinator on the same argument', () => {
+    expect(containerLeaks('.ct-app__exshot--compact { block-size: 7rem; }')).toEqual([]);
+    expect(containerLeaks('.ct-app__items--flush { padding-inline: 0; }')).toEqual([]);
+    expect(containerLeaks('.ct-app__card > .ct-app__items { padding-inline: 0; }')).toEqual([]);
+    // The item's own state word is NOT this shape, and is flat on purpose: `__item` is neither
+    // container, so nothing here touches the pair that buys specificity over source order.
+    expect(
+      containerLeaks(".ct-app__item[data-state='completed'] .ct-app__item-state { color: red; }"),
+    ).toEqual([]);
   });
 
   it('allows the two shapes that CANNOT be reached from an ancestor', () => {

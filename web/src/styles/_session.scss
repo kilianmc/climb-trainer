@@ -68,11 +68,6 @@
     justify-content: center;
   }
 
-  &__player &__exshot {
-    aspect-ratio: auto;
-    block-size: 7rem;
-  }
-
   &__player-banner {
     display: flex;
     flex-wrap: wrap;
@@ -193,7 +188,7 @@
     list-style: none;
   }
 
-  &__card &__items {
+  &__items--flush {
     padding-inline: 0;
   }
 
