@@ -842,9 +842,8 @@ describe('⚠️ the edit path, where the two ways to lose data are', () => {
     const before = reads.length;
     fireEvent.change(screen.getByLabelText(/how it went/i), { target: { value: 'edited' } });
     fireEvent.click(screen.getByRole('button', { name: 'Save this entry' }));
-    // The form leaves edit mode only after `onSuccess` has awaited the invalidation, so the
-    // Edit control being back is the re-read having gone out — and this waits for the SCREEN.
-    // The timeout clears the 500ms gate above with room for a loaded parallel run.
+    // Edit being back means `onSuccess` awaited the invalidation, so the re-read has gone out;
+    // the timeout clears the 500 ms gate with room for a loaded parallel run.
     await screen.findByRole('button', { name: 'Edit' }, { timeout: 5000 });
     expect(reads.length).toBeGreaterThan(before);
   });

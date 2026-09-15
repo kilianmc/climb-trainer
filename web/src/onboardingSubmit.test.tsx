@@ -569,9 +569,8 @@ it('moves the bar from the PENDING write, before any response has arrived', asyn
 
   fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
 
-  // 200 ms of PATCH still to run: nothing has answered, and the bar has already moved. Both
-  // facts in ONE wait — the bar reaching the number AFTER a response landed would prove the
-  // opposite of this test, so `patchesAnswered` has to still be 0 when it gets there.
+  // 200 ms of PATCH still to run, so nothing has answered and the bar has ALREADY moved. One
+  // wait for both: reaching the number after a response landed would prove the opposite.
   await waitFor(() => {
     expect(patchesAnswered).toBe(0);
     expect(screen.getByRole('progressbar')).toHaveAttribute('aria-valuenow', SAVED_PERCENT);
