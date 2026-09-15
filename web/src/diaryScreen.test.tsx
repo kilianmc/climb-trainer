@@ -1,6 +1,6 @@
 import { QueryClientProvider } from '@tanstack/react-query';
 import { RouterProvider, createMemoryHistory } from '@tanstack/react-router';
-import { act, fireEvent, render, screen, within } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { Journal, JournalEntry, JournalPlan, Profile, Vocabulary } from './api/types';
@@ -175,6 +175,9 @@ let renameStatus = 200;
 /** Held open, the UNSCOPED read stays in flight so the scope switch can be observed mid-flight
  *  rather than one already-resolved tick later. `null` is the default: resolve immediately. */
 let unscopedGate: Promise<void> | null = null;
+/** Held open, a SAVE stays in flight, so the re-read its success triggers cannot have been
+ *  issued yet. `null` is the default: answer the PUT immediately. */
+let putGate: Promise<void> | null = null;
 
 function stubFetch() {
   reads = [];
@@ -212,25 +215,18 @@ function stubFetch() {
       if (path.startsWith('/api/journal/')) {
         const sent = typeof init?.body === 'string' ? init.body : 'null';
         puts.push({ path, body: JSON.parse(sent) });
-        return Promise.resolve(
+        const saved = () =>
           json({
             id: 1,
             client_uuid: path.slice('/api/journal/'.length),
             entry_date: '2026-05-12',
             logged_session_id: 909,
-          }),
-        );
+          });
+        return putGate === null ? Promise.resolve(saved()) : putGate.then(saved);
       }
       return Promise.reject(new Error(`unexpected request: ${path}`));
     }),
   );
-}
-
-async function settle(): Promise<void> {
-  await act(async () => {
-    await Promise.resolve();
-    await new Promise((resolve) => setTimeout(resolve, 0));
-  });
 }
 
 function renderDiary(tokenScope: 'user' | 'demo' = 'user') {
@@ -266,6 +262,7 @@ afterEach(() => {
   profile = PROFILE;
   scopedBody = SCOPED;
   unscopedGate = null;
+  putGate = null;
   localStorage.clear();
 });
 
@@ -277,7 +274,6 @@ describe('the entry list', () => {
   it('shows the plan, the phase and the week on the row, phase copy from the vocabulary', async () => {
     renderDiary();
     const row = await screen.findByRole('button', { name: FIRST_ROW });
-    await settle();
     // "Max strength" is the GUIDE's label; "strength" is the enum value the server sent.
     expect(row.textContent).toContain('Road to 6B');
     expect(row.textContent).toContain('Max strength');
@@ -328,8 +324,7 @@ describe('the entry list', () => {
     await screen.findByRole('button', { name: FIRST_ROW });
     expect(document.body.textContent).not.toMatch(/as far back as one read goes/i);
     fireEvent.click(screen.getByRole('button', { name: 'Show old plans' }));
-    // ⚠️ `findBy*` POLLS. `settle()` is one macrotask, and the whole-history read is a second
-    // request that can land after it — a fixed tick makes this a coin toss under load.
+    // ⚠️ The whole-history read is a SECOND request, issued only once the first has landed.
     expect(await screen.findByText(/as far back as one read goes/i)).toBeTruthy();
   });
 });
@@ -338,14 +333,12 @@ describe('sorting is client-side over what is already loaded', () => {
   it('reorders the rows without issuing a request', async () => {
     renderDiary();
     await screen.findByRole('button', { name: FIRST_ROW });
-    await settle();
     const before = reads.length;
     const dates = () =>
       [...document.querySelectorAll('.ct-app__diarydate')].map((node) => node.textContent);
     expect(dates()).toEqual(['12 May 2026', '4 May 2026']);
 
     fireEvent.click(screen.getByRole('button', { name: SORT_NEWEST }));
-    await settle();
     expect(dates()).toEqual(['4 May 2026', '12 May 2026']);
     // ⚠️ THE POINT: order is not part of the query key, so no read went out.
     expect(reads).toHaveLength(before);
@@ -361,11 +354,9 @@ describe('sorting is client-side over what is already loaded', () => {
     expect(screen.getAllByRole('button', { name: /first$/ })).toHaveLength(1);
 
     fireEvent.click(sort());
-    await settle();
     expect(sort()).toHaveAccessibleName(SORT_OLDEST);
     // The glyph flipped with it — the two sort icons are the only `path` pair on this control.
     fireEvent.click(sort());
-    await settle();
     expect(sort()).toHaveAccessibleName(SORT_NEWEST);
   });
 });
@@ -375,7 +366,7 @@ describe('the whole history is behind its own control and its own cache entry', 
     scopedBody = { ...SCOPED, has_entries_outside_plan: false };
     renderDiary();
     await screen.findByRole('button', { name: FIRST_ROW });
-    await settle();
+    await screen.findByText(/These readings, as numbers/);
     expect(screen.queryByRole('button', { name: 'Show old plans' })).toBeNull();
   });
 
@@ -386,10 +377,11 @@ describe('the whole history is behind its own control and its own cache entry', 
     });
     renderDiary();
     await screen.findByRole('button', { name: FIRST_ROW });
-    await settle();
 
     fireEvent.click(screen.getByRole('button', { name: 'Show old plans' }));
-    await settle();
+    await waitFor(() => {
+      expect(reads).toHaveLength(2);
+    });
 
     // ⚠️ STILL in flight, which is the point: without `keepPreviousData` the gate meets the empty
     // new key with its loading page, and that collapse is what clamps the reader to the top.
@@ -404,9 +396,8 @@ describe('the whole history is behind its own control and its own cache entry', 
   it('opens every plan grouped, newest plan first, and going back costs no read', async () => {
     renderDiary();
     await screen.findByRole('button', { name: FIRST_ROW });
-    await settle();
     fireEvent.click(screen.getByRole('button', { name: 'Show old plans' }));
-    // ⚠️ Same race as above, and this one lost it half the time: wait for the DOM, not a tick.
+    // ⚠️ Same second request as above: this heading cannot exist until it has landed.
     await screen.findByRole('heading', { name: 'Winter base', level: 2 });
 
     const groups = [...document.querySelectorAll('.ct-app__diarygroup h2')].map(
@@ -421,7 +412,6 @@ describe('the whole history is behind its own control and its own cache entry', 
 
     const after = reads.length;
     fireEvent.click(screen.getByRole('button', { name: 'Only current plan' }));
-    await settle();
     expect(screen.getByRole('button', { name: 'Show old plans' })).toBeTruthy();
     expect(reads).toHaveLength(after);
   });
@@ -438,7 +428,6 @@ describe('ONE chart, and nothing scored yet is a sentence rather than an empty f
   it('draws a single plot and names all three series by their line style', async () => {
     renderDiary();
     await screen.findByRole('button', { name: FIRST_ROW });
-    await settle();
 
     expect(document.querySelectorAll('.ct-app__chartplot')).toHaveLength(1);
     const legend = document.querySelector('.ct-app__chartlegend')?.textContent ?? '';
@@ -454,7 +443,6 @@ describe('ONE chart, and nothing scored yet is a sentence rather than an empty f
   it('is LINES only — not one marker shape is left on the plot', async () => {
     renderDiary();
     await screen.findByRole('button', { name: FIRST_ROW });
-    await settle();
     const plot = document.querySelector('.ct-app__chartplot');
 
     // Kilian: "i dont like the triangles or squares, just keep the lines."
@@ -465,7 +453,6 @@ describe('ONE chart, and nothing scored yet is a sentence rather than an empty f
   it('rules the axis in the plan’s weeks and writes only some of them down', async () => {
     renderDiary();
     await screen.findByRole('button', { name: FIRST_ROW });
-    await settle();
     const ticks = document.querySelectorAll('.ct-app__chartweek');
     const labels = [...document.querySelectorAll('.ct-app__chartplot text')]
       .map((node) => node.textContent ?? '')
@@ -490,7 +477,6 @@ describe('ONE chart, and nothing scored yet is a sentence rather than an empty f
     };
     renderDiary();
     await screen.findByRole('button', { name: FIRST_ROW });
-    await settle();
 
     expect(document.body.textContent).toMatch(/Nothing scored yet/);
     expect(document.querySelectorAll('.ct-app__chartplot')).toHaveLength(0);
@@ -521,7 +507,7 @@ describe('the weigh-in is a COLUMN of the readings table, and the only weight an
     };
     renderDiary();
     fireEvent.click(await screen.findByText(/These readings, as numbers/));
-    // ⚠️ The column waits on the PROFILE read, a second request one macrotask can miss.
+    // ⚠️ The column waits on the PROFILE read, which is a second request.
     await screen.findByRole('columnheader', { name: 'Weight' });
 
     // Oldest first, one row per weigh-in the PAYLOAD holds — counted off the payload rather
@@ -543,7 +529,7 @@ describe('the weigh-in is a COLUMN of the readings table, and the only weight an
   it('is the only weight surface — the Body weight section is DELETED, not moved', async () => {
     renderDiary();
     await screen.findByRole('button', { name: FIRST_ROW });
-    await settle();
+    await screen.findByText(/These readings, as numbers/);
 
     // Kilian: "the body weight section, just delete it all, leave the data inside the 'these
     // readings, as numbers'." No heading, no average, no last weigh-in, no direction word.
@@ -558,7 +544,7 @@ describe('the whole history is ONE chart per plan, each ruled in its own weeks',
     renderDiary();
     await screen.findByRole('button', { name: FIRST_ROW });
     fireEvent.click(screen.getByRole('button', { name: 'Show old plans' }));
-    // ⚠️ `findBy*` POLLS: the whole-history read is a SECOND request and `settle()` is one tick.
+    // ⚠️ The whole-history read is a SECOND request, issued only once the first has landed.
     await screen.findByRole('heading', { name: 'Winter base', level: 2 });
     return [...document.querySelectorAll('.ct-app__diarygroup')];
   }
@@ -620,14 +606,12 @@ describe('the whole history is ONE chart per plan, each ruled in its own weeks',
 
     // The CURRENT section's own control: its list flips and no other section moves.
     fireEvent.click(within(groups[0] as HTMLElement).getByRole('button', { name: SORT_NEWEST }));
-    await settle();
     expect(datesIn(groups[0])).toEqual(['4 May 2026', '12 May 2026']);
     expect(names()).toEqual(['Road to 6B', 'Winter base', 'Outside any plan']);
 
     // ⚠️ A DIFFERENT control with a different job (Kilian): which OLD section leads, never a
     // second entry sort — and the plan she is on is not one of the sections it orders.
     fireEvent.click(screen.getByRole('button', { name: PLAN_SORT_NEWEST }));
-    await settle();
     expect(names()).toEqual(['Road to 6B', 'Outside any plan', 'Winter base']);
     // Client-side, every press of it: not one of these is part of a query key.
     expect(reads).toHaveLength(before);
@@ -653,7 +637,6 @@ describe('the legend’s checkbox is what takes a line off the plot', () => {
   it('draws only the ticked lines, and still names all three by their style', async () => {
     renderDiary();
     await screen.findByRole('button', { name: FIRST_ROW });
-    await settle();
     expect(paths()).toHaveLength(3);
 
     fireEvent.click(screen.getByRole('checkbox', { name: /Sleep/ }));
@@ -668,7 +651,6 @@ describe('the legend’s checkbox is what takes a line off the plot', () => {
   it('shows ONE series on its own, which is what the checkboxes are for', async () => {
     renderDiary();
     await screen.findByRole('button', { name: FIRST_ROW });
-    await settle();
     fireEvent.click(screen.getByRole('checkbox', { name: /Energy/ }));
     fireEvent.click(screen.getByRole('checkbox', { name: /Sleep/ }));
 
@@ -684,10 +666,9 @@ describe('the legend’s checkbox is what takes a line off the plot', () => {
   it('keeps every value in the table, whatever the plot is showing', async () => {
     renderDiary();
     await screen.findByRole('button', { name: FIRST_ROW });
-    await settle();
     fireEvent.click(screen.getByRole('checkbox', { name: /Sleep/ }));
     fireEvent.click(screen.getByText(/These readings, as numbers/));
-    // ⚠️ The weigh-in column waits on the PROFILE read, which one macrotask can miss.
+    // ⚠️ The weigh-in column waits on the PROFILE read, which is a second request.
     await screen.findByRole('columnheader', { name: 'Weight' });
 
     // ⚠️ The CELLS, not the headers: a header row is spelled from `SERIES_NAMES` and stays put
@@ -726,7 +707,6 @@ describe('show_body_metrics off means NO weight number on this screen', () => {
     scopedBody = { ...SCOPED, trends: { body_weight_kg: null, body_weight_direction: null } };
     renderDiary();
     const row = await screen.findByRole('button', { name: FIRST_ROW });
-    await settle();
     // The payload still CARRIES it — that is deliberate, for the edit path.
     expect(SCOPED.entries[0]?.body_weight_kg).toBe('71.4');
     expect(document.body.innerHTML).not.toContain('71.4');
@@ -735,7 +715,7 @@ describe('show_body_metrics off means NO weight number on this screen', () => {
     expect(document.querySelectorAll('.ct-app__chartplot')).toHaveLength(1);
 
     fireEvent.click(row);
-    await settle();
+    await screen.findByRole('dialog');
     const sheet = within(screen.getByRole('dialog'));
     expect(sheet.queryByLabelText(/weight today/i)).toBeNull();
     expect(screen.getByRole('dialog').innerHTML).not.toContain('71.4');
@@ -762,9 +742,8 @@ describe('show_body_metrics off means NO weight number on this screen', () => {
     };
     renderDiary();
     await screen.findByRole('button', { name: FIRST_ROW });
-    await settle();
     fireEvent.click(screen.getByText(/These readings, as numbers/));
-    await settle();
+    await screen.findByRole('table');
 
     const table = screen.getByRole('table');
     expect([...table.querySelectorAll('th')].map((cell) => cell.textContent)).toEqual([
@@ -797,9 +776,8 @@ describe('the demo mount reads the diary but is offered no edit', () => {
   it('hides the Edit control entirely rather than greying it out', async () => {
     renderDiary('demo');
     const row = await screen.findByRole('button', { name: FIRST_ROW });
-    await settle();
     fireEvent.click(row);
-    await settle();
+    await screen.findByRole('dialog');
     const sheet = within(screen.getByRole('dialog'));
     // Reading works; #65's rule is absence, not a disabled button.
     expect(sheet.getByText('crimps felt sharp')).toBeTruthy();
@@ -810,9 +788,8 @@ describe('the demo mount reads the diary but is offered no edit', () => {
   it('offers it for a real principal', async () => {
     renderDiary();
     const row = await screen.findByRole('button', { name: FIRST_ROW });
-    await settle();
     fireEvent.click(row);
-    await settle();
+    await screen.findByRole('dialog');
     expect(screen.getByRole('button', { name: 'Edit' })).toBeTruthy();
   });
 });
@@ -821,11 +798,10 @@ describe('⚠️ the edit path, where the two ways to lose data are', () => {
   async function openAndEdit(uuidRow: RegExp) {
     renderDiary();
     const row = await screen.findByRole('button', { name: uuidRow });
-    await settle();
     fireEvent.click(row);
-    await settle();
+    await screen.findByRole('dialog');
     fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
-    await settle();
+    await screen.findByLabelText(/how it went/i);
   }
 
   it('PUTs the entry’s OWN client_uuid, so one day keeps one row', async () => {
@@ -833,7 +809,7 @@ describe('⚠️ the edit path, where the two ways to lose data are', () => {
     await openAndEdit(/4 May 2026/);
     fireEvent.change(screen.getByLabelText(/how it went/i), { target: { value: 'edited' } });
     fireEvent.click(screen.getByRole('button', { name: 'Save this entry' }));
-    await settle();
+    await screen.findByRole('button', { name: 'Edit' });
 
     expect(puts.map((put) => put.path)).toEqual([`/api/journal/${UUID_TWO}`]);
   });
@@ -846,7 +822,7 @@ describe('⚠️ the edit path, where the two ways to lose data are', () => {
       target: { value: 'edited blind to the weight' },
     });
     fireEvent.click(screen.getByRole('button', { name: 'Save this entry' }));
-    await settle();
+    await screen.findByRole('button', { name: 'Edit' });
 
     // ⚠️ THE GUARD. The PUT replaces whole, and nothing on screen showed this number.
     expect(puts).toHaveLength(1);
@@ -859,11 +835,17 @@ describe('⚠️ the edit path, where the two ways to lose data are', () => {
   });
 
   it('re-reads the diary after a save, so the list and the charts cannot lie', async () => {
+    // ⚠️ Held open well past any tick a fixed wait could spend: the re-read is issued from
+    // `onSuccess`, so nothing has gone out while the save is still in flight.
+    putGate = new Promise<void>((resolve) => setTimeout(resolve, 500));
     await openAndEdit(FIRST_ROW);
     const before = reads.length;
     fireEvent.change(screen.getByLabelText(/how it went/i), { target: { value: 'edited' } });
     fireEvent.click(screen.getByRole('button', { name: 'Save this entry' }));
-    await settle();
+    // The form leaves edit mode only after `onSuccess` has awaited the invalidation, so the
+    // Edit control being back is the re-read having gone out — and this waits for the SCREEN.
+    // The timeout clears the 500ms gate above with room for a loaded parallel run.
+    await screen.findByRole('button', { name: 'Edit' }, { timeout: 5000 });
     expect(reads.length).toBeGreaterThan(before);
   });
 });
@@ -879,7 +861,6 @@ describe('the app never recommends losing weight — including near this chart',
     profile = { ...PROFILE, show_body_metrics: metrics };
     renderDiary();
     await screen.findByRole('button', { name: FIRST_ROW });
-    await settle();
     const copy = document.body.innerHTML.toLowerCase();
     expect(forbiddenCopyHits(copy), 'the diary screen').toEqual([]);
   });
@@ -901,7 +882,7 @@ describe('renaming a plan, a finished one included', () => {
     renderDiary();
     await screen.findByRole('button', { name: FIRST_ROW });
     fireEvent.click(screen.getByRole('button', { name: 'Show old plans' }));
-    // ⚠️ The whole-history read is a SECOND request; `findBy*` polls where `settle()` is one tick.
+    // ⚠️ The whole-history read is a SECOND request, issued only once the first has landed.
     await screen.findByRole('heading', { name: 'Winter base', level: 2 });
   }
 
@@ -950,7 +931,7 @@ describe('renaming a plan, a finished one included', () => {
   it('is ABSENT for a demo principal rather than greyed out', async () => {
     renderDiary('demo');
     await screen.findByRole('button', { name: FIRST_ROW });
-    await settle();
+    await screen.findByRole('heading', { name: 'Road to 6B', level: 2 });
     expect(screen.queryByRole('button', { name: /^Rename / })).toBeNull();
     // Reading the plan's name still works — #65's rule is absence, not a disabled control.
     expect(screen.getByRole('heading', { name: 'Road to 6B', level: 2 })).toBeTruthy();
@@ -959,7 +940,7 @@ describe('renaming a plan, a finished one included', () => {
   it('offers it for a real principal, on the plan she is on', async () => {
     renderDiary();
     await screen.findByRole('button', { name: FIRST_ROW });
-    await settle();
+    await screen.findByRole('button', { name: 'Rename Road to 6B' });
     expect(screen.getByRole('button', { name: 'Rename Road to 6B' })).toBeTruthy();
   });
 
@@ -969,7 +950,7 @@ describe('renaming a plan, a finished one included', () => {
   ])('refuses %s before any request goes out', async (_name, typed, said) => {
     renderDiary();
     await screen.findByRole('button', { name: FIRST_ROW });
-    await settle();
+    await screen.findByRole('button', { name: 'Rename Road to 6B' });
     fireEvent.click(screen.getByRole('button', { name: 'Rename Road to 6B' }));
     fireEvent.change(await screen.findByLabelText('Plan name'), { target: { value: typed } });
 
@@ -986,7 +967,6 @@ describe('renaming a plan, a finished one included', () => {
     renameStatus = status;
     renderDiary();
     await screen.findByRole('button', { name: FIRST_ROW });
-    await settle();
     await typeAndSave('Road to 6B', 'Spring block');
 
     const alert = await screen.findByRole('alert', undefined, { timeout: 5000 });
@@ -999,7 +979,7 @@ describe('renaming a plan, a finished one included', () => {
   it('opens with focus in the field and leaves none stranded when it closes', async () => {
     renderDiary();
     await screen.findByRole('button', { name: FIRST_ROW });
-    await settle();
+    await screen.findByRole('button', { name: 'Rename Road to 6B' });
     fireEvent.click(screen.getByRole('button', { name: 'Rename Road to 6B' }));
     expect(document.activeElement).toBe(await screen.findByLabelText('Plan name'));
 

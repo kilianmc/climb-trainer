@@ -1,6 +1,6 @@
 import { QueryClientProvider } from '@tanstack/react-query';
 import { RouterProvider, createMemoryHistory } from '@tanstack/react-router';
-import { act, fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 
 import type {
@@ -217,13 +217,6 @@ function stubFetch() {
   );
 }
 
-async function settle(): Promise<void> {
-  await act(async () => {
-    await Promise.resolve();
-    await new Promise((resolve) => setTimeout(resolve, 0));
-  });
-}
-
 function renderPlan() {
   const auth = createAuth();
   auth.session.set('user-token', 'user');
@@ -293,7 +286,7 @@ function disclosureOf(section: HTMLElement): HTMLDetailsElement {
 it('expands the phase, THEN scrolls to it, THEN moves focus into it', async () => {
   renderPlan();
   expect(await screen.findByRole('button', { name: 'Build a different plan' })).toBeInTheDocument();
-  await settle();
+  const callout = await screen.findByRole('button', { name: /Strength, 1 week, week 2/ });
 
   const section = phaseSection(SECOND_PHASE_ANCHOR);
   // The precondition, which is what makes the ordering matter: week 2's phase is COLLAPSED,
@@ -301,14 +294,14 @@ it('expands the phase, THEN scrolls to it, THEN moves focus into it', async () =
   expect(disclosureOf(section).open).toBe(false);
   expect(moves).toEqual([]);
 
-  const callout = screen.getByRole('button', { name: /Strength, 1 week, week 2/ });
   fireEvent.click(callout);
-  await settle();
 
-  expect(disclosureOf(section).open).toBe(true);
   // Scrolled to the SECTION, and focus landed on that section's own summary with
   // `preventScroll` — in that order, so the scroll was measured against a laid-out phase.
-  expect(moves).toEqual([`scroll:${SECOND_PHASE_ANCHOR}:smooth`, 'focus:summary:true']);
+  await waitFor(() => {
+    expect(disclosureOf(section).open).toBe(true);
+    expect(moves).toEqual([`scroll:${SECOND_PHASE_ANCHOR}:smooth`, 'focus:summary:true']);
+  });
 });
 
 it('scrolls INSTANTLY when reduced motion is preferred', async () => {
@@ -316,22 +309,24 @@ it('scrolls INSTANTLY when reduced motion is preferred', async () => {
   stubReducedMotion(true);
   renderPlan();
   expect(await screen.findByRole('button', { name: 'Build a different plan' })).toBeInTheDocument();
-  await settle();
 
-  fireEvent.click(screen.getByRole('button', { name: /Strength, 1 week, week 2/ }));
-  await settle();
+  fireEvent.click(await screen.findByRole('button', { name: /Strength, 1 week, week 2/ }));
 
   // Reduced motion covers programmatic scrolling too — the movement still happens, instantly.
-  expect(moves).toEqual([`scroll:${SECOND_PHASE_ANCHOR}:auto`, 'focus:summary:true']);
+  await waitFor(() => {
+    expect(moves).toEqual([`scroll:${SECOND_PHASE_ANCHOR}:auto`, 'focus:summary:true']);
+  });
 });
 
 it('persists the newly opened phase under `ct:planPhases`, alongside the one already open', async () => {
   renderPlan();
   expect(await screen.findByRole('button', { name: 'Build a different plan' })).toBeInTheDocument();
-  await settle();
 
-  fireEvent.click(screen.getByRole('button', { name: /Strength, 1 week, week 2/ }));
-  await settle();
+  fireEvent.click(await screen.findByRole('button', { name: /Strength, 1 week, week 2/ }));
+  // The phase being open on screen is what gets written, so read the key once it is.
+  await waitFor(() => {
+    expect(disclosureOf(phaseSection(SECOND_PHASE_ANCHOR)).open).toBe(true);
+  });
 
   const stored: unknown = JSON.parse(localStorage.getItem(PHASE_STORAGE_KEY) ?? 'null');
   expect(stored).toEqual({ v: 1, plan: `plan:${String(PLAN_ID)}`, open: [1, 2] });
@@ -340,7 +335,7 @@ it('persists the newly opened phase under `ct:planPhases`, alongside the one alr
 it('names the current phase in the callout, and only that one', async () => {
   renderPlan();
   expect(await screen.findByRole('button', { name: 'Build a different plan' })).toBeInTheDocument();
-  await settle();
+  await screen.findByRole('button', { name: 'Strength, 1 week, week 2' });
 
   const timeline = document.querySelector('.ct-app__timeline');
   expect(timeline).not.toBeNull();

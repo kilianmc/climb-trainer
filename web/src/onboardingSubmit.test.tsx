@@ -1,6 +1,6 @@
 import { QueryClientProvider } from '@tanstack/react-query';
 import { RouterProvider, createMemoryHistory } from '@tanstack/react-router';
-import { act, fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 
 import type { Profile, Vocabulary } from './api/types';
@@ -140,14 +140,6 @@ function patchRequestBody(): unknown {
   return first;
 }
 
-/** Drain the microtask queue and React's work, inside `act` so no update is unbatched. */
-async function settle(): Promise<void> {
-  await act(async () => {
-    await Promise.resolve();
-    await new Promise((resolve) => setTimeout(resolve, 0));
-  });
-}
-
 function renderOnboarding() {
   const auth = createAuth();
   // Signed in, or `_authed`'s guard redirects to /login and the wizard never renders.
@@ -258,9 +250,11 @@ it('sends exactly the injuries step and celebrates only after the server accepts
     'href',
     '/dashboard',
   );
-  // …and it is still there once every queued microtask and cache write has drained, which
-  // is what makes the assertion non-transient rather than merely lucky.
-  await settle();
+  // …and it is still there once the write has actually landed, which is what makes the
+  // assertion non-transient rather than merely lucky.
+  await waitFor(() => {
+    expect(patchBodies()).toHaveLength(1);
+  });
   expect(screen.getByRole('heading', { name: 'Ready to start your training' })).toBeInTheDocument();
   expect(router.state.location.pathname).toBe('/onboarding');
   // The wizard is gone, not hidden behind the celebration.
@@ -321,6 +315,10 @@ it('distinguishes the committed truth from the optimistic guess', () => {
   expect(percentFor(THREE_OF_FOUR)).not.toBe(TRUTH_PERCENT);
 });
 
+/** PATCHes the stub has actually ANSWERED. `0` is how a test says "still in flight", which
+ *  is the only window in which the optimistic bar is the thing on screen. */
+let patchesAnswered = 0;
+
 /**
  * `patchResponses` and `getResponses` are consumed in order; the last entry repeats. The
  * GET list starts with the successful page load, so a later entry models the network going
@@ -338,6 +336,7 @@ function stubProfile(
 ) {
   let patchCount = 0;
   let getCount = 0;
+  patchesAnswered = 0;
   const gets = options.getResponses ?? [() => json(options.profile ?? HALF_AVAILABILITY)];
   vi.mocked(fetch).mockImplementation((input: unknown, init?: RequestInit) => {
     const url = urlOf(input);
@@ -354,7 +353,10 @@ function stubProfile(
     }
     const responder = patchResponses[Math.min(patchCount, patchResponses.length - 1)];
     patchCount += 1;
-    const respond = () => responder?.() ?? json({ detail: 'unexpected' }, 500);
+    const respond = () => {
+      patchesAnswered += 1;
+      return responder?.() ?? json({ detail: 'unexpected' }, 500);
+    };
     return options.patchDelayMs === undefined
       ? Promise.resolve(respond())
       : new Promise<Response>((resolve) =>
@@ -394,7 +396,11 @@ it('does not credit a step when a CONCURRENT earlier write has failed', async ()
   fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
 
   expect(await screen.findByRole('alert')).toBeInTheDocument();
-  await settle();
+  // The SECOND failure is the last thing to report, so the bar below is the number it
+  // converged on rather than one it is still passing through.
+  await waitFor(() => {
+    expect(screen.getByRole('alert')).toHaveTextContent(/where you are now/i);
+  });
 
   // The bar must converge on what the database holds. Rolling back to the second
   // mutation's snapshot left it one step high — crediting an `available_weekdays` that no
@@ -415,11 +421,11 @@ it('still reports an earlier failure after a later step SUCCEEDS', async () => {
   fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
   fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
 
-  await settle();
-
   // The superseded mutation notified nobody, so this produced NO message at all and the
   // step was silently lost. A later success must not erase a different step's failure.
-  expect(await screen.findByRole('alert')).toHaveTextContent(/availability/i);
+  await waitFor(() => {
+    expect(screen.getByRole('alert')).toHaveTextContent(/availability/i);
+  });
 });
 
 /**
@@ -443,7 +449,10 @@ it('keeps the wizard, the draft and the retry when a write fails', async () => {
 
   fireEvent.click(screen.getByRole('button', { name: 'Save and finish' }));
   expect(await screen.findByRole('alert')).toHaveTextContent(/could not be saved/);
-  await settle();
+  // The write has finished failing once its control is usable again.
+  await waitFor(() => {
+    expect(screen.getByRole('button', { name: 'Save and finish' })).toBeEnabled();
+  });
 
   // Everything the user needs in order to try again must still be here.
   expect(screen.getByRole('heading', { name: 'Injuries' })).toBeInTheDocument();
@@ -481,7 +490,11 @@ it('survives a background refetch failure with data already in the cache', async
     await queryClient.invalidateQueries({ queryKey: ['profile'] });
   });
 
-  await settle();
+  // Without waiting for the error to be IN the cache these assertions would pass simply by
+  // running before it arrived — the failure they guard against would never be on screen.
+  await waitFor(() => {
+    expect(queryClient.getQueryState(['profile'])?.status).toBe('error');
+  });
   // `isRefetchError`, not `isLoadingError` — the data is still there, so the screen is too,
   // and so is the draft that lives inside it.
   expect(screen.getByRole('heading', { name: 'Injuries' })).toBeInTheDocument();
@@ -555,9 +568,14 @@ it('moves the bar from the PENDING write, before any response has arrived', asyn
   expect(screen.getByRole('progressbar')).toHaveAttribute('aria-valuenow', TRUTH_PERCENT);
 
   fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
-  await settle();
 
-  // 200 ms of PATCH still to run: nothing has answered, and the bar has already moved.
+  // 200 ms of PATCH still to run: nothing has answered, and the bar has already moved. Both
+  // facts in ONE wait — the bar reaching the number AFTER a response landed would prove the
+  // opposite of this test, so `patchesAnswered` has to still be 0 when it gets there.
+  await waitFor(() => {
+    expect(patchesAnswered).toBe(0);
+    expect(screen.getByRole('progressbar')).toHaveAttribute('aria-valuenow', SAVED_PERCENT);
+  });
   expect(patchBodies()).toEqual([{ sessions_per_week: 3, available_weekdays: 0b111_1111 }]);
   expect(screen.getByRole('progressbar')).toHaveAttribute('aria-valuenow', SAVED_PERCENT);
 
