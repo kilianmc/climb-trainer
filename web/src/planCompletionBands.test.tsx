@@ -1,6 +1,6 @@
 import { QueryClientProvider } from '@tanstack/react-query';
 import { RouterProvider, createMemoryHistory } from '@tanstack/react-router';
-import { act, render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 
 import type {
@@ -294,10 +294,11 @@ function stubFetch() {
   );
 }
 
-async function settle(): Promise<void> {
-  await act(async () => {
-    await Promise.resolve();
-    await new Promise((resolve) => setTimeout(resolve, 0));
+/** The completion read is issued only once the active plan has landed, so the bands arrive on a
+ *  SECOND response. Waiting for one to be on screen is what makes that arrival observable. */
+async function bandsOnScreen(): Promise<void> {
+  await waitFor(() => {
+    expect(document.querySelector('.ct-app__completion')).not.toBeNull();
   });
 }
 
@@ -353,7 +354,7 @@ beforeEach(() => {
 it('asks the completion read for the ACTIVE PLAN by id, not for its dates alone', async () => {
   renderPlan();
   expect(await screen.findByRole('button', { name: 'Build a different plan' })).toBeInTheDocument();
-  await settle();
+  await bandsOnScreen();
 
   // ⚠️ Without it, every plan the climber ever regenerated inside these dates comes back and
   // spends the response's row cap, which can push live sessions out of the answer entirely.
@@ -363,7 +364,7 @@ it('asks the completion read for the ACTIVE PLAN by id, not for its dates alone'
 it('gives a 100% session badge its OWN full band inside a 75% phase', async () => {
   renderPlan();
   expect(await screen.findByRole('button', { name: 'Build a different plan' })).toBeInTheDocument();
-  await settle();
+  await bandsOnScreen();
 
   // The fixture really is the shape the bug needs: an amber phase around a green session.
   const phase = document.querySelector(PHASE);
@@ -393,7 +394,7 @@ it('gives a 100% session badge its OWN full band inside a 75% phase', async () =
 it('leaves every completion badge self-describing, so no ancestor is consulted', async () => {
   renderPlan();
   expect(await screen.findByRole('button', { name: 'Build a different plan' })).toBeInTheDocument();
-  await settle();
+  await bandsOnScreen();
 
   const badges = [...document.querySelectorAll<HTMLElement>('.ct-app__completion')];
   expect(badges.length).toBeGreaterThanOrEqual(3);
@@ -408,7 +409,7 @@ it('leaves every completion badge self-describing, so no ancestor is consulted',
 it('marks every block of a PAST session done or missed, in words as well as colour', async () => {
   renderPlan();
   expect(await screen.findByRole('button', { name: 'Build a different plan' })).toBeInTheDocument();
-  await settle();
+  await bandsOnScreen();
 
   // Kilian: "i can see that thursday i did 33% done, but i cant see which part of it i missed".
   const half = partsOf(cardTitled('Core tension'));
@@ -433,7 +434,7 @@ it('marks every block of a PAST session done or missed, in words as well as colo
 it('leaves a FUTURE session unmarked: nobody has missed a block they cannot have done', async () => {
   renderPlan();
   expect(await screen.findByRole('button', { name: 'Build a different plan' })).toBeInTheDocument();
-  await settle();
+  await bandsOnScreen();
 
   const future = cardTitled('Power endurance');
   expect(badgeOf(future)).toBeNull();

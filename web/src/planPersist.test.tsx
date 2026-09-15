@@ -1,6 +1,6 @@
 import { QueryClientProvider } from '@tanstack/react-query';
 import { RouterProvider, createMemoryHistory } from '@tanstack/react-router';
-import { act, fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 
 import type {
@@ -283,14 +283,6 @@ function requests(): string[] {
     );
 }
 
-/** Drain the microtask queue and React's work, inside `act` so no update is unbatched. */
-async function settle(): Promise<void> {
-  await act(async () => {
-    await Promise.resolve();
-    await new Promise((resolve) => setTimeout(resolve, 0));
-  });
-}
-
 function renderPlan(scope: 'user' | 'demo' = 'user') {
   const auth = createAuth();
   // Signed in, or `_authed`'s guard redirects to /login and the screen never renders.
@@ -345,20 +337,18 @@ it('writes NO optimistic plan into the query cache while a Start is in flight', 
 
   const start = await screen.findByRole('button', { name: 'Start this plan' });
   fireEvent.click(start);
-  await settle();
 
   // The request is on the wire and the button says so…
+  expect(await screen.findByRole('button', { name: 'Starting…' })).toBeInTheDocument();
   expect(requests()).toContain('POST /api/plans');
-  expect(screen.getByRole('button', { name: 'Starting…' })).toBeInTheDocument();
   // …and the cache still holds only what the SERVER said, which is "no plan".
   expect(cachedEnvelope(queryClient)).toEqual({ plan: null });
 
   release?.(json(PERSISTED, 201));
-  await settle();
 
   // Only now, and it is the server's own 201 body.
-  expect(cachedEnvelope(queryClient)?.plan).toEqual(PERSISTED);
   expect(await screen.findByRole('button', { name: 'Build a different plan' })).toBeInTheDocument();
+  expect(cachedEnvelope(queryClient)?.plan).toEqual(PERSISTED);
 });
 
 it('treats a 409 as "you already have one": it reads the plan and renders it', async () => {
@@ -376,11 +366,10 @@ it('treats a 409 as "you already have one": it reads the plan and renders it', a
   const { queryClient } = renderPlan();
 
   fireEvent.click(await screen.findByRole('button', { name: 'Start this plan' }));
-  await settle();
 
   // The 409 sent the client back to read, and what came back is on screen as the climber's plan.
-  expect(requests().filter((call) => call === 'GET /api/plans/active')).toHaveLength(2);
   expect(await screen.findByRole('button', { name: 'Build a different plan' })).toBeInTheDocument();
+  expect(requests().filter((call) => call === 'GET /api/plans/active')).toHaveLength(2);
   expect(screen.queryByRole('button', { name: /^Start/ })).toBeNull();
   // Not a failure at any layer: no alert, and the cache holds the plan rather than an error.
   expect(screen.queryByRole('alert')).not.toBeInTheDocument();
@@ -394,7 +383,7 @@ it('needs a confirmation before it clears a single setup answer', async () => {
   renderPlan();
 
   fireEvent.click(await screen.findByRole('button', { name: 'Build a different plan' }));
-  await settle();
+  await screen.findByRole('group', { name: 'Build a different plan?' });
 
   // One click writes nothing. The panel has a real accessible name and focus is on the
   // destructive choice, not on the safe one.
@@ -404,8 +393,8 @@ it('needs a confirmation before it clears a single setup answer', async () => {
   expect(yes).toHaveFocus();
 
   // Escape dismisses it and the profile is untouched.
+  // `fireEvent` flushes React, so the panel is gone by the time this reads the screen.
   fireEvent.keyDown(yes, { key: 'Escape' });
-  await settle();
   expect(screen.queryByRole('group', { name: 'Build a different plan?' })).not.toBeInTheDocument();
   expect(requests().some((call) => call.includes('/profile/reset'))).toBe(false);
 });
@@ -415,9 +404,11 @@ it('resets the profile and goes to the wizard, but ONLY after the server agrees'
   const { router } = renderPlan();
 
   fireEvent.click(await screen.findByRole('button', { name: 'Build a different plan' }));
-  await settle();
-  fireEvent.click(screen.getByRole('button', { name: 'Yes, set up again' }));
-  await settle();
+  fireEvent.click(await screen.findByRole('button', { name: 'Yes, set up again' }));
+  // The navigation is what "the server agreed" looks like, so wait for it rather than for a tick.
+  await waitFor(() => {
+    expect(router.state.location.pathname).toBe('/onboarding');
+  });
 
   expect(requests()).toContain('POST /api/profile/reset');
   expect(router.state.location.pathname).toBe('/onboarding');
@@ -433,12 +424,10 @@ it('does NOT navigate when the reset fails, and says nothing has changed', async
   const { router } = renderPlan();
 
   fireEvent.click(await screen.findByRole('button', { name: 'Build a different plan' }));
-  await settle();
-  fireEvent.click(screen.getByRole('button', { name: 'Yes, set up again' }));
-  await settle();
+  fireEvent.click(await screen.findByRole('button', { name: 'Yes, set up again' }));
 
+  const alert = await screen.findByRole('alert');
   expect(router.state.location.pathname).toBe('/plan');
-  const alert = screen.getByRole('alert');
   expect(alert).toHaveTextContent(/could not be cleared/i);
   expect(alert).toHaveTextContent(/nothing has changed/i);
 });
@@ -457,7 +446,11 @@ it('keeps a plan on screen when a background refetch of it fails', async () => {
   await act(async () => {
     await queryClient.refetchQueries({ queryKey: ACTIVE_PLAN_KEY });
   });
-  await settle();
+  // The error has to be IN the cache before any of this means anything — asserted early, the
+  // screen would still be the one from before the refetch failed.
+  await waitFor(() => {
+    expect(queryClient.getQueryState(ACTIVE_PLAN_KEY)?.status).toBe('error');
+  });
 
   // `query.js`'s error reducer sets `status: "error"` even with data present, so a screen gated
   // on `isError` would have replaced itself here. There is something to show, so it is shown.
@@ -492,7 +485,7 @@ it('NEVER generates a preview for a climber who already has a plan', async () =>
   renderPlan();
 
   fireEvent.click(await screen.findByRole('button', { name: 'Build a different plan' }));
-  await settle();
+  await screen.findByRole('group', { name: 'Build a different plan?' });
 
   expect(screen.getByRole('group', { name: 'Build a different plan?' })).toBeInTheDocument();
   expect(requests()).not.toContain('POST /api/plans/preview');
@@ -512,7 +505,7 @@ it('POSTs the start_date THAT WAS ON SCREEN, not a freshly recomputed Monday', a
   renderPlan();
 
   fireEvent.click(await screen.findByRole('button', { name: 'Start this plan' }));
-  await settle();
+  await screen.findByRole('button', { name: 'Build a different plan' });
 
   expect(bodyOf('POST', '/api/plans')).toEqual({ start_date: ON_SCREEN });
   // The preview asked for the recomputed Monday — that is its key — so the two really are
@@ -529,9 +522,8 @@ it('never claims a failed Start saved nothing, and names a STALE PAGE when that 
   renderPlan();
 
   fireEvent.click(await screen.findByRole('button', { name: 'Start this plan' }));
-  await settle();
 
-  const alert = screen.getByRole('alert');
+  const alert = await screen.findByRole('alert');
   expect(alert).toHaveTextContent(/can’t tell whether it saved/i);
   expect(alert).toHaveTextContent(/reload/i);
   expect(alert.textContent).not.toMatch(/nothing was saved|so nothing was|is untouched/i);
@@ -548,7 +540,6 @@ it('tells a stale page to reload rather than showing it the generic failure', as
   renderPlan();
 
   fireEvent.click(await screen.findByRole('button', { name: 'Start this plan' }));
-  await settle();
 
-  expect(screen.getByRole('alert')).toHaveTextContent(/open too long.*Reload it/i);
+  expect(await screen.findByRole('alert')).toHaveTextContent(/open too long.*Reload it/i);
 });
