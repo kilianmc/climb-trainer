@@ -19,10 +19,10 @@ import { useVocabulary } from '../../profile/api';
  * `staleTime: Infinity` and `enabled: isAuthenticated`, so arriving here costs at most one
  * request each per session and nothing on a revisit.
  *
- * **Not in the nav, and that is deliberate.** `_chrome.scss` carries a nav threshold table
- * measured term by term whose tightest regime is budgeted at 311px of content and clears a
- * 365px phone by ~6px; a sixth destination invalidates that arithmetic, and issue #60 is
- * already open about the nav on mobile. The only way in is the dashboard link.
+ * **Not in the nav, and that is deliberate.** The nav's thresholds are MEASURED content
+ * widths and `_chrome.scss` holds only the values — a stylesheet here carries no prose — so a
+ * sixth destination invalidates a measurement nothing writes down; issue #60 is already open
+ * about the nav on mobile. The only way in is the dashboard link.
  */
 function Library() {
   const library = useLibrary();

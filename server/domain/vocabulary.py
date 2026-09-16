@@ -20,9 +20,9 @@ like "a short list of options" from the outside.
 `StrEnum`, and `server/models.py` passes `values_callable` to every `Enum(...)` so the
 **value** ('max_hang') is stored rather than the Python member name ('MAX_HANG'). Get
 that wrong once and SCREAMING_CASE ends up in the database, in every JSON payload and
-in every hand-written `WHERE` clause. `web/src/api/vocabularies.ts` mirrors these
-values by hand until PR #9 generates them from the OpenAPI schema, and
-`tests/test_vocabulary_contract.py` is what stops the two drifting.
+in every hand-written `WHERE` clause. `web/src/api/schema.ts` is generated from the
+OpenAPI schema and read through `web/src/api/types.ts`, so nothing mirrors these values
+by hand; `tests/test_vocabulary_contract.py` is what stops the generated copy drifting.
 
 ## Renaming a value is a migration
 

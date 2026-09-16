@@ -50,7 +50,7 @@ _REWRITABLE_PREFIXES = ("postgresql://", "postgres://")
 
 # Fail a connection attempt rather than hang. Neon's autosuspend wake is ~300-800 ms,
 # so 10 s is generous; without a timeout a network fault burns the function's whole
-# 300 s budget. This is a connect option, not periodic traffic.
+# 20 s `maxDuration` (`vercel.json`). This is a connect option, not periodic traffic.
 _CONNECT_ARGS: dict[str, object] = {"connect_timeout": 10}
 
 

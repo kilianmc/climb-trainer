@@ -521,8 +521,8 @@ function PlanBody({
   vocabulary: Vocabulary;
   completion: ReadonlyMap<number, SessionCompletion>;
 }) {
-  // ONCE, for the whole plan — both of them. A 32-week plan is sixteen mesocycles over seven
-  // phases, so the guide is indexed rather than searched per section.
+  // ONCE, for the whole plan — both of them. Every plan is eight mesocycles over six of the
+  // seven phases, so the guide is indexed rather than searched per section.
   const index = exercisesByKey(exercises);
   const guides = phaseGuides(vocabulary);
   // The third index built ONCE here, for the reason the other two are: 672 blocks at worst.
@@ -577,7 +577,7 @@ function PlanBody({
 
       <PlanTimeline plan={plan} guides={guides} todayIso={todayIso} onSelect={showPhase} />
 
-      {/* Fourteen sections at 28 weeks, so both directions are one tap rather than fourteen.
+      {/* Eight sections at sixteen weeks, so both directions are one tap rather than eight.
           ⚠️ Icons at EVERY width, so the nav's container-range machinery does not apply here. */}
       <div className="ct-app__actions">
         <button
@@ -690,9 +690,9 @@ function PlanBody({
 }
 
 /**
- * One week: its sessions, each behind a disclosure so a 32-week plan is readable without scrolling
- * past a few thousand prescribed sets. `week_no` is plan-global (1..`week_count`), not per
- * mesocycle, so it is unique across the screen and is the key.
+ * One week: its sessions, each behind a disclosure so a sixteen-week plan is readable without
+ * scrolling past the couple of thousand prescribed sets it can carry. `week_no` is plan-global
+ * (1..`week_count`), not per mesocycle, so it is unique across the screen and is the key.
  */
 function WeekCard({
   microcycle,
@@ -771,8 +771,8 @@ function WeekCard({
   );
 }
 
-/** ⚠️ The panel MOUNTS ON FIRST OPEN and never unmounts: 672 blocks at ~30 nodes each is 20k
- *  for every phase toggle to reconcile. `<details>` still owns keyboard and expanded state. */
+/** ⚠️ The panel MOUNTS ON FIRST OPEN and never unmounts: up to 672 blocks at tens of elements
+ *  a panel would land in every phase toggle. `<details>` still owns keyboard and expanded state. */
 function BlockRow({
   block,
   phase,

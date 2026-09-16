@@ -571,11 +571,11 @@ export function useSessionRun(): SessionRun {
   /**
    * One flush, whatever triggered it.
    *
-   * ⚠️ **The triggers are Start, Finish, `visibilitychange`→hidden and `online`. There is NO
-   * debounce and NO item-count threshold**, and adding one is the well-meaning change that
-   * undoes the design: the persisted run is authoritative and has exactly one writer, so a
-   * periodic flush buys nothing and holds a serverless Postgres awake for the whole 45–90
-   * minute session. "Add a debounce so we don't lose data" loses no data and costs real money.
+   * ⚠️ **Every trigger is an event and NONE is a timer.** Start, Finish, the RPE follow-up,
+   * the manual retry, `visibilitychange`→hidden and `online` — the six call sites below. **NO
+   * debounce and NO item-count threshold**, and adding one undoes the design: the persisted
+   * run is authoritative and has exactly one writer, so a periodic flush buys nothing and
+   * holds a serverless Postgres awake for the whole 45–90 minute session. It costs real money.
    */
   const flush = useCallback(
     async (options: { finished?: boolean; force?: boolean } = {}): Promise<void> => {

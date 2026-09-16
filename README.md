@@ -16,8 +16,9 @@ diary.
    the one you are training for, one strength and one weakness, your weekly availability,
    and anything that is currently injured.
 2. **Plan out.** A pure-Python plan generator turns the gap between your current and
-   target grade into a phased plan — base → strength → power → power endurance →
-   peak/taper, with a deload every fourth week — allocating volume toward your weakest
+   target grade into a phased plan — sixteen weeks as four blocks, base → strength →
+   power endurance → performance, each three loading weeks then one unload week: a
+   deload, or the taper in the last block — allocating volume toward your weakest
    aspects, skipping anything an open injury contraindicates, and naming the gear that
    would unlock a session it had to build thin.
 3. **Guided session player.** A protocol interpreter compiles any prescription (max

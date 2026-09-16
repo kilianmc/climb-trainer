@@ -20,10 +20,10 @@ import type { Scope } from '../auth/session';
  *
  * ## ⚠️ NO debounce and NO item-count flush trigger
  *
- * The triggers are Finish, `visibilitychange`→hidden and `online`, and nothing else. Any
- * periodic flush would hold Neon awake for the whole 45–90 minute session for zero user
- * benefit, because the persisted store is already authoritative and a run has exactly one
- * writer. "Add a debounce so we don't lose data" is the well-meaning change that undoes it.
+ * Every flush is event-driven: Start, Finish, the RPE follow-up, the manual retry,
+ * `visibilitychange`→hidden and `online` — six `flush(` sites in `useSessionRun.ts`, and no
+ * timer fires one. A periodic flush would hold Neon awake for the whole 45–90 minute session
+ * for zero benefit — one writer, store already authoritative. "Add a debounce" undoes it.
  */
 
 /** Per-uuid: the last `SessionLogResponse` the server sent for that session, and nothing else. */
