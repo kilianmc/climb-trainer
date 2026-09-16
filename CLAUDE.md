@@ -52,8 +52,8 @@ One line each; `→` names the archive heading that holds the reasoning.
 - A focused control's `font-size` stays explicitly at or above 16px — iOS Safari zooms the page below it — and the fix is never to disable pinch-zoom in the viewport meta
 - Reduced motion drops the TRANSITION and nothing else — the colour, the fill, the ring and the countdown still change, instantly: reduced motion is not reduced information
 - The `--ct-tap` 44px floor is on BOTH axes of every control and no consumer may round it down
-- The visually-hidden idiom is the 1px clip: never `display: none` or `visibility: hidden` (both REMOVE the node from the accessibility tree) and never `clip-path: inset(50%)`, which a zero-size box lets some screen readers skip
-- The nav's five thresholds are MEASURED content widths, never screen sizes — a conventional 768/1024 pair was explicitly rejected — and the icon band's upper bound is the label threshold minus `0.001rem`, because container ranges are inclusive
+- The visually-hidden idiom is a 1px box clipped with `clip-path: inset(50%)`: never `display: none` or `visibility: hidden` (both REMOVE the node from the accessibility tree) and never collapse that box to zero size, which lets some screen readers skip the node
+- The nav's numbers are MEASURED content widths, never screen sizes — a conventional 768/1024 pair was explicitly rejected — and they are not one ladder: an icon/label pair PER VARIANT, plus a separate compression threshold, so each icon band's upper bound is its OWN label threshold minus `0.001rem`, because container ranges are inclusive
 - `&__actionbar` is a grouping primitive that anchors nothing: never `position: sticky` on it, whose range as the last child of a content-sized form is about zero — a real bottom bar is the last row of a full-height grid
 - The phase timeline's x axis is DAYS: `weeks × a constant` makes February and March the same width and every band edge after the first a lie, and nothing is rounded to a week
 - The brand tile does NOT follow the accent — `BrandMark`, `web/public/mark.svg` and the generated PWA icons carry the same three fixed values in both schemes — and dark has no shadow scale, which is not an omission to complete
@@ -67,9 +67,9 @@ One line each; `→` names the archive heading that holds the reasoning.
 ### Database and compute
 
 - Neon bills AWAKE TIME, not writes: how spread out the queries are is the entire cost model → *Neon bills AWAKE TIME, not writes*
-- The UI never waits on the database, and the outbox has explicitly NO debounce timer and NO item-count trigger — `Finish`, `tab-hidden` and `online` only → *Two write tiers*
+- The UI never waits on the database, and every outbox flush is EVENT-DRIVEN: explicitly no debounce timer, no item-count trigger and nothing periodic — count the `flush(` sites in `web/src/session/useSessionRun.ts` rather than trusting an enumeration → *Two write tiers*
 - Never write `last_used_at` / `last_seen` on read, and never cron-ping Neon to defeat autosuspend → *The other compute rules*
-- `GET /api/library` is USER-INDEPENDENT, permanently; per-user state about exercises goes on a separate endpoint that is never CDN-cached → *`/api/library` is USER-INDEPENDENT, permanently*
+- `GET /api/library` is USER-INDEPENDENT, permanently: it is served from a shared CDN keyed on URL alone with no `Vary`, so if per-user state about exercises is ever built it goes on its own endpoint that is never CDN-cached — no such endpoint exists today → *`/api/library` is USER-INDEPENDENT, permanently*
 - Sync SQLAlchemy 2 with `def` endpoints, psycopg3 never asyncpg, `TIMESTAMPTZ` never naive — the engine's omissions are deliberate and must not be "completed" → *Engine config — the omissions are the point*
 - `DATABASE_URL` is pooled and `DATABASE_URL_UNPOOLED` is direct; they are different hosts and one cannot stand for the other → *Database and compute budget*
 - Never store a grade as a display string alone, and never accept a free-typed grade or a client-supplied `ordinal` → *Prefer CLOSED inputs over free text*

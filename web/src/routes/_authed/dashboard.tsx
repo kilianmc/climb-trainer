@@ -32,9 +32,9 @@ function Dashboard() {
             : 'Your training plan and today’s session will appear here.'}
         </p>
         {/* The ONLY way into the exercise library, deliberately. A sixth nav destination would
-            invalidate `_chrome.scss`'s measured threshold table — its tightest regime is
-            budgeted at 311px of content and clears a 365px phone by ~6px — and issue #60 is
-            already open about the nav overflowing on mobile. */}
+            invalidate the nav's measured content-width thresholds — `_chrome.scss` holds the
+            values and a stylesheet here carries no prose, so the measurement is not written
+            down — and issue #60 is already open about the nav overflowing on mobile. */}
         <div className="ct-app__actions">
           <Link className="ct-app__button" to="/library">
             Browse the exercise library

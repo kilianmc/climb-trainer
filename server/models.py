@@ -750,7 +750,7 @@ class UserInjury(Base):
 
 
 # --- The plan tree: prescription, NEVER mutated by logging. Fully relational, a row per set:
-# a 24-week plan is ~290 KB of a 0.5 GB budget, so `jsonb` would save nothing and cost queries.
+# 16 weeks is under 3,000 rows even at 7 sessions/week, so `jsonb` saves nothing and costs more.
 
 
 class Plan(Base):
@@ -1148,7 +1148,7 @@ class Activity(Base):
         # LEADING column is the first FK column.** Most in this schema get it free from a
         # composite primary key or a unique constraint that happens to lead with the right
         # column — `logged_set`'s `uq (logged_session_id, client_uuid)`, `plan`'s
-        # `ix (user_id, created_at)` and so on. Six do not and are declared explicitly:
+        # `ix (user_id, created_at)` and so on. Seven do not and are declared explicitly:
         # these four, plus `microcycle (mesocycle_id, plan_id)`,
         # `exercise_equipment (equipment_id)` and
         # `exercise_contraindication (injury_area_id)`.
@@ -1297,8 +1297,8 @@ class LoggedSet(Base):
         Index("ix_logged_set_exercise_id", "exercise_id"),
         # ⚠️ Required by the `ON DELETE SET NULL` on `prescribed_set_id`, and this is the
         # worst of the four to omit: `logged_set` is the largest table in the app, and
-        # abandoning a 24-week plan deletes ~1000 prescribed sets, each of which would
-        # otherwise sequentially scan all of it. See Activity's matching index.
+        # abandoning a 16-week plan deletes up to ~2,000 prescribed sets, each of which
+        # would otherwise sequentially scan all of it. See Activity's matching index.
         Index("ix_logged_set_prescribed_set_id", "prescribed_set_id"),
         CheckConstraint("set_index >= 1", name="set_index_positive"),
         CheckConstraint("actual_reps IS NULL OR actual_reps >= 0", name="actual_reps_not_negative"),

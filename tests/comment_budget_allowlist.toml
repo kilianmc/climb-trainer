@@ -6753,7 +6753,7 @@ path = "web/src/routes/_authed/library.lazy.tsx"
 kind = "block"
 anchor = "the exercise library browsed grouped by"
 limit = 17
-reason = "Three decisions a reader would otherwise reverse: the card is a `<details>` rather than a detail route, both reads are `staleTime: Infinity` so the screen costs no request of its own, and the screen is absent from the nav because a sixth destination invalidates `_chrome.scss`'s measured 311px threshold."
+reason = "Three decisions a reader would otherwise reverse: the card is a `<details>` rather than a detail route, both reads are `staleTime: Infinity` so the screen costs no request of its own, and the screen is absent from the nav because a sixth destination invalidates the nav's measured content-width thresholds."
 
 [[exception]]
 path = "web/src/routes/_authed/library.lazy.tsx"

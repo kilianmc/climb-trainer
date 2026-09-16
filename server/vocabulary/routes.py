@@ -17,10 +17,10 @@ render its pickers. It does not: the pickers iterate `climbing_aspects`, `equipm
 test. What this field actually buys is that **every closed vocabulary reaches the OpenAPI
 schema**, and therefore the generated TypeScript: five of the six are referenced by no
 profile field, so without it `tests/test_vocabulary_contract.py` could only have been
-re-pointed for one of them and retiring the hand-written `web/src/api/vocabularies.ts`
-would have silently dropped the other five assertions. Six real cross-language assertions
-for six short arrays and zero database time is a good trade; a fictional consumer is not a
-reason.
+re-pointed at the generated `web/src/api/schema.ts` for one of them, and retiring the
+hand-written mirror it replaced would have silently dropped the other five assertions.
+Six real cross-language assertions for six short arrays and zero database time is a good
+trade; a fictional consumer is not a reason.
 
 ## Caching: `private`, not `public, immutable`
 
