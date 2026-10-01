@@ -21,7 +21,7 @@ dependencies = [
     "psycopg[binary]==3.3.5",
     # HS256 access tokens (server/auth/tokens.py). Verification is stateless on purpose,
     # so it must never need the database.
-    "pyjwt==2.13.0",
+    "pyjwt==2.15.0",
     # A runtime dep, not a dev one, on purpose: server/settings.py imports it, and a
     # dev-only dep would make production depend on the Vercel guard never regressing.
     "python-dotenv==1.2.3",
